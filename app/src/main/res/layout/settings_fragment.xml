@@ -37,6 +37,15 @@
                             android:layout_weight="1"
                             android:spinnerMode="dialog" />
 
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="start"
+                        android:paddingTop="4dp">
+
                         <ImageButton
                             style="@style/ListMenuButton"
                             android:id="@+id/BTAddBox64Preset"
@@ -69,6 +78,10 @@
                             android:id="@+id/BTImportBox64Preset"
                             android:layout_marginRight="0dp"
                             android:src="@drawable/icon_popup_menu_download" />
+
+                        <Space
+                            android:layout_width="75dp"
+                            android:layout_height="0dp" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -159,6 +172,7 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1" />
                         <Button
+                            style="@style/ButtonNeutral"
                             android:id="@+id/BTChooseWinlatorPath"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
@@ -181,6 +195,7 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1" />
                         <Button
+                            style="@style/ButtonNeutral"
                             android:id="@+id/BTChooseShortcutExportPath"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"

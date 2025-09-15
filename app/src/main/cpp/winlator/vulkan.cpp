@@ -95,8 +95,10 @@ void init_vulkan(JNIEnv  *env, jobject context, const char *driver_name) {
 VkResult create_instance(jstring driverName, JNIEnv *env, jobject context, VkInstance *instance) {
     VkResult result;
     VkInstanceCreateInfo create_info = {};
+    char *driver_name = nullptr;
 
-    const char *driver_name = env->GetStringUTFChars(driverName, nullptr);
+    if (driverName != nullptr)
+        driver_name = (char *)env->GetStringUTFChars(driverName, nullptr);
 
     if (driver_name && strcmp(driver_name, "System"))
       init_vulkan(env, context, driver_name);

@@ -224,10 +224,12 @@ public class GraphicsDriverConfigDialog extends ContentDialog {
 
     private void populateGraphicsDriverVersions(Context context, ContentsManager contentsManager, String vulkanVersion, @Nullable String initialVersion, @Nullable String blExtensions, String maxDeviceMemory, String presentMode, String graphicsDriver) {
         List<String> wrapperVersions = new ArrayList<>();
-
         String[] wrapperDefaultVersions = context.getResources().getStringArray(R.array.wrapper_graphics_driver_version_entries);
 
-        wrapperVersions.addAll(Arrays.asList(wrapperDefaultVersions));
+        if (GPUInformation.getRenderer(null, null).contains("Adreno"))
+            wrapperVersions.addAll(Arrays.asList(wrapperDefaultVersions));
+        else
+            wrapperVersions.add(wrapperDefaultVersions[0]);
         
         // Add installed versions from AdrenotoolsManager
         AdrenotoolsManager adrenotoolsManager = new AdrenotoolsManager(context);

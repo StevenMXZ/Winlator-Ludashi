@@ -113,16 +113,24 @@ public class DXVKConfigDialog extends ContentDialog {
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 String selectedVersion = sVKD3DVersion.getSelectedItem().toString();
                 String currentDXVKVersion = config.get("version");
+
                 if (!selectedVersion.equals("None")) {
+                    ArrayList<String> versions = new ArrayList<>();
+
                     for (int i = 0; i < dxvkVersions.size(); i++) {
                         int major = Integer.parseInt(dxvkVersions.get(i).split("\\.")[0]);
                         if (major < 2)
-                            dxvkVersions.remove(i);
+                            versions.add(dxvkVersions.get(i));
                     }
+
+                    dxvkVersions.removeAll(versions);
+
                     ArrayAdapter<String> adapter = new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, dxvkVersions);
                     sDXVKVersion.setAdapter(adapter);
+
                     int major = Integer.parseInt(currentDXVKVersion.split("\\.")[0]);
                     AppUtils.setSpinnerSelectionFromIdentifier(sDXVKVersion, (major >= 2) ? currentDXVKVersion : DefaultVersion.DXVK);
+                    updateConfigVisibility(getDXVKType(sDXVKVersion.getSelectedItemPosition()));
                 }
                 else {
                     loadDxvkVersionSpinner(contentsManager, sDXVKVersion, isARM64EC);
@@ -175,13 +183,19 @@ public class DXVKConfigDialog extends ContentDialog {
         String selectedVersion = config.get("vkd3dVersion");
         String currentDXVKVersion = config.get("version");
         if (!selectedVersion.equals("None")) {
+            ArrayList<String> versions = new ArrayList<>();
+
             for (int i = 0; i < dxvkVersions.size(); i++) {
                 int major = Integer.parseInt(dxvkVersions.get(i).split("\\.")[0]);
                 if (major < 2)
-                    dxvkVersions.remove(i);
+                    versions.add(dxvkVersions.get(i));
             }
+
+            dxvkVersions.removeAll(versions);
+
             ArrayAdapter<String> adapter = new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, dxvkVersions);
             sDXVKVersion.setAdapter(adapter);
+
             int major = Integer.parseInt(currentDXVKVersion.split("\\.")[0]);
             AppUtils.setSpinnerSelectionFromIdentifier(sDXVKVersion, (major >= 2) ? currentDXVKVersion : DefaultVersion.DXVK);
         }

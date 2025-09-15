@@ -18,6 +18,7 @@ import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.core.Callback;
 import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
+import com.winlator.cmod.core.GPUInformation;
 import com.winlator.cmod.core.KeyValueSet;
 import com.winlator.cmod.core.ProcessHelper;
 import com.winlator.cmod.core.TarCompressorUtils;
@@ -251,8 +252,15 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
 
         addBox64EnvVars(envVars, enableBox64Logs);
 
-        if (envVars.get("BOX64_MMAP32").equals("1") && !wineInfo.isArm64EC())
+        String renderer = GPUInformation.getRenderer(null, null);
+
+        if (renderer.contains("Mali"))
+            envVars.put("BOX64_MMAP32", "0");
+
+        if (envVars.get("BOX64_MMAP32").equals("1") && !wineInfo.isArm64EC()) {
+            Log.d("GuestProgramLauncherComponent", "Disabling map memory placed");
             envVars.put("WRAPPER_DISABLE_PLACED", "1");
+        }
 
         FEXCoreManager.loadFEXCoreEnvVars(fexConfig, envVars);
 
