@@ -128,6 +128,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import cn.sherlock.com.sun.media.sound.SF2Soundbank;
 
@@ -1616,7 +1618,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 Log.d(TAG, "Extracting fallback DXVK .tzst archive: " + dxvkWrapper);
                 TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this, "dxwrapper/" + dxvkWrapper + ".tzst", windowsDir, onExtractFileListener);
 
-                if (compareVersion(StringUtils.parseNumber(dxvkWrapper), "2.4") < 0) {
+                if (compareVersion(dxvkWrapper, "2.4") < 0) {
                     Log.d(TAG, "Extracting d8vk as part of DXVK version " + dxvkWrapper);
                     TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this, "dxwrapper/d8vk-" + DefaultVersion.D8VK + ".tzst", windowsDir, onExtractFileListener);
                 }
@@ -1660,24 +1662,39 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     }
 
     private static int compareVersion(String varA, String varB) {
-        final String[] levelsA = varA.split("\\.");
-        final String[] levelsB = varB.split("\\.");
-        int minLen = Math.min(levelsA.length, levelsB.length);
-        int numA, numB;
+        int[] a = parseSemverLoose(varA);
+        int[] b = parseSemverLoose(varB);
 
-        for (int i = 0; i < minLen; i++) {
-            numA = Integer.parseInt(levelsA[i]);
-            numB = Integer.parseInt(levelsB[i]);
-            if (numA != numB)
-                return numA - numB;
-        }
-
-        if (levelsA.length != levelsB.length)
-            return levelsA.length - levelsB.length;
-
-        return 0;
+        if (a[0] != b[0]) return a[0] - b[0];
+        if (a[1] != b[1]) return a[1] - b[1];
+        return a[2] - b[2];
     }
 
+    private static final Pattern SEMVER_LOOSE = Pattern.compile("(\\d+)\\.(\\d+)(?:\\.(\\d+))?");
+
+    private static int[] parseSemverLoose(String s) {
+        if (s == null) return new int[]{0, 0, 0};
+
+        Matcher m = SEMVER_LOOSE.matcher(s);
+        if (!m.find()) {
+            return new int[]{0, 0, 0};
+        }
+
+        int major = safeParseInt(m.group(1));
+        int minor = safeParseInt(m.group(2));
+        int patch = safeParseInt(m.group(3));
+        return new int[]{major, minor, patch};
+    }
+
+    private static int safeParseInt(String s) {
+        if (s == null || s.isEmpty()) return 0;
+        try {
+            return Integer.parseInt(s);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+    
     private void extractWinComponentFiles() {
         Log.d("XServerDisplayActivity", "Extracting WinComponents");
         File rootDir = imageFs.getRootDir();
@@ -1893,5 +1910,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     }
 
 }
+
 
 
