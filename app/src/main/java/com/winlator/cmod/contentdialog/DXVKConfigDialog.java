@@ -24,6 +24,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class DXVKConfigDialog extends ContentDialog {
     public static final String DEFAULT_CONFIG = Container.DEFAULT_DXWRAPPERCONFIG;
@@ -37,6 +39,19 @@ public class DXVKConfigDialog extends ContentDialog {
     private final View llAsyncCache;
     private final Context context;
     private static List<String> dxvkVersions;
+    private static final Pattern SEMVER = Pattern.compile("(\\d+)\\.(\\d+)(?:\\.(\\d+))?");
+
+    private static Integer tryGetMajor(String s) {
+        if (s == null) return null;
+        Matcher m = SEMVER.matcher(s);
+        if (!m.find()) return null;
+        try {
+            return Integer.parseInt(m.group(1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+    
     public static final String[] VKD3D_FEATURE_LEVEL = {"12_0", "12_1", "12_2", "11_1", "11_0", "10_1", "10_0", "9_3", "9_2", "9_1"};
 
     private static int compareVersion(String varA, String varB) {
@@ -118,9 +133,10 @@ public class DXVKConfigDialog extends ContentDialog {
                     ArrayList<String> versions = new ArrayList<>();
 
                     for (int i = 0; i < dxvkVersions.size(); i++) {
-                        int major = Integer.parseInt(dxvkVersions.get(i).split("\\.")[0]);
-                        if (major < 2)
+                        Integer major = tryGetMajor(dxvkVersions.get(i));
+                        if (major != null && major < 2) {
                             versions.add(dxvkVersions.get(i));
+                        }
                     }
 
                     dxvkVersions.removeAll(versions);
@@ -128,8 +144,11 @@ public class DXVKConfigDialog extends ContentDialog {
                     ArrayAdapter<String> adapter = new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, dxvkVersions);
                     sDXVKVersion.setAdapter(adapter);
 
-                    int major = Integer.parseInt(currentDXVKVersion.split("\\.")[0]);
-                    AppUtils.setSpinnerSelectionFromIdentifier(sDXVKVersion, (major >= 2) ? currentDXVKVersion : DefaultVersion.DXVK);
+                    Integer curMajor = tryGetMajor(currentDXVKVersion);
+                    AppUtils.setSpinnerSelectionFromIdentifier(
+                            sDXVKVersion,
+                            (curMajor != null && curMajor >= 2) ? currentDXVKVersion : DefaultVersion.DXVK
+                    );
                     updateConfigVisibility(getDXVKType(sDXVKVersion.getSelectedItemPosition()));
                 }
                 else {
@@ -186,9 +205,10 @@ public class DXVKConfigDialog extends ContentDialog {
             ArrayList<String> versions = new ArrayList<>();
 
             for (int i = 0; i < dxvkVersions.size(); i++) {
-                int major = Integer.parseInt(dxvkVersions.get(i).split("\\.")[0]);
-                if (major < 2)
+                Integer major = tryGetMajor(dxvkVersions.get(i));
+                if (major != null && major < 2) {
                     versions.add(dxvkVersions.get(i));
+                }
             }
 
             dxvkVersions.removeAll(versions);
@@ -196,8 +216,11 @@ public class DXVKConfigDialog extends ContentDialog {
             ArrayAdapter<String> adapter = new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, dxvkVersions);
             sDXVKVersion.setAdapter(adapter);
 
-            int major = Integer.parseInt(currentDXVKVersion.split("\\.")[0]);
-            AppUtils.setSpinnerSelectionFromIdentifier(sDXVKVersion, (major >= 2) ? currentDXVKVersion : DefaultVersion.DXVK);
+            Integer curMajor = tryGetMajor(currentDXVKVersion);
+            AppUtils.setSpinnerSelectionFromIdentifier(
+                    sDXVKVersion,
+                    (curMajor != null && curMajor >= 2) ? currentDXVKVersion : DefaultVersion.DXVK
+            );
         }
         else
             AppUtils.setSpinnerSelectionFromIdentifier(sDXVKVersion, currentDXVKVersion);
@@ -274,3 +297,4 @@ public class DXVKConfigDialog extends ContentDialog {
         spinner.setAdapter(adapter);
     }
 }
+
