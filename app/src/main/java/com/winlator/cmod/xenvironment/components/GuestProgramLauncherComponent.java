@@ -325,14 +325,6 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         }
 
         envVars.put("LD_PRELOAD", ld_preload);
-
-        if (this.envVars.has("MANGOHUD")) {
-            this.envVars.remove("MANGOHUD");
-        }
-
-        if (this.envVars.has("MANGOHUD_CONFIG")) {
-            this.envVars.remove("MANGOHUD_CONFIG");
-        }
         
         // Merge any additional environment variables from external sources
         if (this.envVars != null) {
@@ -405,4 +397,5 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             if (pid != -1) ProcessHelper.resumeProcess(pid);
         }
     }
+
 }
