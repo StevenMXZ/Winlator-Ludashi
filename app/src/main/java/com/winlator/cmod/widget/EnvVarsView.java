@@ -34,7 +34,7 @@ public class EnvVarsView extends FrameLayout {
         {"mesa_glthread", "CHECKBOX", "false", "true"},
         {"WINEESYNC", "CHECKBOX", "0", "1"},
         {"FD_DEV_FEATURES", "SELECT_MULTIPLE", "enable_tp_ubwc_flag_hint=1", "storage_8bit=1"},
-        {"TU_DEBUG", "SELECT_MULTIPLE", "forcecb", "nocb", "startup", "deck_emu", "nir", "nobin", "sysmem", "gmem", "forcebin", "layout", "noubwc", "nomultipos", "nolrz", "nolrzfc", "perf", "perfc", "flushall", "syncdraw", "push_consts_per_stage", "rast_order", "unaligned_store", "log_skip_gmem_ops", "dynamic", "bos", "3d_load", "fdm", "noconform", "rd"},
+        {"TU_DEBUG", "SELECT_MULTIPLE", "forcecb", "nocb", "startup", "deck_emu", "nir", "nobin", "sysmem", "gmem", "forcebin", "layout", "noubwc", "nomultipos", "nolrz", "nolrzfc", "perf", "perfc", "flushall", "syncdraw", "push_consts_per_stage", "rast_order", "unaligned_store", "log_skip_gmem_ops", "dynamic", "bos", "3d_load", "fdm", "noconform", "rd", "deck_emu"},
         {"IR3_SHADER_DEBUG", "SELECT_MULTIPLE", "nouboopt", "nopreamble", "noearlypreamble"},
         {"DXVK_HUD", "SELECT_MULTIPLE", "scale=0.5", "scale=0.7", "opacity=0.5", "opacity=0.7", "devinfo", "fps", "frametimes", "submissions", "drawcalls", "pipelines", "descriptors", "memory", "gpuload", "version", "api", "cs", "compiler", "samplers"},
         {"MESA_EXTENSION_MAX_YEAR", "TEXT"},
@@ -252,6 +252,7 @@ public class EnvVarsView extends FrameLayout {
     }
 
 }
+
 
 
 
