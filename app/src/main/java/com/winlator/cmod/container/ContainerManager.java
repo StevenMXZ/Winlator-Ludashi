@@ -38,6 +38,10 @@ public class ContainerManager {
         File rootDir = ImageFs.find(context).getRootDir();
         homeDir = new File(rootDir, "home");
         loadContainers();
+        Container container = new Container(
+                    Integer.parseInt("Test"), this
+            );
+        containers.add(container);
         isInitialized = true;
     }
 
@@ -296,3 +300,4 @@ public class ContainerManager {
 
 
 }
+
