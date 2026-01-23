@@ -4,6 +4,7 @@ import static com.winlator.cmod.inputcontrols.ExternalController.TRIGGER_IS_AXIS
 
 import android.content.SharedPreferences;
 import android.util.Log;
+import android.view.View;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 
@@ -743,5 +744,6 @@ if (view instanceof com.winlator.cmod.widget.XServerView) {
 
 
 }
+
 
 
