@@ -67,7 +67,11 @@ public class ScreenEffectDialog extends ContentDialog {
         cbEnableNTSCEffect = findViewById(R.id.CBEnableNTSCEffect);
 
 
-        GLRenderer renderer = activity.getXServerView().getRenderer();
+        com.winlator.renderer.GLRenderer renderer = null;
+       android.view.View view = activity.getXServerView();
+      if (view instanceof com.winlator.cmod.widget.XServerView) {
+      renderer = ((com.winlator.cmod.widget.XServerView) view).getRenderer();
+         }
         if (renderer == null) {
             Log.e(TAG, "Renderer is null in ScreenEffectDialog initialization!");
             return;
@@ -390,3 +394,4 @@ public class ScreenEffectDialog extends ContentDialog {
 
 
 }
+
