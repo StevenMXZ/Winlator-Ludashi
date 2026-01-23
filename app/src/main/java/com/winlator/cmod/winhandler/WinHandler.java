@@ -521,8 +521,9 @@ public class WinHandler {
                 XServer xServer = activity.getXServer();
                 xServer.pointer.setX(x);
                 xServer.pointer.setY(y);
-                activity.getXServerView().requestRender();
-                break;
+                View view = activity.getXServerView();
+if (view instanceof com.winlator.cmod.widget.XServerView) {
+    ((com.winlator.cmod.widget.XServerView) view).requestRender();
             }
             default: {
                 // Handle any other request codes if needed
@@ -741,3 +742,4 @@ public class WinHandler {
 
 
 }
+
