@@ -525,6 +525,7 @@ public class WinHandler {
 if (view instanceof com.winlator.cmod.widget.XServerView) {
     ((com.winlator.cmod.widget.XServerView) view).requestRender();
             }
+            }
             default: {
                 // Handle any other request codes if needed
                 break;
@@ -742,4 +743,5 @@ if (view instanceof com.winlator.cmod.widget.XServerView) {
 
 
 }
+
 
