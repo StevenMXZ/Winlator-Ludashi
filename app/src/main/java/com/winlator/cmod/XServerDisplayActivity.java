@@ -150,6 +150,15 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     
     private InputControlsView inputControlsView;
     private TouchpadView touchpadView;
+    private XEnvironment environment;
+    private DrawerLayout drawerLayout;
+    private ContainerManager containerManager;
+    public Container container; // Public for other activities
+    private XServer xServer;
+    private InputControlsManager inputControlsManager;
+    private ImageFs imageFs;
+    private FrameRating frameRating = null;
+    private Runnable editInputControlsCallback;
     private final ActivityResultLauncher<Intent> controlsEditorActivityResultLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
             result -> {
@@ -161,15 +170,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 }
             }
     );
-    private XEnvironment environment;
-    private DrawerLayout drawerLayout;
-    private ContainerManager containerManager;
-    public Container container; // Public for other activities
-    private XServer xServer;
-    private InputControlsManager inputControlsManager;
-    private ImageFs imageFs;
-    private FrameRating frameRating = null;
-    private Runnable editInputControlsCallback;
     private Shortcut shortcut;
     private String graphicsDriver = Container.DEFAULT_GRAPHICS_DRIVER;
     private HashMap<String, String> graphicsDriverConfig;
