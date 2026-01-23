@@ -150,6 +150,17 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     
     private InputControlsView inputControlsView;
     private TouchpadView touchpadView;
+    private final ActivityResultLauncher<Intent> controlsEditorActivityResultLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (result.getResultCode() == Activity.RESULT_OK) {
+                    if (editInputControlsCallback != null) {
+                        editInputControlsCallback.run();
+                        editInputControlsCallback = null;
+                    }
+                }
+            }
+    );
     private XEnvironment environment;
     private DrawerLayout drawerLayout;
     private ContainerManager containerManager;
