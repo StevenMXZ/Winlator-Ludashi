@@ -55,8 +55,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     // --- CORREÇÃO DO CRASH DO XLORIE ---
@@ -100,4 +100,5 @@ dependencies {
     // Dependências adicionais para garantir compatibilidade
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
+
 }
