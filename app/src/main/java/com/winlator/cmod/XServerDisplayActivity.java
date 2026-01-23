@@ -101,11 +101,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
         winHandler.start();
 
-        try {
-            container.start(); 
-        } catch (Exception e) {
-        }
-
         drawerLayout = new DrawerLayout(this);
         setupSystemUI();
         
