@@ -550,8 +550,14 @@ import cn.sherlock.com.sun.media.sound.SF2Soundbank;
         // --- 1. Escolha do Motor ---
         if (useXlorie) {
             lorieView = new LorieView(this);
+            
+            // --- CONECTANDO A PONTE ---
+            X11Activity.setLorieView(lorieView); 
+            // Precisamos conectar o input handler assim que ele for criado (passo 2 do setupUI)
+            // ...
             rootView.addView(lorieView);
-            xServerView = null; 
+            xServerView = null;
+        }
         } else {
             xServerView = new XServerView(this, xServer);
             final GLRenderer renderer = xServerView.getRenderer();
@@ -570,7 +576,7 @@ import cn.sherlock.com.sun.media.sound.SF2Soundbank;
             if (!drawerLayout.isDrawerOpen(GravityCompat.START)) drawerLayout.openDrawer(GravityCompat.START);
         });
         rootView.addView(touchpadView);
-
+X11Activity.setInputHandler(seuTouchInputHandler);
         // --- 3. Input Controls ---
         inputControlsView = new InputControlsView(this); 
         inputControlsView.setOverlayOpacity(preferences.getFloat("overlay_opacity", InputControlsView.DEFAULT_OVERLAY_OPACITY));
