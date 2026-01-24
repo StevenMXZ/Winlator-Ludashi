@@ -547,24 +547,22 @@ import cn.sherlock.com.sun.media.sound.SF2Soundbank;
     private void setupUI() {
         FrameLayout rootView = findViewById(R.id.FLXServerDisplay);
         
-        // --- LOGIC: CHOOSE ENGINE ---
+        // --- 1. Escolha do Motor ---
         if (useXlorie) {
             lorieView = new LorieView(this);
             rootView.addView(lorieView);
-            xServerView = null; // Important: set to null so we know it's disabled
+            xServerView = null; 
         } else {
-            // ORIGINAL LOGIC
             xServerView = new XServerView(this, xServer);
             final GLRenderer renderer = xServerView.getRenderer();
             renderer.setCursorVisible(false);
-
-            if (shortcut != null) {
-                renderer.setUnviewableWMClasses("explorer.exe");
-            }
-
+            if (shortcut != null) renderer.setUnviewableWMClasses("explorer.exe");
             xServer.setRenderer(renderer);
             rootView.addView(xServerView);
         }
+
+        // --- 2. TouchpadView (AGORA ESTÁ FORA DO IF/ELSE) ---
+        // Isso garante que ele seja criado para AMBOS os modos
         globalCursorSpeed = preferences.getFloat("cursor_speed", 1.0f);
         touchpadView = new TouchpadView(this, xServer, timeoutHandler, hideControlsRunnable);
         touchpadView.setSensitivity(globalCursorSpeed);
@@ -573,30 +571,22 @@ import cn.sherlock.com.sun.media.sound.SF2Soundbank;
         });
         rootView.addView(touchpadView);
 
-        inputControlsView = new InputControlsView(this); // Assuming Bionic constructor
+        // --- 3. Input Controls ---
+        inputControlsView = new InputControlsView(this); 
         inputControlsView.setOverlayOpacity(preferences.getFloat("overlay_opacity", InputControlsView.DEFAULT_OVERLAY_OPACITY));
         
-        // Fix for InputControls:
         if (!useXlorie) {
              inputControlsView.setXServer(xServer);
-             // inputControlsView.setTouchpadView(touchpadView); // If available
-        } else {
-             // For Xlorie, we might need to rely on touch injection via LorieView's internal handler
-             // or connect inputControlsView to LorieView if possible.
-             if (lorieView != null) {
-                 // inputControlsView.setTouchInputHandler(lorieView.inputHandler); // IF supported
-             }
+             // Se tiver o método setTouchpadView, descomente abaixo:
+             // inputControlsView.setTouchpadView(touchpadView); 
         }
         
         inputControlsView.setVisibility(View.GONE);
         rootView.addView(inputControlsView);
 
-        startTouchscreenTimeout();
-
+        // --- 4. Restante da UI ---
         boolean isTimeoutEnabled = preferences.getBoolean("touchscreen_timeout_enabled", false);
-        if (isTimeoutEnabled) {
-            startTouchscreenTimeout();
-        }
+        if (isTimeoutEnabled) startTouchscreenTimeout();
 
         if (container != null && container.isShowFPS()) {
             frameRating = new FrameRating(this, graphicsDriverConfig);
@@ -604,7 +594,6 @@ import cn.sherlock.com.sun.media.sound.SF2Soundbank;
             rootView.addView(frameRating);
         }
         
-        // Fullscreen Logic for XServerView (only if not Xlorie)
         if (!useXlorie && xServerView != null) {
             String shortcutFullscreenStretched = shortcut != null ? shortcut.getExtra("fullscreenStretched") : null;
             boolean shouldStretch = false;
@@ -620,6 +609,7 @@ import cn.sherlock.com.sun.media.sound.SF2Soundbank;
             }
              AppUtils.observeSoftKeyboardVisibility(drawerLayout, xServerView.getRenderer()::setScreenOffsetYRelativeToCursor);
         }
+
         if (shortcut != null) {
             String controlsProfile = shortcut.getExtra("controlsProfile");
             if (!controlsProfile.isEmpty()) {
