@@ -1254,11 +1254,17 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     }
 
     private void showInputControls(ControlsProfile profile) {
+        if (inputControlsView == null) return; 
+
         inputControlsView.setVisibility(View.VISIBLE);
         inputControlsView.requestFocus();
         inputControlsView.setProfile(profile);
-        touchpadView.setSensitivity(profile.getCursorSpeed() * globalCursorSpeed);
-        touchpadView.setPointerButtonRightEnabled(false);
+
+        if (touchpadView != null) {
+            touchpadView.setSensitivity(profile.getCursorSpeed() * globalCursorSpeed);
+            touchpadView.setPointerButtonRightEnabled(false);
+        }
+
         inputControlsView.invalidate();
     }
 
