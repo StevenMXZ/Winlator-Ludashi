@@ -117,6 +117,7 @@ import com.winlator.cmod.xserver.XServer;
 
 // --- XLORIE INTEGRATION ---
 import com.winlator.LorieView;
+import com.winlator.X11Activity; 
 import com.winlator.input.TouchInputHandler;
 // --------------------------
 
@@ -138,7 +139,7 @@ import java.util.regex.Pattern;
 
 import cn.sherlock.com.sun.media.sound.SF2Soundbank;
 
-public class XServerDisplayActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener {
+ public class XServerDisplayActivity extends X11Activity implements NavigationView.OnNavigationItemSelectedListener {
     public static String NOTIFICATION_CHANNEL_ID = "Winlator";
     public static int NOTIFICATION_ID = -1;
     
