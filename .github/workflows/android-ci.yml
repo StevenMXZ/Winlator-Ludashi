@@ -5,7 +5,6 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -43,7 +42,7 @@ jobs:
       run: ./gradlew assembleDebug
 
     - name: Attach release in action
-      uses: upload-artifact@v4
+      uses: actions/upload-artifact@v4
       with:
        name: Winlator Bionic apk
        path: ./app/build/outputs/apk/debug/app-debug.apk
