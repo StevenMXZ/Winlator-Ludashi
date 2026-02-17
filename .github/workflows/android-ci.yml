@@ -25,8 +25,14 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y meson ninja-build python3-mako
 
+    - name: Set up NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r27c
+
     - name: Build Mesa
       run: |
+        # Ensure the cross-file exists or create a basic one here
         meson setup build-mesa \
           --cross-file .github/workflows/arm64-android.txt \
           -Dplatforms=android \
@@ -47,12 +53,5 @@ jobs:
        name: Winlator Bionic apk
        path: ./app/build/outputs/apk/debug/app-debug.apk
 
-    - name: "Get Short SHA"
-      run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-
     - name: "Get Version"
-      run: echo "VERSION=$(echo $(cat app/build.gradle.kts | grep versionName | cut -d "=" -f 2 | sed "s/\"//g"))" >> $GITHUB_ENV
-
-    - name: "List files"
-      run: |
-        ls -la app/src/main/assets
+      run: echo "VERSION=$(cat app/build.gradle.kts | grep versionName | cut -d "=" -f 2 | sed 's/"//g' | xargs)" >> $GITHUB_ENV
