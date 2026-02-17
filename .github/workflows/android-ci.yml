@@ -1,5 +1,3 @@
-
-
 name: Android CI Bionic
 
 on:
@@ -23,13 +21,29 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    - name: Install Mesa Build Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y meson ninja-build python3-mako
+
+    - name: Build Mesa
+      run: |
+        meson setup build-mesa \
+          --cross-file .github/workflows/arm64-android.txt \
+          -Dplatforms=android \
+          -Dgallium-drivers=panfrost,zink \
+          -Dvulkan-drivers=panfrost \
+          -Dbuildtype=release
+        ninja -C build-mesa install
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
+      
     - name: Build with Gradle
       run: ./gradlew assembleDebug
 
     - name: Attach release in action
-      uses: actions/upload-artifact@v4
+      uses: upload-artifact@v4
       with:
        name: Winlator Bionic apk
        path: ./app/build/outputs/apk/debug/app-debug.apk
@@ -43,6 +57,3 @@ jobs:
     - name: "List files"
       run: |
         ls -la app/src/main/assets
-
-
-  #idk
