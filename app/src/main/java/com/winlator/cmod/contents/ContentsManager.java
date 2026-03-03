@@ -206,7 +206,7 @@ public class ContentsManager {
             }
         }
 
-        if (profile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE) {
+        if (profile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE || profile.type == ContentProfile.ContentType.CONTENT_TYPE_PROTON) {
             File bin = new File(file, profile.wineBinPath);
             File lib = new File(file, profile.wineLibPath);
             File cp = new File(file, profile.winePrefixPack);
@@ -257,7 +257,7 @@ public class ContentsManager {
                 contentFile.target = contentFileJSONObject.getString(ContentProfile.MARK_FILE_TARGET);
                 fileList.add(contentFile);
             }
-            if (typeName.equals(ContentProfile.ContentType.CONTENT_TYPE_WINE.toString())) {
+            if (typeName.equals(ContentProfile.ContentType.CONTENT_TYPE_WINE.toString()) || typeName.equals(ContentProfile.ContentType.CONTENT_TYPE_PROTON.toString())) {
                 JSONObject wineJSONObject = profileJSONObject.getJSONObject(ContentProfile.MARK_WINE);
                 profile.wineLibPath = wineJSONObject.getString(ContentProfile.MARK_WINE_LIBPATH);
                 profile.wineBinPath = wineJSONObject.getString(ContentProfile.MARK_WINE_BINPATH);
@@ -397,7 +397,7 @@ public class ContentsManager {
     }
 
     public boolean applyContent(ContentProfile profile) {
-        if (profile.type != ContentProfile.ContentType.CONTENT_TYPE_WINE) {
+        if (profile.type != ContentProfile.ContentType.CONTENT_TYPE_WINE || profile.type != ContentProfile.ContentType.CONTENT_TYPE_PROTON) {
             for (ContentProfile.ContentFile contentFile : profile.fileList) {
                 File targetFile = new File(getPathFromTemplate(contentFile.target));
                 File sourceFile = new File(getInstallDir(context, profile), contentFile.source);

@@ -295,6 +295,7 @@ public class ContentsFragment extends Fragment {
 
             int iconId = switch (profile.type) {
                 case CONTENT_TYPE_WINE -> R.drawable.icon_wine;
+                case CONTENT_TYPE_PROTON -> R.drawable.icon_wine;
                 default -> R.drawable.icon_settings;
             };
             holder.ivIcon.setBackground(getContext().getDrawable(iconId));
@@ -313,7 +314,7 @@ public class ContentsFragment extends Fragment {
                         new ContentInfoDialog(getContext(), profile).show();
                     } else if (itemId == R.id.remove_content) {
                         ContentDialog.confirm(getContext(), R.string.do_you_want_to_remove_this_content, () -> {
-                            if (profile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE) {
+                            if (profile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE || profile.type == ContentProfile.ContentType.CONTENT_TYPE_PROTON) {
                                 ContainerManager containerManager = new ContainerManager(getContext());
                                 for (Container container : containerManager.getContainers()) {
                                     if (container.getWineVersion().equals(ContentsManager.getEntryName(profile))) {

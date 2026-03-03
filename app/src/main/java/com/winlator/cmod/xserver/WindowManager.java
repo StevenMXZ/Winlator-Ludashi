@@ -32,6 +32,8 @@ public class WindowManager extends XResourceManager {
         default void onMapWindow(Window window) {}
 
         default void onUnmapWindow(Window window) {}
+        
+        default void onDestroyWindow(Window window) {}
 
         default void onChangeWindowZOrder(Window window) {}
 
@@ -70,6 +72,7 @@ public class WindowManager extends XResourceManager {
         if (window != null && rootWindow.id != id) {
             unmapWindow(window);
             removeAllSubwindowsAndWindow(window);
+            triggerOnDestroyWindow(window);
         }
     }
 
@@ -308,6 +311,12 @@ public class WindowManager extends XResourceManager {
         }
     }
 
+    public void triggerOnDestroyWindow(Window window) {
+    	for (int i = onWindowModificationListeners.size()-1; i >= 0; i--) {
+        	onWindowModificationListeners.get(i).onDestroyWindow(window);
+        }
+    }
+
     private void triggerOnChangeWindowZOrder(Window window) {
         for (int i = onWindowModificationListeners.size()-1; i >= 0; i--) {
             onWindowModificationListeners.get(i).onChangeWindowZOrder(window);
@@ -337,4 +346,6 @@ public class WindowManager extends XResourceManager {
             onWindowModificationListeners.get(i).onModifyWindowProperty(window, property);
         }
     }
+
+    
 }

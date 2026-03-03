@@ -99,6 +99,11 @@ public class Keyboard {
         int action = event.getAction();
         int keyCode = event.getKeyCode();
 
+        // Patches: Crash on Asus Rog Phone 9 Pro with Game Genie active (This line should be deleted after the merge)
+        if (keyCode < 0 || keyCode >= keycodeMap.length) {
+            return false; // Ignore unmapped key codes
+        }
+
         if (keyCode == KeyEvent.KEYCODE_TAB || keyCode == KeyEvent.KEYCODE_ESCAPE) {
             if (action == KeyEvent.ACTION_DOWN) {
                 xServer.injectKeyPress(keycodeMap[keyCode]);
@@ -365,4 +370,5 @@ public class Keyboard {
     public static boolean isModifierSticky(byte keycode) {
         return keycode == XKeycode.KEY_CAPS_LOCK.id || keycode == XKeycode.KEY_NUM_LOCK.id;
     }
+
 }

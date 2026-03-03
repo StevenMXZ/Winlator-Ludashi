@@ -125,7 +125,7 @@ public class WineInfo implements Parcelable {
 
         ContentProfile wineProfile = contentsManager.getProfileByEntryName(identifier);
 
-        if (wineProfile != null && wineProfile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE ) {
+        if (wineProfile != null && (wineProfile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE || wineProfile.type == ContentProfile.ContentType.CONTENT_TYPE_PROTON)) {
             identifier = identifier.substring(0, identifier.length() - 2).toLowerCase();
         }
 
@@ -140,7 +140,7 @@ public class WineInfo implements Parcelable {
                 }
             }
 
-            if (wineProfile != null && wineProfile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE)
+            if (wineProfile != null && (wineProfile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE || wineProfile.type == ContentProfile.ContentType.CONTENT_TYPE_PROTON))
                 path = contentsManager.getInstallDir(context, wineProfile).getPath();
 
             return new WineInfo(matcher.group(1), matcher.group(2), matcher.group(4), path);
