@@ -30,15 +30,15 @@ jobs:
       with:
         ndk-version: r27c
 
-    - name: Build Mesa
+    -     - name: Build Mesa
       run: |
-        # Ensure the cross-file exists or create a basic one here
         meson setup build-mesa \
           --cross-file .github/workflows/arm64-android.txt \
           -Dplatforms=android \
           -Dgallium-drivers=panfrost,zink \
           -Dvulkan-drivers=panfrost \
-          -Dbuildtype=release
+          -Dbuildtype=release \
+          .
         ninja -C build-mesa install
 
     - name: Grant execute permission for gradlew
