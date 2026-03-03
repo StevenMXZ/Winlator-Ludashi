@@ -30,7 +30,7 @@ jobs:
       with:
         ndk-version: r27c
 
-    -     - name: Build Mesa
+    - name: Build Mesa
       run: |
         meson setup build-mesa \
           --cross-file .github/workflows/arm64-android.txt \
@@ -53,5 +53,5 @@ jobs:
        name: Winlator Bionic apk
        path: ./app/build/outputs/apk/debug/app-debug.apk
 
-    - name: "Get Version"
+    - name: Get Version
       run: echo "VERSION=$(cat app/build.gradle.kts | grep versionName | cut -d "=" -f 2 | sed 's/"//g' | xargs)" >> $GITHUB_ENV
