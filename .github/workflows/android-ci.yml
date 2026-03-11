@@ -5,6 +5,7 @@ on:
 
 jobs:
   build:
+
     runs-on: ubuntu-latest
 
     steps:
@@ -20,20 +21,8 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Build Mesa
-      run: |
-        meson setup build-mesa \
-          --cross-file .github/workflows/arm64-android.txt \
-          -Dplatforms=android \
-          -Dgallium-drivers=panfrost,zink \
-          -Dvulkan-drivers=panfrost \
-          -Dbuildtype=release \
-          .
-        ninja -C build-mesa install
-
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
-      
     - name: Build with Gradle
       run: ./gradlew assembleDebug
 
@@ -43,5 +32,13 @@ jobs:
        name: Winlator Bionic apk
        path: ./app/build/outputs/apk/debug/app-debug.apk
 
-    - name: Get Version
-      run: echo "VERSION=$(cat app/build.gradle.kts | grep versionName | cut -d "=" -f 2 | sed 's/"//g' | xargs)" >> $GITHUB_ENV
+    - name: "Get Short SHA"
+      run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+    - name: "Get Version"
+      run: echo "VERSION=$(echo $(cat app/build.gradle.kts | grep versionName | cut -d "=" -f 2 | sed "s/\"//g"))" >> $GITHUB_ENV
+
+    - name: "List files"
+      run: |
+        ls -la app/src/main/assets
+  #idk
