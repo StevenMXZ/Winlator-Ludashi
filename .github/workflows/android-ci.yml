@@ -20,16 +20,6 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Install Mesa Build Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y meson ninja-build python3-mako
-
-    - name: Set up NDK
-      uses: nttld/setup-ndk@v1
-      with:
-        ndk-version: r27c
-
     - name: Build Mesa
       run: |
         meson setup build-mesa \
