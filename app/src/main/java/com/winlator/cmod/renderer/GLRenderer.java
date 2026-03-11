@@ -223,7 +223,10 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         if (resized) {
             xServerView.queueEvent(this::updateScene);
         }
-        else xServerView.queueEvent(() -> updateWindowPosition(window));
+        else {
+        	xServerView.queueEvent(() -> updateWindowPosition(window));
+        	xServerView.queueEvent(this::updateScene);
+        }
         xServerView.requestRender();
     }
 
