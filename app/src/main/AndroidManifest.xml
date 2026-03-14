@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    android:versionCode="20"
+    android:versionName="7.1.4x-cmod"
+    android:compileSdkVersion="34"
+    android:compileSdkVersionCodename="14"
+    package="com.ludashi.benchmark"
+    platformBuildVersionCode="34"
+    platformBuildVersionName="14">
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="28"/>
+    <uses-feature
+        android:glEsVersion="0x20000"
+        android:required="true"/>
+    <uses-feature
+        android:name="android.hardware.vr.headtracking"
+        android:required="false"/>
+    <uses-feature
+        android:name="com.oculus.feature.PASSTHROUGH"
+        android:required="false"/>
+    <uses-feature
+        android:name="oculus.software.handtracking"
+        android:required="false"/>
+    <uses-feature
+        android:name="oculus.software.overlay_keyboard"
+        android:required="false"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT"/>
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <application
+        android:theme="@style/AppTheme"
+        android:label="Winlator CMOD"
+        android:icon="@mipmap/ic_launcher"
+        android:debuggable="true"
+        android:allowBackup="false"
+        android:hardwareAccelerated="true"
+        android:supportsRtl="true"
+        android:isGame="true"
+        android:extractNativeLibs="true"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:appCategory="game"
+        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+        android:allowAudioPlaybackCapture="true">
+        <activity
+            android:theme="@style/AppTheme.Dark"
+            android:name="com.winlator.cmod.MainActivity"
+            android:exported="true"
+            android:screenOrientation="sensor"
+            android:configChanges="density|smallestScreenSize|screenSize|screenLayout|orientation|navigation|keyboardHidden|keyboard">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <activity
+            android:theme="@style/Theme.AppCompat"
+            android:name="com.winlator.cmod.BigPictureActivity"
+            android:exported="false"/>
+        <activity
+            android:theme="@style/AppThemeFullscreen"
+            android:name="com.winlator.cmod.XServerDisplayActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="density|smallestScreenSize|screenSize|screenLayout|orientation|navigation|keyboardHidden|keyboard"
+            android:supportsPictureInPicture="true"/>
+        <activity
+            android:theme="@style/AppThemeFullscreen"
+            android:name="com.winlator.cmod.XrActivity"
+            android:exported="true"
+            android:process=":vr_process"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:configChanges="density|screenSize|uiMode|orientation|keyboardHidden|keyboard"
+            android:resizeableActivity="false">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="com.oculus.intent.category.VR"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <activity
+            android:theme="@style/AppThemeFullscreen"
+            android:name="com.winlator.cmod.ControlsEditorActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"/>
+        <activity
+            android:theme="@style/AppTheme"
+            android:name="com.winlator.cmod.ExternalControllerBindingsActivity"
+            android:exported="false"
+            android:screenOrientation="sensor"/>
+        <receiver
+            android:name="com.winlator.cmod.ShortcutBroadcastReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.winlator.cmod.SHORTCUT_ADDED"/>
+            </intent-filter>
+        </receiver>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:exported="false"
+            android:authorities="com.ludashi.benchmark.tileprovider"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
+        <provider
+            android:name="com.winlator.cmod.core.WinlatorFilesProvider"
+            android:permission="android.permission.MANAGE_DOCUMENTS"
+            android:exported="true"
+            android:authorities="com.ludashi.benchmark.core.WinlatorFilesProvider"
+            android:grantUriPermissions="true">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER"/>
+            </intent-filter>
+        </provider>
+        <meta-data
+            android:name="com.samsung.android.multidisplay.keep_process_alive"
+            android:value="false"/>
+        <meta-data
+            android:name="android.allow_multiple_resumed_activities"
+            android:value="true"/>
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:exported="false"
+            android:authorities="com.ludashi.benchmark.androidx-startup">
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                android:value="androidx.startup"/>
+            <meta-data
+                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+                android:value="androidx.startup"/>
+        </provider>
+        <uses-library
+            android:name="androidx.window.extensions"
+            android:required="false"/>
+        <uses-library
+            android:name="androidx.window.sidecar"
+            android:required="false"/>
+    </application>
+</manifest>
