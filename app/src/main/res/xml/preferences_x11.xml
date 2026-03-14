@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <PreferenceScreen
+        app:key="main"
+        app:title="@string/pref_main">
+        <Preference
+            app:fragment="output"
+            app:title="@string/pref_output"/>
+        <Preference
+            app:fragment="pointer"
+            app:title="@string/pref_pointer"/>
+        <Preference
+            app:fragment="kbd"
+            app:title="@string/pref_kbd"/>
+        <Preference
+            app:fragment="other"
+            app:title="@string/pref_other"/>
+        <Preference
+            app:key="version"
+            app:title="@string/pref_version"/>
+    </PreferenceScreen>
+    <PreferenceScreen app:key="output">
+        <ListPreference
+            app:defaultValue="native"
+            app:entries="@array/displayResolutionVariants"
+            app:entryValues="@array/displayResolutionVariants"
+            app:key="displayResolutionMode"/>
+        <SeekBarPreference
+            android:max="300"
+            app:defaultValue="100"
+            app:key="displayScale"
+            app:min="30"
+            app:seekBarIncrement="10"
+            app:showSeekBarValue="true"
+            app:updatesContinuously="true"/>
+        <ListPreference
+            app:defaultValue="1280x1024"
+            app:entries="@array/displayResolution"
+            app:entryValues="@array/displayResolution"
+            app:key="displayResolutionExact"/>
+        <EditTextPreference
+            app:defaultValue="1280x1024"
+            app:key="displayResolutionCustom"
+            app:useSimpleSummaryProvider="true"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="adjustResolution"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="displayStretch"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="Reseed"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="PIP"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="fullscreen"/>
+        <ListPreference
+            app:defaultValue="no"
+            app:entries="@array/forceOrientationVariants"
+            app:entryValues="@array/forceOrientationVariants"
+            app:key="forceOrientation"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="hideCutout"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="keepScreenOn"/>
+    </PreferenceScreen>
+    <PreferenceScreen app:key="pointer">
+        <ListPreference
+            app:defaultValue="1"
+            app:entries="@array/touchscreenInputModesEntries"
+            app:entryValues="@array/touchscreenInputModesValues"
+            app:key="touchMode"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="scaleTouchpad"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="showStylusClickOverride"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="stylusIsMouse"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="stylusButtonContactModifierMode"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="showMouseHelper"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="pointerCapture"/>
+        <ListPreference
+            app:defaultValue="no"
+            app:entries="@array/transformCapturedPointerEntries"
+            app:entryValues="@array/transformCapturedPointerValues"
+            app:key="transformCapturedPointer"/>
+        <SeekBarPreference
+            android:max="200"
+            app:defaultValue="100"
+            app:key="capturedPointerSpeedFactor"
+            app:min="1"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="true"
+            app:updatesContinuously="true"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="tapToMove"/>
+    </PreferenceScreen>
+    <PreferenceScreen app:key="kbd">
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="showAdditionalKbd"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:isPreferenceVisible="false"
+            app:key="additionalKbdVisible"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="showIMEWhileExternalConnected"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="preferScancodes"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="hardwareKbdScancodesWorkaround"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="dexMetaKeyCapture"/>
+        <Preference app:key="enableAccessibilityService">
+            <intent android:action="android.settings.ACCESSIBILITY_SETTINGS"/>
+        </Preference>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="enableAccessibilityServiceAutomatically"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="pauseKeyInterceptingWithEsc"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="filterOutWinkey"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="enableGboardCJK"/>
+    </PreferenceScreen>
+    <PreferenceScreen app:key="other">
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="clipboardEnable"/>
+        <Preference app:key="requestNotificationPermission"/>
+        <Preference
+            app:fragment="userActions"
+            app:key="configureResponseToUserActions"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="storeSecondaryDisplayPreferencesSeparately"/>
+    </PreferenceScreen>
+    <PreferenceScreen app:key="ekbar">
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="adjustHeightForEK"/>
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="useTermuxEKBarBehaviour"/>
+        <SeekBarPreference
+            android:max="100"
+            app:defaultValue="100"
+            app:key="opacityEKBar"
+            app:min="1"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="true"
+            app:updatesContinuously="true"/>
+        <EditTextPreference app:key="extra_keys_config"/>
+    </PreferenceScreen>
+    <PreferenceScreen app:key="userActions">
+        <ListPreference
+            app:defaultValue="no action"
+            app:entries="@array/userActionsValues"
+            app:entryValues="@array/userActionsValues"
+            app:key="swipeUpAction"/>
+        <ListPreference
+            app:defaultValue="toggle additional key bar"
+            app:entries="@array/userActionsValues"
+            app:entryValues="@array/userActionsValues"
+            app:key="swipeDownAction"/>
+        <ListPreference
+            app:defaultValue="no action"
+            app:entries="@array/userActionsVolumeUpValues"
+            app:entryValues="@array/userActionsVolumeUpValues"
+            app:key="volumeUpAction"/>
+        <ListPreference
+            app:defaultValue="no action"
+            app:entries="@array/userActionsVolumeDownValues"
+            app:entryValues="@array/userActionsVolumeDownValues"
+            app:key="volumeDownAction"/>
+        <ListPreference
+            app:defaultValue="toggle soft keyboard"
+            app:entries="@array/userActionsValues"
+            app:entryValues="@array/userActionsValues"
+            app:key="backButtonAction"/>
+        <ListPreference
+            app:defaultValue="open preferences"
+            app:entries="@array/userActionsValues"
+            app:entryValues="@array/userActionsValues"
+            app:key="notificationTapAction"/>
+        <ListPreference
+            app:defaultValue="open preferences"
+            app:entries="@array/userActionsValues"
+            app:entryValues="@array/userActionsValues"
+            app:key="notificationButton0Action"/>
+        <ListPreference
+            app:defaultValue="exit"
+            app:entries="@array/userActionsValues"
+            app:entryValues="@array/userActionsValues"
+            app:key="notificationButton1Action"/>
+        <ListPreference
+            app:defaultValue="no action"
+            app:entries="@array/userActionsMediaKeyValues"
+            app:entryValues="@array/userActionsMediaKeyValues"
+            app:key="mediaKeysAction"/>
+    </PreferenceScreen>
+</PreferenceScreen>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:icon="@drawable/ic_big_picture_mode"
+        android:id="@+id/action_big_picture_mode"
+        android:color="#ffffff"
+        android:title="Big Picture Mode"
+        app:showAsAction="ifRoom"/>
+    <item
+        android:icon="@drawable/icon_action_bar_add"
+        android:id="@+id/containers_menu_add"
+        android:title="@string/add"
+        app:showAsAction="ifRoom"/>
+</menu>

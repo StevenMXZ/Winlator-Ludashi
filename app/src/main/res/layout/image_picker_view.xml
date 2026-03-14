@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <FrameLayout
+        android:background="@drawable/bordered_panel"
+        android:layout_width="140dp"
+        android:layout_height="140dp">
+        <ImageView
+            android:layout_gravity="center"
+            android:id="@+id/ImageView"
+            android:layout_width="130dp"
+            android:layout_height="130dp"
+            android:scaleType="centerCrop"/>
+        <ImageView
+            android:layout_gravity="right"
+            android:id="@+id/BTRemove"
+            android:visibility="gone"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:layout_margin="5dp"
+            android:src="@drawable/remove_button"/>
+    </FrameLayout>
+    <View style="@style/HorizontalLine"/>
+    <Button
+        android:layout_gravity="center_horizontal"
+        android:id="@+id/BTBrowse"
+        android:layout_width="130dp"
+        android:layout_height="wrap_content"
+        android:text="@string/browse"
+        style="@style/ButtonNeutral"/>
+</LinearLayout>

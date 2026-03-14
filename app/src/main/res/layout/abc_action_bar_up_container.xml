@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:enabled="false"
+    android:gravity="center_vertical"
+    android:background="?attr/actionBarItemBackground"
+    android:layout_width="wrap_content"
+    android:layout_height="match_parent"/>

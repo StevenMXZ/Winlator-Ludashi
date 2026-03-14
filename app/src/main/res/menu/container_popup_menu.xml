@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:icon="@drawable/icon_popup_menu_edit"
+        android:id="@+id/container_edit"
+        android:title="@string/edit"
+        android:iconTint="@color/colorAccent"/>
+    <item
+        android:icon="@drawable/icon_popup_menu_duplicate"
+        android:id="@+id/container_duplicate"
+        android:title="@string/duplicate"
+        android:iconTint="@color/colorAccent"/>
+    <item
+        android:icon="@drawable/icon_popup_menu_remove"
+        android:id="@+id/container_remove"
+        android:title="@string/remove"
+        android:iconTint="@color/colorAccent"/>
+    <item
+        android:icon="@drawable/icon_popup_menu_info"
+        android:id="@+id/container_info"
+        android:title="@string/storage_info"
+        android:iconTint="@color/colorAccent"/>
+</menu>

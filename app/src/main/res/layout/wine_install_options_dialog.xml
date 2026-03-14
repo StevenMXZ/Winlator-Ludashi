@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="160dp">
+    <LinearLayout
+        android:orientation="vertical"
+        android:padding="8dp"
+        android:layout_width="340dp"
+        android:layout_height="wrap_content">
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/version"/>
+        <EditText
+            android:enabled="false"
+            android:id="@+id/ETVersion"
+            android:inputType="textCapSentences"
+            style="@style/EditText"/>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/arch"/>
+        <Spinner
+            android:id="@+id/SArch"
+            android:layout_width="match_parent"
+            style="@style/ComboBox"/>
+    </LinearLayout>
+</ScrollView>

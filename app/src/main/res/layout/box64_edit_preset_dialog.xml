@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="wrap_content"
+    android:layout_height="match_parent">
+    <EditText
+        android:id="@+id/ETName"
+        android:layout_width="300dp"
+        android:hint="@string/untitled"
+        style="@style/EditText"/>
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+        <LinearLayout style="@style/FieldSet">
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+                <LinearLayout
+                    android:orientation="vertical"
+                    android:id="@+id/LLContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"/>
+            </ScrollView>
+        </LinearLayout>
+        <TextView
+            android:id="@+id/TVEnvironmentVariables"
+            android:background="#ffffff"
+            android:text="@string/environment_variables"
+            style="@style/FieldSetLabel"/>
+    </FrameLayout>
+</LinearLayout>
