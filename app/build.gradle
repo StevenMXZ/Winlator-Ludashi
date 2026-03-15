@@ -117,7 +117,7 @@ downloadProton.dependsOn(downloadImageFS)
 preBuild.dependsOn(downloadProton)
 
 android {
-    namespace 'com.winlator.cmod'
+    namespace "com.ludashi.benchmark"
     // Keep compileSdk from your current config. If you want to match Termux-X11, you could set to 34.
     compileSdk 34
     buildToolsVersion "35.0.0"
