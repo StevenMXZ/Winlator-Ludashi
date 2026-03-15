@@ -4,7 +4,6 @@
     android:versionName="7.1.4x-cmod"
     android:compileSdkVersion="34"
     android:compileSdkVersionCodename="14"
-    package="com.ludashi.benchmark"
     platformBuildVersionCode="34"
     platformBuildVersionName="14">
     <uses-sdk
