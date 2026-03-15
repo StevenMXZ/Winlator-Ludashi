@@ -4,19 +4,16 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
-
-import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
-
+import com.ludashi.benchmark.R;
 import com.winlator.cmod.BigPictureActivity;
-import com.winlator.cmod.R;
 import com.winlator.cmod.container.Shortcut;
-
 import java.util.List;
 
-public class BigPictureAdapter extends RecyclerView.Adapter<BigPictureAdapter.ViewHolder> {
-    private final List<Shortcut> shortcuts;
+/* loaded from: classes12.dex */
+public class BigPictureAdapter extends RecyclerView.Adapter<ViewHolder> {
     private final RecyclerView recyclerView;
+    private final List<Shortcut> shortcuts;
 
     public BigPictureAdapter(List<Shortcut> shortcuts, RecyclerView recyclerView) {
         this.shortcuts = shortcuts;
@@ -24,7 +21,7 @@ public class BigPictureAdapter extends RecyclerView.Adapter<BigPictureAdapter.Vi
     }
 
     public Shortcut getItem(int position) {
-        return shortcuts.get(position);
+        return this.shortcuts.get(position);
     }
 
     public static class ViewHolder extends RecyclerView.ViewHolder {
@@ -32,56 +29,56 @@ public class BigPictureAdapter extends RecyclerView.Adapter<BigPictureAdapter.Vi
 
         public ViewHolder(View itemView) {
             super(itemView);
-            iconView = itemView.findViewById(R.id.IVCoverArt); // Icon is for the carousel
+            this.iconView = (ImageView) itemView.findViewById(R.id.IVCoverArt);
         }
     }
 
-
-    @NonNull
-    @Override
+    @Override // androidx.recyclerview.widget.RecyclerView.Adapter
     public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
         View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.big_picture_list_item, parent, false);
         return new ViewHolder(view);
     }
 
-    @Override
-    public void onBindViewHolder(ViewHolder holder, int position) {
-        Shortcut shortcut = shortcuts.get(position);
-
-        // Set shortcut's icon in the carousel
+    @Override // androidx.recyclerview.widget.RecyclerView.Adapter
+    public void onBindViewHolder(ViewHolder holder, final int position) {
+        final Shortcut shortcut = this.shortcuts.get(position);
         if (shortcut.icon != null) {
             holder.iconView.setImageBitmap(shortcut.icon);
         } else {
-            holder.iconView.setImageResource(R.mipmap.ic_launcher_foreground); // Placeholder for missing icon
+            holder.iconView.setImageResource(R.mipmap.ic_launcher_foreground);
         }
-
-        // Make sure the item can receive focus
         holder.itemView.setFocusable(true);
         holder.itemView.setFocusableInTouchMode(true);
-
-        // Set click listener to load data when clicked
-        holder.itemView.setOnClickListener(v -> {
-            recyclerView.smoothScrollToPosition(position);
-            ((BigPictureActivity) recyclerView.getContext()).loadShortcutData(shortcut);
+        holder.itemView.setOnClickListener(new View.OnClickListener() { // from class: com.winlator.cmod.bigpicture.BigPictureAdapter$$ExternalSyntheticLambda0
+            @Override // android.view.View.OnClickListener
+            public final void onClick(View view) {
+                BigPictureAdapter.this.lambda$onBindViewHolder$0(position, shortcut, view);
+            }
         });
-
-        // Set focus listener to load data when focused
-        holder.itemView.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) {
-                // Smooth scroll to the focused item to keep it centered
-                recyclerView.smoothScrollToPosition(position);
-
-                // Load data for the focused item
-                ((BigPictureActivity) recyclerView.getContext()).loadShortcutData(shortcut);
+        holder.itemView.setOnFocusChangeListener(new View.OnFocusChangeListener() { // from class: com.winlator.cmod.bigpicture.BigPictureAdapter$$ExternalSyntheticLambda1
+            @Override // android.view.View.OnFocusChangeListener
+            public final void onFocusChange(View view, boolean z) {
+                BigPictureAdapter.this.lambda$onBindViewHolder$1(position, shortcut, view, z);
             }
         });
     }
 
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onBindViewHolder$0(int position, Shortcut shortcut, View v) {
+        this.recyclerView.smoothScrollToPosition(position);
+        ((BigPictureActivity) this.recyclerView.getContext()).loadShortcutData(shortcut);
+    }
 
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onBindViewHolder$1(int position, Shortcut shortcut, View v, boolean hasFocus) {
+        if (hasFocus) {
+            this.recyclerView.smoothScrollToPosition(position);
+            ((BigPictureActivity) this.recyclerView.getContext()).loadShortcutData(shortcut);
+        }
+    }
 
-
-    @Override
+    @Override // androidx.recyclerview.widget.RecyclerView.Adapter
     public int getItemCount() {
-        return shortcuts.size();
+        return this.shortcuts.size();
     }
 }

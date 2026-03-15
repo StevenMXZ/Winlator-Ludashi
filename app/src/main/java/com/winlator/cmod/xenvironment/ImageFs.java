@@ -1,36 +1,33 @@
 package com.winlator.cmod.xenvironment;
 
 import android.content.Context;
-
-import androidx.annotation.NonNull;
-
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.WineInfo;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.Locale;
 
+/* loaded from: classes12.dex */
 public class ImageFs {
+    public static final String CACHE_PATH = "/home/xuser/.cache";
+    public static final String CONFIG_PATH = "/home/xuser/.config";
+    public static final String HOME_PATH = "/home/xuser";
     public static final String USER = "xuser";
-    public static final String HOME_PATH = "/home/"+USER;
-    public static final String CACHE_PATH = HOME_PATH+"/.cache";
-    public static final String CONFIG_PATH = HOME_PATH+"/.config";
-    public static final String WINEPREFIX = HOME_PATH+"/.wine";
-    private final File rootDir;
-    public String winePath;
-    public String home_path;
+    public static final String WINEPREFIX = "/home/xuser/.wine";
     public String cache_path;
     public String config_path;
+    public String home_path;
+    private final File rootDir;
+    public String winePath;
     public String wineprefix;
 
     private ImageFs(File rootDir) {
         this.rootDir = rootDir;
-        winePath = rootDir + "/opt/" + WineInfo.MAIN_WINE_VERSION.identifier();
-        home_path = rootDir + HOME_PATH;
-        cache_path = rootDir + CACHE_PATH;
-        config_path = rootDir + CONFIG_PATH;
-        wineprefix = rootDir + WINEPREFIX;
+        this.winePath = rootDir + "/opt/" + WineInfo.MAIN_WINE_VERSION.identifier();
+        this.home_path = rootDir + HOME_PATH;
+        this.cache_path = rootDir + CACHE_PATH;
+        this.config_path = rootDir + CONFIG_PATH;
+        this.wineprefix = rootDir + WINEPREFIX;
     }
 
     public static ImageFs find(Context context) {
@@ -42,20 +39,23 @@ public class ImageFs {
     }
 
     public File getRootDir() {
-        return rootDir;
+        return this.rootDir;
     }
 
     public boolean isValid() {
-        return rootDir.isDirectory() && getImgVersionFile().exists();
+        return this.rootDir.isDirectory() && getImgVersionFile().exists();
     }
 
     public int getVersion() {
         File imgVersionFile = getImgVersionFile();
-        return imgVersionFile.exists() ? Integer.parseInt(FileUtils.readLines(imgVersionFile).get(0)) : 0;
+        if (imgVersionFile.exists()) {
+            return Integer.parseInt(FileUtils.readLines(imgVersionFile).get(0));
+        }
+        return 0;
     }
 
     public String getFormattedVersion() {
-        return String.format(Locale.ENGLISH, "%.1f", (float)getVersion());
+        return String.format(Locale.ENGLISH, "%.1f", Float.valueOf(getVersion()));
     }
 
     public void createImgVersionFile(int version) {
@@ -64,14 +64,13 @@ public class ImageFs {
         try {
             file.createNewFile();
             FileUtils.writeString(file, String.valueOf(version));
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     public String getWinePath() {
-        return winePath;
+        return this.winePath;
     }
 
     public void setWinePath(String winePath) {
@@ -79,7 +78,7 @@ public class ImageFs {
     }
 
     public File getConfigDir() {
-        return new File(rootDir, ".winlator");
+        return new File(this.rootDir, ".winlator");
     }
 
     public File getImgVersionFile() {
@@ -87,30 +86,30 @@ public class ImageFs {
     }
 
     public File getInstalledWineDir() {
-        return new File(rootDir, "/opt/installed-wine");
+        return new File(this.rootDir, "/opt/installed-wine");
     }
 
     public File getTmpDir() {
-        return new File(rootDir, "/usr/tmp");
+        return new File(this.rootDir, "/usr/tmp");
     }
 
     public File getLibDir() {
-        return new File(rootDir, "/usr/lib");
+        return new File(this.rootDir, "/usr/lib");
     }
 
-    public File getBinDir() { return new File(rootDir, "/usr/bin"); }
-    
+    public File getBinDir() {
+        return new File(this.rootDir, "/usr/bin");
+    }
+
     public File getShareDir() {
-        return new File(rootDir, "/usr/share");
-    }
-    
-    public File getEtcDir() {
-        return new File(rootDir, "/usr/etc");
+        return new File(this.rootDir, "/usr/share");
     }
 
-    @NonNull
-    @Override
+    public File getEtcDir() {
+        return new File(this.rootDir, "/usr/etc");
+    }
+
     public String toString() {
-        return rootDir.getPath();
+        return this.rootDir.getPath();
     }
 }

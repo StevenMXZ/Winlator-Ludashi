@@ -1,7 +1,5 @@
 package com.winlator.cmod.xserver.extensions;
 
-import static com.winlator.cmod.xserver.XClientRequestHandler.RESPONSE_CODE_SUCCESS;
-
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
@@ -15,51 +13,68 @@ import com.winlator.cmod.xserver.errors.BadGraphicsContext;
 import com.winlator.cmod.xserver.errors.BadImplementation;
 import com.winlator.cmod.xserver.errors.BadSHMSegment;
 import com.winlator.cmod.xserver.errors.XRequestError;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import kotlin.jvm.internal.ByteCompanionObject;
 
+/* loaded from: classes11.dex */
 public class MITSHMExtension implements Extension {
     public static final byte MAJOR_OPCODE = -101;
 
     private static abstract class ClientOpcodes {
-        private static final byte QUERY_VERSION = 0;
         private static final byte ATTACH = 1;
         private static final byte DETACH = 2;
         private static final byte PUT_IMAGE = 3;
+        private static final byte QUERY_VERSION = 0;
+
+        private ClientOpcodes() {
+        }
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.extensions.Extension
     public String getName() {
         return "MIT-SHM";
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.extensions.Extension
     public byte getMajorOpcode() {
         return MAJOR_OPCODE;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.extensions.Extension
     public byte getFirstErrorId() {
-        return Byte.MIN_VALUE;
+        return ByteCompanionObject.MIN_VALUE;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.extensions.Extension
     public byte getFirstEventId() {
-        return 64;
+        return (byte) 64;
     }
 
     private static void queryVersion(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
-        try (XStreamLock lock = outputStream.lock()) {
-            outputStream.writeByte(RESPONSE_CODE_SUCCESS);
-            outputStream.writeByte((byte)0);
+        XStreamLock lock = outputStream.lock();
+        try {
+            outputStream.writeByte((byte) 1);
+            outputStream.writeByte((byte) 0);
             outputStream.writeShort(client.getSequenceNumber());
             outputStream.writeInt(0);
-            outputStream.writeShort((short)1);
-            outputStream.writeShort((short)1);
-            outputStream.writeShort((short)0);
-            outputStream.writeShort((short)0);
-            outputStream.writeByte((byte)0);
+            outputStream.writeShort((short) 1);
+            outputStream.writeShort((short) 1);
+            outputStream.writeShort((short) 0);
+            outputStream.writeShort((short) 0);
+            outputStream.writeByte((byte) 0);
+            if (lock != null) {
+                lock.close();
+            }
+        } catch (Throwable th) {
+            if (lock != null) {
+                try {
+                    lock.close();
+                } catch (Throwable th2) {
+                    th.addSuppressed(th2);
+                }
+            }
+            throw th;
         }
     }
 
@@ -89,45 +104,72 @@ public class MITSHMExtension implements Extension {
         inputStream.skip(3);
         int shmseg = inputStream.readInt();
         inputStream.skip(4);
-
         Drawable drawable = client.xServer.drawableManager.getDrawable(drawableId);
-        if (drawable == null) throw new BadDrawable(drawableId);
-
+        if (drawable == null) {
+            throw new BadDrawable(drawableId);
+        }
         GraphicsContext graphicsContext = client.xServer.graphicsContextManager.getGraphicsContext(gcId);
-        if (graphicsContext == null) throw new BadGraphicsContext(gcId);
-
+        if (graphicsContext == null) {
+            throw new BadGraphicsContext(gcId);
+        }
         ByteBuffer data = client.xServer.getSHMSegmentManager().getData(shmseg);
-        if (data == null) throw new BadSHMSegment(shmseg);
-
+        if (data == null) {
+            throw new BadSHMSegment(shmseg);
+        }
         if (graphicsContext.getFunction() != GraphicsContext.Function.COPY) {
             throw new UnsupportedOperationException("GC Function other than COPY is not supported.");
         }
-
         drawable.drawImage(srcX, srcY, dstX, dstY, srcWidth, srcHeight, depth, data, totalWidth, totalHeight);
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.extensions.Extension
     public void handleRequest(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
+        XLock lock;
         int opcode = client.getRequestData();
         switch (opcode) {
-            case ClientOpcodes.QUERY_VERSION :
+            case 0:
                 queryVersion(client, inputStream, outputStream);
-                break;
-            case ClientOpcodes.ATTACH :
-                try (XLock lock = client.xServer.lock(XServer.Lockable.SHMSEGMENT_MANAGER)) {
+                return;
+            case 1:
+                XLock lock2 = client.xServer.lock(XServer.Lockable.SHMSEGMENT_MANAGER);
+                try {
                     attach(client, inputStream, outputStream);
+                    if (lock2 != null) {
+                        lock2.close();
+                        return;
+                    }
+                    return;
+                } finally {
+                    if (lock2 != null) {
+                        try {
+                            lock2.close();
+                        } catch (Throwable th) {
+                            th.addSuppressed(th);
+                        }
+                    }
                 }
-                break;
-            case ClientOpcodes.DETACH :
-                try (XLock lock = client.xServer.lock(XServer.Lockable.SHMSEGMENT_MANAGER)) {
+            case 2:
+                lock = client.xServer.lock(XServer.Lockable.SHMSEGMENT_MANAGER);
+                try {
                     detach(client, inputStream, outputStream);
+                    if (lock != null) {
+                        lock.close();
+                        return;
+                    }
+                    return;
+                } finally {
                 }
-                break;
-            case ClientOpcodes.PUT_IMAGE :
-                try (XLock lock = client.xServer.lock(XServer.Lockable.SHMSEGMENT_MANAGER, XServer.Lockable.DRAWABLE_MANAGER, XServer.Lockable.GRAPHIC_CONTEXT_MANAGER)) {
+            case 3:
+                lock = client.xServer.lock(XServer.Lockable.SHMSEGMENT_MANAGER, XServer.Lockable.DRAWABLE_MANAGER, XServer.Lockable.GRAPHIC_CONTEXT_MANAGER);
+                try {
                     putImage(client, inputStream, outputStream);
+                    if (lock != null) {
+                        lock.close();
+                        return;
+                    }
+                    return;
+                } finally {
                 }
-                break;
             default:
                 throw new BadImplementation();
         }

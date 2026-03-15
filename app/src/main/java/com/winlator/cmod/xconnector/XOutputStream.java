@@ -1,30 +1,32 @@
 package com.winlator.cmod.xconnector;
 
 import com.winlator.cmod.xserver.XServer;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.locks.ReentrantLock;
 
+/* loaded from: classes13.dex */
 public class XOutputStream {
     private static final byte[] ZERO = new byte[64];
+    private int ancillaryFd;
     public ByteBuffer buffer;
     public final ClientSocket clientSocket;
-    private final ReentrantLock lock = new ReentrantLock();
-    private int ancillaryFd = -1;
+    private final ReentrantLock lock;
 
     public XOutputStream(int initialCapacity) {
         this(null, initialCapacity);
     }
 
     public XOutputStream(ClientSocket clientSocket, int initialCapacity) {
+        this.lock = new ReentrantLock();
+        this.ancillaryFd = -1;
         this.clientSocket = clientSocket;
-        buffer = ByteBuffer.allocateDirect(initialCapacity);
+        this.buffer = ByteBuffer.allocateDirect(initialCapacity);
     }
 
     public void setByteOrder(ByteOrder byteOrder) {
-        buffer.order(byteOrder);
+        this.buffer.order(byteOrder);
     }
 
     public void setAncillaryFd(int ancillaryFd) {
@@ -33,30 +35,32 @@ public class XOutputStream {
 
     public void writeByte(byte value) {
         ensureSpaceIsAvailable(1);
-        buffer.put(value);
+        this.buffer.put(value);
     }
 
     public void writeShort(short value) {
         ensureSpaceIsAvailable(2);
-        buffer.putShort(value);
+        this.buffer.putShort(value);
     }
 
     public void writeInt(int value) {
         ensureSpaceIsAvailable(4);
-        buffer.putInt(value);
+        this.buffer.putInt(value);
     }
 
     public void writeLong(long value) {
         ensureSpaceIsAvailable(8);
-        buffer.putLong(value);
+        this.buffer.putLong(value);
     }
 
     public void writeString8(String str) {
         byte[] bytes = str.getBytes(XServer.LATIN1_CHARSET);
-        int length = -str.length() & 3;
+        int length = (-str.length()) & 3;
         ensureSpaceIsAvailable(bytes.length + length);
-        buffer.put(bytes);
-        if (length > 0) writePad(length);
+        this.buffer.put(bytes);
+        if (length > 0) {
+            writePad(length);
+        }
     }
 
     public void write(byte[] data) {
@@ -65,29 +69,29 @@ public class XOutputStream {
 
     public void write(byte[] data, int offset, int length) {
         ensureSpaceIsAvailable(length);
-        buffer.put(data, offset, length);
+        this.buffer.put(data, offset, length);
     }
 
     public void write(ByteBuffer data) {
         ensureSpaceIsAvailable(data.remaining());
-        buffer.put(data);
+        this.buffer.put(data);
     }
 
     public void writePad(int length) {
         write(ZERO, 0, length);
     }
 
-    private void flush() throws IOException {
-        if (buffer.position() != 0) {
-            buffer.flip();
-
-            if (ancillaryFd != -1) {
-                clientSocket.sendAncillaryMsg(buffer, ancillaryFd);
-                ancillaryFd = -1;
+    /* JADX INFO: Access modifiers changed from: private */
+    public void flush() throws IOException {
+        if (this.buffer.position() != 0) {
+            this.buffer.flip();
+            if (this.ancillaryFd != -1) {
+                this.clientSocket.sendAncillaryMsg(this.buffer, this.ancillaryFd);
+                this.ancillaryFd = -1;
+            } else {
+                this.clientSocket.write(this.buffer);
             }
-            else clientSocket.write(buffer);
-
-            buffer.clear();
+            this.buffer.clear();
         }
     }
 
@@ -96,38 +100,51 @@ public class XOutputStream {
     }
 
     private void ensureSpaceIsAvailable(int length) {
-        int position = buffer.position();
-        if ((buffer.capacity() - position) >= length) return;
-        ByteBuffer newBuffer = ByteBuffer.allocateDirect(buffer.capacity() + length).order(buffer.order());
-        buffer.rewind();
-        newBuffer.put(buffer).position(position);
-        buffer = newBuffer;
+        int position = this.buffer.position();
+        if (this.buffer.capacity() - position >= length) {
+            return;
+        }
+        ByteBuffer newBuffer = ByteBuffer.allocateDirect(this.buffer.capacity() + length).order(this.buffer.order());
+        this.buffer.rewind();
+        newBuffer.put(this.buffer).position(position);
+        this.buffer = newBuffer;
     }
 
     private class OutputStreamLock implements XStreamLock {
         public OutputStreamLock() {
-            lock.lock();
+            XOutputStream.this.lock.lock();
         }
 
-        @Override
+        @Override // com.winlator.cmod.xconnector.XStreamLock, java.lang.AutoCloseable
         public void close() throws IOException {
             try {
-                flush();
-            }
-            finally {
-                lock.unlock();
+                XOutputStream.this.flush();
+            } finally {
+                XOutputStream.this.lock.unlock();
             }
         }
     }
 
     public void writeSuccessReply(int sequenceNumber, int replyLength) throws IOException {
-        try (XStreamLock lock = lock()) {
-            writeByte((byte) 1);       // Response Code for Success
-            writeByte((byte) 0);       // Unused
-            writeShort((short) sequenceNumber);  // Sequence number
-            writeInt(replyLength);     // Reply length in 4-byte units
-            writePad(24);              // Unused padding
+        XStreamLock lock = lock();
+        try {
+            writeByte((byte) 1);
+            writeByte((byte) 0);
+            writeShort((short) sequenceNumber);
+            writeInt(replyLength);
+            writePad(24);
+            if (lock != null) {
+                lock.close();
+            }
+        } catch (Throwable th) {
+            if (lock != null) {
+                try {
+                    lock.close();
+                } catch (Throwable th2) {
+                    th.addSuppressed(th2);
+                }
+            }
+            throw th;
         }
     }
-
 }

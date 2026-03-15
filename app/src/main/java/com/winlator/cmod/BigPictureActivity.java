@@ -2,27 +2,27 @@ package com.winlator.cmod;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.animation.ObjectAnimator;
 import android.app.AlertDialog;
-import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
-import android.graphics.drawable.Drawable;
 import android.media.MediaPlayer;
 import android.net.Uri;
-import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
-import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -30,22 +30,17 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
-import android.widget.SeekBar;
 import android.widget.TextView;
-
+import android.widget.Toast;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.preference.PreferenceManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.LinearSnapHelper;
 import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.SnapHelper;
-
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.winlator.cmod.R;
 import com.winlator.cmod.bigpicture.BigPictureAdapter;
-import com.winlator.cmod.bigpicture.CarouselItemDecoration;
 import com.winlator.cmod.bigpicture.TiledBackgroundView;
 import com.winlator.cmod.bigpicture.steamgrid.SteamGridDBApi;
 import com.winlator.cmod.bigpicture.steamgrid.SteamGridGridsResponse;
@@ -55,7 +50,6 @@ import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.container.Shortcut;
 import com.winlator.cmod.core.FileUtils;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -67,7 +61,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
-
+import kotlinx.coroutines.DebugKt;
 import okhttp3.OkHttpClient;
 import retrofit2.Call;
 import retrofit2.Callback;
@@ -75,598 +69,264 @@ import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
-// For YouTube Playback
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-
-import android.animation.ObjectAnimator;
-import android.view.animation.AccelerateDecelerateInterpolator;
-import android.widget.Toast;
-
+/* loaded from: classes8.dex */
 public class BigPictureActivity extends AppCompatActivity {
-    private ImageView coverArtView;
-    private TextView gameTitleView, graphicsDriverView, graphicsDriverVersionView, dxWrapperView, dxWrapperConfigView, audioDriverView, box64PresetView, playCountView, playtimeView;
-    private RecyclerView recyclerView;
-    private ContainerManager manager;
-    private BigPictureAdapter adapter;
-    private ImageButton playButton;
-
-    private Shortcut currentShortcut;
-    private int lastFocusedItemIndex = RecyclerView.NO_POSITION;
-
     private static String API_KEY = "0324c52513634547a7b32d6d323635d0";
     private static final String BASE_URL = "https://www.steamgriddb.com/api/v2/";
-
+    private static final int REQUEST_CODE_SELECT_MP3 = 1070;
+    private static final int REQUEST_CODE_SELECT_PNG_FOLDER = 1090;
+    private static final int REQUEST_CODE_SELECT_WALLPAPER = 1080;
     private static final int REQUEST_CODE_UPLOAD_CUSTOM_COVER = 1069;
-    private TextView uploadText; // Class-level variable
-
+    public static final String SEEK_BAR_PROGRESS_KEY = "frame_duration_seekbar";
+    private static final String WALLPAPER_DISPLAY_PREF_KEY = "wallpaper_display_mode";
+    private static final String WALLPAPER_PREF_KEY = "custom_wallpaper_path";
+    private BigPictureAdapter adapter;
+    private TextView audioDriverView;
+    private TextView box64PresetView;
+    private ImageView coverArtView;
+    private Shortcut currentShortcut;
+    private TextView dxWrapperConfigView;
+    private TextView dxWrapperView;
     private TextView emptyStateTextView;
-
+    private TextView gameTitleView;
+    private TextView graphicsDriverVersionView;
+    private TextView graphicsDriverView;
+    private int lastFocusedItemIndex = -1;
+    private ContainerManager manager;
+    private MediaPlayer mediaPlayer;
+    private ImageButton playButton;
+    private TextView playCountView;
+    private TextView playtimeView;
+    private RecyclerView recyclerView;
+    private Uri selectedMp3Uri;
+    private TextView uploadText;
     private WebView webView;
 
-    private static final int REQUEST_CODE_SELECT_MP3 = 1070;
-    private Uri selectedMp3Uri;
-
-    private MediaPlayer mediaPlayer;
-
-    // Declare constants for the request code and preferences key
-    private static final int REQUEST_CODE_SELECT_WALLPAPER = 1080;
-    private static final String WALLPAPER_PREF_KEY = "custom_wallpaper_path";
-    private static final String WALLPAPER_DISPLAY_PREF_KEY = "wallpaper_display_mode";
-
-    public static final String SEEK_BAR_PROGRESS_KEY = "frame_duration_seekbar";
-
-
-    @Override
+    @Override // androidx.appcompat.app.AppCompatActivity, androidx.fragment.app.FragmentActivity, android.app.Activity
     protected void onStart() {
         super.onStart();
-        TiledBackgroundView backgroundView = findViewById(R.id.parallaxBackgroundView);
-        backgroundView.startAnimation(); // Start animation
+        TiledBackgroundView backgroundView = (TiledBackgroundView) findViewById(com.ludashi.benchmark.R.id.parallaxBackgroundView);
+        backgroundView.startAnimation();
     }
 
-    @Override
+    @Override // androidx.appcompat.app.AppCompatActivity, androidx.fragment.app.FragmentActivity, android.app.Activity
     protected void onStop() {
         super.onStop();
-        TiledBackgroundView backgroundView = findViewById(R.id.parallaxBackgroundView);
-        backgroundView.stopAnimation(); // Stop animation
+        TiledBackgroundView backgroundView = (TiledBackgroundView) findViewById(com.ludashi.benchmark.R.id.parallaxBackgroundView);
+        backgroundView.stopAnimation();
     }
 
+    /* JADX WARN: Can't fix incorrect switch cases order, some code will duplicate */
+    /* JADX WARN: Failed to restore switch over string. Please report as a decompilation issue
+    java.lang.NullPointerException: Cannot invoke "java.util.List.iterator()" because the return value of "jadx.core.dex.visitors.regions.SwitchOverStringVisitor$SwitchData.getNewCases()" is null
+    	at jadx.core.dex.visitors.regions.SwitchOverStringVisitor.restoreSwitchOverString(SwitchOverStringVisitor.java:109)
+    	at jadx.core.dex.visitors.regions.SwitchOverStringVisitor.visitRegion(SwitchOverStringVisitor.java:66)
+    	at jadx.core.dex.visitors.regions.DepthRegionTraversal.traverseIterativeStepInternal(DepthRegionTraversal.java:77)
+    	at jadx.core.dex.visitors.regions.DepthRegionTraversal.traverseIterativeStepInternal(DepthRegionTraversal.java:82)
+    	at jadx.core.dex.visitors.regions.DepthRegionTraversal.traverseIterative(DepthRegionTraversal.java:31)
+    	at jadx.core.dex.visitors.regions.SwitchOverStringVisitor.visit(SwitchOverStringVisitor.java:60)
+     */
+    /* JADX WARN: Removed duplicated region for block: B:13:0x0161  */
+    /* JADX WARN: Removed duplicated region for block: B:16:0x01a7  */
+    /* JADX WARN: Removed duplicated region for block: B:27:0x01ee  */
+    /* JADX WARN: Removed duplicated region for block: B:31:0x0210  */
+    /* JADX WARN: Removed duplicated region for block: B:41:0x0305  */
+    /* JADX WARN: Removed duplicated region for block: B:44:0x0344  */
+    /* JADX WARN: Removed duplicated region for block: B:53:0x03cc  */
+    /* JADX WARN: Removed duplicated region for block: B:56:0x03ec  */
+    /* JADX WARN: Removed duplicated region for block: B:59:0x0492  */
+    /* JADX WARN: Removed duplicated region for block: B:63:0x049e  */
+    /* JADX WARN: Removed duplicated region for block: B:64:0x03fa  */
+    /* JADX WARN: Removed duplicated region for block: B:77:0x03b0  */
+    /* JADX WARN: Removed duplicated region for block: B:78:0x030c  */
+    /* JADX WARN: Removed duplicated region for block: B:80:0x021e  */
+    /* JADX WARN: Removed duplicated region for block: B:81:0x022c  */
+    /* JADX WARN: Removed duplicated region for block: B:82:0x023a  */
+    /* JADX WARN: Removed duplicated region for block: B:83:0x01f8  */
+    /* JADX WARN: Removed duplicated region for block: B:86:0x0202  */
+    /* JADX WARN: Removed duplicated region for block: B:89:0x020c  */
+    /* JADX WARN: Removed duplicated region for block: B:90:0x01d1  */
+    /* JADX WARN: Removed duplicated region for block: B:91:0x0165  */
+    @Override // androidx.fragment.app.FragmentActivity, androidx.activity.ComponentActivity, androidx.core.app.ComponentActivity, android.app.Activity
+    /*
+        Code decompiled incorrectly, please refer to instructions dump.
+        To view partially-correct add '--show-bad-code' argument
+    */
+    protected void onCreate(android.os.Bundle r42) {
+        /*
+            Method dump skipped, instructions count: 1290
+            To view this dump add '--comments-level debug' option
+        */
+        throw new UnsupportedOperationException("Method not decompiled: com.winlator.cmod.BigPictureActivity.onCreate(android.os.Bundle):void");
+    }
 
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$0(View v) {
+        selectPngFolder();
+    }
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        getSupportActionBar().hide();  // Hide the action bar for full-screen mode
-        setContentView(R.layout.big_picture_activity);
-
-//        // Set the background to ImageView for the tiled animation background
-//        ImageView parallaxBackgroundView = findViewById(R.id.parallaxBackgroundView);
-//        parallaxBackgroundView.setBackgroundResource(R.drawable.animated_background); // Use animation as background
-//
-//        // Get the AnimationDrawable and start it directly
-//        animatedBackground = (AnimationDrawable) parallaxBackgroundView.getBackground();
-//        animatedBackground.setOneShot(false); // Loop the animation
-//        parallaxBackgroundView.post(() -> animatedBackground.start());
-
-
-
-        TiledBackgroundView backgroundView = findViewById(R.id.parallaxBackgroundView);
-
-        Button selectWallpaperButton = findViewById(R.id.selectWallpaperButton);
-        RadioButton rbCustomWallpaper = findViewById(R.id.rbCustomWallpaper); // Get reference to the custom wallpaper button
-
-        Button folderPickerButton = findViewById(R.id.selectPngFolderButton);
-        folderPickerButton.setOnClickListener(v -> {
-            selectPngFolder();
-        });
-
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        String savedFolderUri = prefs.getString("png_folder_uri", null);
-        if (savedFolderUri != null) {
-            Uri folderUri = Uri.parse(savedFolderUri);
-            loadFramesFromFolder(folderUri);
-        }
-
-        int storedFrameDuration = prefs.getInt("frame_duration", 66);
-        TiledBackgroundView bgView = findViewById(R.id.parallaxBackgroundView);
-        if (bgView != null) {
-            bgView.setFrameDuration(storedFrameDuration);
-        }
-
-
-        // In onCreate, after inflating views:
-        SeekBar frameSpeedSeekBar = findViewById(R.id.frameSpeedSeekBar);
-        bgView = findViewById(R.id.parallaxBackgroundView);
-        prefs = PreferenceManager.getDefaultSharedPreferences(this);
-
-// 1) Restore the previous SeekBar progress
-        int storedSeekBarProgress = prefs.getInt(SEEK_BAR_PROGRESS_KEY, 66); // default 66
-// 2) Set the SeekBar position
-        frameSpeedSeekBar.setProgress(storedSeekBarProgress);
-
-// 3) Convert that storedSeekBarProgress to actual frameDuration
-        int reversedProgress = frameSpeedSeekBar.getMax() - storedSeekBarProgress;
-        bgView.setFrameDuration(reversedProgress);
-
-// Now attach the listener
-        TiledBackgroundView finalBgView = bgView;
-        SharedPreferences finalPrefs = prefs;
-        frameSpeedSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                // Because you’re reversing the direction:
-                int reversed = seekBar.getMax() - progress;
-                // Apply to the TiledBackgroundView
-                finalBgView.setFrameDuration(reversed);
-
-                // Store the *raw* SeekBar progress so we can restore next time
-                finalPrefs.edit().putInt(SEEK_BAR_PROGRESS_KEY, progress).apply();
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) { }
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) { }
-        });
-
-
-        RadioGroup animationSelectorGroup = findViewById(R.id.animationSelectorGroup);
-        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
-
-// Temporarily disable listener to avoid unintended triggers
-        animationSelectorGroup.setOnCheckedChangeListener(null);
-
-// Restore the selected animation state for the RadioGroup
-        String savedAnimation = preferences.getString("selected_animation", "ab"); // Default to "ab" or your preferred default
-        if (savedAnimation.equals("custom_wallpaper")) {
-            ((RadioButton) findViewById(R.id.rbCustomWallpaper)).setChecked(true);
-        } else if (savedAnimation.equals("ab_gear")) {
-            ((RadioButton) findViewById(R.id.rbGearAnimation)).setChecked(true);
-        } else if (savedAnimation.equals("ab_quilt")) {
-            ((RadioButton) findViewById(R.id.rbQuiltAnimation)).setChecked(true);
-        } else if (savedAnimation.equals("none")) {
-            ((RadioButton) findViewById(R.id.rbNoAnimation)).setChecked(true);
-        } else if (savedAnimation.equals("folder")) {
-            ((RadioButton) findViewById(R.id.rbFolderAnimation)).setChecked(true);
-            savedFolderUri = preferences.getString("png_folder_uri", null);
-            if (savedFolderUri != null) {
-                Uri folderUri = Uri.parse(savedFolderUri);
-                loadFramesFromFolder(folderUri);
-            }
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$1(SharedPreferences preferences, Button selectWallpaperButton, TiledBackgroundView backgroundView, RadioGroup group, int checkedId) {
+        SharedPreferences.Editor editor = preferences.edit();
+        if (checkedId == com.ludashi.benchmark.R.id.rbCustomWallpaper) {
+            selectWallpaperButton.setVisibility(0);
+            backgroundView.setVisibility(8);
+            editor.putString("selected_animation", "custom_wallpaper");
         } else {
-            ((RadioButton) findViewById(R.id.rbDefaultAnimation)).setChecked(true);
-        }
-
-// Re-enable and attach the listener after setting the state
-        animationSelectorGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            SharedPreferences.Editor editor = preferences.edit();
-            if (checkedId == R.id.rbCustomWallpaper) {
-                selectWallpaperButton.setVisibility(View.VISIBLE);
-                backgroundView.setVisibility(View.GONE);
-                editor.putString("selected_animation", "custom_wallpaper");
-            } else {
-                selectWallpaperButton.setVisibility(View.GONE);
-                backgroundView.setVisibility(View.VISIBLE);
-
-                // Handle other animation options here
-                if (checkedId == R.id.rbGearAnimation) {
-                    backgroundView.setAnimation("ab_gear");
-                    editor.putString("selected_animation", "ab_gear");
-                } else if (checkedId == R.id.rbQuiltAnimation) {
-                    backgroundView.setAnimation("ab_quilt");
-                    editor.putString("selected_animation", "ab_quilt");
-                } else if (checkedId == R.id.rbDefaultAnimation) {
-                    backgroundView.setAnimation("ab");
-                    editor.putString("selected_animation", "ab");
-                } else if (checkedId == R.id.rbNoAnimation) {
-                    backgroundView.stopAnimation();
-                    backgroundView.setVisibility(View.GONE);
-                    editor.putString("selected_animation", "none");
-                } else if (checkedId == R.id.rbFolderAnimation) {
-                    editor.putString("selected_animation", "folder");
-                    selectPngFolder();
-                }
+            selectWallpaperButton.setVisibility(8);
+            backgroundView.setVisibility(0);
+            if (checkedId == com.ludashi.benchmark.R.id.rbGearAnimation) {
+                backgroundView.setAnimation("ab_gear");
+                editor.putString("selected_animation", "ab_gear");
+            } else if (checkedId == com.ludashi.benchmark.R.id.rbQuiltAnimation) {
+                backgroundView.setAnimation("ab_quilt");
+                editor.putString("selected_animation", "ab_quilt");
+            } else if (checkedId == com.ludashi.benchmark.R.id.rbDefaultAnimation) {
+                backgroundView.setAnimation("ab");
+                editor.putString("selected_animation", "ab");
+            } else if (checkedId == com.ludashi.benchmark.R.id.rbNoAnimation) {
+                backgroundView.stopAnimation();
+                backgroundView.setVisibility(8);
+                editor.putString("selected_animation", Container.DEFAULT_DDRAWRAPPER);
+            } else if (checkedId == com.ludashi.benchmark.R.id.rbFolderAnimation) {
+                editor.putString("selected_animation", "folder");
+                selectPngFolder();
             }
-            editor.apply();
-            backgroundView.startAnimation();
-        });
-
-// Handle the saved animation for the TiledBackgroundView
-        if (savedAnimation.equals("ab_gear")) {
-            backgroundView.setAnimation("ab_gear");
-        } else if (savedAnimation.equals("ab_quilt")) {
-            backgroundView.setAnimation("ab_quilt");
-        } else if (savedAnimation.equals("none")) {
-            backgroundView.stopAnimation();
-            backgroundView.setVisibility(View.GONE); // Hide when animation stops
-        } else if (savedAnimation.equals("folder")) {
-            savedFolderUri = preferences.getString("png_folder_uri", null);
-            if (savedFolderUri != null) {
-                Uri folderUri = Uri.parse(savedFolderUri);
-                loadFramesFromFolder(folderUri);
-            }
-        } else {
-            backgroundView.setAnimation("ab");
         }
+        editor.apply();
         backgroundView.startAnimation();
+    }
 
-        // Launch file picker when button is clicked
-        selectWallpaperButton.setOnClickListener(v -> {
-            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-            intent.setType("image/*");
-            startActivityForResult(intent, REQUEST_CODE_SELECT_WALLPAPER);
-        });
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$2(View v) {
+        Intent intent = new Intent("android.intent.action.GET_CONTENT");
+        intent.setType("image/*");
+        startActivityForResult(intent, REQUEST_CODE_SELECT_WALLPAPER);
+    }
 
-
-        if ("custom_wallpaper".equals(savedAnimation)) {
-            String savedWallpaperPath = preferences.getString(WALLPAPER_PREF_KEY, null);
-            if (savedWallpaperPath != null) {
-                File wallpaperFile = new File(savedWallpaperPath);
-                if (wallpaperFile.exists()) {
-                    try {
-                        applyWallpaper(Uri.fromFile(wallpaperFile), preferences.getString(WALLPAPER_DISPLAY_PREF_KEY, "center"));
-                    } catch (FileNotFoundException e) {
-                        e.printStackTrace();
-                    }
-                }
-            }
-        } else {
-            // Apply other animation options as per the selected animation value
-            applyAnimationBasedOnState(backgroundView, savedAnimation);
-        }
-
-
-        RadioGroup parallaxModeGroup = findViewById(R.id.parallaxModeGroup);
-
-        String savedParallaxMode = preferences.getString("parallax_mode", "default");
-// Pre-check whichever is saved
-        switch (savedParallaxMode) {
-            case "off":
-                ((RadioButton) findViewById(R.id.rbParallaxOff)).setChecked(true);
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$3(SharedPreferences preferences, RadioGroup group, int checkedId) {
+        String mode;
+        switch (checkedId) {
+            case com.ludashi.benchmark.R.id.rbParallaxFast /* 2131296994 */:
+                mode = "fast";
                 break;
-            case "slow":
-                ((RadioButton) findViewById(R.id.rbParallaxSlow)).setChecked(true);
+            case com.ludashi.benchmark.R.id.rbParallaxOff /* 2131296995 */:
+                mode = DebugKt.DEBUG_PROPERTY_VALUE_OFF;
                 break;
-            case "fast":
-                ((RadioButton) findViewById(R.id.rbParallaxFast)).setChecked(true);
+            case com.ludashi.benchmark.R.id.rbParallaxSlow /* 2131296996 */:
+                mode = "slow";
                 break;
             default:
-                ((RadioButton) findViewById(R.id.rbParallaxDefault)).setChecked(true);
+                mode = "default";
                 break;
         }
-
-        applyParallaxMode(savedParallaxMode);
-
-        parallaxModeGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            String mode;
-            switch (checkedId) {
-                case R.id.rbParallaxOff:
-                    mode = "off";
-                    break;
-                case R.id.rbParallaxSlow:
-                    mode = "slow";
-                    break;
-                case R.id.rbParallaxFast:
-                    mode = "fast";
-                    break;
-                default:
-                    mode = "default";
-                    break;
-            }
-            preferences.edit().putString("parallax_mode", mode).apply();
-
-            // Immediately apply to TiledBackgroundView:
-            applyParallaxMode(mode);
-        });
-
-
-
-        // Find the YouTube URL input and Load Video button
-        EditText youtubeUrlInput = findViewById(R.id.youtubeUrlInput);
-        Button loadVideoButton = findViewById(R.id.loadVideoButton);
-
-        // Set default video (this will be used if no custom URL is provided)
-        final String defaultVideoId = "yNwKYgM6SkM"; // Wii shop channel music extended
-
-
-        LinearLayout settingsLayout = findViewById(R.id.settingsLayout);
-
-
-        // Override API key if custom key is set
-        boolean isCustomApiKeyEnabled = preferences.getBoolean("enable_custom_api_key", false);
-        if (isCustomApiKeyEnabled) {
-            String customApiKey = preferences.getString("custom_api_key", "");
-            if (customApiKey != null && !customApiKey.isEmpty()) {
-                API_KEY = customApiKey;
-            }
-        }
-
-        // Find the "Disable BG Music" button
-        Button disableBgMusicButton = findViewById(R.id.disableBgMusicButton);
-
-        // Load the saved BG music state from SharedPreferences
-        boolean isBgMusicEnabled = preferences.getBoolean("bg_music_enabled", true);
-
-        // Update the button text based on the current state
-        updateBgMusicButtonText(disableBgMusicButton, isBgMusicEnabled);
-
-        // Set the listener for the "Disable BG Music" button
-        disableBgMusicButton.setOnClickListener(v -> {
-            boolean currentBgMusicState = preferences.getBoolean("bg_music_enabled", true);
-            boolean newBgMusicState = !currentBgMusicState;
-
-            SharedPreferences.Editor editor = preferences.edit();
-            editor.putBoolean("bg_music_enabled", newBgMusicState);
-            editor.apply();
-
-            updateBgMusicButtonText(disableBgMusicButton, newBgMusicState);
-
-            // Enable or disable music based on the new state
-            if (newBgMusicState) {
-                onResume(); // Restart music based on the current selection (MP3 or YouTube)
-            } else {
-                stopBackgroundMusic(); // Stop both YouTube and MP3
-            }
-        });
-
-
-        Button selectMp3Button = findViewById(R.id.selectMp3Button);
-        selectMp3Button.setOnClickListener(v -> {
-            Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-            intent.setType("audio/mpeg");
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            startActivityForResult(intent, REQUEST_CODE_SELECT_MP3);
-        });
-
-
-
-        RadioGroup musicSourceGroup = findViewById(R.id.musicSourceGroup);
-        RadioButton youtubeRadioButton = findViewById(R.id.youtubeRadioButton);
-        RadioButton mp3RadioButton = findViewById(R.id.mp3RadioButton);
-
-        // Initialize the Reset MP3 button
-        Button resetMp3Button = findViewById(R.id.resetMp3Button);
-        resetMp3Button.setOnClickListener(v -> {
-            stopBackgroundMusic();
-
-            // Reset the selected MP3 path in SharedPreferences
-            SharedPreferences.Editor editor = preferences.edit();
-            editor.remove("selected_mp3_path");
-            editor.putString("music_source", "mp3"); // Ensure the music source is set to MP3
-            editor.apply();
-
-            // Update the RadioButton to reflect the change
-            mp3RadioButton.setChecked(true);
-
-            // Play the default MP3 from assets
-            playDefaultMp3FromAssets();
-
-            // Provide feedback to the user
-            Toast.makeText(this, "MP3 reset to default", Toast.LENGTH_SHORT).show();
-        });
-
-
-        // Load saved preference
-        String musicSource = preferences.getString("music_source", "mp3");
-
-        if ("mp3".equals(musicSource)) {
-            mp3RadioButton.setChecked(true);
-        } else {
-            youtubeRadioButton.setChecked(true);
-        }
-
-        // Save the selection to SharedPreferences
-        musicSourceGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            SharedPreferences.Editor editor = preferences.edit();
-            if (checkedId == R.id.youtubeRadioButton) {
-                editor.putString("music_source", "youtube");
-            } else if (checkedId == R.id.mp3RadioButton) {
-                editor.putString("music_source", "mp3");
-            }
-            editor.apply();
-        });
-
-
-        webView = findViewById(R.id.webView);
-        webView.getSettings().setJavaScriptEnabled(true); // Enable JavaScript
-        webView.setWebViewClient(new WebViewClient()); // Prevent redirecting to external browser
-
-        // Load saved preference for music source
-        String selectedMp3Path = preferences.getString("selected_mp3_path", null);
-
-        // Start music based on the selected source, only if BG music is enabled
-        if (isBgMusicEnabled) {
-            if ("mp3".equals(musicSource)) {
-                // If selectedMp3Path is null, use the default mp3 from assets
-                if (selectedMp3Path != null) {
-                    // Get the MP3 file from internal storage
-                    File mp3File = new File(selectedMp3Path);
-
-                    // Play the selected MP3 if the user chose MP3
-                    if (mp3File.exists()) {
-                        playMp3(mp3File);  // Pass the File object to playMp3 method
-                    } else {
-                        Log.e("BigPictureActivity", "MP3 file not found: " + selectedMp3Path);
-                        playDefaultMp3FromAssets();
-                    }
-                } else {
-                    // No mp3 selected, play default mp3 from assets
-                    playDefaultMp3FromAssets();
-                }
-            } else if ("youtube".equals(musicSource)) {
-                // Play the YouTube video if the user chose YouTube
-                String savedUrl = preferences.getString("saved_youtube_url", "");
-                String videoId = savedUrl.isEmpty() ? defaultVideoId : extractYouTubeId(savedUrl);
-
-                if (videoId != null) {
-                    loadYouTubeVideo(videoId);
-                    youtubeUrlInput.setText(savedUrl);  // Populate the input field with the saved URL
-                } else {
-                    // If no saved URL or invalid, use the default video
-                    loadYouTubeVideo(defaultVideoId);
-                    youtubeUrlInput.setText("");  // Clear the input field if invalid or default video is used
-                }
-            }
-        }
-
-
-
-
-        // Set the listener for the "Load Video" button
-        loadVideoButton.setOnClickListener(v -> {
-            String userUrl = youtubeUrlInput.getText().toString();
-            if (userUrl != null && !userUrl.isEmpty()) {
-                String videoId = extractYouTubeId(userUrl);
-                if (videoId != null) {
-                    loadYouTubeVideo(videoId);  // Load the user-specified video
-
-                    // Save the YouTube URL to SharedPreferences
-                    SharedPreferences.Editor editor = preferences.edit();
-                    editor.putString("saved_youtube_url", userUrl);
-                    editor.apply();
-                } else {
-                    // Show an error message if the URL is invalid
-                    youtubeUrlInput.setError("Invalid YouTube URL");
-                }
-            } else {
-                // Load the default video if no URL is entered
-                loadYouTubeVideo(defaultVideoId);
-            }
-        });
-
-        // Set immersive mode
-        enableImmersiveMode();
-
-        // Find the settings button
-        ImageButton settingsButton = findViewById(R.id.settingsButton);
-
-        // Tint the settings button icon to white
-        Drawable settingsIcon = settingsButton.getDrawable();
-        if (settingsIcon != null) {
-            settingsIcon.mutate();  // Ensure it doesn't affect other instances
-            settingsIcon.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);  // Apply the white color filter
-        }
-
-        // Set the click listener for the settings button
-        settingsButton.setOnClickListener(v -> {
-            if (findViewById(R.id.settingsLayout).getVisibility() == View.VISIBLE) {
-                hideSettingsView();
-            } else {
-                showSettingsView();
-            }
-        });
-
-        // Find the back button
-        ImageButton backButton = findViewById(R.id.backButton);
-
-        // Tint the settings button icon to white
-        Drawable backIcon = backButton.getDrawable();
-        if (backIcon != null) {
-            backIcon.mutate();  // Ensure it doesn't affect other instances
-            backIcon.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);  // Apply the white color filter
-        }
-
-        // Set the click listener for the settings button
-        backButton.setOnClickListener(v -> {
-            if (findViewById(R.id.settingsLayout).getVisibility() == View.VISIBLE) {
-                hideSettingsView();
-            } else {
-                showSettingsView();
-            }
-        });
-
-
-        coverArtView = findViewById(R.id.IVCoverArt);
-        gameTitleView = findViewById(R.id.TVGameTitle);
-        graphicsDriverView = findViewById(R.id.TVGraphicsDriver);
-        graphicsDriverVersionView = findViewById(R.id.TVGraphicsDriverVersion);
-        dxWrapperView = findViewById(R.id.TVDXWrapper);
-        dxWrapperConfigView = findViewById(R.id.TVDXWrapperConfig);
-        audioDriverView = findViewById(R.id.TVAudioDriver);
-        box64PresetView = findViewById(R.id.TVBox64Preset);
-        playCountView = findViewById(R.id.TVPlayCount);
-        playtimeView = findViewById(R.id.TVPlaytime);
-        recyclerView = findViewById(R.id.RecyclerView);
-        playButton = findViewById(R.id.playButton);
-
-        // Tint the play button icon to white
-        Drawable playIcon = playButton.getDrawable();
-        if (playIcon != null) {
-            playIcon.mutate();  // Ensure it doesn't affect other instances
-            playIcon.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);  // Apply the white color filter
-        }
-
-        // Add item decoration for reduced spacing
-        recyclerView.addItemDecoration(new CarouselItemDecoration(15));  // Reduced space between items
-
-        // Initialize ContainerManager
-        manager = new ContainerManager(this);
-
-        // Load the list of shortcuts
-        loadShortcutsList();
-
-        // Setup snapping for RecyclerView to center the items
-        SnapHelper snapHelper = new LinearSnapHelper();
-        snapHelper.attachToRecyclerView(recyclerView);
-
-
-        // Set the click listener for the play button
-        playButton.setOnClickListener(v -> {
-            if (currentShortcut != null) {
-                runFromShortcut(currentShortcut);  // Use the loaded shortcut
-            }
-        });
-
-        coverArtView.setOnClickListener(v -> {
-            if (currentShortcut != null) {
-                if (currentShortcut.getCustomCoverArtPath() != null) {
-                    // Custom cover art exists, show the dialog
-                    showCoverArtOptionsDialog();
-                } else {
-                    // No custom cover art, directly prompt for uploading a new one
-                    promptForCustomCoverArtUpload();
-                }
-            }
-        });
-
-        playButton.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                    playButton.requestFocus(); // Ensure playButton gets focus
-                    playButton.performClick(); // Simulate a click immediately
-                }
-                return true; // Consumes the touch event so that it doesn't require another click
-            }
-        });
-
-        settingsButton.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                    settingsButton.requestFocus(); // Ensure settingsButton gets focus
-                    settingsButton.performClick(); // Simulate a click immediately
-                }
-                return true; // Consumes the touch event
-            }
-        });
-
-        backButton.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                    backButton.requestFocus(); // Ensure backButton gets focus
-                    backButton.performClick(); // Simulate a click immediately
-                }
-                return true; // Consumes the touch event
-            }
-        });
-
+        preferences.edit().putString("parallax_mode", mode).apply();
+        applyParallaxMode(mode);
     }
 
-    @Override
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$4(SharedPreferences preferences, Button disableBgMusicButton, View v) {
+        boolean currentBgMusicState = preferences.getBoolean("bg_music_enabled", true);
+        boolean newBgMusicState = !currentBgMusicState;
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putBoolean("bg_music_enabled", newBgMusicState);
+        editor.apply();
+        updateBgMusicButtonText(disableBgMusicButton, newBgMusicState);
+        if (newBgMusicState) {
+            onResume();
+        } else {
+            stopBackgroundMusic();
+        }
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$5(View v) {
+        Intent intent = new Intent("android.intent.action.GET_CONTENT");
+        intent.setType("audio/mpeg");
+        intent.addCategory("android.intent.category.OPENABLE");
+        startActivityForResult(intent, REQUEST_CODE_SELECT_MP3);
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$6(SharedPreferences preferences, RadioButton mp3RadioButton, View v) {
+        stopBackgroundMusic();
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.remove("selected_mp3_path");
+        editor.putString("music_source", "mp3");
+        editor.apply();
+        mp3RadioButton.setChecked(true);
+        playDefaultMp3FromAssets();
+        Toast.makeText(this, "MP3 reset to default", 0).show();
+    }
+
+    static /* synthetic */ void lambda$onCreate$7(SharedPreferences preferences, RadioGroup group, int checkedId) {
+        SharedPreferences.Editor editor = preferences.edit();
+        if (checkedId == com.ludashi.benchmark.R.id.youtubeRadioButton) {
+            editor.putString("music_source", "youtube");
+        } else if (checkedId == com.ludashi.benchmark.R.id.mp3RadioButton) {
+            editor.putString("music_source", "mp3");
+        }
+        editor.apply();
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$8(EditText youtubeUrlInput, SharedPreferences preferences, View v) {
+        String userUrl = youtubeUrlInput.getText().toString();
+        if (userUrl != null && !userUrl.isEmpty()) {
+            String videoId = extractYouTubeId(userUrl);
+            if (videoId != null) {
+                loadYouTubeVideo(videoId);
+                SharedPreferences.Editor editor = preferences.edit();
+                editor.putString("saved_youtube_url", userUrl);
+                editor.apply();
+                return;
+            }
+            youtubeUrlInput.setError("Invalid YouTube URL");
+            return;
+        }
+        loadYouTubeVideo("yNwKYgM6SkM");
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$9(View v) {
+        if (findViewById(com.ludashi.benchmark.R.id.settingsLayout).getVisibility() == 0) {
+            hideSettingsView();
+        } else {
+            showSettingsView();
+        }
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$10(View v) {
+        if (findViewById(com.ludashi.benchmark.R.id.settingsLayout).getVisibility() == 0) {
+            hideSettingsView();
+        } else {
+            showSettingsView();
+        }
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$11(View v) {
+        if (this.currentShortcut != null) {
+            runFromShortcut(this.currentShortcut);
+        }
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onCreate$12(View v) {
+        if (this.currentShortcut != null) {
+            if (this.currentShortcut.getCustomCoverArtPath() != null) {
+                showCoverArtOptionsDialog();
+            } else {
+                promptForCustomCoverArtUpload();
+            }
+        }
+    }
+
+    @Override // androidx.activity.ComponentActivity, android.app.Activity
     public void onBackPressed() {
-        if (findViewById(R.id.settingsLayout).getVisibility() == View.VISIBLE) {
+        if (findViewById(com.ludashi.benchmark.R.id.settingsLayout).getVisibility() == 0) {
             hideSettingsView();
         } else {
             super.onBackPressed();
@@ -681,118 +341,72 @@ public class BigPictureActivity extends AppCompatActivity {
         }
     }
 
-
-    /**
-     * Extracts the YouTube video ID from a given URL.
-     *
-     * @param youtubeUrl The full YouTube URL.
-     * @return The extracted video ID or null if the URL is invalid.
-     */
     private String extractYouTubeId(String youtubeUrl) {
-        String videoIdPattern = "^(https?://)?(www\\.)?(youtube\\.com|youtu\\.?be)/.+$";
-        if (youtubeUrl.matches(videoIdPattern)) {
+        if (youtubeUrl.matches("^(https?://)?(www\\.)?(youtube\\.com|youtu\\.?be)/.+$")) {
             String[] splitUrl = youtubeUrl.split("v=");
             if (splitUrl.length > 1) {
-                // Video ID is after "v=" in standard URLs
-                return splitUrl[1].split("&")[0]; // Split off any extra parameters
-            } else if (youtubeUrl.contains("youtu.be/")) {
-                // Handle short URLs (e.g., https://youtu.be/video_id)
+                return splitUrl[1].split("&")[0];
+            }
+            if (youtubeUrl.contains("youtu.be/")) {
                 return youtubeUrl.substring(youtubeUrl.lastIndexOf("/") + 1);
             }
+            return null;
         }
-        return null; // Invalid URL
+        return null;
     }
 
     private void loadYouTubeVideo(String videoId) {
-        String html = "<html><body>" +
-                "<iframe id=\"player\" type=\"text/html\" width=\"100%\" height=\"100%\"" +
-                "src=\"https://www.youtube.com/embed/" + videoId + "?enablejsapi=1\"" +  // Removed autoplay and simplified script
-                "frameborder=\"0\" allowfullscreen></iframe>" +
-                "</body></html>";
-
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
+        String html = "<html><body><iframe id=\"player\" type=\"text/html\" width=\"100%\" height=\"100%\"src=\"https://www.youtube.com/embed/" + videoId + "?enablejsapi=1\"frameborder=\"0\" allowfullscreen></iframe></body></html>";
+        this.webView.setWebViewClient(new WebViewClient() { // from class: com.winlator.cmod.BigPictureActivity.5
+            @Override // android.webkit.WebViewClient
             public void onPageFinished(WebView view, String url) {
-                // Trigger the native touch event on the WebView when the page is fully loaded
-                simulateTouchOnWebView(webView);
-                webView.setVisibility(View.INVISIBLE);
+                BigPictureActivity.this.simulateTouchOnWebView(BigPictureActivity.this.webView);
+                BigPictureActivity.this.webView.setVisibility(4);
             }
         });
-
-        webView.loadData(html, "text/html", "UTF-8");
+        this.webView.loadData(html, "text/html", "UTF-8");
     }
 
-//    private void moveWebViewToBottom() {
-//        // Get the parent of the WebView
-//        FrameLayout parent = (FrameLayout) webView.getParent();
-//
-//        if (parent != null) {
-//            // Remove the WebView from its parent
-//            parent.removeView(webView);
-//
-//            // Add the WebView back to the parent at index 0 (bottom of the stack)
-//            parent.addView(webView, 0);
-//        }
-//    }
+    /* JADX INFO: Access modifiers changed from: private */
+    public void simulateTouchOnWebView(final WebView webView) {
+        new Handler().postDelayed(new Runnable() { // from class: com.winlator.cmod.BigPictureActivity$$ExternalSyntheticLambda0
+            @Override // java.lang.Runnable
+            public final void run() {
+                BigPictureActivity.lambda$simulateTouchOnWebView$13(webView);
+            }
+        }, 1000L);
+    }
 
-
-    // Simulate a touch event at the center of the WebView
-    private void simulateTouchOnWebView(WebView webView) {
-        // Delay to allow WebView to fully load the content
-        new Handler().postDelayed(() -> {
-            // Get the WebView's dimensions
-            int webViewWidth = webView.getWidth();
-            int webViewHeight = webView.getHeight();
-
-            // Calculate the center coordinates (YouTube player is usually in the center)
-            float x = webViewWidth / 2f;
-            float y = webViewHeight / 2f;
-
-            // Create MotionEvent to simulate touch at the calculated position
-            long downTime = System.currentTimeMillis();
-            long eventTime = System.currentTimeMillis() + 100;
-
-            // Simulate the touch press event
-            MotionEvent touchDown = MotionEvent.obtain(
-                    downTime, eventTime, MotionEvent.ACTION_DOWN, x, y, 0
-            );
-
-            // Simulate the touch release event
-            MotionEvent touchUp = MotionEvent.obtain(
-                    downTime, eventTime + 100, MotionEvent.ACTION_UP, x, y, 0
-            );
-
-            // Dispatch the events to the WebView
-            webView.dispatchTouchEvent(touchDown);
-            webView.dispatchTouchEvent(touchUp);
-
-            // Recycle the events to free up memory
-            touchDown.recycle();
-            touchUp.recycle();
-
-
-        }, 1000);  // Delay of 1 second after WebView loads
+    static /* synthetic */ void lambda$simulateTouchOnWebView$13(WebView webView) {
+        int webViewWidth = webView.getWidth();
+        int webViewHeight = webView.getHeight();
+        float x = webViewWidth / 2.0f;
+        float y = webViewHeight / 2.0f;
+        long downTime = System.currentTimeMillis();
+        long eventTime = System.currentTimeMillis() + 100;
+        MotionEvent touchDown = MotionEvent.obtain(downTime, eventTime, 0, x, y, 0);
+        MotionEvent touchUp = MotionEvent.obtain(downTime, eventTime + 100, 1, x, y, 0);
+        webView.dispatchTouchEvent(touchDown);
+        webView.dispatchTouchEvent(touchUp);
+        touchDown.recycle();
+        touchUp.recycle();
     }
 
     private void showSettingsView() {
-        final LinearLayout mainLayout = findViewById(R.id.mainLayout);
-        final LinearLayout settingsLayout = findViewById(R.id.settingsLayout);
-
-        settingsLayout.setVisibility(View.VISIBLE);
-
-        settingsLayout.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
-            @Override
+        final LinearLayout mainLayout = (LinearLayout) findViewById(com.ludashi.benchmark.R.id.mainLayout);
+        final LinearLayout settingsLayout = (LinearLayout) findViewById(com.ludashi.benchmark.R.id.settingsLayout);
+        settingsLayout.setVisibility(0);
+        settingsLayout.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() { // from class: com.winlator.cmod.BigPictureActivity.6
+            @Override // android.view.ViewTreeObserver.OnPreDrawListener
             public boolean onPreDraw() {
                 settingsLayout.getViewTreeObserver().removeOnPreDrawListener(this);
-                // Start your animations here
-                ObjectAnimator mainSlideOut = ObjectAnimator.ofFloat(mainLayout, "translationX", 0f, -mainLayout.getWidth());
+                ObjectAnimator mainSlideOut = ObjectAnimator.ofFloat(mainLayout, "translationX", 0.0f, -mainLayout.getWidth());
                 mainSlideOut.setInterpolator(new AccelerateDecelerateInterpolator());
-                mainSlideOut.setDuration(500);
+                mainSlideOut.setDuration(500L);
                 mainSlideOut.start();
-
-                ObjectAnimator settingsSlideIn = ObjectAnimator.ofFloat(settingsLayout, "translationX", settingsLayout.getWidth(), 0f);
+                ObjectAnimator settingsSlideIn = ObjectAnimator.ofFloat(settingsLayout, "translationX", settingsLayout.getWidth(), 0.0f);
                 settingsSlideIn.setInterpolator(new AccelerateDecelerateInterpolator());
-                settingsSlideIn.setDuration(500);
+                settingsSlideIn.setDuration(500L);
                 settingsSlideIn.start();
                 return true;
             }
@@ -800,367 +414,320 @@ public class BigPictureActivity extends AppCompatActivity {
     }
 
     private void hideSettingsView() {
-        LinearLayout mainLayout = findViewById(R.id.mainLayout);
-        LinearLayout settingsLayout = findViewById(R.id.settingsLayout);
-
-        // Slide the main layout back into view
-        ObjectAnimator mainSlideIn = ObjectAnimator.ofFloat(mainLayout, "translationX", -mainLayout.getWidth(), 0f);
+        LinearLayout mainLayout = (LinearLayout) findViewById(com.ludashi.benchmark.R.id.mainLayout);
+        final LinearLayout settingsLayout = (LinearLayout) findViewById(com.ludashi.benchmark.R.id.settingsLayout);
+        ObjectAnimator mainSlideIn = ObjectAnimator.ofFloat(mainLayout, "translationX", -mainLayout.getWidth(), 0.0f);
         mainSlideIn.setInterpolator(new AccelerateDecelerateInterpolator());
-        mainSlideIn.setDuration(500);
+        mainSlideIn.setDuration(500L);
         mainSlideIn.start();
-
-        // Slide the settings layout off-screen to the right
-        ObjectAnimator settingsSlideOut = ObjectAnimator.ofFloat(settingsLayout, "translationX", 0f, settingsLayout.getWidth());
+        ObjectAnimator settingsSlideOut = ObjectAnimator.ofFloat(settingsLayout, "translationX", 0.0f, settingsLayout.getWidth());
         settingsSlideOut.setInterpolator(new AccelerateDecelerateInterpolator());
-        settingsSlideOut.setDuration(500);
+        settingsSlideOut.setDuration(500L);
         settingsSlideOut.start();
-        settingsSlideOut.addListener(new AnimatorListenerAdapter() {
-            @Override
+        settingsSlideOut.addListener(new AnimatorListenerAdapter() { // from class: com.winlator.cmod.BigPictureActivity.7
+            @Override // android.animation.AnimatorListenerAdapter, android.animation.Animator.AnimatorListener
             public void onAnimationEnd(Animator animation) {
-                settingsLayout.setVisibility(View.GONE);  // Hide after animation completes
+                settingsLayout.setVisibility(8);
             }
         });
     }
 
-
     private void showCoverArtOptionsDialog() {
-        // Create an AlertDialog to show the options
-        new androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Cover Art Options")
-                .setItems(new CharSequence[]{"Remove Custom Cover Art", "Upload New Cover Art"}, (dialog, which) -> {
-                    switch (which) {
-                        case 0: // Remove Custom Cover Art
-                            removeCustomCoverArt();
-                            break;
-                        case 1: // Upload New Cover Art
-                            promptForCustomCoverArtUpload();
-                            break;
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+        new AlertDialog.Builder(this).setTitle("Cover Art Options").setItems(new CharSequence[]{"Remove Custom Cover Art", "Upload New Cover Art"}, new DialogInterface.OnClickListener() { // from class: com.winlator.cmod.BigPictureActivity$$ExternalSyntheticLambda12
+            @Override // android.content.DialogInterface.OnClickListener
+            public final void onClick(DialogInterface dialogInterface, int i) {
+                BigPictureActivity.this.lambda$showCoverArtOptionsDialog$14(dialogInterface, i);
+            }
+        }).setNegativeButton("Cancel", (DialogInterface.OnClickListener) null).show();
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$showCoverArtOptionsDialog$14(DialogInterface dialog, int which) {
+        switch (which) {
+            case 0:
+                removeCustomCoverArt();
+                break;
+            case 1:
+                promptForCustomCoverArtUpload();
+                break;
+        }
     }
 
     private void removeCustomCoverArt() {
-        if (currentShortcut != null) {
-            Log.d("BigPictureActivity", "Removing cover art for shortcut: " + currentShortcut.name);
-            Log.d("BigPictureActivity", "Current custom cover art path: " + currentShortcut.getCustomCoverArtPath());
-
-            // Remove custom cover art from the shortcut
-            currentShortcut.removeCustomCoverArt();
-
-            // Clear cached cover art if exists
-            File cachedFile = new File(getCacheDir(), "coverArtCache/" + currentShortcut.name + ".png");
+        if (this.currentShortcut != null) {
+            Log.d("BigPictureActivity", "Removing cover art for shortcut: " + this.currentShortcut.name);
+            Log.d("BigPictureActivity", "Current custom cover art path: " + this.currentShortcut.getCustomCoverArtPath());
+            this.currentShortcut.removeCustomCoverArt();
+            File cachedFile = new File(getCacheDir(), "coverArtCache/" + this.currentShortcut.name + ".png");
             if (cachedFile.exists() && cachedFile.delete()) {
                 Log.d("BigPictureActivity", "Cached cover art deleted successfully.");
             } else {
                 Log.e("BigPictureActivity", "Failed to delete cached cover art or it doesn't exist.");
             }
-
-            // Update UI
-            coverArtView.setImageResource(R.drawable.icon_action_bar_import); // Default placeholder image
-            coverArtView.setBackgroundColor(Color.parseColor("#99000000")); // Semi-transparent background
-
+            this.coverArtView.setImageResource(com.ludashi.benchmark.R.drawable.icon_action_bar_import);
+            this.coverArtView.setBackgroundColor(Color.parseColor("#99000000"));
             Log.d("BigPictureActivity", "Custom cover art removed and data saved.");
-
-            // Reload the shortcut data to reflect the changes
-            loadShortcutData(currentShortcut);
+            loadShortcutData(this.currentShortcut);
             Log.d("BigPictureActivity", "Shortcut data reloaded after removal.");
         }
     }
 
-
-
-    // Prompt user to select a custom cover art image from gallery
     private void promptForCustomCoverArtUpload() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        Intent intent = new Intent("android.intent.action.GET_CONTENT");
         intent.setType("image/*");
-//        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, false);
         startActivityForResult(intent, REQUEST_CODE_UPLOAD_CUSTOM_COVER);
     }
 
     private void enableImmersiveMode() {
         View decorView = getWindow().getDecorView();
-        decorView.setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        decorView.setSystemUiVisibility(5894);
     }
 
     private Shortcut getSelectedShortcut() {
         int position = getCenterItemPosition();
-        if (position != RecyclerView.NO_POSITION) {
-            return adapter.getItem(position);
+        if (position != -1) {
+            return this.adapter.getItem(position);
         }
         return null;
     }
 
     private int getCenterItemPosition() {
-        LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerView.getLayoutManager();
+        View itemView;
+        LinearLayoutManager layoutManager = (LinearLayoutManager) this.recyclerView.getLayoutManager();
         int firstVisibleItemPosition = layoutManager.findFirstVisibleItemPosition();
         int lastVisibleItemPosition = layoutManager.findLastVisibleItemPosition();
-
-        int centerPosition = RecyclerView.NO_POSITION;
+        int centerPosition = -1;
         float closestToCenter = Float.MAX_VALUE;
-        int recyclerViewCenter = recyclerView.getWidth() / 2;
-
+        int recyclerViewCenter = this.recyclerView.getWidth() / 2;
         for (int i = firstVisibleItemPosition; i <= lastVisibleItemPosition; i++) {
-            if (i >= 0) {
-                View itemView = layoutManager.findViewByPosition(i);
-                if (itemView != null) {
-                    int itemCenter = (itemView.getLeft() + itemView.getRight()) / 2;
-                    float distanceFromCenter = Math.abs(recyclerViewCenter - itemCenter);
-
-                    if (distanceFromCenter < closestToCenter) {
-                        closestToCenter = distanceFromCenter;
-                        centerPosition = i;
-                    }
+            if (i >= 0 && (itemView = layoutManager.findViewByPosition(i)) != null) {
+                int itemCenter = (itemView.getLeft() + itemView.getRight()) / 2;
+                float distanceFromCenter = Math.abs(recyclerViewCenter - itemCenter);
+                if (distanceFromCenter < closestToCenter) {
+                    closestToCenter = distanceFromCenter;
+                    centerPosition = i;
                 }
             }
         }
-
         return centerPosition;
     }
 
     private void loadShortcutsList() {
-        List<Shortcut> shortcuts = manager.loadShortcuts();
-        emptyStateTextView = findViewById(R.id.TVEmptyState);
-
-        // Check if the shortcuts list is empty
+        List<Shortcut> shortcuts = this.manager.loadShortcuts();
+        this.emptyStateTextView = (TextView) findViewById(com.ludashi.benchmark.R.id.TVEmptyState);
         if (shortcuts.isEmpty()) {
-            // Show the empty state message
-            recyclerView.setVisibility(View.GONE);
-            playButton.setVisibility(View.GONE);
-            emptyStateTextView.setVisibility(View.VISIBLE);
+            this.recyclerView.setVisibility(8);
+            this.playButton.setVisibility(8);
+            this.emptyStateTextView.setVisibility(0);
         } else {
-            // Hide the empty state message and show the RecyclerView
-            recyclerView.setVisibility(View.VISIBLE);
-            emptyStateTextView.setVisibility(View.GONE);
-
-            // Initialize and set the adapter
-            adapter = new BigPictureAdapter(shortcuts, recyclerView); // Pass the RecyclerView reference
-            recyclerView.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
-            recyclerView.setAdapter(adapter);
-
-            // Preload first shortcut details
+            this.recyclerView.setVisibility(0);
+            this.emptyStateTextView.setVisibility(8);
+            this.adapter = new BigPictureAdapter(shortcuts, this.recyclerView);
+            this.recyclerView.setLayoutManager(new LinearLayoutManager(this, 0, false));
+            this.recyclerView.setAdapter(this.adapter);
             loadShortcutData(shortcuts.get(0));
         }
     }
 
-
     public void loadShortcutData(Shortcut shortcut) {
-        currentShortcut = shortcut;
-
-        // Log the current cover art path
+        this.currentShortcut = shortcut;
         Log.d("BigPictureActivity", "Loaded cover art path: " + shortcut.getCustomCoverArtPath());
-
-        // Set the game title
-        gameTitleView.setText(shortcut.name);
-
-        // Set play count and playtime (unchanged)
-        SharedPreferences playtimePrefs = getSharedPreferences("playtime_stats", Context.MODE_PRIVATE);
-        long totalPlaytime = playtimePrefs.getLong(shortcut.name + "_playtime", 0);
+        this.gameTitleView.setText(shortcut.name);
+        SharedPreferences playtimePrefs = getSharedPreferences("playtime_stats", 0);
+        long totalPlaytime = playtimePrefs.getLong(shortcut.name + "_playtime", 0L);
         int playCount = playtimePrefs.getInt(shortcut.name + "_play_count", 0);
-        playCountView.setText("Times Played: " + playCount);
-        playtimeView.setText("Playtime: " + formatPlaytime(totalPlaytime));
-
-        // Get the associated container for this shortcut (unchanged)
-        Container container = manager.getContainerForShortcut(shortcut);
+        this.playCountView.setText("Times Played: " + playCount);
+        this.playtimeView.setText("Playtime: " + formatPlaytime(totalPlaytime));
+        Container container = this.manager.getContainerForShortcut(shortcut);
         String graphicsDriver = shortcut.getExtra("graphicsDriver");
-        
-        setTextOrPlaceholder(graphicsDriverView, graphicsDriver, container.getGraphicsDriver());
-        setTextOrPlaceholder(graphicsDriverVersionView, shortcut.getExtra("graphicsDroverConfig"), container.getGraphicsDriverConfig());
-        setTextOrPlaceholder(dxWrapperView, shortcut.getExtra("dxwrapper"), container.getDXWrapper());
-        setTextOrPlaceholder(dxWrapperConfigView, shortcut.getExtra("dxwrapperConfig"), container.getDXWrapperConfig());
-        setTextOrPlaceholder(audioDriverView, shortcut.getExtra("audioDriver"), container.getAudioDriver());
-        setTextOrPlaceholder(box64PresetView, shortcut.getExtra("box64Preset"), container.getBox64Preset());
-
-        // Handle cover art loading
+        setTextOrPlaceholder(this.graphicsDriverView, graphicsDriver, container.getGraphicsDriver());
+        setTextOrPlaceholder(this.graphicsDriverVersionView, shortcut.getExtra("graphicsDroverConfig"), container.getGraphicsDriverConfig());
+        setTextOrPlaceholder(this.dxWrapperView, shortcut.getExtra("dxwrapper"), container.getDXWrapper());
+        setTextOrPlaceholder(this.dxWrapperConfigView, shortcut.getExtra("dxwrapperConfig"), container.getDXWrapperConfig());
+        setTextOrPlaceholder(this.audioDriverView, shortcut.getExtra("audioDriver"), container.getAudioDriver());
+        setTextOrPlaceholder(this.box64PresetView, shortcut.getExtra("box64Preset"), container.getBox64Preset());
         Bitmap coverArt = null;
         if (shortcut.getCustomCoverArtPath() != null && !shortcut.getCustomCoverArtPath().isEmpty()) {
             coverArt = BitmapFactory.decodeFile(shortcut.getCustomCoverArtPath());
         }
-
         if (coverArt == null) {
-            // Check for cached cover art if custom cover art is not found or removed
             coverArt = loadCachedCoverArt(shortcut.name);
         }
-
         if (coverArt != null) {
-            coverArtView.setImageBitmap(coverArt); // Set cover art from custom or cache
+            this.coverArtView.setImageBitmap(coverArt);
         } else {
-            coverArtView.setImageResource(R.drawable.cover_art_placeholder); // Default icon or placeholder
-            fetchCoverArt(shortcut); // Fetch from remote if not available locally
+            this.coverArtView.setImageResource(com.ludashi.benchmark.R.drawable.cover_art_placeholder);
+            fetchCoverArt(shortcut);
         }
-
-        // Update the click listener to reflect the current state of custom cover art
-        coverArtView.setOnClickListener(v -> {
-            if (currentShortcut.getCustomCoverArtPath() != null) {
-                // Custom cover art exists, show the dialog
-                showCoverArtOptionsDialog();
-            } else {
-                // No custom cover art, directly prompt for uploading a new one
-                promptForCustomCoverArtUpload();
+        this.coverArtView.setOnClickListener(new View.OnClickListener() { // from class: com.winlator.cmod.BigPictureActivity$$ExternalSyntheticLambda6
+            @Override // android.view.View.OnClickListener
+            public final void onClick(View view) {
+                BigPictureActivity.this.lambda$loadShortcutData$15(view);
             }
         });
     }
 
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$loadShortcutData$15(View v) {
+        if (this.currentShortcut.getCustomCoverArtPath() != null) {
+            showCoverArtOptionsDialog();
+        } else {
+            promptForCustomCoverArtUpload();
+        }
+    }
 
     private void runFromShortcut(Shortcut shortcut) {
-        // Launch XServerDisplayActivity with the necessary extras
-        Intent intent = new Intent(this, XServerDisplayActivity.class);
+        Intent intent = new Intent(this, (Class<?>) XServerDisplayActivity.class);
         intent.putExtra("container_id", shortcut.container.id);
         intent.putExtra("shortcut_path", shortcut.file.getPath());
-        intent.putExtra("shortcut_name", shortcut.name); // Pass the shortcut name for display
-        // Check if the shortcut has the disableXinput value; if not, default to false.
-        String disableXinputValue = shortcut.getExtra("disableXinput", "0"); // Get value from shortcut or use "0" (false) by default
-        intent.putExtra("disableXinput", disableXinputValue); // Use the actual value from the shortcut
+        intent.putExtra("shortcut_name", shortcut.name);
+        String disableXinputValue = shortcut.getExtra("disableXinput", "0");
+        intent.putExtra("disableXinput", disableXinputValue);
         startActivity(intent);
     }
 
-
     private void setTextOrPlaceholder(TextView textView, String shortcutValue, String containerValue) {
         if (!shortcutValue.isEmpty()) {
-            textView.setText(shortcutValue); // Use the value from the shortcut if available
+            textView.setText(shortcutValue);
         } else if (!containerValue.isEmpty()) {
-            textView.setText(containerValue); // Fallback to the container's value
+            textView.setText(containerValue);
         } else {
-            textView.setText("Not Set"); // Fallback if neither are available
+            textView.setText("Not Set");
         }
     }
-
 
     private void setTextFromContainer(TextView textView, String label, String shortcutValue, String containerValue) {
         if (!shortcutValue.isEmpty()) {
-            textView.setText(label + shortcutValue); // Use the value from the shortcut if available
+            textView.setText(label + shortcutValue);
         } else if (!containerValue.isEmpty()) {
-            textView.setText(label + containerValue); // Fallback to the container's value
+            textView.setText(label + containerValue);
         } else {
-            textView.setText(label + "Not Set"); // Fallback if neither are available
+            textView.setText(label + "Not Set");
         }
     }
 
-
-    private void fetchCoverArt(Shortcut shortcut) {
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl(BASE_URL)
-                .client(new OkHttpClient())
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
-
-        SteamGridDBApi api = retrofit.create(SteamGridDBApi.class);
+    private void fetchCoverArt(final Shortcut shortcut) {
+        Retrofit retrofit = new Retrofit.Builder().baseUrl(BASE_URL).client(new OkHttpClient()).addConverterFactory(GsonConverterFactory.create()).build();
+        SteamGridDBApi api = (SteamGridDBApi) retrofit.create(SteamGridDBApi.class);
         Call<SteamGridSearchResponse> call = api.searchGame("Bearer " + API_KEY, shortcut.name);
-
-        call.enqueue(new Callback<SteamGridSearchResponse>() {
-            @Override
-            public void onResponse(Call<SteamGridSearchResponse> call, Response<SteamGridSearchResponse> response) {
+        call.enqueue(new Callback<SteamGridSearchResponse>() { // from class: com.winlator.cmod.BigPictureActivity.8
+            @Override // retrofit2.Callback
+            public void onResponse(Call<SteamGridSearchResponse> call2, Response<SteamGridSearchResponse> response) {
                 if (response.isSuccessful() && response.body() != null) {
                     List<SteamGridSearchResponse.GameData> gameData = response.body().data;
                     if (gameData != null && !gameData.isEmpty()) {
-                        fetchGridsForGame(gameData.get(0).id, shortcut);
+                        BigPictureActivity.this.fetchGridsForGame(gameData.get(0).id, shortcut);
+                        return;
                     } else {
-                        showCustomCoverArtUploadOption(shortcut);
+                        BigPictureActivity.this.showCustomCoverArtUploadOption(shortcut);
+                        return;
                     }
-                } else {
-                    showCustomCoverArtUploadOption(shortcut);
                 }
+                BigPictureActivity.this.showCustomCoverArtUploadOption(shortcut);
             }
 
-            @Override
-            public void onFailure(Call<SteamGridSearchResponse> call, Throwable t) {
+            @Override // retrofit2.Callback
+            public void onFailure(Call<SteamGridSearchResponse> call2, Throwable t) {
                 Log.e("SteamGridDB", "Failed to fetch game ID", t);
-                showCustomCoverArtUploadOption(shortcut);
+                BigPictureActivity.this.showCustomCoverArtUploadOption(shortcut);
             }
         });
     }
 
-    // Display upload custom cover art option if no cover art found
-    private void showCustomCoverArtUploadOption(Shortcut shortcut) {
-        runOnUiThread(() -> {
-            coverArtView.setImageResource(android.R.color.transparent); // Remove existing placeholder
-            coverArtView.setBackgroundColor(Color.parseColor("#99000000")); // Semi-transparent gray background
-
-            // Set the image resource to show upload icon and update the click listener
-            coverArtView.setImageResource(R.drawable.cover_art_placeholder);
-            coverArtView.setOnClickListener(v -> promptForCustomCoverArtUpload());
-
-            // Display message indicating no cover art found
-            if (uploadText != null) {
-                ViewGroup parent = (ViewGroup) uploadText.getParent();
-                if (parent != null) {
-                    parent.removeView(uploadText);
-                }
+    /* JADX INFO: Access modifiers changed from: private */
+    public void showCustomCoverArtUploadOption(final Shortcut shortcut) {
+        runOnUiThread(new Runnable() { // from class: com.winlator.cmod.BigPictureActivity$$ExternalSyntheticLambda10
+            @Override // java.lang.Runnable
+            public final void run() {
+                BigPictureActivity.this.lambda$showCustomCoverArtUploadOption$17(shortcut);
             }
-
-            uploadText = new TextView(this); // Initialize the uploadText variable
-            uploadText.setText("No suitable cover art found for " + shortcut.name + ". Click the image to upload custom cover art or rename the Shortcut to something SteamGrid can recognize.");
-            uploadText.setTextColor(Color.WHITE);
-            uploadText.setTextSize(18);
-            uploadText.setPadding(20, 20, 20, 20);
-            uploadText.setGravity(Gravity.CENTER);
-            uploadText.setBackgroundColor(Color.parseColor("#99000000")); // Semi-transparent gray background
-
-            // Add the text view as a sibling to cover art view
-            ViewGroup parent = (ViewGroup) coverArtView.getParent();
-            parent.addView(uploadText);
         });
     }
 
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$showCustomCoverArtUploadOption$17(Shortcut shortcut) {
+        ViewGroup parent;
+        this.coverArtView.setImageResource(android.R.color.transparent);
+        this.coverArtView.setBackgroundColor(Color.parseColor("#99000000"));
+        this.coverArtView.setImageResource(com.ludashi.benchmark.R.drawable.cover_art_placeholder);
+        this.coverArtView.setOnClickListener(new View.OnClickListener() { // from class: com.winlator.cmod.BigPictureActivity$$ExternalSyntheticLambda8
+            @Override // android.view.View.OnClickListener
+            public final void onClick(View view) {
+                BigPictureActivity.this.lambda$showCustomCoverArtUploadOption$16(view);
+            }
+        });
+        if (this.uploadText != null && (parent = (ViewGroup) this.uploadText.getParent()) != null) {
+            parent.removeView(this.uploadText);
+        }
+        this.uploadText = new TextView(this);
+        this.uploadText.setText("No suitable cover art found for " + shortcut.name + ". Click the image to upload custom cover art or rename the Shortcut to something SteamGrid can recognize.");
+        this.uploadText.setTextColor(-1);
+        this.uploadText.setTextSize(18.0f);
+        this.uploadText.setPadding(20, 20, 20, 20);
+        this.uploadText.setGravity(17);
+        this.uploadText.setBackgroundColor(Color.parseColor("#99000000"));
+        ((ViewGroup) this.coverArtView.getParent()).addView(this.uploadText);
+    }
 
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$showCustomCoverArtUploadOption$16(View v) {
+        promptForCustomCoverArtUpload();
+    }
 
-
-    private void fetchGridsForGame(int gameId, Shortcut shortcut) {
-        Gson gson = new GsonBuilder()
-                .registerTypeAdapter(SteamGridGridsResponse.class, new SteamGridGridsResponseDeserializer())
-                .setPrettyPrinting()
-                .create();
-
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl(BASE_URL)
-                .client(new OkHttpClient())
-                .addConverterFactory(GsonConverterFactory.create(gson))
-                .build();
-
-        SteamGridDBApi api = retrofit.create(SteamGridDBApi.class);
-
+    /* JADX INFO: Access modifiers changed from: private */
+    public void fetchGridsForGame(int gameId, final Shortcut shortcut) {
+        Gson gson = new GsonBuilder().registerTypeAdapter(SteamGridGridsResponse.class, new SteamGridGridsResponseDeserializer()).setPrettyPrinting().create();
+        Retrofit retrofit = new Retrofit.Builder().baseUrl(BASE_URL).client(new OkHttpClient()).addConverterFactory(GsonConverterFactory.create(gson)).build();
+        SteamGridDBApi api = (SteamGridDBApi) retrofit.create(SteamGridDBApi.class);
         Call<SteamGridGridsResponse> gridsCall = api.getGridsByGameId("Bearer " + API_KEY, gameId, "alternate", "600x900", "static");
-
-        gridsCall.enqueue(new Callback<SteamGridGridsResponse>() {
-            @Override
+        gridsCall.enqueue(new Callback<SteamGridGridsResponse>() { // from class: com.winlator.cmod.BigPictureActivity.9
+            @Override // retrofit2.Callback
             public void onResponse(Call<SteamGridGridsResponse> call, Response<SteamGridGridsResponse> response) {
                 if (response.isSuccessful() && response.body() != null && !response.body().data.isEmpty()) {
-                    downloadCoverArt(response.body().data.get(0).url, shortcut);
+                    BigPictureActivity.this.downloadCoverArt(response.body().data.get(0).url, shortcut);
                 }
             }
 
-            @Override
+            @Override // retrofit2.Callback
             public void onFailure(Call<SteamGridGridsResponse> call, Throwable t) {
                 Log.e("SteamGridDB", "Failed to fetch cover art", t);
             }
         });
     }
 
-    private void downloadCoverArt(String url, Shortcut shortcut) {
-        Executors.newSingleThreadExecutor().execute(() -> {
-            try {
-                HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-                connection.connect();
-                InputStream input = connection.getInputStream();
-                Bitmap coverArt = BitmapFactory.decodeStream(input);
-
-                // Cache the downloaded cover art
-                cacheCoverArt(coverArt, shortcut.name);
-
-                // Set cover art in the shortcut and update the UI
-                shortcut.setCoverArt(coverArt);
-                runOnUiThread(() -> coverArtView.setImageBitmap(coverArt));
-            } catch (Exception e) {
-                e.printStackTrace();
+    /* JADX INFO: Access modifiers changed from: private */
+    public void downloadCoverArt(final String url, final Shortcut shortcut) {
+        Executors.newSingleThreadExecutor().execute(new Runnable() { // from class: com.winlator.cmod.BigPictureActivity$$ExternalSyntheticLambda7
+            @Override // java.lang.Runnable
+            public final void run() {
+                BigPictureActivity.this.lambda$downloadCoverArt$19(url, shortcut);
             }
         });
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$downloadCoverArt$19(String url, Shortcut shortcut) {
+        try {
+            HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.connect();
+            InputStream input = connection.getInputStream();
+            final Bitmap coverArt = BitmapFactory.decodeStream(input);
+            cacheCoverArt(coverArt, shortcut.name);
+            shortcut.setCoverArt(coverArt);
+            runOnUiThread(new Runnable() { // from class: com.winlator.cmod.BigPictureActivity$$ExternalSyntheticLambda11
+                @Override // java.lang.Runnable
+                public final void run() {
+                    BigPictureActivity.this.lambda$downloadCoverArt$18(coverArt);
+                }
+            });
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$downloadCoverArt$18(Bitmap coverArt) {
+        this.coverArtView.setImageBitmap(coverArt);
     }
 
     private void cacheCoverArt(Bitmap coverArt, String shortcutName) {
@@ -1186,148 +753,115 @@ public class BigPictureActivity extends AppCompatActivity {
             if (coverFile.exists()) {
                 return BitmapFactory.decodeFile(coverFile.getAbsolutePath());
             }
+            return null;
         } catch (Exception e) {
             e.printStackTrace();
+            return null;
         }
-        return null;
     }
 
-    @Override
+    @Override // androidx.fragment.app.FragmentActivity, androidx.activity.ComponentActivity, android.app.Activity
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-
-        if (requestCode == REQUEST_CODE_SELECT_WALLPAPER && resultCode == RESULT_OK && data != null) {
+        if (requestCode == REQUEST_CODE_SELECT_WALLPAPER && resultCode == -1 && data != null) {
             Uri selectedImageUri = data.getData();
-
             try {
-                // Save the selected wallpaper as custom_bg.png
                 InputStream inputStream = getContentResolver().openInputStream(selectedImageUri);
                 Bitmap wallpaper = BitmapFactory.decodeStream(inputStream);
                 if (wallpaper != null) {
-                    File wallpaperFile = new File(getFilesDir(), "custom_bg.png");
+                    final File wallpaperFile = new File(getFilesDir(), "custom_bg.png");
                     FileOutputStream outputStream = new FileOutputStream(wallpaperFile);
                     wallpaper.compress(Bitmap.CompressFormat.PNG, 100, outputStream);
                     outputStream.flush();
                     outputStream.close();
-
-                    // Save the path to SharedPreferences
                     SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
-                    SharedPreferences.Editor editor = preferences.edit();
+                    final SharedPreferences.Editor editor = preferences.edit();
                     editor.putString(WALLPAPER_PREF_KEY, wallpaperFile.getAbsolutePath());
                     editor.apply();
-
-                    // Show dialog for display preference (center, stretch, tile)
-                    String[] displayOptions = {"Center", "Stretch", "Tile"};
-                    new AlertDialog.Builder(this)
-                            .setTitle("Select Display Mode")
-                            .setItems(displayOptions, (dialog, which) -> {
-                                // Save display mode
-                                editor.putString(WALLPAPER_DISPLAY_PREF_KEY, displayOptions[which].toLowerCase());
-                                editor.apply();
-
-                                // Apply wallpaper based on the chosen mode
-                                try {
-                                    applyWallpaper(Uri.fromFile(wallpaperFile), displayOptions[which].toLowerCase());
-                                } catch (FileNotFoundException e) {
-                                    throw new RuntimeException(e);
-                                }
-                            })
-                            .show();
+                    final String[] displayOptions = {"Center", "Stretch", "Tile"};
+                    new AlertDialog.Builder(this).setTitle("Select Display Mode").setItems(displayOptions, new DialogInterface.OnClickListener() { // from class: com.winlator.cmod.BigPictureActivity$$ExternalSyntheticLambda13
+                        @Override // android.content.DialogInterface.OnClickListener
+                        public final void onClick(DialogInterface dialogInterface, int i) {
+                            BigPictureActivity.this.lambda$onActivityResult$20(editor, displayOptions, wallpaperFile, dialogInterface, i);
+                        }
+                    }).show();
                 }
             } catch (IOException e) {
                 e.printStackTrace();
             }
-
         }
-
-        if (requestCode == REQUEST_CODE_SELECT_MP3 && resultCode == RESULT_OK && data != null && data.getData() != null) {
-            selectedMp3Uri = data.getData();
-
-            // Get the internal storage directory
+        if (requestCode == REQUEST_CODE_SELECT_MP3 && resultCode == -1 && data != null && data.getData() != null) {
+            this.selectedMp3Uri = data.getData();
             File appStorageDir = getFilesDir();
             File musicFile = new File(appStorageDir, "bigpicturemode_bgmusic.mp3");
-
-            // Use FileUtils to copy the selected MP3 to internal storage and rename it
-            if (FileUtils.copy(this, selectedMp3Uri, musicFile, null)) {
-                // Save the file path to SharedPreferences
-                SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
-                SharedPreferences.Editor editor = preferences.edit();
-                editor.putString("selected_mp3_path", musicFile.getAbsolutePath()); // Store the file path instead of URI
-                editor.apply();
-
-                // Play the copied MP3 file using the updated playMp3 method
-                playMp3(musicFile);  // Pass the File object
+            if (FileUtils.copy(this, this.selectedMp3Uri, musicFile, null)) {
+                SharedPreferences preferences2 = PreferenceManager.getDefaultSharedPreferences(this);
+                SharedPreferences.Editor editor2 = preferences2.edit();
+                editor2.putString("selected_mp3_path", musicFile.getAbsolutePath());
+                editor2.apply();
+                playMp3(musicFile);
             } else {
                 Log.e("BigPictureActivity", "Failed to copy the MP3 file.");
             }
         } else if (requestCode == REQUEST_CODE_UPLOAD_CUSTOM_COVER && data.getData() != null) {
-            Uri selectedImageUri = data.getData();
+            Uri selectedImageUri2 = data.getData();
             try {
-                InputStream inputStream = getContentResolver().openInputStream(selectedImageUri);
-                Bitmap customCoverArt = BitmapFactory.decodeStream(inputStream);
-
-                // Save custom cover art in shortcut and cache it
-                if (currentShortcut != null) {
-                    currentShortcut.saveCustomCoverArt(customCoverArt);  // Save custom cover art
-
-                    // Cache the custom cover art
-                    cacheCoverArt(customCoverArt, currentShortcut.name);
-
-                    // Set the custom cover art in the view
-                    coverArtView.setImageBitmap(customCoverArt);
-
-                    // Hide the upload text once the cover art is uploaded
-                    if (uploadText != null) {
-                        uploadText.setVisibility(View.GONE);
+                InputStream inputStream2 = getContentResolver().openInputStream(selectedImageUri2);
+                Bitmap customCoverArt = BitmapFactory.decodeStream(inputStream2);
+                if (this.currentShortcut != null) {
+                    this.currentShortcut.saveCustomCoverArt(customCoverArt);
+                    cacheCoverArt(customCoverArt, this.currentShortcut.name);
+                    this.coverArtView.setImageBitmap(customCoverArt);
+                    if (this.uploadText != null) {
+                        this.uploadText.setVisibility(8);
                     }
-
-                    // Update the click listener to reflect that custom cover art is now present
-                    coverArtView.setOnClickListener(v -> {
-                        if (currentShortcut.getCustomCoverArtPath() != null) {
-                            // Custom cover art exists, show the dialog
-                            showCoverArtOptionsDialog();
-                        } else {
-                            // No custom cover art, directly prompt for uploading a new one
-                            promptForCustomCoverArtUpload();
+                    this.coverArtView.setOnClickListener(new View.OnClickListener() { // from class: com.winlator.cmod.BigPictureActivity$$ExternalSyntheticLambda14
+                        @Override // android.view.View.OnClickListener
+                        public final void onClick(View view) {
+                            BigPictureActivity.this.lambda$onActivityResult$21(view);
                         }
                     });
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
+            } catch (Exception e2) {
+                e2.printStackTrace();
             }
         }
-
-        if (requestCode == REQUEST_CODE_SELECT_PNG_FOLDER && resultCode == RESULT_OK) {
-            if (data != null) {
-                Uri folderUri = data.getData();
-                // Take persistable permissions:
-                final int takeFlags = data.getFlags()
-                        & (Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-
-                getContentResolver().takePersistableUriPermission(folderUri, takeFlags);
-
-                // 1) Save to SharedPreferences
-                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-                prefs.edit()
-                        .putString("png_folder_uri", folderUri.toString())
-                        .putString("selected_animation", "folder")   // <-- store that we’re now using a folder-based animation
-                        .apply();
-
-                // 2) Load the frames
-                loadFramesFromFolder(folderUri);
-            }
+        if (requestCode == REQUEST_CODE_SELECT_PNG_FOLDER && resultCode == -1 && data != null) {
+            Uri folderUri = data.getData();
+            int takeFlags = 3 & data.getFlags();
+            getContentResolver().takePersistableUriPermission(folderUri, takeFlags);
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+            prefs.edit().putString("png_folder_uri", folderUri.toString()).putString("selected_animation", "folder").apply();
+            loadFramesFromFolder(folderUri);
         }
-
     }
 
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onActivityResult$20(SharedPreferences.Editor editor, String[] displayOptions, File wallpaperFile, DialogInterface dialog, int which) {
+        editor.putString(WALLPAPER_DISPLAY_PREF_KEY, displayOptions[which].toLowerCase());
+        editor.apply();
+        try {
+            applyWallpaper(Uri.fromFile(wallpaperFile), displayOptions[which].toLowerCase());
+        } catch (FileNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$onActivityResult$21(View v) {
+        if (this.currentShortcut.getCustomCoverArtPath() != null) {
+            showCoverArtOptionsDialog();
+        } else {
+            promptForCustomCoverArtUpload();
+        }
+    }
 
     private void applyWallpaper(Uri wallpaperUri, String mode) throws FileNotFoundException {
-        TiledBackgroundView backgroundView = findViewById(R.id.parallaxBackgroundView);
+        TiledBackgroundView backgroundView = (TiledBackgroundView) findViewById(com.ludashi.benchmark.R.id.parallaxBackgroundView);
         if (backgroundView != null && wallpaperUri != null) {
             Bitmap wallpaper = BitmapFactory.decodeStream(getContentResolver().openInputStream(wallpaperUri));
             if (wallpaper != null) {
-                backgroundView.setVisibility(View.VISIBLE);
+                backgroundView.setVisibility(0);
                 backgroundView.setStaticWallpaper(wallpaper, mode);
             } else {
                 Log.e("BigPictureActivity", "Invalid wallpaper dimensions.");
@@ -1335,27 +869,60 @@ public class BigPictureActivity extends AppCompatActivity {
         }
     }
 
+    /* JADX WARN: Can't fix incorrect switch cases order, some code will duplicate */
     private void applyAnimationBasedOnState(TiledBackgroundView backgroundView, String animationState) {
+        char c;
         if (backgroundView != null && animationState != null) {
-            switch (animationState) {
-                case "ab_gear":
+            switch (animationState.hashCode()) {
+                case -1268966290:
+                    if (animationState.equals("folder")) {
+                        c = 3;
+                        break;
+                    }
+                    c = 65535;
+                    break;
+                case -1209896211:
+                    if (animationState.equals("ab_gear")) {
+                        c = 0;
+                        break;
+                    }
+                    c = 65535;
+                    break;
+                case 3387192:
+                    if (animationState.equals(Container.DEFAULT_DDRAWRAPPER)) {
+                        c = 2;
+                        break;
+                    }
+                    c = 65535;
+                    break;
+                case 1157642607:
+                    if (animationState.equals("ab_quilt")) {
+                        c = 1;
+                        break;
+                    }
+                    c = 65535;
+                    break;
+                default:
+                    c = 65535;
+                    break;
+            }
+            switch (c) {
+                case 0:
                     backgroundView.setAnimation("ab_gear");
                     break;
-                case "ab_quilt":
+                case 1:
                     backgroundView.setAnimation("ab_quilt");
                     break;
-                case "none":
+                case 2:
                     backgroundView.stopAnimation();
-                    backgroundView.setVisibility(View.GONE); // Hide the view when animation is stopped
-                    return; // Exit early since there's no animation to start
-                case "folder":
-                    // Do NOT call setAnimation(...) with "ab" or "ab_gear"
-                    // Instead, do nothing special here, because we’ll load PNG frames from the folder in onResume or onCreate
-                    // Possibly just stopAnimation if you want, or call start if frames are loaded
+                    backgroundView.setVisibility(8);
+                    return;
+                case 3:
                     break;
                 default:
                     if (!"folder".equals(animationState)) {
                         backgroundView.setAnimation("ab");
+                        break;
                     }
                     break;
             }
@@ -1363,198 +930,158 @@ public class BigPictureActivity extends AppCompatActivity {
         }
     }
 
-
-
-
     private void playMp3(File mp3File) {
-        if (mediaPlayer != null) {
-            mediaPlayer.release();  // Release any existing player
+        if (this.mediaPlayer != null) {
+            this.mediaPlayer.release();
         }
-
-        mediaPlayer = new MediaPlayer();
+        this.mediaPlayer = new MediaPlayer();
         try {
             FileInputStream fis = new FileInputStream(mp3File);
-            mediaPlayer.setDataSource(fis.getFD());  // Use FileDescriptor for internal storage files
+            this.mediaPlayer.setDataSource(fis.getFD());
             fis.close();
-
-            mediaPlayer.prepare();  // Prepare synchronously
-            mediaPlayer.setOnPreparedListener(mp -> mediaPlayer.start());  // Start playback once prepared
+            this.mediaPlayer.prepare();
+            this.mediaPlayer.setOnPreparedListener(new MediaPlayer.OnPreparedListener() { // from class: com.winlator.cmod.BigPictureActivity$$ExternalSyntheticLambda9
+                @Override // android.media.MediaPlayer.OnPreparedListener
+                public final void onPrepared(MediaPlayer mediaPlayer) {
+                    BigPictureActivity.this.lambda$playMp3$22(mediaPlayer);
+                }
+            });
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-
-
-//    private String saveCustomCoverArt(Bitmap coverArt, String shortcutName) {
-//        try {
-//            File coverArtDir = new File(currentShortcut.container.getRootDir(), "app_data/cover_arts"); // Match path with Shortcut class
-//            if (!coverArtDir.exists()) {
-//                coverArtDir.mkdirs(); // Create directory if not exist
-//            }
-//
-//            File coverFile = new File(coverArtDir, shortcutName + ".png");
-//            FileOutputStream outputStream = new FileOutputStream(coverFile);
-//            coverArt.compress(Bitmap.CompressFormat.PNG, 100, outputStream);
-//            outputStream.flush();
-//            outputStream.close();
-//            return coverFile.getAbsolutePath(); // Return the file path for storing in shortcut
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-//        return null;
-//    }
-
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$playMp3$22(MediaPlayer mp) {
+        this.mediaPlayer.start();
+    }
 
     private String formatPlaytime(long playtimeInMillis) {
         long seconds = (playtimeInMillis / 1000) % 60;
-        long minutes = (playtimeInMillis / (1000 * 60)) % 60;
-        long hours = (playtimeInMillis / (1000 * 60 * 60)) % 24;
-        long days = (playtimeInMillis / (1000 * 60 * 60 * 24));
-
-        return String.format("%dd %02dh %02dm %02ds", days, hours, minutes, seconds);
+        long minutes = (playtimeInMillis / 60000) % 60;
+        long hours = (playtimeInMillis / 3600000) % 24;
+        long days = playtimeInMillis / 86400000;
+        return String.format("%dd %02dh %02dm %02ds", Long.valueOf(days), Long.valueOf(hours), Long.valueOf(minutes), Long.valueOf(seconds));
     }
 
-    @Override
+    @Override // androidx.appcompat.app.AppCompatActivity, androidx.core.app.ComponentActivity, android.app.Activity, android.view.Window.Callback
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+        if (event.getAction() == 0) {
             View currentFocus = getCurrentFocus();
-
             switch (event.getKeyCode()) {
-                case KeyEvent.KEYCODE_DPAD_UP:
-                    if (currentFocus == recyclerView) {
-                        playButton.requestFocus(); // Move focus to playButton when UP is pressed from RecyclerView
+                case 19:
+                    if (currentFocus == this.recyclerView) {
+                        this.playButton.requestFocus();
                         return true;
-                    } else if (currentFocus == playButton) {
-                        // Move focus to the first TextView (e.g., graphicsDriverView) when UP is pressed from playButton
-                        graphicsDriverView.requestFocus();
+                    }
+                    if (currentFocus == this.playButton) {
+                        this.graphicsDriverView.requestFocus();
                         return true;
-                    } else if (currentFocus != coverArtView) {
-                        // Default behavior: Move focus to playButton from anywhere else (except coverArt)
-                        playButton.requestFocus();
+                    }
+                    if (currentFocus != this.coverArtView) {
+                        this.playButton.requestFocus();
                         return true;
                     }
                     break;
-
-                case KeyEvent.KEYCODE_DPAD_DOWN:
-                    if (currentFocus == playButton) {
-                        // Focus the closest carousel item to the center or playButton
+                case 20:
+                    if (currentFocus == this.playButton) {
                         focusClosestCarouselItem();
                         return true;
                     }
                     break;
-
-                case KeyEvent.KEYCODE_DPAD_LEFT:
-                case KeyEvent.KEYCODE_DPAD_RIGHT:
-                    break;
-
-                case KeyEvent.KEYCODE_BUTTON_A:
-                    if (currentFocus == playButton) {
-                        // Simulate a click on the play button if A is pressed
-                        playButton.performClick();
+                case 96:
+                    if (currentFocus == this.playButton) {
+                        this.playButton.performClick();
                         return true;
-                    } else if (currentFocus == coverArtView) {
-                        // Simulate a click on the cover art if A is pressed
-                        coverArtView.performClick();
+                    }
+                    if (currentFocus == this.coverArtView) {
+                        this.coverArtView.performClick();
                         return true;
                     }
                     break;
-                case KeyEvent.KEYCODE_BUTTON_R1:  // RB button
-                case KeyEvent.KEYCODE_BUTTON_R2:  // RT button
-                    if (findViewById(R.id.settingsLayout).getVisibility() == View.VISIBLE) {
+                case 103:
+                case 105:
+                    if (findViewById(com.ludashi.benchmark.R.id.settingsLayout).getVisibility() == 0) {
                         hideSettingsView();
                     } else {
                         showSettingsView();
                     }
                     return true;
-
             }
         }
-
         return super.dispatchKeyEvent(event);
     }
 
     private void focusClosestCarouselItem() {
-        LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerView.getLayoutManager();
+        View itemView;
+        LinearLayoutManager layoutManager = (LinearLayoutManager) this.recyclerView.getLayoutManager();
         int firstVisibleItemPosition = layoutManager.findFirstVisibleItemPosition();
         int lastVisibleItemPosition = layoutManager.findLastVisibleItemPosition();
-
-        int closestPosition = RecyclerView.NO_POSITION;
+        int closestPosition = -1;
         float closestDistance = Float.MAX_VALUE;
-
-        // Get the center of the recyclerView or use a constant for where the playButton is (center of screen)
-        int recyclerViewCenter = recyclerView.getWidth() / 2;
-
-        // Iterate over visible items to find the closest one to the center
+        int recyclerViewCenter = this.recyclerView.getWidth() / 2;
         for (int i = firstVisibleItemPosition; i <= lastVisibleItemPosition; i++) {
-            if (i >= 0) {
-                View itemView = layoutManager.findViewByPosition(i);
-                if (itemView != null) {
-                    int itemCenter = (itemView.getLeft() + itemView.getRight()) / 2;
-                    float distanceFromCenter = Math.abs(recyclerViewCenter - itemCenter);
-
-                    if (distanceFromCenter < closestDistance) {
-                        closestDistance = distanceFromCenter;
-                        closestPosition = i;
-                    }
+            if (i >= 0 && (itemView = layoutManager.findViewByPosition(i)) != null) {
+                int itemCenter = (itemView.getLeft() + itemView.getRight()) / 2;
+                float distanceFromCenter = Math.abs(recyclerViewCenter - itemCenter);
+                if (distanceFromCenter < closestDistance) {
+                    closestDistance = distanceFromCenter;
+                    closestPosition = i;
                 }
             }
         }
-
-        // Focus the closest item in the carousel
-        if (closestPosition != RecyclerView.NO_POSITION) {
-            recyclerView.scrollToPosition(closestPosition);
+        if (closestPosition != -1) {
+            this.recyclerView.scrollToPosition(closestPosition);
             layoutManager.findViewByPosition(closestPosition).requestFocus();
         }
     }
 
-    @Override
+    @Override // androidx.fragment.app.FragmentActivity, android.app.Activity
     protected void onResume() {
         super.onResume();
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
         boolean isBgMusicEnabled = preferences.getBoolean("bg_music_enabled", true);
-        String musicSource = preferences.getString("music_source", "mp3"); // Default to "mp3"
-        String selectedMp3Path = preferences.getString("selected_mp3_path", null); // Use the file path instead of URI
-
-        // Restore the selected animation state for the RadioGroup
+        String musicSource = preferences.getString("music_source", "mp3");
+        String selectedMp3Path = preferences.getString("selected_mp3_path", null);
         String savedAnimation = preferences.getString("selected_animation", "ab");
         if (savedAnimation.equals("custom_wallpaper")) {
-            ((RadioButton) findViewById(R.id.rbCustomWallpaper)).setChecked(true);
+            ((RadioButton) findViewById(com.ludashi.benchmark.R.id.rbCustomWallpaper)).setChecked(true);
         } else if (savedAnimation.equals("ab_gear")) {
-            ((RadioButton) findViewById(R.id.rbGearAnimation)).setChecked(true);
+            ((RadioButton) findViewById(com.ludashi.benchmark.R.id.rbGearAnimation)).setChecked(true);
         } else if (savedAnimation.equals("ab_quilt")) {
-            ((RadioButton) findViewById(R.id.rbQuiltAnimation)).setChecked(true);
-        } else if (savedAnimation.equals("none")) {
-            ((RadioButton) findViewById(R.id.rbNoAnimation)).setChecked(true);
+            ((RadioButton) findViewById(com.ludashi.benchmark.R.id.rbQuiltAnimation)).setChecked(true);
+        } else if (savedAnimation.equals(Container.DEFAULT_DDRAWRAPPER)) {
+            ((RadioButton) findViewById(com.ludashi.benchmark.R.id.rbNoAnimation)).setChecked(true);
         } else if (savedAnimation.equals("folder")) {
-            ((RadioButton) findViewById(R.id.rbFolderAnimation)).setChecked(true);
+            ((RadioButton) findViewById(com.ludashi.benchmark.R.id.rbFolderAnimation)).setChecked(true);
         } else {
-            ((RadioButton) findViewById(R.id.rbDefaultAnimation)).setChecked(true);
+            ((RadioButton) findViewById(com.ludashi.benchmark.R.id.rbDefaultAnimation)).setChecked(true);
         }
-
         if (!isBgMusicEnabled) {
-            webView.setVisibility(View.GONE);
-            return; // Exit early if background music is disabled
+            this.webView.setVisibility(8);
+            return;
         }
-
-        // Handle WebView visibility based on music source
         if ("mp3".equals(musicSource)) {
-            if (webView != null) {
-                webView.setVisibility(View.INVISIBLE); // Hide WebView when MP3 is selected
+            if (this.webView != null) {
+                this.webView.setVisibility(4);
             }
-
-            // Play MP3 if file exists
             if (selectedMp3Path != null) {
                 File mp3File = new File(selectedMp3Path);
-                if (mp3File.exists() && (mediaPlayer == null || !mediaPlayer.isPlaying())) {
-                    playMp3(mp3File);  // Play the MP3 file
+                if (mp3File.exists()) {
+                    if (this.mediaPlayer == null || !this.mediaPlayer.isPlaying()) {
+                        playMp3(mp3File);
+                        return;
+                    }
+                    return;
                 }
+                return;
             }
-        } else if ("youtube".equals(musicSource)) {
-            if (webView != null) {
-                webView.setVisibility(View.VISIBLE); // Show WebView if YouTube is selected
+            return;
+        }
+        if ("youtube".equals(musicSource)) {
+            if (this.webView != null) {
+                this.webView.setVisibility(0);
             }
-
             String savedUrl = preferences.getString("saved_youtube_url", "");
             String videoId = savedUrl.isEmpty() ? "yNwKYgM6SkM" : extractYouTubeId(savedUrl);
             if (videoId != null) {
@@ -1564,121 +1091,138 @@ public class BigPictureActivity extends AppCompatActivity {
     }
 
     private void playDefaultMp3FromAssets() {
-        if (mediaPlayer != null) {
-            mediaPlayer.release();  // Release any existing player
+        if (this.mediaPlayer != null) {
+            this.mediaPlayer.release();
         }
-
-        mediaPlayer = new MediaPlayer();
+        this.mediaPlayer = new MediaPlayer();
         try {
-            AssetFileDescriptor afd = getAssets().openFd("default_music.mp3"); // Ensure the MP3 file is named "default_music.mp3" in assets
-            mediaPlayer.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
-            mediaPlayer.setLooping(true); // Loop the music
-            mediaPlayer.prepare();
-            mediaPlayer.start();
+            AssetFileDescriptor afd = getAssets().openFd("default_music.mp3");
+            this.mediaPlayer.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
+            this.mediaPlayer.setLooping(true);
+            this.mediaPlayer.prepare();
+            this.mediaPlayer.start();
             afd.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-
-
-
-
     private void stopBackgroundMusic() {
-        // Stop YouTube WebView
-        if (webView != null) {
-            webView.loadUrl("about:blank");
+        if (this.webView != null) {
+            this.webView.loadUrl("about:blank");
         }
-
-        // Stop MP3 playback
-        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
-            mediaPlayer.stop();
-            mediaPlayer.release(); // Release resources
-            mediaPlayer = null;
+        if (this.mediaPlayer != null && this.mediaPlayer.isPlaying()) {
+            this.mediaPlayer.stop();
+            this.mediaPlayer.release();
+            this.mediaPlayer = null;
         }
     }
 
-
-    @Override
+    @Override // androidx.fragment.app.FragmentActivity, android.app.Activity
     protected void onPause() {
         super.onPause();
-        stopBackgroundMusic(); // Ensure MP3 or YouTube stops when activity is paused
+        stopBackgroundMusic();
     }
 
-    // Import Animations:
-    private static final int REQUEST_CODE_SELECT_PNG_FOLDER = 1090;
-
     private void selectPngFolder() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        // Optionally, set some flags or extras if needed
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        Intent intent = new Intent("android.intent.action.OPEN_DOCUMENT_TREE");
+        intent.addFlags(195);
         startActivityForResult(intent, REQUEST_CODE_SELECT_PNG_FOLDER);
     }
 
     private void loadFramesFromFolder(Uri folderUri) {
-        // 1. DocumentFile from the tree URI
         DocumentFile docFolder = DocumentFile.fromTreeUri(this, folderUri);
         if (docFolder == null || !docFolder.isDirectory()) {
-            Toast.makeText(this, "Invalid folder selected!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Invalid folder selected!", 0).show();
             return;
         }
-
-        // 2. Iterate children
         DocumentFile[] docFiles = docFolder.listFiles();
         if (docFiles == null || docFiles.length == 0) {
-            Toast.makeText(this, "No files in folder!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "No files in folder!", 0).show();
             return;
         }
-
         List<Bitmap> bitmaps = new ArrayList<>();
         for (DocumentFile df : docFiles) {
             if (df != null && df.getName() != null && df.getName().toLowerCase().endsWith(".png")) {
-                try (InputStream is = getContentResolver().openInputStream(df.getUri())) {
-                    Bitmap bmp = BitmapFactory.decodeStream(is);
-                    if (bmp != null) {
-                        bitmaps.add(bmp);
+                try {
+                    InputStream is = getContentResolver().openInputStream(df.getUri());
+                    try {
+                        Bitmap bmp = BitmapFactory.decodeStream(is);
+                        if (bmp != null) {
+                            bitmaps.add(bmp);
+                        }
+                        if (is != null) {
+                            is.close();
+                        }
+                    } catch (Throwable th) {
+                        if (is != null) {
+                            try {
+                                is.close();
+                            } catch (Throwable th2) {
+                                th.addSuppressed(th2);
+                            }
+                        }
+                        throw th;
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
         }
-
         if (bitmaps.isEmpty()) {
-            Toast.makeText(this, "No PNG files found in this folder!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "No PNG files found in this folder!", 0).show();
             return;
         }
-
         Log.d("AnimationCheck", "Loaded " + bitmaps.size() + " PNG frames from folder.");
-        // 3. Pass these bitmaps to the TiledBackgroundView
-        TiledBackgroundView backgroundView = findViewById(R.id.parallaxBackgroundView);
-        backgroundView.loadFramesFromBitmaps(bitmaps);  // A new method we’ll create below
+        TiledBackgroundView backgroundView = (TiledBackgroundView) findViewById(com.ludashi.benchmark.R.id.parallaxBackgroundView);
+        backgroundView.loadFramesFromBitmaps(bitmaps);
     }
 
+    /* JADX WARN: Can't fix incorrect switch cases order, some code will duplicate */
     private void applyParallaxMode(String mode) {
-        TiledBackgroundView backgroundView = findViewById(R.id.parallaxBackgroundView);
-        if (backgroundView == null) return;
-
-        switch (mode) {
-            case "off":
-                backgroundView.setParallax(false, 0f, 0f);
+        char c;
+        TiledBackgroundView backgroundView = (TiledBackgroundView) findViewById(com.ludashi.benchmark.R.id.parallaxBackgroundView);
+        if (backgroundView == null) {
+        }
+        switch (mode.hashCode()) {
+            case 109935:
+                if (mode.equals(DebugKt.DEBUG_PROPERTY_VALUE_OFF)) {
+                    c = 0;
+                    break;
+                }
+                c = 65535;
                 break;
-            case "slow":
+            case 3135580:
+                if (mode.equals("fast")) {
+                    c = 2;
+                    break;
+                }
+                c = 65535;
+                break;
+            case 3533313:
+                if (mode.equals("slow")) {
+                    c = 1;
+                    break;
+                }
+                c = 65535;
+                break;
+            default:
+                c = 65535;
+                break;
+        }
+        switch (c) {
+            case 0:
+                backgroundView.setParallax(false, 0.0f, 0.0f);
+                break;
+            case 1:
                 backgroundView.setParallax(true, 1.0f, 1.0f);
                 break;
-            case "fast":
+            case 2:
                 backgroundView.setParallax(true, 5.0f, 5.0f);
                 break;
-            default: // "default"
+            default:
                 backgroundView.setParallax(true, 2.0f, 2.0f);
                 break;
         }
     }
-
-
-
 }

@@ -3,9 +3,9 @@ package com.winlator.cmod.xserver.events;
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
 import com.winlator.cmod.xserver.Window;
-
 import java.io.IOException;
 
+/* loaded from: classes6.dex */
 public class CreateNotify extends Event {
     private final Window parent;
     private final Window window;
@@ -16,21 +16,34 @@ public class CreateNotify extends Event {
         this.window = window;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.events.Event
     public void send(short sequenceNumber, XOutputStream outputStream) throws IOException {
-        try (XStreamLock lock = outputStream.lock()) {
-            outputStream.writeByte(code);
-            outputStream.writeByte((byte)0);
+        XStreamLock lock = outputStream.lock();
+        try {
+            outputStream.writeByte(this.code);
+            outputStream.writeByte((byte) 0);
             outputStream.writeShort(sequenceNumber);
-            outputStream.writeInt(parent.id);
-            outputStream.writeInt(window.id);
-            outputStream.writeShort(window.getX());
-            outputStream.writeShort(window.getY());
-            outputStream.writeShort(window.getWidth());
-            outputStream.writeShort(window.getHeight());
-            outputStream.writeShort(window.getBorderWidth());
-            outputStream.writeByte((byte)(window.attributes.isOverrideRedirect() ? 1 : 0));
+            outputStream.writeInt(this.parent.id);
+            outputStream.writeInt(this.window.id);
+            outputStream.writeShort(this.window.getX());
+            outputStream.writeShort(this.window.getY());
+            outputStream.writeShort(this.window.getWidth());
+            outputStream.writeShort(this.window.getHeight());
+            outputStream.writeShort(this.window.getBorderWidth());
+            outputStream.writeByte((byte) (this.window.attributes.isOverrideRedirect() ? 1 : 0));
             outputStream.writePad(9);
+            if (lock != null) {
+                lock.close();
+            }
+        } catch (Throwable th) {
+            if (lock != null) {
+                try {
+                    lock.close();
+                } catch (Throwable th2) {
+                    th.addSuppressed(th2);
+                }
+            }
+            throw th;
         }
     }
 }

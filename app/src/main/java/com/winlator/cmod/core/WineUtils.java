@@ -1,40 +1,44 @@
 package com.winlator.cmod.core;
 
 import android.content.Context;
-
 import com.winlator.cmod.container.Container;
 import com.winlator.cmod.xenvironment.ImageFs;
-
+import java.io.File;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.File;
-import java.util.Locale;
-
+/* loaded from: classes10.dex */
 public abstract class WineUtils {
     public static void createDosdevicesSymlinks(Container container) {
-        String dosdevicesPath = (new File(container.getRootDir(), ".wine/dosdevices")).getPath();
-        File[] files = (new File(dosdevicesPath)).listFiles();
-        if (files != null) for (File file : files) if (file.getName().matches("[a-z]:")) file.delete();
-
-        FileUtils.symlink("../drive_c", dosdevicesPath+"/c:");
-        FileUtils.symlink(container.getRootDir().getPath() + "/../..", dosdevicesPath+"/z:");
-
+        String dosdevicesPath = new File(container.getRootDir(), ".wine/dosdevices").getPath();
+        File[] files = new File(dosdevicesPath).listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.getName().matches("[a-z]:")) {
+                    file.delete();
+                }
+            }
+        }
+        FileUtils.symlink("../drive_c", dosdevicesPath + "/c:");
+        FileUtils.symlink(container.getRootDir().getPath() + "/../..", dosdevicesPath + "/z:");
         for (String[] drive : container.drivesIterator()) {
             File linkTarget = new File(drive[1]);
             String path = linkTarget.getAbsolutePath();
             if (!linkTarget.isDirectory() && path.endsWith("/com.winlator.cmod/storage")) {
                 linkTarget.mkdirs();
-                FileUtils.chmod(linkTarget, 0771);
+                FileUtils.chmod(linkTarget, 505);
             }
-            FileUtils.symlink(path, dosdevicesPath+"/"+drive[0].toLowerCase(Locale.ENGLISH)+":");
+            FileUtils.symlink(path, dosdevicesPath + "/" + drive[0].toLowerCase(Locale.ENGLISH) + ":");
         }
     }
 
     private static void setWindowMetrics(WineRegistryEditor registryEditor) {
-        byte[] fontNormalData = (new MSLogFont()).toByteArray();
-        byte[] fontBoldData = (new MSLogFont()).setWeight(700).toByteArray();
+        byte[] fontNormalData = new MSLogFont().toByteArray();
+        byte[] fontBoldData = new MSLogFont().setWeight(700).toByteArray();
         registryEditor.setHexValue("Control Panel\\Desktop\\WindowMetrics", "CaptionFont", fontBoldData);
         registryEditor.setHexValue("Control Panel\\Desktop\\WindowMetrics", "IconFont", fontNormalData);
         registryEditor.setHexValue("Control Panel\\Desktop\\WindowMetrics", "MenuFont", fontNormalData);
@@ -45,72 +49,81 @@ public abstract class WineUtils {
 
     public static void applySystemTweaks(Context context, WineInfo wineInfo) {
         File rootDir = ImageFs.find(context).getRootDir();
-        File systemRegFile = new File(rootDir, ImageFs.WINEPREFIX+"/system.reg");
-        File userRegFile = new File(rootDir, ImageFs.WINEPREFIX+"/user.reg");
-
-        try (WineRegistryEditor registryEditor = new WineRegistryEditor(systemRegFile)) {
+        File systemRegFile = new File(rootDir, "/home/xuser/.wine/system.reg");
+        File userRegFile = new File(rootDir, "/home/xuser/.wine/user.reg");
+        WineRegistryEditor registryEditor = new WineRegistryEditor(systemRegFile);
+        try {
             registryEditor.setStringValue("Software\\Classes\\.reg", null, "REGfile");
             registryEditor.setStringValue("Software\\Classes\\.reg", "Content Type", "application/reg");
             registryEditor.setStringValue("Software\\Classes\\REGfile\\Shell\\Open\\command", null, "C:\\windows\\regedit.exe /C \"%1\"");
-
             registryEditor.setStringValue("Software\\Classes\\dllfile\\DefaultIcon", null, "shell32.dll,-154");
             registryEditor.setStringValue("Software\\Classes\\lnkfile\\DefaultIcon", null, "shell32.dll,-30");
             registryEditor.setStringValue("Software\\Classes\\inifile\\DefaultIcon", null, "shell32.dll,-151");
-        }
-
-        final String[] direct3dLibs = {"d3d8", "d3d9", "d3d10", "d3d10_1", "d3d10core", "d3d11", "d3d12", "d3d12core", "ddraw", "dxgi", "wined3d"};
-        final String[] xinputLibs = {"dinput", "dinput8", "xinput1_1", "xinput1_2", "xinput1_3", "xinput1_4", "xinput9_1_0", "xinputuap"};
-
-        final String dllOverridesKey = "Software\\Wine\\DllOverrides";
-
-        try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
-            for (String name : direct3dLibs) registryEditor.setStringValue(dllOverridesKey, name, "native,builtin");
-            for (String name : xinputLibs) registryEditor.setStringValue(dllOverridesKey, name, "builtin,native");
-            setWindowMetrics(registryEditor);
+            registryEditor.close();
+            String[] direct3dLibs = {"d3d8", "d3d9", "d3d10", "d3d10_1", "d3d10core", "d3d11", "d3d12", "d3d12core", "ddraw", "dxgi", "wined3d"};
+            registryEditor = new WineRegistryEditor(userRegFile);
+            try {
+                for (String name : direct3dLibs) {
+                    registryEditor.setStringValue("Software\\Wine\\DllOverrides", name, "native,builtin");
+                }
+                setWindowMetrics(registryEditor);
+                registryEditor.close();
+            } finally {
+                try {
+                    registryEditor.close();
+                } catch (Throwable th) {
+                    th.addSuppressed(th);
+                }
+            }
+        } catch (Throwable th2) {
+            throw th2;
         }
     }
 
     public static void overrideWinComponentDlls(Context context, Container container, String identifier, boolean useNative) {
-        final String dllOverridesKey = "Software\\Wine\\DllOverrides";
         File userRegFile = new File(container.getRootDir(), ".wine/user.reg");
-
-        try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
-            JSONObject wincomponentsJSONObject = new JSONObject(FileUtils.readString(context, "wincomponents/wincomponents.json"));
-            JSONArray dlnames = wincomponentsJSONObject.getJSONArray(identifier);
-            for (int i = 0; i < dlnames.length(); i++) {
-                String dlname = dlnames.getString(i);
-                if (useNative) {
-                    registryEditor.setStringValue(dllOverridesKey, dlname, "native,builtin");
+        try {
+            WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile);
+            try {
+                JSONObject wincomponentsJSONObject = new JSONObject(FileUtils.readString(context, "wincomponents/wincomponents.json"));
+                JSONArray dlnames = wincomponentsJSONObject.getJSONArray(identifier);
+                for (int i = 0; i < dlnames.length(); i++) {
+                    String dlname = dlnames.getString(i);
+                    if (useNative) {
+                        registryEditor.setStringValue("Software\\Wine\\DllOverrides", dlname, "native,builtin");
+                    } else {
+                        registryEditor.removeValue("Software\\Wine\\DllOverrides", dlname);
+                    }
                 }
-                else registryEditor.removeValue(dllOverridesKey, dlname);
+                registryEditor.close();
+            } finally {
             }
+        } catch (JSONException e) {
         }
-        catch (JSONException e) {}
     }
 
     public static void setWinComponentRegistryKeys(File systemRegFile, String identifier, boolean useNative, Context context) {
+        WineRegistryEditor registryEditor;
         if (identifier.equals("directsound")) {
-            try (WineRegistryEditor registryEditor = new WineRegistryEditor(systemRegFile)) {
-                final String key64 = "Software\\Classes\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}";
-                final String key32 = "Software\\Classes\\Wow6432Node\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}";
-
+            registryEditor = new WineRegistryEditor(systemRegFile);
+            try {
                 if (useNative) {
-                    registryEditor.setStringValue(key32, "CLSID", "{E30629D1-27E5-11CE-875D-00608CB78066}");
-                    registryEditor.setHexValue(key32, "FilterData", "02000000000080000100000000000000307069330200000000000000010000000000000000000000307479330000000038000000480000006175647300001000800000aa00389b710100000000001000800000aa00389b71");
-                    registryEditor.setStringValue(key32, "FriendlyName", "Wave Audio Renderer");
-
-                    registryEditor.setStringValue(key64, "CLSID", "{E30629D1-27E5-11CE-875D-00608CB78066}");
-                    registryEditor.setHexValue(key64, "FilterData", "02000000000080000100000000000000307069330200000000000000010000000000000000000000307479330000000038000000480000006175647300001000800000aa00389b710100000000001000800000aa00389b71");
-                    registryEditor.setStringValue(key64, "FriendlyName", "Wave Audio Renderer");
+                    registryEditor.setStringValue("Software\\Classes\\Wow6432Node\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}", "CLSID", "{E30629D1-27E5-11CE-875D-00608CB78066}");
+                    registryEditor.setHexValue("Software\\Classes\\Wow6432Node\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}", "FilterData", "02000000000080000100000000000000307069330200000000000000010000000000000000000000307479330000000038000000480000006175647300001000800000aa00389b710100000000001000800000aa00389b71");
+                    registryEditor.setStringValue("Software\\Classes\\Wow6432Node\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}", "FriendlyName", "Wave Audio Renderer");
+                    registryEditor.setStringValue("Software\\Classes\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}", "CLSID", "{E30629D1-27E5-11CE-875D-00608CB78066}");
+                    registryEditor.setHexValue("Software\\Classes\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}", "FilterData", "02000000000080000100000000000000307069330200000000000000010000000000000000000000307479330000000038000000480000006175647300001000800000aa00389b710100000000001000800000aa00389b71");
+                    registryEditor.setStringValue("Software\\Classes\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}", "FriendlyName", "Wave Audio Renderer");
+                } else {
+                    registryEditor.removeKey("Software\\Classes\\Wow6432Node\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}");
+                    registryEditor.removeKey("Software\\Classes\\CLSID\\{083863F1-70DE-11D0-BD40-00A0C911CE86}\\Instance\\{E30629D1-27E5-11CE-875D-00608CB78066}");
                 }
-                else {
-                    registryEditor.removeKey(key32);
-                    registryEditor.removeKey(key64);
-                }
+                registryEditor.close();
+            } finally {
             }
-        }
-        else if (identifier.equals("xaudio")) {
-            try (WineRegistryEditor registryEditor = new WineRegistryEditor(systemRegFile)) {
+        } else if (identifier.equals("xaudio")) {
+            registryEditor = new WineRegistryEditor(systemRegFile);
+            try {
                 if (useNative) {
                     registryEditor.setStringValue("Software\\Classes\\Wow6432Node\\CLSID\\{074B110F-7F58-4743-AEA5-12F1B5074ED}\\InprocServer32", null, "C:\\windows\\syswow64\\xactengine3_5.dll");
                     registryEditor.setStringValue("Software\\Classes\\Wow6432Node\\CLSID\\{0977D092-2D95-4E43-8D42-9DDCC2545ED5}\\InprocServer32", null, "C:\\windows\\syswow64\\xactengine3_4.dll");
@@ -194,22 +207,65 @@ public abstract class WineUtils {
                     registryEditor.setStringValue("Software\\Classes\\Wow6432Node\\CLSID\\{F4769300-B949-4DF9-B333-00D33932E9A6}\\InprocServer32", null, "C:\\windows\\system32\\xaudio2_1.dll");
                     registryEditor.setStringValue("Software\\Classes\\Wow6432Node\\CLSID\\{F5CA7B34-8055-42C0-B836-216129EB7E30}\\InprocServer32", null, "C:\\windows\\system32\\xaudio2_2.dll");
                 }
+                registryEditor.close();
+            } finally {
             }
         }
     }
 
-    public static void changeServicesStatus(Container container, boolean onlyEssential) {
-        final String[] services = {"BITS:3", "Eventlog:2", "HTTP:3", "LanmanServer:3", "NDIS:2", "PlugPlay:2", "RpcSs:3", "scardsvr:3", "Schedule:3", "Spooler:3", "StiSvc:3", "TermService:3", "winebus:3", "winehid:3", "Winmgmt:3", "wuauserv:3"};
+    public static void changeServicesStatus(Container container, String startupSelection) {
+        String[] services = {"BITS:3", "Eventlog:2", "HTTP:3", "LanmanServer:3", "NDIS:2", "PlugPlay:2", "RpcSs:3", "scardsvr:3", "Schedule:3", "Spooler:3", "StiSvc:3", "TermService:3", "winebus:2", "winehid:2", "Winmgmt:3", "wuauserv:3"};
+        String[] aggressiveServices = {"BITS:3", "Eventlog:2", "FontCache:3", "FontCache3.0.0.0:3", "HTTP:3", "LanmanServer:3", "MSIServer:3", "NDIS:2", "nsiproxy:3", "PlugPlay:2", "RpcSs:3", "scardsvr:3", "Schedule:3", "SharedGpuResources:2", "Spooler:3", "StiSvc:3", "TermService:3", "TrkWks:3", "W32Time:3", "winebus:2", "winehid:2", "Winmgmt:3", "wuauserv:3"};
         File systemRegFile = new File(container.getRootDir(), ".wine/system.reg");
-
-        try (WineRegistryEditor registryEditor = new WineRegistryEditor(systemRegFile)) {
+        byte selection = 0;
+        try {
+            selection = Byte.parseByte(startupSelection);
+        } catch (NumberFormatException e) {
+        }
+        WineRegistryEditor registryEditor = new WineRegistryEditor(systemRegFile);
+        try {
             registryEditor.setCreateKeyIfNotExist(false);
-
-            for (String service : services) {
+            List<String> servicesList = Arrays.asList(services);
+            for (String service : aggressiveServices) {
                 String name = service.substring(0, service.indexOf(":"));
-                int value = onlyEssential ? 4 : Character.getNumericValue(service.charAt(service.length()-1));
-                registryEditor.setDwordValue("System\\CurrentControlSet\\Services\\"+name, "Start", value);
+                int value = Character.getNumericValue(service.charAt(service.length() - 1));
+                if (selection == 1) {
+                    if (servicesList.contains(service) && !name.equals("winebus") && !name.equals("winehid")) {
+                        value = 4;
+                    }
+                } else if (selection == 2 && !name.equals("winebus") && !name.equals("winehid")) {
+                    value = 4;
+                }
+                registryEditor.setDwordValue("System\\CurrentControlSet\\Services\\" + name, "Start", value);
+                registryEditor.setDwordValue("System\\ControlSet001\\Services\\" + name, "Start", value);
+            }
+            registryEditor.close();
+        } finally {
+        }
+    }
+
+    public static void setJoystickRegistryKeys(Container container, boolean dinputEnabled, boolean exclusiveXInput) {
+        File userRegFile = new File(container.getRootDir(), ".wine/user.reg");
+        String value = dinputEnabled ? "override" : "disabled";
+        WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile);
+        for (int i = 0; i < 4; i++) {
+            if (exclusiveXInput) {
+                try {
+                    registryEditor.setStringValue("Software\\Wine\\DirectInput\\Joysticks", "Generic HID Gamepad " + i, value);
+                    registryEditor.setStringValue("Software\\Wine\\DirectInput\\Joysticks", "ric HID Gamepad " + i, value);
+                } catch (Throwable th) {
+                    try {
+                        registryEditor.close();
+                    } catch (Throwable th2) {
+                        th.addSuppressed(th2);
+                    }
+                    throw th;
+                }
+            } else {
+                registryEditor.removeValue("Software\\Wine\\DirectInput\\Joysticks", "Generic HID Gamepad " + i);
+                registryEditor.removeValue("Software\\Wine\\DirectInput\\Joysticks", "ric HID Gamepad " + i);
             }
         }
+        registryEditor.close();
     }
 }

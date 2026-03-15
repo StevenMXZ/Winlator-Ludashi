@@ -1,5 +1,6 @@
 package com.winlator.cmod.alsaserver;
 
+import com.winlator.cmod.alsaserver.ALSAClient;
 import com.winlator.cmod.sysvshm.SysVSharedMemory;
 import com.winlator.cmod.xconnector.Client;
 import com.winlator.cmod.xconnector.RequestHandler;
@@ -7,85 +8,110 @@ import com.winlator.cmod.xconnector.XConnectorEpoll;
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+/* loaded from: classes7.dex */
 public class ALSARequestHandler implements RequestHandler {
     private int maxSHMemoryId = 0;
 
-    @Override
+    @Override // com.winlator.cmod.xconnector.RequestHandler
     public boolean handleRequest(Client client) throws IOException {
-        ALSAClient alsaClient = (ALSAClient)client.getTag();
+        ALSAClient alsaClient = (ALSAClient) client.getTag();
         XInputStream inputStream = client.getInputStream();
         XOutputStream outputStream = client.getOutputStream();
-
-        if (inputStream.available() < 5) return false;
+        if (inputStream.available() < 5) {
+            return false;
+        }
         byte requestCode = inputStream.readByte();
         int requestLength = inputStream.readInt();
-
         switch (requestCode) {
-            case RequestCodes.CLOSE:
+            case 0:
                 alsaClient.release();
-                break;
-            case RequestCodes.START:
+                return true;
+            case 1:
                 alsaClient.start();
-                break;
-            case RequestCodes.STOP:
+                return true;
+            case 2:
                 alsaClient.stop();
-                break;
-            case RequestCodes.PAUSE:
+                return true;
+            case 3:
                 alsaClient.pause();
-                break;
-            case RequestCodes.PREPARE:
-                if (inputStream.available() < requestLength) return false;
-
+                return true;
+            case 4:
+                if (inputStream.available() < requestLength) {
+                    return false;
+                }
                 alsaClient.setChannelCount(inputStream.readByte());
                 alsaClient.setDataType(ALSAClient.DataType.values()[inputStream.readByte()]);
                 alsaClient.setSampleRate(inputStream.readInt());
                 alsaClient.setBufferSize(inputStream.readInt());
                 alsaClient.prepare();
-
                 createSharedMemory(alsaClient, outputStream);
-                break;
-            case RequestCodes.WRITE:
+                return true;
+            case 5:
                 ByteBuffer buffer = alsaClient.getSharedBuffer();
                 if (buffer != null) {
                     buffer.limit(requestLength);
                     alsaClient.writeDataToStream(buffer);
+                    return true;
                 }
-                else {
-                    if (inputStream.available() < requestLength) return false;
-                    alsaClient.writeDataToStream(inputStream.readByteBuffer(requestLength));
+                if (inputStream.available() < requestLength) {
+                    return false;
                 }
-                break;
-            case RequestCodes.DRAIN:
+                alsaClient.writeDataToStream(inputStream.readByteBuffer(requestLength));
+                return true;
+            case 6:
                 alsaClient.drain();
-                break;
-            case RequestCodes.POINTER:
-                try (XStreamLock lock = outputStream.lock()) {
+                return true;
+            case 7:
+                XStreamLock lock = outputStream.lock();
+                try {
                     outputStream.writeInt(alsaClient.pointer());
+                    if (lock != null) {
+                        lock.close();
+                        return true;
+                    }
+                    return true;
+                } catch (Throwable th) {
+                    if (lock != null) {
+                        try {
+                            lock.close();
+                        } catch (Throwable th2) {
+                            th.addSuppressed(th2);
+                        }
+                    }
+                    throw th;
                 }
-                break;
+            default:
+                return true;
         }
-        return true;
     }
 
     private void createSharedMemory(ALSAClient alsaClient, XOutputStream outputStream) throws IOException {
+        ByteBuffer buffer;
         int size = alsaClient.getBufferSizeInBytes();
-        int fd = SysVSharedMemory.createMemoryFd("alsa-shm"+(++maxSHMemoryId), size);
-
-        if (fd >= 0) {
-            ByteBuffer buffer = SysVSharedMemory.mapSHMSegment(fd, size, 0, true);
-            if (buffer != null) alsaClient.setSharedBuffer(buffer);
+        StringBuilder append = new StringBuilder().append("alsa-shm");
+        int i = this.maxSHMemoryId + 1;
+        this.maxSHMemoryId = i;
+        int fd = SysVSharedMemory.createMemoryFd(append.append(i).toString(), size);
+        if (fd >= 0 && (buffer = SysVSharedMemory.mapSHMSegment(fd, size, 0, true)) != null) {
+            alsaClient.setSharedBuffer(buffer);
         }
-
-        try (XStreamLock lock = outputStream.lock()) {
-            outputStream.writeByte((byte)0);
-            outputStream.setAncillaryFd(fd);
-        }
-        finally {
-            if (fd >= 0) XConnectorEpoll.closeFd(fd);
+        try {
+            XStreamLock lock = outputStream.lock();
+            try {
+                outputStream.writeByte((byte) 0);
+                outputStream.setAncillaryFd(fd);
+                if (lock != null) {
+                    lock.close();
+                }
+            } finally {
+            }
+        } finally {
+            if (fd >= 0) {
+                XConnectorEpoll.closeFd(fd);
+            }
         }
     }
 }

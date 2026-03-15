@@ -1,47 +1,41 @@
 package com.winlator.cmod.renderer;
 
-import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
-
 import com.winlator.cmod.XrActivity;
 import com.winlator.cmod.xserver.Drawable;
-
 import java.nio.ByteBuffer;
+import org.apache.commons.compress.archivers.tar.TarConstants;
 
+/* loaded from: classes12.dex */
 public class Texture {
     protected int textureId = 0;
-    private int wrapS = GLES20.GL_CLAMP_TO_EDGE;
-    private int wrapT = GLES20.GL_CLAMP_TO_EDGE;
-    private int magFilter = GLES20.GL_LINEAR;
-    private int minFilter = GLES20.GL_LINEAR;
-    protected int format = GLES11Ext.GL_BGRA;
+    private int wrapS = 33071;
+    private int wrapT = 33071;
+    private int magFilter = 9729;
+    private int minFilter = 9729;
+    protected int format = 32993;
     protected boolean needsUpdate = true;
-    protected byte unpackAlignment = 4; // or add a getter method
-
+    protected byte unpackAlignment = 4;
 
     public void allocateTexture(short width, short height, ByteBuffer data) {
         int[] textureIds = new int[1];
         GLES20.glGenTextures(1, textureIds, 0);
-        textureId = textureIds[0];
-
-        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
-        GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 4);
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId);
-
+        this.textureId = textureIds[0];
+        GLES20.glActiveTexture(33984);
+        GLES20.glPixelStorei(3317, 4);
+        GLES20.glBindTexture(3553, this.textureId);
         if (data != null) {
-            GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, format, width, height, 0, format, GLES20.GL_UNSIGNED_BYTE, data);
+            GLES20.glTexImage2D(3553, 0, this.format, width, height, 0, this.format, 5121, data);
         }
-
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, wrapS);
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, wrapT);
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, magFilter);
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, minFilter);
-
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+        GLES20.glTexParameteri(3553, 10242, this.wrapS);
+        GLES20.glTexParameteri(3553, 10243, this.wrapT);
+        GLES20.glTexParameteri(3553, TarConstants.DEFAULT_BLKSIZE, this.magFilter);
+        GLES20.glTexParameteri(3553, 10241, this.minFilter);
+        GLES20.glBindTexture(3553, 0);
     }
 
     public int getWrapS() {
-        return wrapS;
+        return this.wrapS;
     }
 
     public void setWrapS(int wrapS) {
@@ -49,7 +43,7 @@ public class Texture {
     }
 
     public int getWrapT() {
-        return wrapT;
+        return this.wrapT;
     }
 
     public void setWrapT(int wrapT) {
@@ -57,7 +51,7 @@ public class Texture {
     }
 
     public int getMagFilter() {
-        return magFilter;
+        return this.magFilter;
     }
 
     public void setMagFilter(int magFilter) {
@@ -65,7 +59,7 @@ public class Texture {
     }
 
     public int getMinFilter() {
-        return minFilter;
+        return this.minFilter;
     }
 
     public void setMinFilter(int minFilter) {
@@ -73,7 +67,7 @@ public class Texture {
     }
 
     public int getFormat() {
-        return format;
+        return this.format;
     }
 
     public void setFormat(int format) {
@@ -81,7 +75,7 @@ public class Texture {
     }
 
     public boolean isNeedsUpdate() {
-        return needsUpdate;
+        return this.needsUpdate;
     }
 
     public void setNeedsUpdate(boolean needsUpdate) {
@@ -90,57 +84,60 @@ public class Texture {
 
     public void updateFromDrawable(Drawable drawable) {
         ByteBuffer data = drawable.getData();
-        if (data == null) return;
-
+        if (data == null) {
+            return;
+        }
         if (!isAllocated()) {
             allocateTexture(drawable.width, drawable.height, data);
-        }
-        else if (needsUpdate) {
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId);
-            GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, drawable.width, drawable.height, format, GLES20.GL_UNSIGNED_BYTE, data);
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
-            needsUpdate = false;
+        } else if (this.needsUpdate) {
+            GLES20.glBindTexture(3553, this.textureId);
+            GLES20.glTexSubImage2D(3553, 0, 0, 0, drawable.width, drawable.height, this.format, 5121, data);
+            GLES20.glBindTexture(3553, 0);
+            this.needsUpdate = false;
         }
     }
 
     public boolean isAllocated() {
-        return textureId > 0;
+        return this.textureId > 0;
     }
 
     public int getTextureId() {
-        return textureId;
+        return this.textureId;
     }
 
     public void copyFromFramebuffer(int framebuffer, short width, short height) {
-        if (!isAllocated()) allocateTexture(width, height, null);
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer);
-        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId);
-        GLES20.glCopyTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, 0, 0, width, height, 0);
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
-        if (XrActivity.isEnabled(null)) XrActivity.getInstance().bindFramebuffer();
+        if (!isAllocated()) {
+            allocateTexture(width, height, null);
+        }
+        GLES20.glBindFramebuffer(36160, framebuffer);
+        GLES20.glActiveTexture(33984);
+        GLES20.glBindTexture(3553, this.textureId);
+        GLES20.glCopyTexImage2D(3553, 0, 6408, 0, 0, width, height, 0);
+        GLES20.glBindTexture(3553, 0);
+        GLES20.glBindFramebuffer(36160, 0);
+        if (XrActivity.isEnabled(null)) {
+            XrActivity.getInstance().bindFramebuffer();
+        }
     }
 
     public void destroy() {
-        if (textureId > 0) {
-            int[] textureIds = new int[]{textureId};
+        if (this.textureId > 0) {
+            int[] textureIds = {this.textureId};
             GLES20.glDeleteTextures(textureIds.length, textureIds, 0);
-            textureId = 0;
+            this.textureId = 0;
         }
     }
 
     protected void generateTextureId() {
         int[] textureIds = new int[1];
         GLES20.glGenTextures(1, textureIds, 0);
-        textureId = textureIds[0];
+        this.textureId = textureIds[0];
     }
 
     protected void setTextureParameters() {
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, wrapS);
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, wrapT);
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, magFilter);
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, minFilter);
+        GLES20.glTexParameteri(3553, 10242, this.wrapS);
+        GLES20.glTexParameteri(3553, 10243, this.wrapT);
+        GLES20.glTexParameteri(3553, TarConstants.DEFAULT_BLKSIZE, this.magFilter);
+        GLES20.glTexParameteri(3553, 10241, this.minFilter);
     }
-
 }

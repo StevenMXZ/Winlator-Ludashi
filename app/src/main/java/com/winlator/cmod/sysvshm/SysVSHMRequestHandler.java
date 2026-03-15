@@ -5,44 +5,53 @@ import com.winlator.cmod.xconnector.RequestHandler;
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
-
 import java.io.IOException;
 
+/* loaded from: classes11.dex */
 public class SysVSHMRequestHandler implements RequestHandler {
-    @Override
+    @Override // com.winlator.cmod.xconnector.RequestHandler
     public boolean handleRequest(Client client) throws IOException {
-        SysVSharedMemory sysVSharedMemory = (SysVSharedMemory)client.getTag();
+        XStreamLock lock;
+        SysVSharedMemory sysVSharedMemory = (SysVSharedMemory) client.getTag();
         XInputStream inputStream = client.getInputStream();
         XOutputStream outputStream = client.getOutputStream();
-
-        if (inputStream.available() < 5) return false;
+        if (inputStream.available() < 5) {
+            return false;
+        }
         byte requestCode = inputStream.readByte();
-
         switch (requestCode) {
-            case RequestCodes.SHMGET: {
+            case 0:
                 long size = inputStream.readUnsignedInt();
                 int shmid = sysVSharedMemory.get(size);
-
-                try (XStreamLock lock = outputStream.lock()) {
+                lock = outputStream.lock();
+                try {
                     outputStream.writeInt(shmid);
+                    if (lock != null) {
+                        lock.close();
+                        return true;
+                    }
+                    return true;
+                } finally {
                 }
-                break;
-            }
-            case RequestCodes.GET_FD: {
-                int shmid = inputStream.readInt();
-
-                try (XStreamLock lock = outputStream.lock()) {
-                    outputStream.writeByte((byte)0);
-                    outputStream.setAncillaryFd(sysVSharedMemory.getFd(shmid));
+            case 1:
+                int shmid2 = inputStream.readInt();
+                lock = outputStream.lock();
+                try {
+                    outputStream.writeByte((byte) 0);
+                    outputStream.setAncillaryFd(sysVSharedMemory.getFd(shmid2));
+                    if (lock != null) {
+                        lock.close();
+                        return true;
+                    }
+                    return true;
+                } finally {
                 }
-                break;
-            }
-            case RequestCodes.DELETE: {
-                int shmid = inputStream.readInt();
-                sysVSharedMemory.delete(shmid);
-                break;
-            }
+            case 2:
+                int shmid3 = inputStream.readInt();
+                sysVSharedMemory.delete(shmid3);
+                return true;
+            default:
+                return true;
         }
-        return true;
     }
 }

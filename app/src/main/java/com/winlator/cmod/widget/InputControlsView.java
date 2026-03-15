@@ -1,6 +1,5 @@
 package com.winlator.cmod.widget;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
@@ -23,12 +22,10 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.PointerIcon;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.FrameLayout;
-
+import androidx.core.view.ViewCompat;
 import androidx.preference.PreferenceManager;
-
-import com.winlator.cmod.R;
+import com.ludashi.benchmark.R;
 import com.winlator.cmod.inputcontrols.Binding;
 import com.winlator.cmod.inputcontrols.ControlElement;
 import com.winlator.cmod.inputcontrols.ControlsProfile;
@@ -40,102 +37,127 @@ import com.winlator.cmod.winhandler.MouseEventFlags;
 import com.winlator.cmod.winhandler.WinHandler;
 import com.winlator.cmod.xserver.Pointer;
 import com.winlator.cmod.xserver.XServer;
-
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Iterator;
 import java.util.Timer;
 import java.util.TimerTask;
 
+/* loaded from: classes14.dex */
 public class InputControlsView extends View {
     public static final float DEFAULT_OVERLAY_OPACITY = 0.4f;
     private static final byte MOUSE_WHEEL_DELTA = 120;
-    private boolean editMode = false;
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Path path = new Path();
-    private final ColorFilter colorFilter = new PorterDuffColorFilter(0xffffffff, PorterDuff.Mode.SRC_IN);
-    private final Point cursor = new Point();
-    private boolean readyToDraw = false;
-    private boolean moveCursor = false;
-    private int snappingSize;
+    private final ColorFilter colorFilter;
+    private final Point cursor;
+    private boolean editMode;
+    private boolean focusOnStick;
+    private Runnable hideControlsRunnable;
+    private final Bitmap[] icons;
+    private final PointF mouseMoveOffset;
+    private Timer mouseMoveTimer;
+    private boolean moveCursor;
     private float offsetX;
     private float offsetY;
-    private ControlElement selectedElement;
+    private float overlayOpacity;
+    private final Paint paint;
+    private final Path path;
+    private SharedPreferences preferences;
     private ControlsProfile profile;
-    private float overlayOpacity = DEFAULT_OVERLAY_OPACITY;
+    private boolean readyToDraw;
+    private ControlElement selectedElement;
+    private boolean showTouchscreenControls;
+    private int snappingSize;
+    private ControlElement stickElement;
+    private Handler timeoutHandler;
     private TouchpadView touchpadView;
     private XServer xServer;
-    private final Bitmap[] icons = new Bitmap[17];
-    private Timer mouseMoveTimer;
-    private final PointF mouseMoveOffset = new PointF();
-    private boolean showTouchscreenControls = true;
-
-    private Handler timeoutHandler; // Reference to the activity's timeout handler
-    private Runnable hideControlsRunnable; // Runnable to hide the controls
-
-    private SharedPreferences preferences;
-
-    private ControlElement stickElement;
-
-    private boolean focusOnStick = false; // A flag to determine if we are focusing on the stick
 
     public boolean isFocusedOnStick() {
-        return focusOnStick;
+        return this.focusOnStick;
     }
 
     public void setFocusOnStick(boolean focus) {
         this.focusOnStick = focus;
-        invalidate(); // Redraw the view with the new focus setting
+        invalidate();
     }
 
-
-
-    @SuppressLint("ResourceType")
     public InputControlsView(Context context) {
         super(context);
+        this.editMode = false;
+        this.paint = new Paint(1);
+        this.path = new Path();
+        this.colorFilter = new PorterDuffColorFilter(-1, PorterDuff.Mode.SRC_IN);
+        this.cursor = new Point();
+        this.readyToDraw = false;
+        this.moveCursor = false;
+        this.overlayOpacity = 0.4f;
+        this.icons = new Bitmap[17];
+        this.mouseMoveOffset = new PointF();
+        this.showTouchscreenControls = true;
+        this.focusOnStick = false;
         setClickable(true);
         setFocusable(true);
         setFocusableInTouchMode(true);
-        requestFocus(); // Add this line to request focus
-        setBackgroundColor(0x00000000);
+        requestFocus();
+        setBackgroundColor(0);
         setPointerIcon(PointerIcon.load(getResources(), R.drawable.hidden_pointer_arrow));
-        setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        preferences = PreferenceManager.getDefaultSharedPreferences(this.getContext());
+        setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        this.preferences = PreferenceManager.getDefaultSharedPreferences(getContext());
     }
 
-    @SuppressLint("ResourceType")
     public InputControlsView(Context context, Handler timeoutHandler, Runnable hideControlsRunnable) {
         super(context);
-        this.timeoutHandler = timeoutHandler; // Store the reference to timeout handler
-        this.hideControlsRunnable = hideControlsRunnable; // Store the reference to the hide controls runnable
+        this.editMode = false;
+        this.paint = new Paint(1);
+        this.path = new Path();
+        this.colorFilter = new PorterDuffColorFilter(-1, PorterDuff.Mode.SRC_IN);
+        this.cursor = new Point();
+        this.readyToDraw = false;
+        this.moveCursor = false;
+        this.overlayOpacity = 0.4f;
+        this.icons = new Bitmap[17];
+        this.mouseMoveOffset = new PointF();
+        this.showTouchscreenControls = true;
+        this.focusOnStick = false;
+        this.timeoutHandler = timeoutHandler;
+        this.hideControlsRunnable = hideControlsRunnable;
         setClickable(true);
         setFocusable(true);
         setFocusableInTouchMode(true);
-        requestFocus(); // Add this line to request focus
-        setBackgroundColor(0x00000000);
+        requestFocus();
+        setBackgroundColor(0);
         setPointerIcon(PointerIcon.load(getResources(), R.drawable.hidden_pointer_arrow));
-        setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        preferences = PreferenceManager.getDefaultSharedPreferences(this.getContext());
+        setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        this.preferences = PreferenceManager.getDefaultSharedPreferences(getContext());
     }
 
     public InputControlsView(Context context, boolean focusOnStick) {
         super(context);
+        this.editMode = false;
+        this.paint = new Paint(1);
+        this.path = new Path();
+        this.colorFilter = new PorterDuffColorFilter(-1, PorterDuff.Mode.SRC_IN);
+        this.cursor = new Point();
+        this.readyToDraw = false;
+        this.moveCursor = false;
+        this.overlayOpacity = 0.4f;
+        this.icons = new Bitmap[17];
+        this.mouseMoveOffset = new PointF();
+        this.showTouchscreenControls = true;
+        this.focusOnStick = false;
         setClickable(true);
         setFocusable(true);
         setFocusableInTouchMode(true);
-        requestFocus(); // Add this line to request focus
-        setBackgroundColor(0x00000000);
+        requestFocus();
+        setBackgroundColor(0);
         setPointerIcon(PointerIcon.load(getResources(), R.drawable.hidden_pointer_arrow));
-
-        // If focusOnStick is true, adjust the layout params to match the stick element size
         if (focusOnStick) {
-            setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            setLayoutParams(new FrameLayout.LayoutParams(-2, -2));
         } else {
-            setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
         }
-
-        preferences = PreferenceManager.getDefaultSharedPreferences(this.getContext());
+        this.preferences = PreferenceManager.getDefaultSharedPreferences(getContext());
     }
-
 
     public void setEditMode(boolean editMode) {
         this.editMode = editMode;
@@ -146,188 +168,175 @@ public class InputControlsView extends View {
     }
 
     public int getSnappingSize() {
-        return snappingSize;
+        return this.snappingSize;
     }
 
-    @Override
+    @Override // android.view.View
     protected synchronized void onDraw(Canvas canvas) {
-        int width, height;
-
-        if (stickElement != null && isFocusedOnStick()) {
-            // If focusing on the stick, set width and height to the stick's bounding box size
-            Rect boundingBox = stickElement.getBoundingBox();
+        int width;
+        int height;
+        if (this.stickElement != null && isFocusedOnStick()) {
+            Rect boundingBox = this.stickElement.getBoundingBox();
             width = boundingBox.width();
             height = boundingBox.height();
         } else {
-            // Default behavior for full screen
-            width = getWidth();
+            int height2 = getWidth();
+            width = height2;
             height = getHeight();
         }
-
-        if (width == 0 || height == 0) {
-            readyToDraw = false;
+        if (width != 0 && height != 0) {
+            this.snappingSize = width / 100;
+            this.readyToDraw = true;
+            if (this.editMode) {
+                drawGrid(canvas);
+                drawCursor(canvas);
+            }
+            if (this.stickElement != null) {
+                this.stickElement.draw(canvas);
+            }
+            if (this.profile != null && this.showTouchscreenControls && !isFocusedOnStick()) {
+                if (!this.profile.isElementsLoaded()) {
+                    this.profile.loadElements(this);
+                }
+                for (ControlElement element : this.profile.getElements()) {
+                    element.draw(canvas);
+                }
+            }
+            super.onDraw(canvas);
             return;
         }
-
-        snappingSize = width / 100;
-        readyToDraw = true;
-
-        if (editMode) {
-            drawGrid(canvas);
-            drawCursor(canvas);
-        }
-
-        if (stickElement != null) {
-            // Draw only the stick element if focus mode is active
-            stickElement.draw(canvas);
-        }
-
-        if (profile != null && showTouchscreenControls && !isFocusedOnStick()) {
-            if (!profile.isElementsLoaded()) profile.loadElements(this);
-            for (ControlElement element : profile.getElements()) {
-                element.draw(canvas);
-            }
-        }
-
-        super.onDraw(canvas);
+        this.readyToDraw = false;
     }
-
 
     public void resetStickPosition() {
-        if (stickElement != null) {
-            Rect boundingBox = stickElement.getBoundingBox();
+        if (this.stickElement != null) {
+            Rect boundingBox = this.stickElement.getBoundingBox();
             float centerX = boundingBox.centerX();
             float centerY = boundingBox.centerY();
-
-            stickElement.setCurrentPosition(centerX, centerY); // Reset to the center of the bounding box
-            invalidate(); // Redraw the stick in the centered position
+            this.stickElement.setCurrentPosition(centerX, centerY);
+            invalidate();
         }
     }
-
-
 
     public void initializeStickElement(float x, float y, float scale) {
-        stickElement = new ControlElement(this);
-        stickElement.setType(ControlElement.Type.STICK); // Set type to STICK
-        stickElement.setX((int) x);
-        stickElement.setY((int) y);
-        stickElement.setScale(scale);
-        invalidate(); // Force the view to redraw with the stick
+        this.stickElement = new ControlElement(this);
+        this.stickElement.setType(ControlElement.Type.STICK);
+        this.stickElement.setX((int) x);
+        this.stickElement.setY((int) y);
+        this.stickElement.setScale(scale);
+        invalidate();
     }
 
-
     public void updateStickPosition(float x, float y) {
-        if (stickElement != null) {
-            stickElement.getCurrentPosition().x = x;  // Update the thumbstick's position
-            stickElement.getCurrentPosition().y = y;  // Update the thumbstick's position
-            invalidate(); // Redraw the view
+        if (this.stickElement != null) {
+            this.stickElement.getCurrentPosition().x = x;
+            this.stickElement.getCurrentPosition().y = y;
+            invalidate();
         }
     }
 
-
     public ControlElement getStickElement() {
-        return stickElement;
+        return this.stickElement;
     }
 
     private void drawGrid(Canvas canvas) {
-        paint.setStyle(Paint.Style.FILL);
-        paint.setStrokeWidth(snappingSize * 0.0625f);
-        paint.setColor(0xff000000);
-        canvas.drawColor(Color.BLACK);
-
-        paint.setAntiAlias(false);
-        paint.setColor(0xff303030);
-
+        this.paint.setStyle(Paint.Style.FILL);
+        this.paint.setStrokeWidth(this.snappingSize * 0.0625f);
+        this.paint.setColor(ViewCompat.MEASURED_STATE_MASK);
+        canvas.drawColor(ViewCompat.MEASURED_STATE_MASK);
+        this.paint.setAntiAlias(false);
+        this.paint.setColor(-13619152);
         int width = getMaxWidth();
         int height = getMaxHeight();
-
-        for (int i = 0; i < width; i += snappingSize) {
-            canvas.drawLine(i, 0, i, height, paint);
-            canvas.drawLine(0, i, width, i, paint);
+        int i = 0;
+        while (i < width) {
+            canvas.drawLine(i, 0.0f, i, height, this.paint);
+            canvas.drawLine(0.0f, i, width, i, this.paint);
+            i += this.snappingSize;
         }
-
-        float cx = Mathf.roundTo(width * 0.5f, snappingSize);
-        float cy = Mathf.roundTo(height * 0.5f, snappingSize);
-        paint.setColor(0xff424242);
-
-        for (int i = 0; i < width; i += snappingSize * 2) {
-            canvas.drawLine(cx, i, cx, i + snappingSize, paint);
-            canvas.drawLine(i, cy, i + snappingSize, cy, paint);
+        float cx = Mathf.roundTo(width * 0.5f, this.snappingSize);
+        float cy = Mathf.roundTo(height * 0.5f, this.snappingSize);
+        this.paint.setColor(-12434878);
+        int i2 = 0;
+        while (i2 < width) {
+            canvas.drawLine(cx, i2, cx, this.snappingSize + i2, this.paint);
+            canvas.drawLine(i2, cy, this.snappingSize + i2, cy, this.paint);
+            i2 += this.snappingSize * 2;
         }
-
-        paint.setAntiAlias(true);
+        this.paint.setAntiAlias(true);
     }
 
     private void drawCursor(Canvas canvas) {
-        paint.setStyle(Paint.Style.FILL);
-        paint.setStrokeWidth(snappingSize * 0.0625f);
-        paint.setColor(0xffc62828);
-
-        paint.setAntiAlias(false);
-        canvas.drawLine(0, cursor.y, getMaxWidth(), cursor.y, paint);
-        canvas.drawLine(cursor.x, 0, cursor.x, getMaxHeight(), paint);
-
-        paint.setAntiAlias(true);
+        this.paint.setStyle(Paint.Style.FILL);
+        this.paint.setStrokeWidth(this.snappingSize * 0.0625f);
+        this.paint.setColor(-3790808);
+        this.paint.setAntiAlias(false);
+        canvas.drawLine(0.0f, this.cursor.y, getMaxWidth(), this.cursor.y, this.paint);
+        canvas.drawLine(this.cursor.x, 0.0f, this.cursor.x, getMaxHeight(), this.paint);
+        this.paint.setAntiAlias(true);
     }
 
     public synchronized boolean addElement() {
-        if (editMode && profile != null) {
-            ControlElement element = new ControlElement(this);
-            element.setX(cursor.x);
-            element.setY(cursor.y);
-            profile.addElement(element);
-            profile.save();
-            selectElement(element);
-            return true;
+        if (!this.editMode || this.profile == null) {
+            return false;
         }
-        else return false;
+        ControlElement element = new ControlElement(this);
+        element.setX(this.cursor.x);
+        element.setY(this.cursor.y);
+        this.profile.addElement(element);
+        this.profile.save();
+        selectElement(element);
+        return true;
     }
 
     public synchronized boolean removeElement() {
-        if (editMode && selectedElement != null && profile != null) {
-            profile.removeElement(selectedElement);
-            selectedElement = null;
-            profile.save();
-            invalidate();
-            return true;
+        if (!this.editMode || this.selectedElement == null || this.profile == null) {
+            return false;
         }
-        else return false;
+        this.profile.removeElement(this.selectedElement);
+        this.selectedElement = null;
+        this.profile.save();
+        invalidate();
+        return true;
     }
 
     public ControlElement getSelectedElement() {
-        return selectedElement;
+        return this.selectedElement;
     }
 
     private synchronized void deselectAllElements() {
-        selectedElement = null;
-        if (profile != null) {
-            for (ControlElement element : profile.getElements()) element.setSelected(false);
+        this.selectedElement = null;
+        if (this.profile != null) {
+            for (ControlElement element : this.profile.getElements()) {
+                element.setSelected(false);
+            }
         }
     }
 
     private void selectElement(ControlElement element) {
         deselectAllElements();
         if (element != null) {
-            selectedElement = element;
-            selectedElement.setSelected(true);
+            this.selectedElement = element;
+            this.selectedElement.setSelected(true);
         }
         invalidate();
     }
 
     public synchronized ControlsProfile getProfile() {
-        return profile;
+        return this.profile;
     }
 
     public synchronized void setProfile(ControlsProfile profile) {
         if (profile != null) {
             this.profile = profile;
             deselectAllElements();
+        } else {
+            this.profile = null;
         }
-        else this.profile = null;
     }
 
     public boolean isShowTouchscreenControls() {
-        return showTouchscreenControls;
+        return this.showTouchscreenControls;
     }
 
     public void setShowTouchscreenControls(boolean showTouchscreenControls) {
@@ -335,36 +344,38 @@ public class InputControlsView extends View {
     }
 
     public int getPrimaryColor() {
-        return Color.argb((int)(overlayOpacity * 255), 255, 255, 255);
+        return Color.argb((int) (this.overlayOpacity * 255.0f), 255, 255, 255);
     }
 
     public int getSecondaryColor() {
-        return Color.argb((int)(overlayOpacity * 255), 2, 119, 189);
+        return Color.argb((int) (this.overlayOpacity * 255.0f), 2, 119, 189);
     }
 
     private synchronized ControlElement intersectElement(float x, float y) {
-        if (profile != null) {
-            for (ControlElement element : profile.getElements()) {
-                if (element.containsPoint(x, y)) return element;
+        if (this.profile != null) {
+            for (ControlElement element : this.profile.getElements()) {
+                if (element.containsPoint(x, y)) {
+                    return element;
+                }
             }
         }
         return null;
     }
 
     public Paint getPaint() {
-        return paint;
+        return this.paint;
     }
 
     public Path getPath() {
-        return path;
+        return this.path;
     }
 
     public ColorFilter getColorFilter() {
-        return colorFilter;
+        return this.colorFilter;
     }
 
     public TouchpadView getTouchpadView() {
-        return touchpadView;
+        return this.touchpadView;
     }
 
     public void setTouchpadView(TouchpadView touchpadView) {
@@ -372,7 +383,7 @@ public class InputControlsView extends View {
     }
 
     public XServer getXServer() {
-        return xServer;
+        return this.xServer;
     }
 
     public void setXServer(XServer xServer) {
@@ -381,393 +392,389 @@ public class InputControlsView extends View {
     }
 
     public int getMaxWidth() {
-        return (int)Mathf.roundTo(getWidth(), snappingSize);
+        return (int) Mathf.roundTo(getWidth(), this.snappingSize);
     }
 
-    @Override
+    @Override // android.view.View
     protected void onDetachedFromWindow() {
-        if (mouseMoveTimer != null)
-            mouseMoveTimer.cancel();
+        if (this.mouseMoveTimer != null) {
+            this.mouseMoveTimer.cancel();
+        }
         super.onDetachedFromWindow();
     }
 
     public int getMaxHeight() {
-        return (int)Mathf.roundTo(getHeight(), snappingSize);
+        return (int) Mathf.roundTo(getHeight(), this.snappingSize);
     }
 
     private void createMouseMoveTimer() {
-        WinHandler winHandler = xServer.getWinHandler();
-        if (mouseMoveTimer == null && profile != null) {
-            final float cursorSpeed = profile.getCursorSpeed();
-            mouseMoveTimer = new Timer();
-            mouseMoveTimer.schedule(new TimerTask() {
-                @Override
+        final WinHandler winHandler = this.xServer.getWinHandler();
+        if (this.mouseMoveTimer == null && this.profile != null) {
+            final float cursorSpeed = this.profile.getCursorSpeed();
+            this.mouseMoveTimer = new Timer();
+            this.mouseMoveTimer.schedule(new TimerTask() { // from class: com.winlator.cmod.widget.InputControlsView.1
+                @Override // java.util.TimerTask, java.lang.Runnable
                 public void run() {
-                    if (mouseMoveOffset.x != 0 || mouseMoveOffset.y != 0) {// Only move if there's an offsete if there's an offset
-                        if (xServer.isRelativeMouseMovement())
-                            winHandler.mouseEvent(MouseEventFlags.MOVE, (int) (mouseMoveOffset.x * cursorSpeed * 10), (int) (mouseMoveOffset.y * cursorSpeed * 10), 0);
-                        else
-                            xServer.injectPointerMoveDelta(
-                                (int) (mouseMoveOffset.x * cursorSpeed * 10),
-                                (int) (mouseMoveOffset.y * cursorSpeed * 10)
-                        );
+                    if (InputControlsView.this.mouseMoveOffset.x != 0.0f || InputControlsView.this.mouseMoveOffset.y != 0.0f) {
+                        if (InputControlsView.this.xServer.isRelativeMouseMovement()) {
+                            winHandler.mouseEvent(1, (int) (InputControlsView.this.mouseMoveOffset.x * cursorSpeed * 10.0f), (int) (InputControlsView.this.mouseMoveOffset.y * cursorSpeed * 10.0f), 0);
+                        } else {
+                            InputControlsView.this.xServer.injectPointerMoveDelta((int) (InputControlsView.this.mouseMoveOffset.x * cursorSpeed * 10.0f), (int) (InputControlsView.this.mouseMoveOffset.y * cursorSpeed * 10.0f));
+                        }
                     }
                 }
-            }, 0, 1000 / 60); // 60 FPS
+            }, 0L, 16L);
         }
     }
 
-
-//    private void processJoystickInput(ExternalController controller) {
-//        ExternalControllerBinding controllerBinding;
-//        final int[] axes = {MotionEvent.AXIS_X, MotionEvent.AXIS_Y, MotionEvent.AXIS_Z, MotionEvent.AXIS_RZ, MotionEvent.AXIS_HAT_X, MotionEvent.AXIS_HAT_Y};
-//        final float[] values = {controller.state.thumbLX, controller.state.thumbLY, controller.state.thumbRX, controller.state.thumbRY, controller.state.getDPadX(), controller.state.getDPadY()};
-//
-//        for (byte i = 0; i < axes.length; i++) {
-//            if (Math.abs(values[i]) > ControlElement.STICK_DEAD_ZONE) {
-//                controllerBinding = controller.getControllerBinding(ExternalControllerBinding.getKeyCodeForAxis(axes[i], Mathf.sign(values[i])));
-//                if (controllerBinding != null) handleInputEvent(controllerBinding.getBinding(), true, values[i]);
-//            }
-//            else {
-//                controllerBinding = controller.getControllerBinding(ExternalControllerBinding.getKeyCodeForAxis(axes[i], (byte) 1));
-//                if (controllerBinding != null) handleInputEvent(controllerBinding.getBinding(), false, values[i]);
-//                controllerBinding = controller.getControllerBinding(ExternalControllerBinding.getKeyCodeForAxis(axes[i], (byte)-1));
-//                if (controllerBinding != null) handleInputEvent(controllerBinding.getBinding(), false, values[i]);
-//            }
-//        }
-//    }
-
     private void processJoystickInput(ExternalController controller) {
-        final int[] axes = {
-                MotionEvent.AXIS_X, MotionEvent.AXIS_Y,
-                MotionEvent.AXIS_Z, MotionEvent.AXIS_RZ,
-                MotionEvent.AXIS_HAT_X, MotionEvent.AXIS_HAT_Y
-        };
-        final float[] values = {
-                controller.state.thumbLX, controller.state.thumbLY,
-                controller.state.thumbRX, controller.state.thumbRY,
-                controller.state.getDPadX(), controller.state.getDPadY()
-        };
-
+        int[] axes = {0, 1, 11, 14, 15, 16};
+        float[] values = {controller.state.thumbLX, controller.state.thumbLY, controller.state.thumbRX, controller.state.thumbRY, controller.state.getDPadX(), controller.state.getDPadY()};
         for (int i = 0; i < axes.length; i++) {
             float value = values[i];
-            if (Math.abs(value) > ControlElement.STICK_DEAD_ZONE) {
+            if (Math.abs(value) > 0.15f) {
                 byte sign = Mathf.sign(value);
                 int keyCode = ExternalControllerBinding.getKeyCodeForAxis(axes[i], sign);
                 ExternalControllerBinding controllerBinding = controller.getControllerBinding(keyCode);
                 if (controllerBinding != null) {
-                    handleInputEvent(controllerBinding.getBinding(), true, value);
+                    handleInputEvent(controller, controllerBinding.getBinding(), true, value, false);
                 }
             } else {
-                // Handle releasing the bindings when the axis returns to deadzone
-                for (byte sign = -1; sign <= 1; sign += 2) {
-                    int keyCode = ExternalControllerBinding.getKeyCodeForAxis(axes[i], sign);
-                    ExternalControllerBinding controllerBinding = controller.getControllerBinding(keyCode);
-                    if (controllerBinding != null) {
-                        handleInputEvent(controllerBinding.getBinding(), false, value);
+                for (byte sign2 = -1; sign2 <= 1; sign2 = (byte) (sign2 + 2)) {
+                    int keyCode2 = ExternalControllerBinding.getKeyCodeForAxis(axes[i], sign2);
+                    ExternalControllerBinding controllerBinding2 = controller.getControllerBinding(keyCode2);
+                    if (controllerBinding2 != null) {
+                        handleInputEvent(controller, controllerBinding2.getBinding(), false, value, false);
                     }
                 }
             }
         }
+        processTriggerInput(controller, controller.state.triggerL, 104, false);
+        processTriggerInput(controller, controller.state.triggerR, 105, false);
+        WinHandler winHandler = this.xServer != null ? this.xServer.getWinHandler() : null;
+        if (winHandler != null) {
+            winHandler.sendGamepadState(controller);
+        }
     }
 
+    private void processTriggerInput(ExternalController controller, float value, int keyCode, boolean sendUpdate) {
+        ExternalControllerBinding binding = controller.getControllerBinding(keyCode);
+        if (binding != null) {
+            boolean isPressed = value > 0.15f;
+            if (isPressed) {
+                handleInputEvent(controller, binding.getBinding(), true, value, sendUpdate);
+            } else {
+                handleInputEvent(controller, binding.getBinding(), false, 0.0f, sendUpdate);
+            }
+        }
+    }
 
-
-//    @Override
-//    public boolean onGenericMotionEvent(MotionEvent event) {
-//        if (!editMode && profile != null) {
-//            ExternalController controller = profile.getController(event.getDeviceId());
-//            if (controller != null && controller.updateStateFromMotionEvent(event)) {
-//                ExternalControllerBinding controllerBinding;
-//                controllerBinding = controller.getControllerBinding(KeyEvent.KEYCODE_BUTTON_L2);
-//                if (controllerBinding != null) handleInputEvent(controllerBinding.getBinding(), controller.state.isPressed(ExternalController.IDX_BUTTON_L2));
-//
-//                controllerBinding = controller.getControllerBinding(KeyEvent.KEYCODE_BUTTON_R2);
-//                if (controllerBinding != null) handleInputEvent(controllerBinding.getBinding(), controller.state.isPressed(ExternalController.IDX_BUTTON_R2));
-//
-//                processJoystickInput(controller);
-//                return true;
-//            }
-//        }
-//        return super.onGenericMotionEvent(event);
-//    }
-
-    @Override
+    @Override // android.view.View
     public boolean dispatchGenericMotionEvent(MotionEvent event) {
         Log.d("InputControlsView", "dispatchGenericMotionEvent called. Source: " + event.getSource());
         return super.dispatchGenericMotionEvent(event);
     }
 
-
-    @Override
+    @Override // android.view.View
     public boolean onGenericMotionEvent(MotionEvent event) {
-
+        ExternalController controller;
         Log.d("InputControlsView", "Motion event received. Source: " + event.getSource());
         Log.d("InputControlsView", "Device ID: " + event.getDeviceId());
-        Log.d("InputControlsView", "Profile is " + (profile != null ? "set" : "null"));
-
-
-        if (!editMode && profile != null) {
-            // Retrieve the associated controller for this event
-            ExternalController controller = profile.getController(event.getDeviceId());
-
-            if (controller != null && controller.updateStateFromMotionEvent(event)) {
-                // Process L2 and R2 button bindings
-                ExternalControllerBinding controllerBinding;
-
-                // L2 button
-                controllerBinding = controller.getControllerBinding(KeyEvent.KEYCODE_BUTTON_L2);
-                if (controllerBinding != null) {
-                    handleInputEvent(controllerBinding.getBinding(), controller.state.isPressed(ExternalController.IDX_BUTTON_L2));
-                }
-
-                // R2 button
-                controllerBinding = controller.getControllerBinding(KeyEvent.KEYCODE_BUTTON_R2);
-                if (controllerBinding != null) {
-                    handleInputEvent(controllerBinding.getBinding(), controller.state.isPressed(ExternalController.IDX_BUTTON_R2));
-                }
-
-                Log.d("InputEvent", "Event source: " + event.getSource());
-                Log.d("InputEvent", "Device ID: " + event.getDeviceId());
-                Log.d("InputEvent", "Action: " + event.getAction());
-
-                // Process joystick inputs for mouse movement and other bindings
-                processJoystickInput(controller);
-
-                // Return true to indicate the motion event was handled
-                return true;
+        Log.d("InputControlsView", "Profile is " + (this.profile != null ? "set" : "null"));
+        if (!this.editMode && this.profile != null && (controller = this.profile.getController(event.getDeviceId())) != null && controller.updateStateFromMotionEvent(event)) {
+            ExternalControllerBinding controllerBinding = controller.getControllerBinding(104);
+            if (controllerBinding != null) {
+                handleInputEvent(controller, controllerBinding.getBinding(), controller.state.isPressed(10));
             }
+            ExternalControllerBinding controllerBinding2 = controller.getControllerBinding(105);
+            if (controllerBinding2 != null) {
+                handleInputEvent(controller, controllerBinding2.getBinding(), controller.state.isPressed(11));
+            }
+            Log.d("InputEvent", "Event source: " + event.getSource());
+            Log.d("InputEvent", "Device ID: " + event.getDeviceId());
+            Log.d("InputEvent", "Action: " + event.getAction());
+            processJoystickInput(controller);
+            return true;
         }
-
-        // Pass the event to the super method if not handled
         return super.onGenericMotionEvent(event);
     }
 
-
-    @Override
+    @Override // android.view.View
     public boolean onTouchEvent(MotionEvent event) {
-
-        boolean hapticsEnabled = preferences.getBoolean("touchscreen_haptics_enabled", true);
-
-        // Reset the timeout when touch events occur within InputControlsView
+        Vibrator vibrator;
+        boolean hapticsEnabled = this.preferences.getBoolean("touchscreen_haptics_enabled", true);
         resetTouchscreenTimeout();
-
-        if (editMode && readyToDraw) {
+        if (this.editMode && this.readyToDraw) {
             switch (event.getAction()) {
-                case MotionEvent.ACTION_DOWN: {
+                case 0:
                     float x = event.getX();
                     float y = event.getY();
-
                     ControlElement element = intersectElement(x, y);
-                    moveCursor = true;
+                    this.moveCursor = true;
                     if (element != null) {
-                        offsetX = x - element.getX();
-                        offsetY = y - element.getY();
-                        moveCursor = false;
+                        this.offsetX = x - element.getX();
+                        this.offsetY = y - element.getY();
+                        this.moveCursor = false;
                     }
-
                     selectElement(element);
                     break;
-                }
-                case MotionEvent.ACTION_MOVE: {
-                    if (selectedElement != null) {
-                        selectedElement.setX((int)Mathf.roundTo(event.getX() - offsetX, snappingSize));
-                        selectedElement.setY((int)Mathf.roundTo(event.getY() - offsetY, snappingSize));
-                        invalidate();
+                case 1:
+                    if (this.selectedElement != null && this.profile != null) {
+                        this.profile.save();
                     }
-                    break;
-                }
-                case MotionEvent.ACTION_UP: {
-                    if (selectedElement != null && profile != null) profile.save();
-                    if (moveCursor) cursor.set((int)Mathf.roundTo(event.getX(), snappingSize), (int)Mathf.roundTo(event.getY(), snappingSize));
+                    if (this.moveCursor) {
+                        this.cursor.set((int) Mathf.roundTo(event.getX(), this.snappingSize), (int) Mathf.roundTo(event.getY(), this.snappingSize));
+                    }
                     invalidate();
                     break;
-                }
+                case 2:
+                    if (this.selectedElement != null) {
+                        this.selectedElement.setX((int) Mathf.roundTo(event.getX() - this.offsetX, this.snappingSize));
+                        this.selectedElement.setY((int) Mathf.roundTo(event.getY() - this.offsetY, this.snappingSize));
+                        invalidate();
+                        break;
+                    }
+                    break;
             }
         }
-
-        if (!editMode && profile != null) {
+        if (!this.editMode && this.profile != null) {
             int actionIndex = event.getActionIndex();
             int pointerId = event.getPointerId(actionIndex);
             int actionMasked = event.getActionMasked();
             boolean handled = false;
-
             switch (actionMasked) {
-                case MotionEvent.ACTION_DOWN:
-                case MotionEvent.ACTION_POINTER_DOWN: {
-                    float x = event.getX(actionIndex);
-                    float y = event.getY(actionIndex);
-
-                    touchpadView.setPointerButtonLeftEnabled(true);
-                    for (ControlElement element : profile.getElements()) {
-                        if (element.handleTouchDown(pointerId, x, y)) {
+                case 0:
+                case 5:
+                    float x2 = event.getX(actionIndex);
+                    float y2 = event.getY(actionIndex);
+                    this.touchpadView.setPointerButtonLeftEnabled(true);
+                    for (ControlElement element2 : this.profile.getElements()) {
+                        if (element2.handleTouchDown(pointerId, x2, y2)) {
                             handled = true;
-
-                            // Trigger haptic feedback for input controls
-                            if (hapticsEnabled) {
-                                Vibrator vibrator = (Vibrator) getContext().getSystemService(Context.VIBRATOR_SERVICE);
-                                if (vibrator != null && vibrator.hasVibrator()) {
-                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                        vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
-                                    } else {
-                                        vibrator.vibrate(50); // Legacy method for older Android versions
-                                    }
-
-                                }
-
+                            if (hapticsEnabled && (vibrator = (Vibrator) getContext().getSystemService("vibrator")) != null && vibrator.hasVibrator()) {
+                                vibrator.vibrate(VibrationEffect.createOneShot(50L, -1));
                             }
                         }
-                        if (element.getBindingAt(0) == Binding.MOUSE_LEFT_BUTTON) {
-                            touchpadView.setPointerButtonLeftEnabled(false);
+                        if (element2.getBindingAt(0) == Binding.MOUSE_LEFT_BUTTON) {
+                            this.touchpadView.setPointerButtonLeftEnabled(false);
                         }
                     }
-                    if (!handled) touchpadView.onTouchEvent(event);
-                    break;
-                }
-                case MotionEvent.ACTION_MOVE: {
-                    for (byte i = 0, count = (byte)event.getPointerCount(); i < count; i++) {
-                        float x = event.getX(i);
-                        float y = event.getY(i);
-
-                        handled = false;
-                        for (ControlElement element : profile.getElements()) {
-                            if (element.handleTouchMove(i, x, y)) handled = true;
-                        }
-                        if (!handled) touchpadView.onTouchEvent(event);
+                    if (!handled) {
+                        this.touchpadView.onTouchEvent(event);
+                        break;
                     }
                     break;
-                }
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_POINTER_UP:
-                case MotionEvent.ACTION_CANCEL:
-                    for (ControlElement element : profile.getElements()) if (element.handleTouchUp(pointerId)) handled = true;
-                    if (!handled) touchpadView.onTouchEvent(event);
+                case 1:
+                case 3:
+                case 6:
+                    Iterator<ControlElement> it = this.profile.getElements().iterator();
+                    while (it.hasNext()) {
+                        if (it.next().handleTouchUp(pointerId)) {
+                            handled = true;
+                        }
+                    }
+                    if (!handled) {
+                        this.touchpadView.onTouchEvent(event);
+                        break;
+                    }
+                    break;
+                case 2:
+                    byte count = (byte) event.getPointerCount();
+                    for (byte i = 0; i < count; i = (byte) (i + 1)) {
+                        float x3 = event.getX(i);
+                        float y3 = event.getY(i);
+                        boolean handled2 = false;
+                        Iterator<ControlElement> it2 = this.profile.getElements().iterator();
+                        while (it2.hasNext()) {
+                            if (it2.next().handleTouchMove(i, x3, y3)) {
+                                handled2 = true;
+                            }
+                        }
+                        if (!handled2) {
+                            this.touchpadView.onTouchEvent(event);
+                        }
+                    }
                     break;
             }
+            return true;
         }
         return true;
     }
 
-
-
-
-
     private void resetTouchscreenTimeout() {
         Log.d("InputControlsView", "Touch detected, resetting timeout.");
-        if (timeoutHandler != null && hideControlsRunnable != null) {
-            // Cancel any pending hide requests
-            timeoutHandler.removeCallbacks(hideControlsRunnable);
-            // Post a new request to hide the controls after 5 seconds
-            timeoutHandler.postDelayed(hideControlsRunnable, 5000); // Adjust timeout as necessary
+        if (this.timeoutHandler != null && this.hideControlsRunnable != null) {
+            this.timeoutHandler.removeCallbacks(this.hideControlsRunnable);
+            this.timeoutHandler.postDelayed(this.hideControlsRunnable, 5000L);
         }
     }
 
     public boolean onKeyEvent(KeyEvent event) {
-        if (profile != null && event.getRepeatCount() == 0) {
-            ExternalController controller = profile.getController(event.getDeviceId());
-            if (controller != null) {
-                ExternalControllerBinding controllerBinding = controller.getControllerBinding(event.getKeyCode());
-                if (controllerBinding != null) {
-                    int action = event.getAction();
-
-                    if (action == KeyEvent.ACTION_DOWN) {
-                        handleInputEvent(controllerBinding.getBinding(), true);
-                    }
-                    else if (action == KeyEvent.ACTION_UP) {
-                        handleInputEvent(controllerBinding.getBinding(), false);
-                    }
-                    return true;
-                }
-            }
+        ExternalController controller;
+        ExternalControllerBinding controllerBinding;
+        if (this.profile == null || event.getRepeatCount() != 0 || (controller = this.profile.getController(event.getDeviceId())) == null || (controllerBinding = controller.getControllerBinding(event.getKeyCode())) == null) {
+            return false;
         }
-        return false;
+        int action = event.getAction();
+        if (action == 0) {
+            handleInputEvent(controller, controllerBinding.getBinding(), true);
+        } else if (action == 1) {
+            handleInputEvent(controller, controllerBinding.getBinding(), false);
+        }
+        return true;
     }
 
     public void handleInputEvent(Binding binding, boolean isActionDown) {
-        handleInputEvent(binding, isActionDown, 0);
+        handleInputEvent(null, binding, isActionDown, 0.0f);
     }
 
-    public void handleInputEvent(Binding binding, boolean isActionDown, float offset) {
-        WinHandler winHandler = xServer != null ? xServer.getWinHandler() : null;
-        if (binding.isGamepad()) {
-            GamepadState state = profile.getGamepadState();
+    public void handleInputEvent(ExternalController controller, Binding binding, boolean isActionDown) {
+        handleInputEvent(controller, binding, isActionDown, 0.0f);
+    }
 
-            int buttonIdx = binding.ordinal() - Binding.GAMEPAD_BUTTON_A.ordinal();
-            if (buttonIdx <= ExternalController.IDX_BUTTON_R2) {
-                if (buttonIdx == ExternalController.IDX_BUTTON_L2)
-                    state.triggerL = isActionDown ? 1.0f : 0f;
-                else if (buttonIdx == ExternalController.IDX_BUTTON_R2)
-                    state.triggerR = isActionDown ? 1.0f : 0f;
-                else
-                    state.setPressed(buttonIdx, isActionDown);
+    public void handleStickInput(Binding firstBinding, float deltaX, float deltaY) {
+        if (firstBinding.isGamepad()) {
+            GamepadState state = this.profile.getGamepadState();
+            WinHandler winHandler = this.xServer != null ? this.xServer.getWinHandler() : null;
+            boolean isLeftStick = firstBinding == Binding.GAMEPAD_LEFT_THUMB_UP || firstBinding == Binding.GAMEPAD_LEFT_THUMB_DOWN || firstBinding == Binding.GAMEPAD_LEFT_THUMB_LEFT || firstBinding == Binding.GAMEPAD_LEFT_THUMB_RIGHT;
+            if (isLeftStick) {
+                state.thumbLX = deltaX;
+                state.thumbLY = deltaY;
+            } else {
+                state.thumbRX = deltaX;
+                state.thumbRY = deltaY;
             }
-            else if (binding == Binding.GAMEPAD_LEFT_THUMB_UP || binding == Binding.GAMEPAD_LEFT_THUMB_DOWN) {
-                state.thumbLY = isActionDown ? offset : 0;
-            }
-            else if (binding == Binding.GAMEPAD_LEFT_THUMB_LEFT || binding == Binding.GAMEPAD_LEFT_THUMB_RIGHT) {
-                state.thumbLX = isActionDown ? offset : 0;
-            }
-            else if (binding == Binding.GAMEPAD_RIGHT_THUMB_UP || binding == Binding.GAMEPAD_RIGHT_THUMB_DOWN) {
-                state.thumbRY = isActionDown ? offset : 0;
-            }
-            else if (binding == Binding.GAMEPAD_RIGHT_THUMB_LEFT || binding == Binding.GAMEPAD_RIGHT_THUMB_RIGHT) {
-                state.thumbRX = isActionDown ? offset : 0;
-            }
-            else if (binding == Binding.GAMEPAD_DPAD_UP || binding == Binding.GAMEPAD_DPAD_RIGHT ||
-                     binding == Binding.GAMEPAD_DPAD_DOWN || binding == Binding.GAMEPAD_DPAD_LEFT) {
-                state.dpad[binding.ordinal() - Binding.GAMEPAD_DPAD_UP.ordinal()] = isActionDown;
-            }
-
             if (winHandler != null) {
-                ExternalController controller = winHandler.getCurrentController();
-                if (controller != null) controller.state.copy(state);
                 winHandler.sendGamepadState();
             }
         }
-        else {
-            if (binding == Binding.MOUSE_MOVE_LEFT || binding == Binding.MOUSE_MOVE_RIGHT) {
-                mouseMoveOffset.x = isActionDown ? (offset != 0 ? offset : (binding == Binding.MOUSE_MOVE_LEFT ? -1 : 1)) : 0;
-                if (isActionDown) createMouseMoveTimer();
-            }
-            else if (binding == Binding.MOUSE_MOVE_DOWN || binding == Binding.MOUSE_MOVE_UP) {
-                mouseMoveOffset.y = isActionDown ? (offset != 0 ? offset : (binding == Binding.MOUSE_MOVE_UP ? -1 : 1)) : 0;
-                if (isActionDown) createMouseMoveTimer();
-            }
-            else {
-                Pointer.Button pointerButton = binding.getPointerButton();
-                if (isActionDown) {
-                    if (pointerButton != null) {
-                        if (xServer.isRelativeMouseMovement()) {
-                            int wheelDelta = pointerButton == Pointer.Button.BUTTON_SCROLL_UP ? MOUSE_WHEEL_DELTA : (pointerButton == Pointer.Button.BUTTON_SCROLL_DOWN ? -MOUSE_WHEEL_DELTA : 0);
-                            winHandler.mouseEvent(MouseEventFlags.getFlagFor(pointerButton, true), 0, 0, wheelDelta);
-                        } else {
-                            xServer.injectPointerButtonPress(pointerButton);
-                        }
-                    }
-                    else xServer.injectKeyPress(binding.keycode);
+    }
+
+    public void handleInputEvent(Binding binding, boolean isActionDown, float offset) {
+        handleInputEvent(null, binding, isActionDown, offset);
+    }
+
+    public void handleInputEvent(ExternalController controller, Binding binding, boolean isActionDown, float offset) {
+        handleInputEvent(controller, binding, isActionDown, offset, true);
+    }
+
+    public void handleInputEvent(ExternalController controller, Binding binding, boolean isActionDown, float offset, boolean sendUpdate) {
+        int wheelDelta;
+        WinHandler winHandler = this.xServer != null ? this.xServer.getWinHandler() : null;
+        if (binding.isGamepad()) {
+            GamepadState state = controller != null ? controller.remappedState : this.profile.getGamepadState();
+            int buttonIdx = binding.ordinal() - Binding.GAMEPAD_BUTTON_A.ordinal();
+            if (buttonIdx <= 11) {
+                if (buttonIdx == 10) {
+                    state.triggerL = isActionDown ? offset != 0.0f ? offset : 1.0f : 0.0f;
+                } else if (buttonIdx == 11) {
+                    state.triggerR = isActionDown ? offset != 0.0f ? offset : 1.0f : 0.0f;
+                } else {
+                    state.setPressed(buttonIdx, isActionDown);
                 }
-                else {
-                    if (pointerButton != null) {
-                        if (xServer.isRelativeMouseMovement()) {
-                            winHandler.mouseEvent(MouseEventFlags.getFlagFor(pointerButton, false), 0, 0, 0);
-                        } else {
-                            xServer.injectPointerButtonRelease(pointerButton);
-                        }
-                    }
-                    else xServer.injectKeyRelease(binding.keycode);
+            } else if (binding == Binding.GAMEPAD_LEFT_THUMB_UP || binding == Binding.GAMEPAD_LEFT_THUMB_DOWN) {
+                float val = (isActionDown && offset == 0.0f) ? 1.0f : Math.abs(offset);
+                state.thumbLY = isActionDown ? binding == Binding.GAMEPAD_LEFT_THUMB_UP ? -val : val : 0.0f;
+            } else if (binding == Binding.GAMEPAD_LEFT_THUMB_LEFT || binding == Binding.GAMEPAD_LEFT_THUMB_RIGHT) {
+                float val2 = (isActionDown && offset == 0.0f) ? 1.0f : Math.abs(offset);
+                state.thumbLX = isActionDown ? binding == Binding.GAMEPAD_LEFT_THUMB_LEFT ? -val2 : val2 : 0.0f;
+            } else if (binding == Binding.GAMEPAD_RIGHT_THUMB_UP || binding == Binding.GAMEPAD_RIGHT_THUMB_DOWN) {
+                float val3 = (isActionDown && offset == 0.0f) ? 1.0f : Math.abs(offset);
+                state.thumbRY = isActionDown ? binding == Binding.GAMEPAD_RIGHT_THUMB_UP ? -val3 : val3 : 0.0f;
+            } else if (binding == Binding.GAMEPAD_RIGHT_THUMB_LEFT || binding == Binding.GAMEPAD_RIGHT_THUMB_RIGHT) {
+                float val4 = (isActionDown && offset == 0.0f) ? 1.0f : Math.abs(offset);
+                state.thumbRX = isActionDown ? binding == Binding.GAMEPAD_RIGHT_THUMB_LEFT ? -val4 : val4 : 0.0f;
+            } else if (binding == Binding.GAMEPAD_DPAD_UP || binding == Binding.GAMEPAD_DPAD_RIGHT || binding == Binding.GAMEPAD_DPAD_DOWN || binding == Binding.GAMEPAD_DPAD_LEFT) {
+                state.dpad[binding.ordinal() - Binding.GAMEPAD_DPAD_UP.ordinal()] = isActionDown;
+            }
+            if (winHandler != null && sendUpdate) {
+                if (controller != null) {
+                    winHandler.sendGamepadState(controller);
+                    return;
+                } else {
+                    winHandler.sendGamepadState();
+                    return;
                 }
+            }
+            return;
+        }
+        if (binding == Binding.MOUSE_MOVE_LEFT || binding == Binding.MOUSE_MOVE_RIGHT) {
+            PointF pointF = this.mouseMoveOffset;
+            if (isActionDown) {
+                if (offset != 0.0f) {
+                    r2 = offset;
+                } else {
+                    r2 = binding != Binding.MOUSE_MOVE_LEFT ? 1 : -1;
+                }
+            }
+            pointF.x = r2;
+            if (isActionDown) {
+                createMouseMoveTimer();
+                return;
+            }
+            return;
+        }
+        if (binding == Binding.MOUSE_MOVE_DOWN || binding == Binding.MOUSE_MOVE_UP) {
+            PointF pointF2 = this.mouseMoveOffset;
+            if (isActionDown) {
+                if (offset != 0.0f) {
+                    r2 = offset;
+                } else {
+                    r2 = binding != Binding.MOUSE_MOVE_UP ? 1 : -1;
+                }
+            }
+            pointF2.y = r2;
+            if (isActionDown) {
+                createMouseMoveTimer();
+                return;
+            }
+            return;
+        }
+        Pointer.Button pointerButton = binding.getPointerButton();
+        if (isActionDown) {
+            if (pointerButton != null) {
+                if (this.xServer.isRelativeMouseMovement()) {
+                    if (pointerButton == Pointer.Button.BUTTON_SCROLL_UP) {
+                        wheelDelta = 120;
+                    } else {
+                        wheelDelta = pointerButton == Pointer.Button.BUTTON_SCROLL_DOWN ? -120 : 0;
+                    }
+                    winHandler.mouseEvent(MouseEventFlags.getFlagFor(pointerButton, true), 0, 0, wheelDelta);
+                    return;
+                }
+                this.xServer.injectPointerButtonPress(pointerButton);
+                return;
+            }
+            this.xServer.injectKeyPress(binding.keycode);
+            return;
+        }
+        if (pointerButton != null) {
+            if (this.xServer.isRelativeMouseMovement()) {
+                winHandler.mouseEvent(MouseEventFlags.getFlagFor(pointerButton, false), 0, 0, 0);
+                return;
+            } else {
+                this.xServer.injectPointerButtonRelease(pointerButton);
+                return;
             }
         }
+        this.xServer.injectKeyRelease(binding.keycode);
     }
 
     public Bitmap getIcon(byte id) {
-        if (icons[id] == null) {
+        if (this.icons[id] == null) {
             Context context = getContext();
-            try (InputStream is = context.getAssets().open("inputcontrols/icons/"+id+".png")) {
-                icons[id] = BitmapFactory.decodeStream(is);
+            try {
+                InputStream is = context.getAssets().open("inputcontrols/icons/" + ((int) id) + ".png");
+                try {
+                    this.icons[id] = BitmapFactory.decodeStream(is);
+                    if (is != null) {
+                        is.close();
+                    }
+                } finally {
+                }
+            } catch (IOException e) {
             }
-            catch (IOException e) {}
         }
-        return icons[id];
+        return this.icons[id];
     }
 }

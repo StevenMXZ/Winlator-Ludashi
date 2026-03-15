@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="horizontal"
+    android:paddingLeft="@dimen/mtrl_calendar_content_padding"
+    android:paddingTop="16dp"
+    android:paddingRight="@dimen/mtrl_calendar_content_padding"
+    android:paddingBottom="16dp"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/mtrl_picker_text_input_range_start"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_weight="1">
+        <com.google.android.material.textfield.TextInputEditText
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/mtrl_picker_text_input_date_range_start_hint"
+            android:inputType="date"
+            android:imeOptions="flagNoExtractUi"/>
+    </com.google.android.material.textfield.TextInputLayout>
+    <Space
+        android:layout_width="8dp"
+        android:layout_height="0dp"/>
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/mtrl_picker_text_input_range_end"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_weight="1">
+        <com.google.android.material.textfield.TextInputEditText
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/mtrl_picker_text_input_date_range_end_hint"
+            android:inputType="date"
+            android:imeOptions="flagNoExtractUi"/>
+    </com.google.android.material.textfield.TextInputLayout>
+</LinearLayout>

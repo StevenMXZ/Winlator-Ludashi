@@ -1,5 +1,6 @@
 package com.winlator.cmod.xserver;
 
+/* loaded from: classes11.dex */
 public abstract class XResource {
     public final int id;
 
@@ -7,8 +8,7 @@ public abstract class XResource {
         this.id = id;
     }
 
-    @Override
     public int hashCode() {
-        return id;
+        return this.id;
     }
 }

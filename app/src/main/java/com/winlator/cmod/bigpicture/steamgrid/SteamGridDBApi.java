@@ -6,25 +6,11 @@ import retrofit2.http.Header;
 import retrofit2.http.Path;
 import retrofit2.http.Query;
 
+/* loaded from: classes14.dex */
 public interface SteamGridDBApi {
+    @GET("grids/game/{gameId}")
+    Call<SteamGridGridsResponse> getGridsByGameId(@Header("Authorization") String str, @Path("gameId") int i, @Query("styles") String str2, @Query("dimensions") String str3, @Query("types") String str4);
 
     @GET("search/autocomplete/{term}")
-    Call<SteamGridSearchResponse> searchGame(
-            @Header("Authorization") String authHeader,
-            @Path("term") String searchTerm
-    );
-
-    // Updated method to fetch grids by game ID with filters
-    @GET("grids/game/{gameId}")
-    Call<SteamGridGridsResponse> getGridsByGameId(
-            @Header("Authorization") String authToken,
-            @Path("gameId") int gameId,
-            @Query("styles") String styles,           // Example: "alternate"
-            @Query("dimensions") String dimensions,   // Example: "600x900"
-            @Query("types") String types              // Example: "static"
-    );
-
-
-
-
+    Call<SteamGridSearchResponse> searchGame(@Header("Authorization") String str, @Path("term") String str2);
 }

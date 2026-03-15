@@ -1,40 +1,43 @@
 package com.winlator.cmod.xenvironment.components;
 
-import com.winlator.cmod.xenvironment.EnvironmentComponent;
-import com.winlator.cmod.xconnector.XConnectorEpoll;
 import com.winlator.cmod.xconnector.UnixSocketConfig;
+import com.winlator.cmod.xconnector.XConnectorEpoll;
+import com.winlator.cmod.xenvironment.EnvironmentComponent;
 import com.winlator.cmod.xserver.XClientConnectionHandler;
 import com.winlator.cmod.xserver.XClientRequestHandler;
 import com.winlator.cmod.xserver.XServer;
 
+/* loaded from: classes10.dex */
 public class XServerComponent extends EnvironmentComponent {
     private XConnectorEpoll connector;
-    private final XServer xServer;
     private final UnixSocketConfig socketConfig;
+    private final XServer xServer;
 
     public XServerComponent(XServer xServer, UnixSocketConfig socketConfig) {
         this.xServer = xServer;
         this.socketConfig = socketConfig;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xenvironment.EnvironmentComponent
     public void start() {
-        if (connector != null) return;
-        connector = new XConnectorEpoll(socketConfig, new XClientConnectionHandler(xServer), new XClientRequestHandler());
-        connector.setInitialInputBufferCapacity(262144);
-        connector.setCanReceiveAncillaryMessages(true);
-        connector.start();
+        if (this.connector != null) {
+            return;
+        }
+        this.connector = new XConnectorEpoll(this.socketConfig, new XClientConnectionHandler(this.xServer), new XClientRequestHandler());
+        this.connector.setInitialInputBufferCapacity(262144);
+        this.connector.setCanReceiveAncillaryMessages(true);
+        this.connector.start();
     }
 
-    @Override
+    @Override // com.winlator.cmod.xenvironment.EnvironmentComponent
     public void stop() {
-        if (connector != null) {
-            connector.stop();
-            connector = null;
+        if (this.connector != null) {
+            this.connector.stop();
+            this.connector = null;
         }
     }
 
     public XServer getXServer() {
-        return xServer;
+        return this.xServer;
     }
 }

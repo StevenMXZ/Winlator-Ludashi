@@ -3,6 +3,7 @@ package com.winlator.cmod.core;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+/* loaded from: classes10.dex */
 public class MSLogFont {
     private int height = -11;
     private int width = 0;
@@ -20,7 +21,7 @@ public class MSLogFont {
     private String faceName = "Tahoma";
 
     public int getHeight() {
-        return height;
+        return this.height;
     }
 
     public MSLogFont setHeight(int height) {
@@ -29,7 +30,7 @@ public class MSLogFont {
     }
 
     public int getWidth() {
-        return width;
+        return this.width;
     }
 
     public MSLogFont setWidth(int width) {
@@ -38,7 +39,7 @@ public class MSLogFont {
     }
 
     public int getEscapement() {
-        return escapement;
+        return this.escapement;
     }
 
     public MSLogFont setEscapement(int escapement) {
@@ -47,7 +48,7 @@ public class MSLogFont {
     }
 
     public int getOrientation() {
-        return orientation;
+        return this.orientation;
     }
 
     public MSLogFont setOrientation(int orientation) {
@@ -56,7 +57,7 @@ public class MSLogFont {
     }
 
     public int getWeight() {
-        return weight;
+        return this.weight;
     }
 
     public MSLogFont setWeight(int weight) {
@@ -65,7 +66,7 @@ public class MSLogFont {
     }
 
     public byte getItalic() {
-        return italic;
+        return this.italic;
     }
 
     public MSLogFont setItalic(byte italic) {
@@ -74,7 +75,7 @@ public class MSLogFont {
     }
 
     public byte getUnderline() {
-        return underline;
+        return this.underline;
     }
 
     public MSLogFont setUnderline(byte underline) {
@@ -83,7 +84,7 @@ public class MSLogFont {
     }
 
     public byte getStrikeOut() {
-        return strikeOut;
+        return this.strikeOut;
     }
 
     public MSLogFont setStrikeOut(byte strikeOut) {
@@ -92,7 +93,7 @@ public class MSLogFont {
     }
 
     public byte getCharSet() {
-        return charSet;
+        return this.charSet;
     }
 
     public MSLogFont setCharSet(byte charSet) {
@@ -101,7 +102,7 @@ public class MSLogFont {
     }
 
     public byte getOutPrecision() {
-        return outPrecision;
+        return this.outPrecision;
     }
 
     public MSLogFont setOutPrecision(byte outPrecision) {
@@ -110,7 +111,7 @@ public class MSLogFont {
     }
 
     public byte getClipPrecision() {
-        return clipPrecision;
+        return this.clipPrecision;
     }
 
     public MSLogFont setClipPrecision(byte clipPrecision) {
@@ -119,7 +120,7 @@ public class MSLogFont {
     }
 
     public byte getQuality() {
-        return quality;
+        return this.quality;
     }
 
     public MSLogFont setQuality(byte quality) {
@@ -128,7 +129,7 @@ public class MSLogFont {
     }
 
     public byte getPitchAndFamily() {
-        return pitchAndFamily;
+        return this.pitchAndFamily;
     }
 
     public MSLogFont setPitchAndFamily(byte pitchAndFamily) {
@@ -137,7 +138,7 @@ public class MSLogFont {
     }
 
     public String getFaceName() {
-        return faceName;
+        return this.faceName;
     }
 
     public MSLogFont setFaceName(String faceName) {
@@ -147,21 +148,22 @@ public class MSLogFont {
 
     public byte[] toByteArray() {
         ByteBuffer data = ByteBuffer.allocate(92).order(ByteOrder.LITTLE_ENDIAN);
-        data.putInt(height);
-        data.putInt(width);
-        data.putInt(escapement);
-        data.putInt(orientation);
-        data.putInt(weight);
-        data.put(italic);
-        data.put(underline);
-        data.put(strikeOut);
-        data.put(charSet);
-        data.put(outPrecision);
-        data.put(clipPrecision);
-        data.put(quality);
-        data.put(pitchAndFamily);
-
-        for (int i = 0; i < faceName.length(); i++) data.putChar(faceName.charAt(i));
+        data.putInt(this.height);
+        data.putInt(this.width);
+        data.putInt(this.escapement);
+        data.putInt(this.orientation);
+        data.putInt(this.weight);
+        data.put(this.italic);
+        data.put(this.underline);
+        data.put(this.strikeOut);
+        data.put(this.charSet);
+        data.put(this.outPrecision);
+        data.put(this.clipPrecision);
+        data.put(this.quality);
+        data.put(this.pitchAndFamily);
+        for (int i = 0; i < this.faceName.length(); i++) {
+            data.putChar(this.faceName.charAt(i));
+        }
         return data.array();
     }
 }

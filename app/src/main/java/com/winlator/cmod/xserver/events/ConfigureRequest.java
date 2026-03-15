@@ -4,20 +4,20 @@ import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
 import com.winlator.cmod.xserver.Bitmask;
 import com.winlator.cmod.xserver.Window;
-
 import java.io.IOException;
 
+/* loaded from: classes6.dex */
 public class ConfigureRequest extends Event {
-    private final Window parent;
-    private final Window window;
-    private final Window sibling;
-    private final short x;
-    private final short y;
-    private final short width;
-    private final short height;
     private final short borderWidth;
+    private final short height;
+    private final Window parent;
+    private final Window sibling;
     private final Window.StackMode stackMode;
     private final Bitmask valueMask;
+    private final short width;
+    private final Window window;
+    private final short x;
+    private final short y;
 
     public ConfigureRequest(Window parent, Window window, Window sibling, short x, short y, short width, short height, short borderWidth, Window.StackMode stackMode, Bitmask valueMask) {
         super(23);
@@ -33,22 +33,35 @@ public class ConfigureRequest extends Event {
         this.valueMask = valueMask;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.events.Event
     public void send(short sequenceNumber, XOutputStream outputStream) throws IOException {
-        try (XStreamLock lock = outputStream.lock()) {
-            outputStream.writeByte(code);
-            outputStream.writeByte((byte)stackMode.ordinal());
+        XStreamLock lock = outputStream.lock();
+        try {
+            outputStream.writeByte(this.code);
+            outputStream.writeByte((byte) this.stackMode.ordinal());
             outputStream.writeShort(sequenceNumber);
-            outputStream.writeInt(parent.id);
-            outputStream.writeInt(window.id);
-            outputStream.writeInt(sibling != null ? sibling.id : 0);
-            outputStream.writeShort(x);
-            outputStream.writeShort(y);
-            outputStream.writeShort(width);
-            outputStream.writeShort(height);
-            outputStream.writeShort(borderWidth);
-            outputStream.writeShort((short)valueMask.getBits());
+            outputStream.writeInt(this.parent.id);
+            outputStream.writeInt(this.window.id);
+            outputStream.writeInt(this.sibling != null ? this.sibling.id : 0);
+            outputStream.writeShort(this.x);
+            outputStream.writeShort(this.y);
+            outputStream.writeShort(this.width);
+            outputStream.writeShort(this.height);
+            outputStream.writeShort(this.borderWidth);
+            outputStream.writeShort((short) this.valueMask.getBits());
             outputStream.writePad(4);
+            if (lock != null) {
+                lock.close();
+            }
+        } catch (Throwable th) {
+            if (lock != null) {
+                try {
+                    lock.close();
+                } catch (Throwable th2) {
+                    th.addSuppressed(th2);
+                }
+            }
+            throw th;
         }
     }
 }

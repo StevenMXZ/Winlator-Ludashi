@@ -2,9 +2,10 @@ package com.winlator.cmod.core;
 
 import android.content.res.Resources;
 
+/* loaded from: classes10.dex */
 public class UnitUtils {
     public static float dpToPx(float dp) {
-        return dp * Resources.getSystem().getDisplayMetrics().density;
+        return Resources.getSystem().getDisplayMetrics().density * dp;
     }
 
     public static float pxToDp(float px) {

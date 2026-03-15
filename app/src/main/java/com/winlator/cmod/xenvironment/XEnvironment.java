@@ -1,18 +1,17 @@
 package com.winlator.cmod.xenvironment;
 
 import android.content.Context;
-
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.xenvironment.components.GuestProgramLauncherComponent;
-
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Iterator;
 
+/* loaded from: classes12.dex */
 public class XEnvironment implements Iterable<EnvironmentComponent> {
+    private final ArrayList<EnvironmentComponent> components = new ArrayList<>();
     private final Context context;
     private final ImageFs imageFs;
-    private final ArrayList<EnvironmentComponent> components = new ArrayList<>();
 
     public XEnvironment(Context context, ImageFs imageFs) {
         this.context = context;
@@ -20,55 +19,71 @@ public class XEnvironment implements Iterable<EnvironmentComponent> {
     }
 
     public Context getContext() {
-        return context;
+        return this.context;
     }
 
     public ImageFs getImageFs() {
-        return imageFs;
+        return this.imageFs;
     }
 
     public void addComponent(EnvironmentComponent environmentComponent) {
         environmentComponent.environment = this;
-        components.add(environmentComponent);
+        this.components.add(environmentComponent);
     }
 
     public <T extends EnvironmentComponent> T getComponent(Class<T> componentClass) {
-        for (EnvironmentComponent component : components) {
-            if (component.getClass() == componentClass) return (T)component;
+        Iterator<EnvironmentComponent> it = this.components.iterator();
+        while (it.hasNext()) {
+            T t = (T) it.next();
+            if (t.getClass() == componentClass) {
+                return t;
+            }
         }
         return null;
     }
 
-    @Override
+    @Override // java.lang.Iterable
     public Iterator<EnvironmentComponent> iterator() {
-        return components.iterator();
+        return this.components.iterator();
     }
 
     public File getTmpDir() {
-        File tmpDir = new File(context.getFilesDir(), "tmp");
+        File tmpDir = new File(this.context.getFilesDir(), "tmp");
         if (!tmpDir.isDirectory()) {
             tmpDir.mkdirs();
-            FileUtils.chmod(tmpDir, 0771);
+            FileUtils.chmod(tmpDir, 505);
         }
         return tmpDir;
     }
 
     public void startEnvironmentComponents() {
         FileUtils.clear(getTmpDir());
-        for (EnvironmentComponent environmentComponent : this) environmentComponent.start();
+        Iterator<EnvironmentComponent> it = iterator();
+        while (it.hasNext()) {
+            EnvironmentComponent environmentComponent = it.next();
+            environmentComponent.start();
+        }
     }
 
     public void stopEnvironmentComponents() {
-        for (EnvironmentComponent environmentComponent : this) environmentComponent.stop();
+        Iterator<EnvironmentComponent> it = iterator();
+        while (it.hasNext()) {
+            EnvironmentComponent environmentComponent = it.next();
+            environmentComponent.stop();
+        }
     }
 
     public void onPause() {
-        GuestProgramLauncherComponent guestProgramLauncherComponent = getComponent(GuestProgramLauncherComponent.class);
-        if (guestProgramLauncherComponent != null) guestProgramLauncherComponent.suspendProcess();
+        GuestProgramLauncherComponent guestProgramLauncherComponent = (GuestProgramLauncherComponent) getComponent(GuestProgramLauncherComponent.class);
+        if (guestProgramLauncherComponent != null) {
+            guestProgramLauncherComponent.suspendProcess();
+        }
     }
 
     public void onResume() {
-        GuestProgramLauncherComponent guestProgramLauncherComponent = getComponent(GuestProgramLauncherComponent.class);
-        if (guestProgramLauncherComponent != null) guestProgramLauncherComponent.resumeProcess();
+        GuestProgramLauncherComponent guestProgramLauncherComponent = (GuestProgramLauncherComponent) getComponent(GuestProgramLauncherComponent.class);
+        if (guestProgramLauncherComponent != null) {
+            guestProgramLauncherComponent.resumeProcess();
+        }
     }
 }

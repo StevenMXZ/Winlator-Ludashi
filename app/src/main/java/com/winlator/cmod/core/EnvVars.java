@@ -1,84 +1,88 @@
 package com.winlator.cmod.core;
 
-import androidx.annotation.NonNull;
-
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 
+/* loaded from: classes10.dex */
 public class EnvVars implements Iterable<String> {
     private final LinkedHashMap<String, String> data = new LinkedHashMap<>();
 
-    public EnvVars() {}
+    public EnvVars() {
+    }
 
     public EnvVars(String values) {
         putAll(values);
     }
 
     public void put(String name, Object value) {
-        data.put(name, String.valueOf(value));
+        this.data.put(name, String.valueOf(value));
     }
 
     public void putAll(String values) {
-        if (values == null || values.isEmpty()) return;
+        if (values == null || values.isEmpty()) {
+            return;
+        }
         String[] parts = values.split(" ");
         for (String part : parts) {
             int index = part.indexOf("=");
             String name = part.substring(0, index);
-            String value = part.substring(index+1);
-            data.put(name, value);
+            String value = part.substring(index + 1);
+            this.data.put(name, value);
         }
     }
 
     public void putAll(EnvVars envVars) {
-        data.putAll(envVars.data);
+        this.data.putAll(envVars.data);
     }
 
     public String get(String name) {
-        return data.getOrDefault(name, "");
+        return this.data.getOrDefault(name, "");
     }
 
     public void remove(String name) {
-        data.remove(name);
+        this.data.remove(name);
     }
 
     public boolean has(String name) {
-        return data.containsKey(name);
+        return this.data.containsKey(name);
     }
 
     public void clear() {
-        data.clear();
+        this.data.clear();
     }
 
     public boolean isEmpty() {
-        return data.isEmpty();
+        return this.data.isEmpty();
     }
 
-    @NonNull
-    @Override
     public String toString() {
         return String.join(" ", toStringArray());
     }
 
     public String toEscapedString() {
         String result = "";
-        for (String key : data.keySet()) {
-            if (!result.isEmpty()) result += " ";
-            String value = data.get(key);
-            result += key+"="+value.replace(" ", "\\ ");
+        for (String key : this.data.keySet()) {
+            if (!result.isEmpty()) {
+                result = result + " ";
+            }
+            String value = this.data.get(key);
+            result = result + key + "=" + value.replace(" ", "\\ ");
         }
         return result;
     }
 
     public String[] toStringArray() {
-        String[] stringArray = new String[data.size()];
+        String[] stringArray = new String[this.data.size()];
         int index = 0;
-        for (String key : data.keySet()) stringArray[index++] = key+"="+data.get(key);
+        for (String key : this.data.keySet()) {
+            stringArray[index] = key + "=" + this.data.get(key);
+            index++;
+        }
         return stringArray;
     }
 
-    @NonNull
-    @Override
+    @Override // java.lang.Iterable
     public Iterator<String> iterator() {
-        return data.keySet().iterator();
+        return this.data.keySet().iterator();
     }
 }

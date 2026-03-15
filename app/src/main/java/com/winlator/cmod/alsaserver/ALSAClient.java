@@ -1,99 +1,121 @@
 package com.winlator.cmod.alsaserver;
 
 import com.winlator.cmod.sysvshm.SysVSharedMemory;
-
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+/* loaded from: classes7.dex */
 public class ALSAClient {
-    public enum DataType {
-        U8(1), S16LE(2), S16BE(2), FLOATLE(4), FLOATBE(4);
-        public final byte byteCount;
-
-        DataType(int byteCount) {
-            this.byteCount = (byte)byteCount;
-        }
-    }
+    private int bufferSize;
+    private int frameBytes;
+    private int position;
+    private ByteBuffer sharedBuffer;
     private DataType dataType = DataType.U8;
     private byte channelCount = 2;
     private int sampleRate = 0;
-    private int position;
-    private int bufferSize;
-    private int frameBytes;
-    private ByteBuffer sharedBuffer;
     private boolean playing = false;
     private long streamPtr = 0;
+
+    private native void close(long j);
+
+    private native long create(int i, byte b, int i2, int i3);
+
+    private native void flush(long j);
+
+    private native void pause(long j);
+
+    private native void start(long j);
+
+    private native void stop(long j);
+
+    private native int write(long j, ByteBuffer byteBuffer, int i);
+
+    public enum DataType {
+        U8(1),
+        S16LE(2),
+        S16BE(2),
+        FLOATLE(4),
+        FLOATBE(4);
+
+        public final byte byteCount;
+
+        DataType(int byteCount) {
+            this.byteCount = (byte) byteCount;
+        }
+    }
 
     static {
         System.loadLibrary("winlator");
     }
 
     public void release() {
-        if (sharedBuffer != null) {
-            SysVSharedMemory.unmapSHMSegment(sharedBuffer, sharedBuffer.capacity());
-            sharedBuffer = null;
+        if (this.sharedBuffer != null) {
+            SysVSharedMemory.unmapSHMSegment(this.sharedBuffer, this.sharedBuffer.capacity());
+            this.sharedBuffer = null;
         }
-
-        stop(streamPtr);
-        close(streamPtr);
-        playing = false;
-        streamPtr = 0;
+        stop(this.streamPtr);
+        close(this.streamPtr);
+        this.playing = false;
+        this.streamPtr = 0L;
     }
 
     public void prepare() {
-        position = 0;
-        frameBytes = channelCount * dataType.byteCount;
+        this.position = 0;
+        this.frameBytes = this.channelCount * this.dataType.byteCount;
         release();
-
-        if (!isValidBufferSize()) return;
-
-        streamPtr = create(dataType.ordinal(), channelCount, sampleRate, bufferSize);
-        if (streamPtr > 0) start();
+        if (isValidBufferSize()) {
+            this.streamPtr = create(this.dataType.ordinal(), this.channelCount, this.sampleRate, this.bufferSize);
+            if (this.streamPtr > 0) {
+                start();
+            }
+        }
     }
 
     public void start() {
-        if (streamPtr > 0 && !playing) {
-            start(streamPtr);
-            playing = true;
+        if (this.streamPtr > 0 && !this.playing) {
+            start(this.streamPtr);
+            this.playing = true;
         }
     }
 
     public void stop() {
-        if (streamPtr > 0 && playing) {
-            stop(streamPtr);
-            playing = false;
+        if (this.streamPtr > 0 && this.playing) {
+            stop(this.streamPtr);
+            this.playing = false;
         }
     }
 
     public void pause() {
-        if (streamPtr > 0) {
-            pause(streamPtr);
-            playing = false;
+        if (this.streamPtr > 0) {
+            pause(this.streamPtr);
+            this.playing = false;
         }
     }
 
     public void drain() {
-        if (streamPtr > 0) flush(streamPtr);
+        if (this.streamPtr > 0) {
+            flush(this.streamPtr);
+        }
     }
 
     public void writeDataToStream(ByteBuffer data) {
-        if (dataType == DataType.S16LE || dataType == DataType.FLOATLE) {
+        if (this.dataType == DataType.S16LE || this.dataType == DataType.FLOATLE) {
             data.order(ByteOrder.LITTLE_ENDIAN);
-        }
-        else if (dataType == DataType.S16BE || dataType == DataType.FLOATBE) {
+        } else if (this.dataType == DataType.S16BE || this.dataType == DataType.FLOATBE) {
             data.order(ByteOrder.BIG_ENDIAN);
         }
-
-        if (playing) {
-            int numFrames = data.limit() / frameBytes;
-            int framesWritten = write(streamPtr, data, numFrames);
-            if (framesWritten > 0) position += framesWritten;
+        if (this.playing) {
+            int numFrames = data.limit() / this.frameBytes;
+            int framesWritten = write(this.streamPtr, data, numFrames);
+            if (framesWritten > 0) {
+                this.position += framesWritten;
+            }
             data.rewind();
         }
     }
 
     public int pointer() {
-        return position;
+        return this.position;
     }
 
     public void setDataType(DataType dataType) {
@@ -101,7 +123,7 @@ public class ALSAClient {
     }
 
     public void setChannelCount(int channelCount) {
-        this.channelCount = (byte)channelCount;
+        this.channelCount = (byte) channelCount;
     }
 
     public void setSampleRate(int sampleRate) {
@@ -113,7 +135,7 @@ public class ALSAClient {
     }
 
     public ByteBuffer getSharedBuffer() {
-        return sharedBuffer;
+        return this.sharedBuffer;
     }
 
     public void setSharedBuffer(ByteBuffer sharedBuffer) {
@@ -121,44 +143,30 @@ public class ALSAClient {
     }
 
     public DataType getDataType() {
-        return dataType;
+        return this.dataType;
     }
 
     public byte getChannelCount() {
-        return channelCount;
+        return this.channelCount;
     }
 
     public int getSampleRate() {
-        return sampleRate;
+        return this.sampleRate;
     }
 
     public int getBufferSize() {
-        return bufferSize;
+        return this.bufferSize;
     }
 
     public int getBufferSizeInBytes() {
-        return bufferSize * frameBytes;
+        return this.bufferSize * this.frameBytes;
     }
 
     private boolean isValidBufferSize() {
-        return (getBufferSizeInBytes() % frameBytes == 0) && bufferSize > 0;
+        return getBufferSizeInBytes() % this.frameBytes == 0 && this.bufferSize > 0;
     }
 
     public int computeLatencyMillis() {
-        return (int)(((float)bufferSize / sampleRate) * 1000);
+        return (int) ((this.bufferSize / this.sampleRate) * 1000.0f);
     }
-
-    private native long create(int format, byte channelCount, int sampleRate, int bufferSize);
-
-    private native int write(long streamPtr, ByteBuffer buffer, int numFrames);
-
-    private native void start(long streamPtr);
-
-    private native void stop(long streamPtr);
-
-    private native void pause(long streamPtr);
-
-    private native void flush(long streamPtr);
-
-    private native void close(long streamPtr);
 }

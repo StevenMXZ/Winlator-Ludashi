@@ -1,11 +1,11 @@
 package com.winlator.cmod.xconnector;
 
 import com.winlator.cmod.xserver.XServer;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+/* loaded from: classes13.dex */
 public class XInputStream {
     private ByteBuffer activeBuffer;
     private ByteBuffer buffer;
@@ -21,96 +21,97 @@ public class XInputStream {
     }
 
     public int readMoreData(boolean canReceiveAncillaryMessages) throws IOException {
-        if (activeBuffer != null) {
-            if (!activeBuffer.hasRemaining()) {
-                buffer.clear();
+        if (this.activeBuffer != null) {
+            if (!this.activeBuffer.hasRemaining()) {
+                this.buffer.clear();
+            } else if (this.activeBuffer.position() > 0) {
+                int newLimit = this.buffer.position();
+                this.buffer.position(this.activeBuffer.position()).limit(newLimit);
+                this.buffer.compact();
             }
-            else if (activeBuffer.position() > 0) {
-                int newLimit = buffer.position();
-                buffer.position(activeBuffer.position()).limit(newLimit);
-                buffer.compact();
-            }
-            activeBuffer = null;
+            this.activeBuffer = null;
         }
-
         growInputBufferIfNecessary();
-        int bytesRead = canReceiveAncillaryMessages ? clientSocket.recvAncillaryMsg(buffer) : clientSocket.read(buffer);
-
+        ClientSocket clientSocket = this.clientSocket;
+        ByteBuffer byteBuffer = this.buffer;
+        int bytesRead = canReceiveAncillaryMessages ? clientSocket.recvAncillaryMsg(byteBuffer) : clientSocket.read(byteBuffer);
         if (bytesRead > 0) {
-            int position = buffer.position();
-            buffer.flip();
-            activeBuffer = buffer.slice().order(buffer.order());
-            buffer.limit(buffer.capacity()).position(position);
+            int position = this.buffer.position();
+            this.buffer.flip();
+            this.activeBuffer = this.buffer.slice().order(this.buffer.order());
+            this.buffer.limit(this.buffer.capacity()).position(position);
         }
         return bytesRead;
     }
 
     public int getAncillaryFd() {
-        return clientSocket.getAncillaryFd();
+        return this.clientSocket.getAncillaryFd();
     }
 
     private void growInputBufferIfNecessary() {
-        if (buffer.position() == buffer.capacity()) {
-            ByteBuffer newBuffer = ByteBuffer.allocateDirect(buffer.capacity() * 2).order(buffer.order());
-            buffer.rewind();
-            newBuffer.put(buffer);
-            buffer = newBuffer;
+        if (this.buffer.position() == this.buffer.capacity()) {
+            ByteBuffer newBuffer = ByteBuffer.allocateDirect(this.buffer.capacity() * 2).order(this.buffer.order());
+            this.buffer.rewind();
+            newBuffer.put(this.buffer);
+            this.buffer = newBuffer;
         }
     }
 
     public void setByteOrder(ByteOrder byteOrder) {
-        buffer.order(byteOrder);
-        if (activeBuffer != null) activeBuffer.order(byteOrder);
+        this.buffer.order(byteOrder);
+        if (this.activeBuffer != null) {
+            this.activeBuffer.order(byteOrder);
+        }
     }
 
     public int getActivePosition() {
-        return activeBuffer.position();
+        return this.activeBuffer.position();
     }
 
     public void setActivePosition(int activePosition) {
-        activeBuffer.position(activePosition);
+        this.activeBuffer.position(activePosition);
     }
 
     public int available() {
-        return activeBuffer.remaining();
+        return this.activeBuffer.remaining();
     }
 
     public byte readByte() {
-        return activeBuffer.get();
+        return this.activeBuffer.get();
     }
 
     public int readUnsignedByte() {
-        return Byte.toUnsignedInt(activeBuffer.get());
+        return Byte.toUnsignedInt(this.activeBuffer.get());
     }
 
     public short readShort() {
-        return activeBuffer.getShort();
+        return this.activeBuffer.getShort();
     }
 
     public int readUnsignedShort() {
-        return Short.toUnsignedInt(activeBuffer.getShort());
+        return Short.toUnsignedInt(this.activeBuffer.getShort());
     }
 
     public int readInt() {
-        return activeBuffer.getInt();
+        return this.activeBuffer.getInt();
     }
 
     public long readUnsignedInt() {
-        return Integer.toUnsignedLong(activeBuffer.getInt());
+        return Integer.toUnsignedLong(this.activeBuffer.getInt());
     }
 
     public long readLong() {
-        return activeBuffer.getLong();
+        return this.activeBuffer.getLong();
     }
 
     public void read(byte[] result) {
-        activeBuffer.get(result);
+        this.activeBuffer.get(result);
     }
 
     public ByteBuffer readByteBuffer(int length) {
-        ByteBuffer newBuffer = activeBuffer.slice().order(activeBuffer.order());
+        ByteBuffer newBuffer = this.activeBuffer.slice().order(this.activeBuffer.order());
         newBuffer.limit(length);
-        activeBuffer.position(activeBuffer.position() + length);
+        this.activeBuffer.position(this.activeBuffer.position() + length);
         return newBuffer;
     }
 
@@ -118,11 +119,13 @@ public class XInputStream {
         byte[] bytes = new byte[length];
         read(bytes);
         String str = new String(bytes, XServer.LATIN1_CHARSET);
-        if ((-length & 3) > 0) skip(-length & 3);
+        if (((-length) & 3) > 0) {
+            skip((-length) & 3);
+        }
         return str;
     }
 
     public void skip(int length) {
-        activeBuffer.position(activeBuffer.position() + length);
+        this.activeBuffer.position(this.activeBuffer.position() + length);
     }
 }

@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<accessibility-service
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity=".LoriePreferences"
     android:accessibilityEventTypes=""
+    android:packageNames="@null"
     android:accessibilityFlags=""
     android:canRetrieveWindowContent="false"
-    android:settingsActivity=".LoriePreferences"
-    android:packageNames="@null"
-    android:canRequestFilterKeyEvents="true" />
+    android:canRequestFilterKeyEvents="true"/>

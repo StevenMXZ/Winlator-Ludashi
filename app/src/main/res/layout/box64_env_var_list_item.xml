@@ -1,55 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:gravity="center_vertical"
     android:orientation="horizontal"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:gravity="center_vertical">
-
+    android:layout_height="wrap_content">
     <FrameLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:layout_marginRight="4dp">
-
+        android:layout_marginRight="4dp"
+        android:layout_weight="1">
         <TextView
-            android:id="@+id/TextView"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
             android:ellipsize="start"
+            android:id="@+id/TextView"
             android:paddingRight="22dp"
-            android:maxLines="1" />
-
-        <ImageView
-            android:id="@+id/BTHelp"
-            style="@style/HelpButton"
-            android:layout_gravity="right" />
-    </FrameLayout>
-
-    <LinearLayout
-        android:layout_width="100dp"
-        android:layout_height="42dp"
-        android:gravity="center"
-        android:orientation="horizontal">
-
-        <Spinner
-            style="@style/ComboBox"
-            android:layout_width="match_parent"
-            android:id="@+id/Spinner"
-            android:visibility="gone" />
-
-        <EditText
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:maxLines="1"/>
+        <ImageView
+            android:layout_gravity="right"
+            android:id="@+id/BTHelp"
+            style="@style/HelpButton"/>
+    </FrameLayout>
+    <LinearLayout
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:layout_width="100dp"
+        android:layout_height="42dp">
+        <Spinner
+            android:id="@+id/Spinner"
+            android:visibility="gone"
+            android:layout_width="match_parent"
+            style="@style/ComboBox"/>
+        <EditText
             android:id="@+id/EditText"
-            android:visibility="gone" />
-
+            android:visibility="gone"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
         <ToggleButton
             android:id="@+id/ToggleButton"
-            android:layout_width="64dp"
-            android:layout_height="32dp"
             android:background="@drawable/toggle_button_selector"
             android:visibility="gone"
+            android:layout_width="64dp"
+            android:layout_height="32dp"
             android:textOn=""
-            android:textOff="" />
+            android:textOff=""/>
     </LinearLayout>
 </LinearLayout>

@@ -9,6 +9,7 @@ import com.winlator.cmod.xserver.errors.BadDrawable;
 import com.winlator.cmod.xserver.errors.BadIdChoice;
 import com.winlator.cmod.xserver.errors.XRequestError;
 
+/* loaded from: classes4.dex */
 public abstract class PixmapRequests {
     public static void createPixmap(XClient client, XInputStream inputStream, XOutputStream outputStream) throws XRequestError {
         byte depth = client.getRequestData();
@@ -16,16 +17,21 @@ public abstract class PixmapRequests {
         int drawableId = inputStream.readInt();
         short width = inputStream.readShort();
         short height = inputStream.readShort();
-
-        if (!client.isValidResourceId(pixmapId)) throw new BadIdChoice(pixmapId);
-
+        if (!client.isValidResourceId(pixmapId)) {
+            throw new BadIdChoice(pixmapId);
+        }
         Drawable drawable = client.xServer.drawableManager.getDrawable(drawableId);
-        if (drawable == null) throw new BadDrawable(drawableId);
-
+        if (drawable == null) {
+            throw new BadDrawable(drawableId);
+        }
         Drawable backingStore = client.xServer.drawableManager.createDrawable(pixmapId, width, height, depth);
-        if (backingStore == null) throw new BadIdChoice(pixmapId);
+        if (backingStore == null) {
+            throw new BadIdChoice(pixmapId);
+        }
         Pixmap pixmap = client.xServer.pixmapManager.createPixmap(backingStore);
-        if (pixmap == null) throw new BadIdChoice(pixmapId);
+        if (pixmap == null) {
+            throw new BadIdChoice(pixmapId);
+        }
         client.registerAsOwnerOfResource(pixmap);
     }
 

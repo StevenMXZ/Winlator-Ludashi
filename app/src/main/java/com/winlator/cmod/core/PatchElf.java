@@ -1,66 +1,79 @@
 package com.winlator.cmod.core;
 
-import androidx.annotation.NonNull;
-
 import java.io.File;
 
+/* loaded from: classes10.dex */
 public class PatchElf {
+    private long elfInstancePtr = 0;
+    private File elfFile = null;
+
+    private native boolean addNeeded(long j, String str);
+
+    private native boolean addRPath(long j, String str);
+
+    private native long createElfObject(String str);
+
+    private native boolean destroyElfObject(long j);
+
+    private native String getInterpreter(long j);
+
+    private native String[] getNeeded(long j);
+
+    private native String getOsAbi(long j);
+
+    private native String[] getRPath(long j);
+
+    private native String getSoName(long j);
+
+    private native boolean isChanged(long j);
+
+    private native boolean removeNeeded(long j, String str);
+
+    private native boolean removeRPath(long j, String str);
+
+    private native boolean replaceOsAbi(long j, String str);
+
+    private native boolean replaceSoName(long j, String str);
+
+    private native boolean setInterpreter(long j, String str);
+
     static {
         System.loadLibrary("winlator");
     }
 
-    private long elfInstancePtr = 0;
-    private File elfFile = null;
-
     public boolean loadElf(File file) {
-        if (elfInstancePtr != 0 || !file.exists() || file.isDirectory())
+        if (this.elfInstancePtr != 0 || !file.exists() || file.isDirectory()) {
             return false;
-        elfInstancePtr = createElfObject(file.getAbsolutePath());
-        if (elfInstancePtr != 0) {
-            elfFile = file;
-            return true;
         }
-        return false;
+        this.elfInstancePtr = createElfObject(file.getAbsolutePath());
+        if (this.elfInstancePtr == 0) {
+            return false;
+        }
+        this.elfFile = file;
+        return true;
     }
 
-    public boolean loadElf(@NonNull String path) {
+    public boolean loadElf(String path) {
         return loadElf(new File(path));
     }
 
     public void unloadElf() {
-        if (elfInstancePtr != 0)
-            destroyElfObject(elfInstancePtr);
+        if (this.elfInstancePtr != 0) {
+            destroyElfObject(this.elfInstancePtr);
+        }
     }
 
-    public boolean saveElf(@NonNull File file) {
-        if (file != elfFile && !file.exists()) {
-            // TODO: save elf file
+    public boolean saveElf(File file) {
+        if (file != this.elfFile && !file.exists()) {
             return true;
         }
         return false;
     }
 
     public boolean saveElf() {
-        if (elfFile == null)
+        if (this.elfFile == null) {
             return false;
-        return saveElf(elfFile);
+        }
+        return saveElf(this.elfFile);
     }
-
-    // TODO: implement these ops.
-
-    private native long createElfObject(String path);
-    private native boolean destroyElfObject(long objectPtr);
-    private native boolean isChanged(long objectPtr);
-    private native String getInterpreter(long objectPtr);
-    private native boolean setInterpreter(long objectPtr, String interpreter);
-    private native String getOsAbi(long objectPtr);
-    private native boolean replaceOsAbi(long objectPtr, String osAbi);
-    private native String getSoName(long objectPtr);
-    private native boolean replaceSoName(long objectPtr, String soName);
-    private native String[] getRPath(long objectPtr);
-    private native boolean addRPath(long objectPtr, String rpath);
-    private native boolean removeRPath(long objectPtr, String rpath);
-    private native String[] getNeeded(long objectPtr);
-    private native boolean addNeeded(long objectPtr, String needed);
-    private native boolean removeNeeded(long objectPtr, String needed);
 }

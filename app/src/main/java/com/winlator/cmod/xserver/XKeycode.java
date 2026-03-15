@@ -1,5 +1,6 @@
 package com.winlator.cmod.xserver;
 
+/* loaded from: classes11.dex */
 public enum XKeycode {
     KEY_NONE(0),
     KEY_ESC(9),
@@ -103,9 +104,10 @@ public enum XKeycode {
     KEY_INSERT(118),
     KEY_DEL(119),
     KEY_MAX(KEY_DEL.id);
+
     public final byte id;
 
     XKeycode(int id) {
-        this.id = (byte)id;
+        this.id = (byte) id;
     }
 }

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+    <TextView
+        android:textAppearance="@style/TextAppearance.AppCompat.Tooltip"
+        android:textColor="?attr/tooltipForegroundColor"
+        android:ellipsize="end"
+        android:id="@+id/message"
+        android:background="?attr/tooltipFrameBackground"
+        android:paddingLeft="@dimen/tooltip_horizontal_padding"
+        android:paddingTop="@dimen/tooltip_vertical_padding"
+        android:paddingRight="@dimen/tooltip_horizontal_padding"
+        android:paddingBottom="@dimen/tooltip_vertical_padding"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/tooltip_margin"
+        android:maxWidth="256dp"
+        android:maxLines="3"
+        android:paddingStart="@dimen/tooltip_horizontal_padding"
+        android:paddingEnd="@dimen/tooltip_horizontal_padding"/>
+</LinearLayout>

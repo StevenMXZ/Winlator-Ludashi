@@ -9,6 +9,7 @@ import com.winlator.cmod.xenvironment.EnvironmentComponent;
 import com.winlator.cmod.xserver.SHMSegmentManager;
 import com.winlator.cmod.xserver.XServer;
 
+/* loaded from: classes10.dex */
 public class SysVSharedMemoryComponent extends EnvironmentComponent {
     private XConnectorEpoll connector;
     public final UnixSocketConfig socketConfig;
@@ -20,23 +21,23 @@ public class SysVSharedMemoryComponent extends EnvironmentComponent {
         this.socketConfig = socketConfig;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xenvironment.EnvironmentComponent
     public void start() {
-        if (connector != null) return;
-        sysVSharedMemory = new SysVSharedMemory();
-        connector = new XConnectorEpoll(socketConfig, new SysVSHMConnectionHandler(sysVSharedMemory), new SysVSHMRequestHandler());
-        connector.start();
-
-        xServer.setSHMSegmentManager(new SHMSegmentManager(sysVSharedMemory));
+        if (this.connector != null) {
+            return;
+        }
+        this.sysVSharedMemory = new SysVSharedMemory();
+        this.connector = new XConnectorEpoll(this.socketConfig, new SysVSHMConnectionHandler(this.sysVSharedMemory), new SysVSHMRequestHandler());
+        this.connector.start();
+        this.xServer.setSHMSegmentManager(new SHMSegmentManager(this.sysVSharedMemory));
     }
 
-    @Override
+    @Override // com.winlator.cmod.xenvironment.EnvironmentComponent
     public void stop() {
-        if (connector != null) {
-            connector.stop();
-            connector = null;
+        if (this.connector != null) {
+            this.connector.stop();
+            this.connector = null;
         }
-
-        sysVSharedMemory.deleteAll();
+        this.sysVSharedMemory.deleteAll();
     }
 }

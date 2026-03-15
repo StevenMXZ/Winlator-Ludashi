@@ -1,29 +1,28 @@
 package com.winlator.cmod.xserver;
 
 import android.view.KeyEvent;
-
 import androidx.collection.ArraySet;
-
 import com.winlator.cmod.inputcontrols.ExternalController;
-
 import java.util.ArrayList;
+import jp.kshoji.javax.sound.midi.ShortMessage;
 
+/* loaded from: classes11.dex */
 public class Keyboard {
     public static final byte KEYSYMS_PER_KEYCODE = 2;
     public static final short KEYS_COUNT = 248;
     public static final short MAX_KEYCODE = 255;
     public static final short MIN_KEYCODE = 8;
-    public final int[] keysyms = new int[KEYS_COUNT];
+    private final XServer xServer;
+    public final int[] keysyms = new int[ShortMessage.TIMING_CLOCK];
     private final Bitmask modifiersMask = new Bitmask();
     private final XKeycode[] keycodeMap = createKeycodeMap();
     private final ArraySet<Byte> pressedKeys = new ArraySet<>();
     private final ArrayList<OnKeyboardListener> onKeyboardListeners = new ArrayList<>();
-    private final XServer xServer;
 
     public interface OnKeyboardListener {
-        void onKeyPress(byte keycode, int keysym);
+        void onKeyPress(byte b, int i);
 
-        void onKeyRelease(byte keycode);
+        void onKeyRelease(byte b);
     }
 
     public Keyboard(XServer xServer) {
@@ -31,207 +30,213 @@ public class Keyboard {
     }
 
     public Bitmask getModifiersMask() {
-        return modifiersMask;
+        return this.modifiersMask;
     }
 
     public void setKeysyms(byte keycode, int minKeysym, int majKeysym) {
         int index = keycode - 8;
-        keysyms[index*KEYSYMS_PER_KEYCODE+0] = minKeysym;
-        keysyms[index*KEYSYMS_PER_KEYCODE+1] = majKeysym;
+        this.keysyms[(index * 2) + 0] = minKeysym;
+        this.keysyms[(index * 2) + 1] = majKeysym;
     }
 
     public boolean hasKeysym(byte keycode, int keysym) {
         int index = keycode - 8;
-        return keysyms[index*KEYSYMS_PER_KEYCODE+0] == keysym || keysyms[index*KEYSYMS_PER_KEYCODE+1] == keysym;
+        return this.keysyms[(index * 2) + 0] == keysym || this.keysyms[(index * 2) + 1] == keysym;
     }
 
     public void setKeyPress(byte keycode, int keysym) {
         if (isModifierSticky(keycode)) {
-            if (pressedKeys.contains(keycode)) {
-                pressedKeys.remove(keycode);
-                modifiersMask.unset(getModifierFlag(keycode));
+            if (this.pressedKeys.contains(Byte.valueOf(keycode))) {
+                this.pressedKeys.remove(Byte.valueOf(keycode));
+                this.modifiersMask.unset(getModifierFlag(keycode));
                 triggerOnKeyRelease(keycode);
-            }
-            else {
-                pressedKeys.add(keycode);
-                modifiersMask.set(getModifierFlag(keycode));
+                return;
+            } else {
+                this.pressedKeys.add(Byte.valueOf(keycode));
+                this.modifiersMask.set(getModifierFlag(keycode));
                 triggerOnKeyPress(keycode, keysym);
+                return;
             }
         }
-        else if (!pressedKeys.contains(keycode)) {
-            pressedKeys.add(keycode);
-            if (isModifier(keycode)) modifiersMask.set(getModifierFlag(keycode));
+        if (!this.pressedKeys.contains(Byte.valueOf(keycode))) {
+            this.pressedKeys.add(Byte.valueOf(keycode));
+            if (isModifier(keycode)) {
+                this.modifiersMask.set(getModifierFlag(keycode));
+            }
             triggerOnKeyPress(keycode, keysym);
         }
     }
 
     public void setKeyRelease(byte keycode) {
-        if (!isModifierSticky(keycode) && pressedKeys.contains(keycode)) {
-            pressedKeys.remove(keycode);
-            if (isModifier(keycode)) modifiersMask.unset(getModifierFlag(keycode));
+        if (!isModifierSticky(keycode) && this.pressedKeys.contains(Byte.valueOf(keycode))) {
+            this.pressedKeys.remove(Byte.valueOf(keycode));
+            if (isModifier(keycode)) {
+                this.modifiersMask.unset(getModifierFlag(keycode));
+            }
             triggerOnKeyRelease(keycode);
         }
     }
 
     public void addOnKeyboardListener(OnKeyboardListener onKeyboardListener) {
-        onKeyboardListeners.add(onKeyboardListener);
+        this.onKeyboardListeners.add(onKeyboardListener);
     }
 
     public void removeOnKeyboardListener(OnKeyboardListener onKeyboardListener) {
-        onKeyboardListeners.remove(onKeyboardListener);
+        this.onKeyboardListeners.remove(onKeyboardListener);
     }
 
     private void triggerOnKeyPress(byte keycode, int keysym) {
-        for (int i = onKeyboardListeners.size()-1; i >= 0; i--) {
-            onKeyboardListeners.get(i).onKeyPress(keycode, keysym);
+        for (int i = this.onKeyboardListeners.size() - 1; i >= 0; i--) {
+            this.onKeyboardListeners.get(i).onKeyPress(keycode, keysym);
         }
     }
 
     private void triggerOnKeyRelease(byte keycode) {
-        for (int i = onKeyboardListeners.size()-1; i >= 0; i--) {
-            onKeyboardListeners.get(i).onKeyRelease(keycode);
+        for (int i = this.onKeyboardListeners.size() - 1; i >= 0; i--) {
+            this.onKeyboardListeners.get(i).onKeyRelease(keycode);
         }
     }
 
     public boolean onKeyEvent(KeyEvent event) {
-        if (ExternalController.isGameController(event.getDevice())) return false;
-
+        if (ExternalController.isGameController(event.getDevice())) {
+            return false;
+        }
         int action = event.getAction();
         int keyCode = event.getKeyCode();
-
-        // Patches: Crash on Asus Rog Phone 9 Pro with Game Genie active (This line should be deleted after the merge)
-        if (keyCode < 0 || keyCode >= keycodeMap.length) {
-            return false; // Ignore unmapped key codes
+        if (keyCode < 0 || keyCode >= this.keycodeMap.length) {
+            return false;
         }
-
-        if (keyCode == KeyEvent.KEYCODE_TAB || keyCode == KeyEvent.KEYCODE_ESCAPE) {
-            if (action == KeyEvent.ACTION_DOWN) {
-                xServer.injectKeyPress(keycodeMap[keyCode]);
-                return true; // Consume the event to prevent default focus change
-            } else if (action == KeyEvent.ACTION_UP) {
-                xServer.injectKeyRelease(keycodeMap[keyCode]);
-                return true; // Consume the event to prevent default focus change
+        if (keyCode == 61 || keyCode == 111) {
+            if (action == 0) {
+                this.xServer.injectKeyPress(this.keycodeMap[keyCode]);
+                return true;
             }
-        } else if (action == KeyEvent.ACTION_DOWN || action == KeyEvent.ACTION_UP) {
-            XKeycode xKeycode = keycodeMap[keyCode];
-            if (xKeycode == null) return false;
-
-            if (action == KeyEvent.ACTION_DOWN) {
-                boolean shiftPressed = event.isShiftPressed() || keyCode == KeyEvent.KEYCODE_AT || keyCode == KeyEvent.KEYCODE_STAR || keyCode == KeyEvent.KEYCODE_POUND || keyCode == KeyEvent.KEYCODE_PLUS;
-                if (shiftPressed) xServer.injectKeyPress(XKeycode.KEY_SHIFT_L);
-                xServer.injectKeyPress(xKeycode, xKeycode != XKeycode.KEY_ENTER ? event.getUnicodeChar() : 0);
-            } else if (action == KeyEvent.ACTION_UP) {
-                xServer.injectKeyRelease(XKeycode.KEY_SHIFT_L);
-                xServer.injectKeyRelease(xKeycode);
+            if (action == 1) {
+                this.xServer.injectKeyRelease(this.keycodeMap[keyCode]);
+                return true;
+            }
+        } else if (action == 0 || action == 1) {
+            XKeycode xKeycode = this.keycodeMap[keyCode];
+            if (xKeycode == null) {
+                return false;
+            }
+            if (action == 0) {
+                boolean shiftPressed = event.isShiftPressed() || keyCode == 77 || keyCode == 17 || keyCode == 18 || keyCode == 81;
+                if (shiftPressed) {
+                    this.xServer.injectKeyPress(XKeycode.KEY_SHIFT_L);
+                }
+                this.xServer.injectKeyPress(xKeycode, xKeycode != XKeycode.KEY_ENTER ? event.getUnicodeChar() : 0);
+            } else if (action == 1) {
+                this.xServer.injectKeyRelease(XKeycode.KEY_SHIFT_L);
+                this.xServer.injectKeyRelease(xKeycode);
             }
         }
         return true;
     }
 
     private static XKeycode[] createKeycodeMap() {
-        XKeycode[] keycodeMap = new XKeycode[(KeyEvent.getMaxKeyCode() + 1)];
-        // Adding the Escape key mapping
-        keycodeMap[KeyEvent.KEYCODE_ESCAPE] = XKeycode.KEY_ESC;
-        keycodeMap[KeyEvent.KEYCODE_ENTER] = XKeycode.KEY_ENTER;
-        keycodeMap[KeyEvent.KEYCODE_DPAD_LEFT] = XKeycode.KEY_LEFT;
-        keycodeMap[KeyEvent.KEYCODE_DPAD_RIGHT] = XKeycode.KEY_RIGHT;
-        keycodeMap[KeyEvent.KEYCODE_DPAD_UP] = XKeycode.KEY_UP;
-        keycodeMap[KeyEvent.KEYCODE_DPAD_DOWN] = XKeycode.KEY_DOWN;
-        keycodeMap[KeyEvent.KEYCODE_DEL] = XKeycode.KEY_BKSP;
-        keycodeMap[KeyEvent.KEYCODE_INSERT] = XKeycode.KEY_INSERT;
-        keycodeMap[KeyEvent.KEYCODE_FORWARD_DEL] = XKeycode.KEY_DEL;
-        keycodeMap[KeyEvent.KEYCODE_MOVE_HOME] = XKeycode.KEY_HOME;
-        keycodeMap[KeyEvent.KEYCODE_MOVE_END] = XKeycode.KEY_END;
-        keycodeMap[KeyEvent.KEYCODE_PAGE_UP] = XKeycode.KEY_PRIOR;
-        keycodeMap[KeyEvent.KEYCODE_PAGE_DOWN] = XKeycode.KEY_NEXT;
-        keycodeMap[KeyEvent.KEYCODE_SHIFT_LEFT] = XKeycode.KEY_SHIFT_L;
-        keycodeMap[KeyEvent.KEYCODE_SHIFT_RIGHT] = XKeycode.KEY_SHIFT_R;
-        keycodeMap[KeyEvent.KEYCODE_CTRL_LEFT] = XKeycode.KEY_CTRL_L;
-        keycodeMap[KeyEvent.KEYCODE_CTRL_RIGHT] = XKeycode.KEY_CTRL_R;
-        keycodeMap[KeyEvent.KEYCODE_ALT_LEFT] = XKeycode.KEY_ALT_L;
-        keycodeMap[KeyEvent.KEYCODE_ALT_RIGHT] = XKeycode.KEY_ALT_R;
-        keycodeMap[KeyEvent.KEYCODE_TAB] = XKeycode.KEY_TAB;
-        keycodeMap[KeyEvent.KEYCODE_SPACE] = XKeycode.KEY_SPACE;
-        keycodeMap[KeyEvent.KEYCODE_A] = XKeycode.KEY_A;
-        keycodeMap[KeyEvent.KEYCODE_B] = XKeycode.KEY_B;
-        keycodeMap[KeyEvent.KEYCODE_C] = XKeycode.KEY_C;
-        keycodeMap[KeyEvent.KEYCODE_D] = XKeycode.KEY_D;
-        keycodeMap[KeyEvent.KEYCODE_E] = XKeycode.KEY_E;
-        keycodeMap[KeyEvent.KEYCODE_F] = XKeycode.KEY_F;
-        keycodeMap[KeyEvent.KEYCODE_G] = XKeycode.KEY_G;
-        keycodeMap[KeyEvent.KEYCODE_H] = XKeycode.KEY_H;
-        keycodeMap[KeyEvent.KEYCODE_I] = XKeycode.KEY_I;
-        keycodeMap[KeyEvent.KEYCODE_J] = XKeycode.KEY_J;
-        keycodeMap[KeyEvent.KEYCODE_K] = XKeycode.KEY_K;
-        keycodeMap[KeyEvent.KEYCODE_L] = XKeycode.KEY_L;
-        keycodeMap[KeyEvent.KEYCODE_M] = XKeycode.KEY_M;
-        keycodeMap[KeyEvent.KEYCODE_N] = XKeycode.KEY_N;
-        keycodeMap[KeyEvent.KEYCODE_O] = XKeycode.KEY_O;
-        keycodeMap[KeyEvent.KEYCODE_P] = XKeycode.KEY_P;
-        keycodeMap[KeyEvent.KEYCODE_Q] = XKeycode.KEY_Q;
-        keycodeMap[KeyEvent.KEYCODE_R] = XKeycode.KEY_R;
-        keycodeMap[KeyEvent.KEYCODE_S] = XKeycode.KEY_S;
-        keycodeMap[KeyEvent.KEYCODE_T] = XKeycode.KEY_T;
-        keycodeMap[KeyEvent.KEYCODE_U] = XKeycode.KEY_U;
-        keycodeMap[KeyEvent.KEYCODE_V] = XKeycode.KEY_V;
-        keycodeMap[KeyEvent.KEYCODE_W] = XKeycode.KEY_W;
-        keycodeMap[KeyEvent.KEYCODE_X] = XKeycode.KEY_X;
-        keycodeMap[KeyEvent.KEYCODE_Y] = XKeycode.KEY_Y;
-        keycodeMap[KeyEvent.KEYCODE_Z] = XKeycode.KEY_Z;
-        keycodeMap[KeyEvent.KEYCODE_0] = XKeycode.KEY_0;
-        keycodeMap[KeyEvent.KEYCODE_1] = XKeycode.KEY_1;
-        keycodeMap[KeyEvent.KEYCODE_2] = XKeycode.KEY_2;
-        keycodeMap[KeyEvent.KEYCODE_3] = XKeycode.KEY_3;
-        keycodeMap[KeyEvent.KEYCODE_4] = XKeycode.KEY_4;
-        keycodeMap[KeyEvent.KEYCODE_5] = XKeycode.KEY_5;
-        keycodeMap[KeyEvent.KEYCODE_6] = XKeycode.KEY_6;
-        keycodeMap[KeyEvent.KEYCODE_7] = XKeycode.KEY_7;
-        keycodeMap[KeyEvent.KEYCODE_8] = XKeycode.KEY_8;
-        keycodeMap[KeyEvent.KEYCODE_9] = XKeycode.KEY_9;
-        keycodeMap[KeyEvent.KEYCODE_STAR] = XKeycode.KEY_8;
-        keycodeMap[KeyEvent.KEYCODE_POUND] = XKeycode.KEY_3;
-        keycodeMap[KeyEvent.KEYCODE_COMMA] = XKeycode.KEY_COMMA;
-        keycodeMap[KeyEvent.KEYCODE_PERIOD] = XKeycode.KEY_PERIOD;
-        keycodeMap[KeyEvent.KEYCODE_SEMICOLON] = XKeycode.KEY_SEMICOLON;
-        keycodeMap[KeyEvent.KEYCODE_APOSTROPHE] = XKeycode.KEY_APOSTROPHE;
-        keycodeMap[KeyEvent.KEYCODE_LEFT_BRACKET] = XKeycode.KEY_BRACKET_LEFT;
-        keycodeMap[KeyEvent.KEYCODE_RIGHT_BRACKET] = XKeycode.KEY_BRACKET_RIGHT;
-        keycodeMap[KeyEvent.KEYCODE_GRAVE] = XKeycode.KEY_GRAVE;
-        keycodeMap[KeyEvent.KEYCODE_MINUS] = XKeycode.KEY_MINUS;
-        keycodeMap[KeyEvent.KEYCODE_PLUS] = XKeycode.KEY_EQUAL;
-        keycodeMap[KeyEvent.KEYCODE_EQUALS] = XKeycode.KEY_EQUAL;
-        keycodeMap[KeyEvent.KEYCODE_SLASH] = XKeycode.KEY_SLASH;
-        keycodeMap[KeyEvent.KEYCODE_AT] = XKeycode.KEY_2;
-        keycodeMap[KeyEvent.KEYCODE_BACKSLASH] = XKeycode.KEY_BACKSLASH;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_DIVIDE] = XKeycode.KEY_KP_DIVIDE;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_MULTIPLY] = XKeycode.KEY_KP_MULTIPLY;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_SUBTRACT] = XKeycode.KEY_KP_SUBTRACT;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_ADD] = XKeycode.KEY_KP_ADD;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_DOT] = XKeycode.KEY_KP_DEL;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_0] = XKeycode.KEY_KP_0;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_1] = XKeycode.KEY_KP_1;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_2] = XKeycode.KEY_KP_2;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_3] = XKeycode.KEY_KP_3;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_4] = XKeycode.KEY_KP_4;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_5] = XKeycode.KEY_KP_5;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_6] = XKeycode.KEY_KP_6;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_7] = XKeycode.KEY_KP_7;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_8] = XKeycode.KEY_KP_8;
-        keycodeMap[KeyEvent.KEYCODE_NUMPAD_9] = XKeycode.KEY_KP_9;
-        keycodeMap[KeyEvent.KEYCODE_F1] = XKeycode.KEY_F1;
-        keycodeMap[KeyEvent.KEYCODE_F2] = XKeycode.KEY_F2;
-        keycodeMap[KeyEvent.KEYCODE_F3] = XKeycode.KEY_F3;
-        keycodeMap[KeyEvent.KEYCODE_F4] = XKeycode.KEY_F4;
-        keycodeMap[KeyEvent.KEYCODE_F5] = XKeycode.KEY_F5;
-        keycodeMap[KeyEvent.KEYCODE_F6] = XKeycode.KEY_F6;
-        keycodeMap[KeyEvent.KEYCODE_F7] = XKeycode.KEY_F7;
-        keycodeMap[KeyEvent.KEYCODE_F8] = XKeycode.KEY_F8;
-        keycodeMap[KeyEvent.KEYCODE_F9] = XKeycode.KEY_F9;
-        keycodeMap[KeyEvent.KEYCODE_F10] = XKeycode.KEY_F10;
-        keycodeMap[KeyEvent.KEYCODE_F11] = XKeycode.KEY_F11;
-        keycodeMap[KeyEvent.KEYCODE_F12] = XKeycode.KEY_F12;
-        keycodeMap[KeyEvent.KEYCODE_NUM_LOCK] = XKeycode.KEY_NUM_LOCK;
-        keycodeMap[KeyEvent.KEYCODE_CAPS_LOCK] = XKeycode.KEY_CAPS_LOCK;
+        XKeycode[] keycodeMap = new XKeycode[KeyEvent.getMaxKeyCode() + 1];
+        keycodeMap[111] = XKeycode.KEY_ESC;
+        keycodeMap[66] = XKeycode.KEY_ENTER;
+        keycodeMap[21] = XKeycode.KEY_LEFT;
+        keycodeMap[22] = XKeycode.KEY_RIGHT;
+        keycodeMap[19] = XKeycode.KEY_UP;
+        keycodeMap[20] = XKeycode.KEY_DOWN;
+        keycodeMap[67] = XKeycode.KEY_BKSP;
+        keycodeMap[124] = XKeycode.KEY_INSERT;
+        keycodeMap[112] = XKeycode.KEY_DEL;
+        keycodeMap[122] = XKeycode.KEY_HOME;
+        keycodeMap[123] = XKeycode.KEY_END;
+        keycodeMap[92] = XKeycode.KEY_PRIOR;
+        keycodeMap[93] = XKeycode.KEY_NEXT;
+        keycodeMap[59] = XKeycode.KEY_SHIFT_L;
+        keycodeMap[60] = XKeycode.KEY_SHIFT_R;
+        keycodeMap[113] = XKeycode.KEY_CTRL_L;
+        keycodeMap[114] = XKeycode.KEY_CTRL_R;
+        keycodeMap[57] = XKeycode.KEY_ALT_L;
+        keycodeMap[58] = XKeycode.KEY_ALT_R;
+        keycodeMap[61] = XKeycode.KEY_TAB;
+        keycodeMap[62] = XKeycode.KEY_SPACE;
+        keycodeMap[29] = XKeycode.KEY_A;
+        keycodeMap[30] = XKeycode.KEY_B;
+        keycodeMap[31] = XKeycode.KEY_C;
+        keycodeMap[32] = XKeycode.KEY_D;
+        keycodeMap[33] = XKeycode.KEY_E;
+        keycodeMap[34] = XKeycode.KEY_F;
+        keycodeMap[35] = XKeycode.KEY_G;
+        keycodeMap[36] = XKeycode.KEY_H;
+        keycodeMap[37] = XKeycode.KEY_I;
+        keycodeMap[38] = XKeycode.KEY_J;
+        keycodeMap[39] = XKeycode.KEY_K;
+        keycodeMap[40] = XKeycode.KEY_L;
+        keycodeMap[41] = XKeycode.KEY_M;
+        keycodeMap[42] = XKeycode.KEY_N;
+        keycodeMap[43] = XKeycode.KEY_O;
+        keycodeMap[44] = XKeycode.KEY_P;
+        keycodeMap[45] = XKeycode.KEY_Q;
+        keycodeMap[46] = XKeycode.KEY_R;
+        keycodeMap[47] = XKeycode.KEY_S;
+        keycodeMap[48] = XKeycode.KEY_T;
+        keycodeMap[49] = XKeycode.KEY_U;
+        keycodeMap[50] = XKeycode.KEY_V;
+        keycodeMap[51] = XKeycode.KEY_W;
+        keycodeMap[52] = XKeycode.KEY_X;
+        keycodeMap[53] = XKeycode.KEY_Y;
+        keycodeMap[54] = XKeycode.KEY_Z;
+        keycodeMap[7] = XKeycode.KEY_0;
+        keycodeMap[8] = XKeycode.KEY_1;
+        keycodeMap[9] = XKeycode.KEY_2;
+        keycodeMap[10] = XKeycode.KEY_3;
+        keycodeMap[11] = XKeycode.KEY_4;
+        keycodeMap[12] = XKeycode.KEY_5;
+        keycodeMap[13] = XKeycode.KEY_6;
+        keycodeMap[14] = XKeycode.KEY_7;
+        keycodeMap[15] = XKeycode.KEY_8;
+        keycodeMap[16] = XKeycode.KEY_9;
+        keycodeMap[17] = XKeycode.KEY_8;
+        keycodeMap[18] = XKeycode.KEY_3;
+        keycodeMap[55] = XKeycode.KEY_COMMA;
+        keycodeMap[56] = XKeycode.KEY_PERIOD;
+        keycodeMap[74] = XKeycode.KEY_SEMICOLON;
+        keycodeMap[75] = XKeycode.KEY_APOSTROPHE;
+        keycodeMap[71] = XKeycode.KEY_BRACKET_LEFT;
+        keycodeMap[72] = XKeycode.KEY_BRACKET_RIGHT;
+        keycodeMap[68] = XKeycode.KEY_GRAVE;
+        keycodeMap[69] = XKeycode.KEY_MINUS;
+        keycodeMap[81] = XKeycode.KEY_EQUAL;
+        keycodeMap[70] = XKeycode.KEY_EQUAL;
+        keycodeMap[76] = XKeycode.KEY_SLASH;
+        keycodeMap[77] = XKeycode.KEY_2;
+        keycodeMap[73] = XKeycode.KEY_BACKSLASH;
+        keycodeMap[154] = XKeycode.KEY_KP_DIVIDE;
+        keycodeMap[155] = XKeycode.KEY_KP_MULTIPLY;
+        keycodeMap[156] = XKeycode.KEY_KP_SUBTRACT;
+        keycodeMap[157] = XKeycode.KEY_KP_ADD;
+        keycodeMap[158] = XKeycode.KEY_KP_DEL;
+        keycodeMap[144] = XKeycode.KEY_KP_0;
+        keycodeMap[145] = XKeycode.KEY_KP_1;
+        keycodeMap[146] = XKeycode.KEY_KP_2;
+        keycodeMap[147] = XKeycode.KEY_KP_3;
+        keycodeMap[148] = XKeycode.KEY_KP_4;
+        keycodeMap[149] = XKeycode.KEY_KP_5;
+        keycodeMap[150] = XKeycode.KEY_KP_6;
+        keycodeMap[151] = XKeycode.KEY_KP_7;
+        keycodeMap[152] = XKeycode.KEY_KP_8;
+        keycodeMap[153] = XKeycode.KEY_KP_9;
+        keycodeMap[131] = XKeycode.KEY_F1;
+        keycodeMap[132] = XKeycode.KEY_F2;
+        keycodeMap[133] = XKeycode.KEY_F3;
+        keycodeMap[134] = XKeycode.KEY_F4;
+        keycodeMap[135] = XKeycode.KEY_F5;
+        keycodeMap[136] = XKeycode.KEY_F6;
+        keycodeMap[137] = XKeycode.KEY_F7;
+        keycodeMap[138] = XKeycode.KEY_F8;
+        keycodeMap[139] = XKeycode.KEY_F9;
+        keycodeMap[140] = XKeycode.KEY_F10;
+        keycodeMap[141] = XKeycode.KEY_F11;
+        keycodeMap[142] = XKeycode.KEY_F12;
+        keycodeMap[143] = XKeycode.KEY_NUM_LOCK;
+        keycodeMap[115] = XKeycode.KEY_CAPS_LOCK;
         return keycodeMap;
     }
 
@@ -336,32 +341,23 @@ public class Keyboard {
     }
 
     public static boolean isModifier(byte keycode) {
-        return
-            keycode == XKeycode.KEY_SHIFT_L.id ||
-            keycode == XKeycode.KEY_SHIFT_R.id ||
-            keycode == XKeycode.KEY_CTRL_L.id ||
-            keycode == XKeycode.KEY_CTRL_R.id ||
-            keycode == XKeycode.KEY_ALT_L.id ||
-            keycode == XKeycode.KEY_ALT_R.id ||
-            keycode == XKeycode.KEY_CAPS_LOCK.id ||
-            keycode == XKeycode.KEY_NUM_LOCK.id
-        ;
+        return keycode == XKeycode.KEY_SHIFT_L.id || keycode == XKeycode.KEY_SHIFT_R.id || keycode == XKeycode.KEY_CTRL_L.id || keycode == XKeycode.KEY_CTRL_R.id || keycode == XKeycode.KEY_ALT_L.id || keycode == XKeycode.KEY_ALT_R.id || keycode == XKeycode.KEY_CAPS_LOCK.id || keycode == XKeycode.KEY_NUM_LOCK.id;
     }
 
     public static int getModifierFlag(byte keycode) {
         if (keycode == XKeycode.KEY_SHIFT_L.id || keycode == XKeycode.KEY_SHIFT_R.id) {
             return 1;
         }
-        else if (keycode == XKeycode.KEY_CAPS_LOCK.id) {
+        if (keycode == XKeycode.KEY_CAPS_LOCK.id) {
             return 2;
         }
-        else if (keycode == XKeycode.KEY_CTRL_L.id || keycode == XKeycode.KEY_CTRL_R.id) {
+        if (keycode == XKeycode.KEY_CTRL_L.id || keycode == XKeycode.KEY_CTRL_R.id) {
             return 4;
         }
-        else if (keycode == XKeycode.KEY_ALT_L.id || keycode == XKeycode.KEY_ALT_R.id) {
+        if (keycode == XKeycode.KEY_ALT_L.id || keycode == XKeycode.KEY_ALT_R.id) {
             return 8;
         }
-        else if (keycode == XKeycode.KEY_NUM_LOCK.id) {
+        if (keycode == XKeycode.KEY_NUM_LOCK.id) {
             return 16;
         }
         return 0;
@@ -370,5 +366,4 @@ public class Keyboard {
     public static boolean isModifierSticky(byte keycode) {
         return keycode == XKeycode.KEY_CAPS_LOCK.id || keycode == XKeycode.KEY_NUM_LOCK.id;
     }
-
 }

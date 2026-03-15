@@ -1,24 +1,24 @@
 package com.winlator.cmod.inputcontrols;
 
 import android.graphics.Rect;
-
+import com.winlator.cmod.inputcontrols.ControlElement;
+import com.winlator.cmod.inputcontrols.RangeScroller;
 import com.winlator.cmod.widget.InputControlsView;
-import com.winlator.cmod.widget.TouchpadView;
-
 import java.util.Timer;
 import java.util.TimerTask;
 
+/* loaded from: classes14.dex */
 public class RangeScroller {
-    private final InputControlsView inputControlsView;
-    private final ControlElement element;
-    private float scrollOffset;
     private float currentOffset;
+    private final ControlElement element;
+    private final InputControlsView inputControlsView;
     private float lastPosition;
+    private float scrollOffset;
+    private Timer timer;
     private long touchTime;
     private Binding binding = Binding.NONE;
     private boolean isActionDown = false;
     private boolean scrolling = false;
-    private Timer timer;
 
     public RangeScroller(InputControlsView inputControlsView, ControlElement element) {
         this.inputControlsView = inputControlsView;
@@ -26,110 +26,138 @@ public class RangeScroller {
     }
 
     public float getElementSize() {
-        Rect boundingBox = element.getBoundingBox();
-        return (float)Math.max(boundingBox.width(), boundingBox.height()) / element.getBindingCount();
+        Rect boundingBox = this.element.getBoundingBox();
+        return Math.max(boundingBox.width(), boundingBox.height()) / this.element.getBindingCount();
     }
 
     public float getScrollSize() {
-        return getElementSize() * element.getRange().max;
+        return getElementSize() * this.element.getRange().max;
     }
 
     public float getScrollOffset() {
-        return scrollOffset;
+        return this.scrollOffset;
     }
 
     public byte[] getRangeIndex() {
-        ControlElement.Range range = element.getRange();
-        byte from = (byte)Math.floor((scrollOffset / getElementSize()) % range.max);
-        if (from < 0) from = (byte)(range.max + from);
-        byte to = (byte)(from + element.getBindingCount() + 1);
+        ControlElement.Range range = this.element.getRange();
+        byte from = (byte) Math.floor((this.scrollOffset / getElementSize()) % range.max);
+        if (from < 0) {
+            from = (byte) (range.max + from);
+        }
+        byte to = (byte) (this.element.getBindingCount() + from + 1);
         return new byte[]{from, to};
     }
 
     private Binding getBindingByPosition(float x, float y) {
-        Rect boundingBox = element.getBoundingBox();
-        ControlElement.Range range = element.getRange();
-        float offset = element.getOrientation() == 0 ? x - boundingBox.left - currentOffset : y - boundingBox.top - currentOffset;
-        int index = (int)Math.floor((offset / getElementSize()) % range.max);
-        if (index < 0) index = range.max + index;
-
+        Rect boundingBox = this.element.getBoundingBox();
+        ControlElement.Range range = this.element.getRange();
+        float offset = (this.element.getOrientation() == 0 ? x - boundingBox.left : y - boundingBox.top) - this.currentOffset;
+        int index = (int) Math.floor((offset / getElementSize()) % range.max);
+        if (index < 0) {
+            index += range.max;
+        }
         switch (range) {
             case FROM_A_TO_Z:
-                return Binding.valueOf("KEY_"+((char)(65 + index)));
+                return Binding.valueOf("KEY_" + ((char) (index + 65)));
             case FROM_0_TO_9:
-                return Binding.valueOf("KEY_"+((index + 1) % 10));
+                return Binding.valueOf("KEY_" + ((index + 1) % 10));
             case FROM_F1_TO_F12:
-                return Binding.valueOf("KEY_F"+(index + 1));
+                return Binding.valueOf("KEY_F" + (index + 1));
             case FROM_NP0_TO_NP9:
-                return Binding.valueOf("KEY_KP_"+((index + 1) % 10));
+                return Binding.valueOf("KEY_KP_" + ((index + 1) % 10));
             default:
                 return Binding.NONE;
         }
     }
 
     private boolean isTap() {
-        return (System.currentTimeMillis() - touchTime) < TouchpadView.MAX_TAP_MILLISECONDS;
+        return System.currentTimeMillis() - this.touchTime < 200;
     }
 
     private void destroyTimer() {
-        if (timer != null) {
-            timer.cancel();
-            timer = null;
+        if (this.timer != null) {
+            this.timer.cancel();
+            this.timer = null;
         }
     }
 
     public void handleTouchDown(float x, float y) {
         destroyTimer();
+        this.scrolling = false;
+        this.isActionDown = true;
+        this.binding = getBindingByPosition(x, y);
+        this.touchTime = System.currentTimeMillis();
+        this.lastPosition = this.element.getOrientation() == 0 ? x : y;
+        this.element.setBinding(Binding.NONE);
+        this.timer = new Timer(true);
+        this.timer.schedule(new AnonymousClass1(), 200L);
+    }
 
-        scrolling = false;
-        isActionDown = true;
-        binding = getBindingByPosition(x, y);
-        touchTime = System.currentTimeMillis();
-        lastPosition = element.getOrientation() == 0 ? x : y;
-        element.setBinding(Binding.NONE);
+    /* renamed from: com.winlator.cmod.inputcontrols.RangeScroller$1, reason: invalid class name */
+    class AnonymousClass1 extends TimerTask {
+        AnonymousClass1() {
+        }
 
-        timer = new Timer(true);
-        timer.schedule(new TimerTask() {
-            @Override
-            public void run() {
-                if (!scrolling) inputControlsView.post(() -> inputControlsView.handleInputEvent(binding, true));
+        /* JADX INFO: Access modifiers changed from: private */
+        public /* synthetic */ void lambda$run$0() {
+            RangeScroller.this.inputControlsView.handleInputEvent(RangeScroller.this.binding, true);
+        }
+
+        @Override // java.util.TimerTask, java.lang.Runnable
+        public void run() {
+            if (!RangeScroller.this.scrolling) {
+                RangeScroller.this.inputControlsView.post(new Runnable() { // from class: com.winlator.cmod.inputcontrols.RangeScroller$1$$ExternalSyntheticLambda0
+                    @Override // java.lang.Runnable
+                    public final void run() {
+                        RangeScroller.AnonymousClass1.this.lambda$run$0();
+                    }
+                });
             }
-        }, TouchpadView.MAX_TAP_MILLISECONDS);
+        }
     }
 
     public void handleTouchMove(float x, float y) {
-        if (isActionDown) {
-            float position = element.getOrientation() == 0 ? x : y;
-            float deltaPosition = position - lastPosition;
-
-            if (Math.abs(deltaPosition) >= TouchpadView.MAX_TAP_TRAVEL_DISTANCE) {
-                scrolling = true;
+        if (this.isActionDown) {
+            float position = this.element.getOrientation() == 0 ? x : y;
+            float deltaPosition = position - this.lastPosition;
+            if (Math.abs(deltaPosition) >= 10.0f) {
+                this.scrolling = true;
                 destroyTimer();
             }
-
-            if (scrolling) {
-                currentOffset += deltaPosition;
-
+            if (this.scrolling) {
+                this.currentOffset += deltaPosition;
                 float scrollSize = getScrollSize();
-                scrollOffset = -currentOffset % scrollSize;
-                if (scrollOffset < 0) scrollOffset = scrollSize + scrollOffset;
-
-                lastPosition = position;
-                inputControlsView.invalidate();
+                this.scrollOffset = (-this.currentOffset) % scrollSize;
+                if (this.scrollOffset < 0.0f) {
+                    this.scrollOffset += scrollSize;
+                }
+                this.lastPosition = position;
+                this.inputControlsView.invalidate();
             }
         }
     }
 
     public void handleTouchUp() {
-        if (isActionDown) {
+        if (this.isActionDown) {
             destroyTimer();
-            if (isTap() && !scrolling) {
-                inputControlsView.handleInputEvent(binding, true);
-                final Binding finalBinding = binding;
-                inputControlsView.postDelayed(() -> inputControlsView.handleInputEvent(finalBinding, false), 30);
+            if (isTap() && !this.scrolling) {
+                this.inputControlsView.handleInputEvent(this.binding, true);
+                final Binding finalBinding = this.binding;
+                this.inputControlsView.postDelayed(new Runnable() { // from class: com.winlator.cmod.inputcontrols.RangeScroller$$ExternalSyntheticLambda0
+                    @Override // java.lang.Runnable
+                    public final void run() {
+                        RangeScroller.this.lambda$handleTouchUp$0(finalBinding);
+                    }
+                }, 30L);
+            } else {
+                this.inputControlsView.handleInputEvent(this.binding, false);
             }
-            else inputControlsView.handleInputEvent(binding, false);
         }
-        isActionDown = false;
+        this.isActionDown = false;
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$handleTouchUp$0(Binding finalBinding) {
+        this.inputControlsView.handleInputEvent(finalBinding, false);
     }
 }

@@ -4,86 +4,78 @@ import android.content.Context;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Spinner;
-
-import com.winlator.cmod.R;
+import android.widget.SpinnerAdapter;
+import androidx.exifinterface.media.ExifInterface;
+import com.ludashi.benchmark.R;
 import com.winlator.cmod.container.Container;
 import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.KeyValueSet;
 import com.winlator.cmod.core.StringUtils;
-
+import java.util.ArrayList;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.ArrayList;
-
+/* loaded from: classes4.dex */
 public class WineD3DConfigDialog extends ContentDialog {
-    public static String DEFAULT_CONFIG = Container.DEFAULT_DXWRAPPERCONFIG;
-    public static String[] csmtValues = { "Enabled", "Disabled" };
-    public static String[] strictShaderMathValues = { "Enabled", "Disabled" };
-    public static String[] offscreenRenderingModeValues = { "fbo", "backbuffer" };
-    public static String[] rendererValues = { "gl", "vulkan", "gdi" };
     private Context context;
+    public static String DEFAULT_CONFIG = Container.DEFAULT_DXWRAPPERCONFIG;
+    public static String[] csmtValues = {"Enabled", "Disabled"};
+    public static String[] strictShaderMathValues = {"Enabled", "Disabled"};
+    public static String[] offscreenRenderingModeValues = {"fbo", "backbuffer"};
+    public static String[] rendererValues = {"gl", "vulkan", "gdi"};
 
-    public WineD3DConfigDialog(View anchor) {
-        super(anchor.getContext(), R.layout.wined3d_config_dialog);
-        context = anchor.getContext();
+    public WineD3DConfigDialog(final View view) {
+        super(view.getContext(), R.layout.wined3d_config_dialog);
+        this.context = view.getContext();
         setIcon(R.drawable.icon_settings);
-        setTitle("WineD3D " + context.getString(R.string.configuration));
-
-        final Spinner sCSMT = findViewById(R.id.SCSMT);
-        final Spinner sGPUName = findViewById(R.id.SGPUName);
-        final Spinner sVideoMemorySize = findViewById(R.id.SVideoMemorySize);
-        final Spinner sStrictShaderMath = findViewById(R.id.SStrictShaderMath);
-        final Spinner sOffscreenRenderingMode = findViewById(R.id.SOffscreenRenderingMode);
-        final Spinner sRenderer = findViewById(R.id.SRenderer);
-
-        ArrayAdapter<String> csmtAdapter = new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, csmtValues);
-        sCSMT.setAdapter(csmtAdapter);
-
-        ArrayAdapter<String> ssmAdapter = new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, strictShaderMathValues);
-        sStrictShaderMath.setAdapter(ssmAdapter);
-
-        ArrayAdapter<String> ormAdapter = new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, offscreenRenderingModeValues);
-        sOffscreenRenderingMode.setAdapter(ormAdapter);
-
-        ArrayAdapter<String> rendererAdapter = new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, rendererValues);
-        sRenderer.setAdapter(rendererAdapter);
-
-        loadGPUNameSpinner(sGPUName);
-
-        KeyValueSet config = parseConfig(anchor.getTag());
-
-        sCSMT.setSelection(config.get("csmt").equals("3") ? 0 : 1);
-        sStrictShaderMath.setSelection(config.get("strict_shader_math").equals("1") ? 0 : 1);
-        AppUtils.setSpinnerSelectionFromValue(sOffscreenRenderingMode, config.get("OffscreenRenderingMode"));
-        AppUtils.setSpinnerSelectionFromValue(sGPUName, config.get("gpuName"));
-        AppUtils.setSpinnerSelectionFromValue(sRenderer, config.get("renderer"));
-        AppUtils.setSpinnerSelectionFromNumber(sVideoMemorySize, config.get("videoMemorySize"));
-
-        setOnConfirmCallback(() -> {
-            config.put("csmt", sCSMT.getSelectedItem().toString().equals("Enabled") ? "3": "0");
-            config.put("strict_shader_math", sStrictShaderMath.getSelectedItem().toString().equals("Enabled") ? "1" : "0");
-            config.put("OffscreenRenderingMode", sOffscreenRenderingMode.getSelectedItem().toString());
-            config.put("gpuName", sGPUName.getSelectedItem().toString());
-            config.put("videoMemorySize", StringUtils.parseNumber(sVideoMemorySize.getSelectedItem().toString()));
-            config.put("renderer", sRenderer.getSelectedItem().toString());
-            anchor.setTag(config.toString());
+        setTitle("WineD3D " + this.context.getString(R.string.configuration));
+        final Spinner spinner = (Spinner) findViewById(R.id.SCSMT);
+        final Spinner spinner2 = (Spinner) findViewById(R.id.SGPUName);
+        final Spinner spinner3 = (Spinner) findViewById(R.id.SVideoMemorySize);
+        final Spinner spinner4 = (Spinner) findViewById(R.id.SStrictShaderMath);
+        final Spinner spinner5 = (Spinner) findViewById(R.id.SOffscreenRenderingMode);
+        final Spinner spinner6 = (Spinner) findViewById(R.id.SRenderer);
+        spinner.setAdapter((SpinnerAdapter) new ArrayAdapter(this.context, android.R.layout.simple_spinner_dropdown_item, csmtValues));
+        spinner4.setAdapter((SpinnerAdapter) new ArrayAdapter(this.context, android.R.layout.simple_spinner_dropdown_item, strictShaderMathValues));
+        spinner5.setAdapter((SpinnerAdapter) new ArrayAdapter(this.context, android.R.layout.simple_spinner_dropdown_item, offscreenRenderingModeValues));
+        spinner6.setAdapter((SpinnerAdapter) new ArrayAdapter(this.context, android.R.layout.simple_spinner_dropdown_item, rendererValues));
+        loadGPUNameSpinner(spinner2);
+        final KeyValueSet parseConfig = parseConfig(view.getTag());
+        spinner.setSelection(!parseConfig.get("csmt").equals(ExifInterface.GPS_MEASUREMENT_3D) ? 1 : 0);
+        spinner4.setSelection(!parseConfig.get("strict_shader_math").equals("1") ? 1 : 0);
+        AppUtils.setSpinnerSelectionFromValue(spinner5, parseConfig.get("OffscreenRenderingMode"));
+        AppUtils.setSpinnerSelectionFromValue(spinner2, parseConfig.get("gpuName"));
+        AppUtils.setSpinnerSelectionFromValue(spinner6, parseConfig.get("renderer"));
+        AppUtils.setSpinnerSelectionFromNumber(spinner3, parseConfig.get("videoMemorySize"));
+        setOnConfirmCallback(new Runnable() { // from class: com.winlator.cmod.contentdialog.WineD3DConfigDialog$$ExternalSyntheticLambda0
+            @Override // java.lang.Runnable
+            public final void run() {
+                WineD3DConfigDialog.lambda$new$0(KeyValueSet.this, spinner, spinner4, spinner5, spinner2, spinner3, spinner6, view);
+            }
         });
+    }
 
+    static /* synthetic */ void lambda$new$0(KeyValueSet config, Spinner sCSMT, Spinner sStrictShaderMath, Spinner sOffscreenRenderingMode, Spinner sGPUName, Spinner sVideoMemorySize, Spinner sRenderer, View anchor) {
+        config.put("csmt", sCSMT.getSelectedItem().toString().equals("Enabled") ? ExifInterface.GPS_MEASUREMENT_3D : "0");
+        config.put("strict_shader_math", sStrictShaderMath.getSelectedItem().toString().equals("Enabled") ? "1" : "0");
+        config.put("OffscreenRenderingMode", sOffscreenRenderingMode.getSelectedItem().toString());
+        config.put("gpuName", sGPUName.getSelectedItem().toString());
+        config.put("videoMemorySize", StringUtils.parseNumber(sVideoMemorySize.getSelectedItem().toString()));
+        config.put("renderer", sRenderer.getSelectedItem().toString());
+        anchor.setTag(config.toString());
     }
 
     public static KeyValueSet parseConfig(Object config) {
-        String data = config != null && !config.toString().isEmpty() ? config.toString() :  DEFAULT_CONFIG;
+        String data = (config == null || config.toString().isEmpty()) ? DEFAULT_CONFIG : config.toString();
         return new KeyValueSet(data);
     }
 
-    private void loadGPUNameSpinner(Spinner spinner)  {
-        String gpuNameList = FileUtils.readString(context, "gpu_cards.json");
+    private void loadGPUNameSpinner(Spinner spinner) {
+        String gpuNameList = FileUtils.readString(this.context, "gpu_cards.json");
         ArrayList<String> entries = new ArrayList<>();
-
         try {
             JSONArray jarray = new JSONArray(gpuNameList);
             for (int i = 0; i < jarray.length(); i++) {
@@ -91,10 +83,9 @@ public class WineD3DConfigDialog extends ContentDialog {
                 String gpuName = jobj.getString("name");
                 entries.add(gpuName);
             }
-            ArrayAdapter<String> adapter = new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, entries);
-            spinner.setAdapter(adapter);
-        }
-        catch (JSONException e) {
+            ArrayAdapter<String> adapter = new ArrayAdapter<>(this.context, android.R.layout.simple_spinner_dropdown_item, entries);
+            spinner.setAdapter((SpinnerAdapter) adapter);
+        } catch (JSONException e) {
         }
     }
 
@@ -109,10 +100,8 @@ public class WineD3DConfigDialog extends ContentDialog {
                     deviceId = jobj.getString("deviceID");
                 }
             }
+        } catch (JSONException e) {
         }
-        catch (JSONException e) {
-        }
-
         return deviceId;
     }
 
@@ -127,10 +116,8 @@ public class WineD3DConfigDialog extends ContentDialog {
                     vendorId = jobj.getString("vendorID");
                 }
             }
+        } catch (JSONException e) {
         }
-        catch (JSONException e) {
-        }
-
         return vendorId;
     }
 

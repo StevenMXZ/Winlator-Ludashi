@@ -1,19 +1,24 @@
 package com.winlator.cmod.core;
 
 import android.content.Context;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.Locale;
 
+/* loaded from: classes10.dex */
 public class StringUtils {
     public static String removeEndSlash(String value) {
-        while (value.endsWith("/") || value.endsWith("\\")) value = value.substring(0, value.length()-1);
-        return value;
+        while (true) {
+            if (value.endsWith("/") || value.endsWith("\\")) {
+                value = value.substring(0, value.length() - 1);
+            } else {
+                return value;
+            }
+        }
     }
 
     public static String addEndSlash(String value) {
-        return value.endsWith("/") ? value : value+"/";
+        return value.endsWith("/") ? value : value + "/";
     }
 
     public static String insert(String text, int index, String value) {
@@ -38,11 +43,9 @@ public class StringUtils {
 
     public static String getString(Context context, String resName) {
         try {
-            resName = resName.toLowerCase(Locale.ENGLISH);
-            int resID = context.getResources().getIdentifier(resName, "string", context.getPackageName());
+            int resID = context.getResources().getIdentifier(resName.toLowerCase(Locale.ENGLISH), "string", context.getPackageName());
             return context.getString(resID);
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             return null;
         }
     }
@@ -52,26 +55,28 @@ public class StringUtils {
     }
 
     public static String formatBytes(long bytes, boolean withSuffix) {
-        if (bytes <= 0) return "0 bytes";
-        final String[] units = new String[]{"bytes", "KB", "MB", "GB", "TB"};
-        int digitGroups = (int)(Math.log10(bytes) / Math.log10(1024));
-        String suffix = withSuffix ? " "+units[digitGroups] : "";
-        return String.format(Locale.ENGLISH, "%.2f", bytes / Math.pow(1024, digitGroups))+suffix;
+        if (bytes <= 0) {
+            return "0 bytes";
+        }
+        String[] units = {"bytes", "KB", "MB", "GB", "TB"};
+        int digitGroups = (int) (Math.log10(bytes) / Math.log10(1024.0d));
+        String suffix = withSuffix ? " " + units[digitGroups] : "";
+        return String.format(Locale.ENGLISH, "%.2f", Double.valueOf(bytes / Math.pow(1024.0d, digitGroups))) + suffix;
     }
 
     public static String fromANSIString(byte[] bytes) {
-        return fromANSIString(bytes, null);
+        return fromANSIString(bytes, (Charset) null);
     }
 
     public static String fromANSIString(byte[] bytes, Charset charset) {
         String value = charset != null ? new String(bytes, charset) : new String(bytes);
-        int indexOfNull = value.indexOf('\0');
+        int indexOfNull = value.indexOf(0);
         return indexOfNull != -1 ? value.substring(0, indexOfNull) : value;
     }
 
     public static String fromANSIString(ByteBuffer data, int pos) {
         StringBuilder sb = new StringBuilder();
-        for (int i = pos; data.get(i) != '\0'; i++) {
+        for (int i = pos; data.get(i) != 0; i++) {
             sb.append((char) data.get(i));
         }
         return sb.toString();
@@ -81,27 +86,15 @@ public class StringUtils {
         if (path == null || path.isEmpty()) {
             return "";
         }
-
-        // Replace backslashes with double backslashes
         String escapedPath = path.replace("\\", "\\\\");
-
-        // Replace spaces with escaped spaces
-        escapedPath = escapedPath.replace(" ", "\\ ");
-
-        return escapedPath;
+        return escapedPath.replace(" ", "\\ ");
     }
 
     public static String escapeFileDOSPath(String path) {
         if (path == null || path.isEmpty()) {
             return "";
         }
-
-        // Replace backslashes with double backslashes
         String escapedPath = path.replace("\\", "\\\\\\\\");
-
-        // Replace spaces with escaped spaces
-        escapedPath = escapedPath.replace(" ", "\\\\");
-
-        return escapedPath;
+        return escapedPath.replace(" ", "\\\\");
     }
 }

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:state_enabled="false"
+        android:color="?attr/colorControlNormal"
+        android:alpha="?android:attr/disabledAlpha"/>
+    <item
+        android:state_focused="true"
+        android:color="?attr/colorControlActivated"/>
+    <item
+        android:state_pressed="true"
+        android:color="?attr/colorControlActivated"/>
+    <item
+        android:color="?attr/colorControlActivated"
+        android:state_activated="true"/>
+    <item
+        android:state_selected="true"
+        android:color="?attr/colorControlActivated"/>
+    <item
+        android:state_checked="true"
+        android:color="?attr/colorControlActivated"/>
+    <item android:color="?attr/colorControlNormal"/>
+</selector>

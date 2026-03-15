@@ -1,201 +1,250 @@
 package com.winlator.cmod.renderer;
 
 import android.opengl.GLES20;
-import android.util.Log;
-
 import com.winlator.cmod.renderer.effects.Effect;
+import com.winlator.cmod.renderer.effects.FrameGenerationEffect;
 import com.winlator.cmod.renderer.effects.ToonEffect;
 import com.winlator.cmod.renderer.material.ShaderMaterial;
-
 import java.util.ArrayList;
 import java.util.List;
 
+/* loaded from: classes12.dex */
 public class EffectComposer {
-    // Constants
     private static final String TAG = "EffectComposer";
-    private boolean isRendering = false;
-
-    // Instance fields
-    private final List<Effect> effects = new ArrayList<>();
+    public static final boolean logEnabled = false;
+    private FrameGenerationEffect frameGenerationEffect;
     private RenderTarget readBuffer;
-    private RenderTarget writeBuffer;
     private final GLRenderer renderer;
+    private RenderTarget writeBuffer;
+    private boolean isRendering = false;
+    private final List<Effect> effects = new ArrayList();
+    private int lastWidth = 0;
+    private int lastHeight = 0;
+    private long lastFpsTime = 0;
+    private int frameCount = 0;
 
-    // Constructor
     public EffectComposer(GLRenderer renderer) {
         this.renderer = renderer;
-//        Log.d(TAG, "EffectComposer created");
     }
 
-    // Initializes the buffers if they are not already initialized
-    private void initBuffers() {
-//        Log.d(TAG, "initBuffers() called");
+    private void LogString(String message) {
+    }
 
-        if (readBuffer == null) {
-            readBuffer = new RenderTarget();
-            readBuffer.allocateFramebuffer(renderer.getSurfaceWidth(), renderer.getSurfaceHeight());
-//            Log.d(TAG, "Initialized readBuffer with size: " + renderer.getSurfaceWidth() + "x" + renderer.getSurfaceHeight());
-        }
-
-        if (writeBuffer == null) {
-            writeBuffer = new RenderTarget();
-            writeBuffer.allocateFramebuffer(renderer.getSurfaceWidth(), renderer.getSurfaceHeight());
-//            Log.d(TAG, "Initialized writeBuffer with size: " + renderer.getSurfaceWidth() + "x" + renderer.getSurfaceHeight());
+    private void initBuffers(int width, int height) {
+        if (this.readBuffer == null || width != this.lastWidth || height != this.lastHeight) {
+            if (this.readBuffer != null) {
+                GLES20.glDeleteFramebuffers(1, new int[]{this.readBuffer.getFramebuffer()}, 0);
+            }
+            if (this.writeBuffer != null) {
+                GLES20.glDeleteFramebuffers(1, new int[]{this.writeBuffer.getFramebuffer()}, 0);
+            }
+            this.readBuffer = new RenderTarget();
+            this.readBuffer.allocateFramebuffer(width, height);
+            this.writeBuffer = new RenderTarget();
+            this.writeBuffer.allocateFramebuffer(width, height);
+            this.lastWidth = width;
+            this.lastHeight = height;
         }
     }
 
     public synchronized void addEffect(Effect effect) {
-        if (!effects.contains(effect)) {
-            effects.add(effect);
-//            Log.d(TAG, "Effect added: " + effect.getClass().getSimpleName());
-        } else {
-//            Log.d(TAG, "Effect already present: " + effect.getClass().getSimpleName());
+        if (this.frameGenerationEffect == null || (effect instanceof FrameGenerationEffect)) {
+            if (!this.effects.contains(effect)) {
+                this.effects.add(effect);
+                if (effect instanceof FrameGenerationEffect) {
+                    this.frameGenerationEffect = (FrameGenerationEffect) effect;
+                }
+            }
+            this.renderer.xServerView.requestRender();
         }
-        // Move this call to the end of a batch effect addition or modification to prevent immediate rendering
-        renderer.xServerView.requestRender();
     }
 
-
-
-    // Gets an effect by its class type
     public synchronized <T extends Effect> T getEffect(Class<T> effectClass) {
-//        Log.d(TAG, "getEffect() called for: " + effectClass.getSimpleName());
-
-        for (Effect effect : effects) {
+        for (Effect effect : this.effects) {
             if (effect.getClass() == effectClass) {
-//                Log.d(TAG, "Effect found: " + effectClass.getSimpleName());
                 return effectClass.cast(effect);
             }
         }
-//        Log.d(TAG, "Effect not found: " + effectClass.getSimpleName());
         return null;
     }
 
-    // Checks if there are any effects present
     public synchronized boolean hasEffects() {
-        boolean hasEffects = !effects.isEmpty();
-//        Log.d(TAG, "hasEffects() called. Effects present: " + hasEffects);
-        return hasEffects;
+        return !this.effects.isEmpty();
     }
 
-    // Removes a specific effect from the composer
     public synchronized void removeEffect(Effect effect) {
-        if (effects.remove(effect)) {
-//            Log.d(TAG, "Effect removed: " + effect.getClass().getSimpleName());
-        } else {
-//            Log.d(TAG, "Effect not found for removal: " + effect.getClass().getSimpleName());
+        if (this.effects.remove(effect) && effect == this.frameGenerationEffect) {
+            this.frameGenerationEffect = null;
         }
-        renderer.xServerView.requestRender();
+        this.renderer.xServerView.requestRender();
     }
 
-    // Renders all the effects in the composer
-    public synchronized void render() {
-        // Check for recursive rendering
-        if (isRendering) {
-//            Log.d(TAG, "Render already in progress, skipping.");
+    private int determineFrameSequence() {
+        if (this.frameGenerationEffect == null || !this.frameGenerationEffect.isEnabled()) {
+            return 0;
+        }
+        int frameType = this.frameGenerationEffect.getFrameToDisplay();
+        if (frameType != 1 || this.frameGenerationEffect.isReadyForGeneration()) {
+            return frameType;
+        }
+        return 0;
+    }
+
+    private void updateFPS() {
+        long now = System.nanoTime();
+        if (this.lastFpsTime == 0) {
+            this.lastFpsTime = now;
             return;
         }
-
-        isRendering = true; // Set flag to true
-
-//        Log.d(TAG, "render() called");
-
-        initBuffers();
-
-        // Set up framebuffer if there are effects to render
-        if (hasEffects()) {
-            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, readBuffer.getFramebuffer());
-//            Log.d(TAG, "Binding to readBuffer framebuffer: " + readBuffer.getFramebuffer());
-        } else {
-            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0);
-//            Log.d(TAG, "Binding to default framebuffer (0)");
+        this.frameCount++;
+        if (now - this.lastFpsTime >= 500000000) {
+            float fps = (this.frameCount * 1.0E9f) / (now - this.lastFpsTime);
+            if (this.frameGenerationEffect != null && this.frameGenerationEffect.isAutoDetectFPS()) {
+                this.frameGenerationEffect.updateFPS((int) fps);
+            }
+            this.lastFpsTime = now;
+            this.frameCount = 0;
         }
-
-        // Draw the initial frame
-        renderer.drawFrame();
-//        Log.d(TAG, "Initial frame drawn");
-
-        // Iterate through each effect and render it
-        for (Effect effect : effects) {
-            boolean renderToScreen = effect == effects.get(effects.size() - 1);
-            int targetFramebuffer = renderToScreen ? 0 : writeBuffer.getFramebuffer();
-
-            // Bind appropriate framebuffer
-            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, targetFramebuffer);
-//            Log.d(TAG, "Binding to " + (renderToScreen ? "screen" : "writeBuffer") + " framebuffer: " + targetFramebuffer);
-
-            GLES20.glViewport(0, 0, renderer.surfaceWidth, renderer.surfaceHeight);
-            renderer.setViewportNeedsUpdate(true);
-//            Log.d(TAG, "Viewport updated to size: " + renderer.surfaceWidth + "x" + renderer.surfaceHeight);
-
-            // Clear the buffer
-            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
-//            Log.d(TAG, "Framebuffer cleared");
-
-            // Render the effect
-            renderEffect(effect);
-//            Log.d(TAG, "Effect rendered: " + effect.getClass().getSimpleName());
-
-            // Swap the read and write buffers
-            swapBuffers();
-//            Log.d(TAG, "Buffers swapped");
-        }
-
-        isRendering = false; // Reset flag after rendering
     }
 
-    // Renders a single effect
-    private void renderEffect(Effect effect) {
-//        Log.d(TAG, "renderEffect() called for: " + effect.getClass().getSimpleName());
+    public synchronized void render() {
+        boolean renderToScreen;
+        if (this.isRendering) {
+            return;
+        }
+        this.isRendering = true;
+        try {
+            updateFPS();
+            int width = this.renderer.surfaceWidth;
+            int height = this.renderer.surfaceHeight;
+            initBuffers(width, height);
+            int currentSequence = determineFrameSequence();
+            if (hasEffects()) {
+                try {
+                    GLES20.glBindFramebuffer(36160, this.readBuffer.getFramebuffer());
+                } catch (Throwable th) {
+                    th = th;
+                    this.isRendering = false;
+                    throw th;
+                }
+            } else {
+                GLES20.glBindFramebuffer(36160, 0);
+            }
+            GLES20.glClear(16384);
+            this.renderer.drawFrame();
+            GLES20.glDisable(3089);
+            for (int i = 0; i < this.effects.size(); i++) {
+                Effect effect = this.effects.get(i);
+                if (i == this.effects.size() - 1) {
+                    renderToScreen = true;
+                } else {
+                    renderToScreen = false;
+                }
+                int targetFramebuffer = renderToScreen ? 0 : this.writeBuffer.getFramebuffer();
+                if (effect == this.frameGenerationEffect && this.frameGenerationEffect != null) {
+                    GLES20.glBindFramebuffer(36160, this.readBuffer.getFramebuffer());
+                    this.frameGenerationEffect.prepareFrame(width, height, currentSequence);
+                    GLES20.glBindFramebuffer(36160, targetFramebuffer);
+                    GLES20.glViewport(0, 0, width, height);
+                    this.renderer.setViewportNeedsUpdate(true);
+                    GLES20.glClear(16384);
+                    effect.getMaterial().use();
+                    this.frameGenerationEffect.setupShaderUniforms();
+                    renderEffect(effect);
+                    if (!renderToScreen) {
+                        swapBuffers();
+                    }
+                } else {
+                    GLES20.glBindFramebuffer(36160, targetFramebuffer);
+                    GLES20.glViewport(0, 0, width, height);
+                    this.renderer.setViewportNeedsUpdate(true);
+                    GLES20.glClear(16384);
+                    renderEffect(effect);
+                    swapBuffers();
+                }
+            }
+            this.renderer.xServerView.requestRender();
+            this.isRendering = false;
+        } catch (Throwable th2) {
+            th = th2;
+        }
+    }
 
+    private void renderEffect(Effect effect) {
         ShaderMaterial material = effect.getMaterial();
         if (material == null) {
-//            Log.e(TAG, "Material is null for effect: " + effect.getClass().getSimpleName());
             return;
         }
-
         material.use();
-//        Log.d(TAG, "ShaderMaterial used: " + material.getClass().getSimpleName());
-
-        // Bind the quad vertices to the shader program
-        renderer.getQuadVertices().bind(material.programId);
-//        Log.d(TAG, "Quad vertices bound to program ID: " + material.programId);
-
-        // Set uniform values
-        material.setUniformVec2("resolution", renderer.surfaceWidth, renderer.surfaceHeight);
-        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, readBuffer.getTextureId());
-        material.setUniformInt("screenTexture", 0);
-//        Log.d(TAG, "Uniforms set: resolution=" + renderer.surfaceWidth + "x" + renderer.surfaceHeight + ", screenTexture=" + readBuffer.getTextureId());
-
-        // Draw the quad
-        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, renderer.quadVertices.count());
-//        Log.d(TAG, "Quad drawn");
-
-        // Unbind the texture
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
-//        Log.d(TAG, "Texture unbound");
-    }
-
-    // Swaps the read and write buffers
-    private void swapBuffers() {
-        RenderTarget tmp = writeBuffer;
-        writeBuffer = readBuffer;
-        readBuffer = tmp;
-//        Log.d(TAG, "swapBuffers() called. Buffers swapped.");
-    }
-
-    // Add a method to add the ToonEffect
-    public synchronized void toggleToonEffect() {
-        ToonEffect toonEffect = getEffect(ToonEffect.class);
-        if (toonEffect != null) {
-            removeEffect(toonEffect); // Remove if already present
-            Log.d(TAG, "ToonEffect removed");
+        if (effect instanceof FrameGenerationEffect) {
+            FrameGenerationEffect interpEffect = (FrameGenerationEffect) effect;
+            interpEffect.setupShaderUniforms();
+            GLES20.glActiveTexture(33984);
         } else {
-            addEffect(new ToonEffect()); // Add if not present
-            Log.d(TAG, "ToonEffect added");
+            material.setUniformVec2("resolution", this.renderer.surfaceWidth, this.renderer.surfaceHeight);
+            GLES20.glActiveTexture(33984);
+            GLES20.glBindTexture(3553, this.readBuffer.getTextureId());
+            material.setUniformInt("screenTexture", 0);
         }
-        renderer.xServerView.requestRender();
+        this.renderer.getQuadVertices().bind(material.programId);
+        GLES20.glDrawArrays(5, 0, this.renderer.quadVertices.count());
+        GLES20.glBindTexture(3553, 0);
     }
 
+    private void swapBuffers() {
+        RenderTarget tmp = this.writeBuffer;
+        this.writeBuffer = this.readBuffer;
+        this.readBuffer = tmp;
+    }
+
+    public synchronized void toggleToonEffect() {
+        ToonEffect toonEffect = (ToonEffect) getEffect(ToonEffect.class);
+        if (toonEffect != null) {
+            removeEffect(toonEffect);
+        } else {
+            addEffect(new ToonEffect());
+        }
+        this.renderer.xServerView.requestRender();
+    }
+
+    public synchronized void configureFrameGeneration(int targetFPS, int mode) {
+        if (this.frameGenerationEffect != null) {
+            this.frameGenerationEffect.setTargetFPS(targetFPS);
+            this.frameGenerationEffect.setGenerationMode(mode);
+        }
+        this.renderer.xServerView.requestRender();
+    }
+
+    public void setDisplayRefreshRate(int refreshRate) {
+        if (this.frameGenerationEffect != null) {
+            this.frameGenerationEffect.setDisplayRefreshRate(refreshRate);
+        }
+    }
+
+    public void setGenerationMode(int mode) {
+        if (this.frameGenerationEffect != null) {
+            this.frameGenerationEffect.setGenerationMode(mode);
+        }
+    }
+
+    public synchronized FrameGenerationSettings getFrameGenerationSettings() {
+        if (this.frameGenerationEffect == null) {
+            return null;
+        }
+        return new FrameGenerationSettings(this.frameGenerationEffect.getTargetFPS(), this.frameGenerationEffect.isAutoDetectFPS(), this.frameGenerationEffect.getCurrentRealFrameInterval(), this.frameGenerationEffect.getCurrentTargetFrameInterval());
+    }
+
+    public static class FrameGenerationSettings {
+        public final boolean autoDetect;
+        public final long realInterval;
+        public final int targetFPS;
+        public final long targetInterval;
+
+        public FrameGenerationSettings(int targetFPS, boolean autoDetect, long realInterval, long targetInterval) {
+            this.targetFPS = targetFPS;
+            this.autoDetect = autoDetect;
+            this.realInterval = realInterval;
+            this.targetInterval = targetInterval;
+        }
+    }
 }

@@ -9,34 +9,27 @@ import java.io.OutputStream;
 import java.net.URL;
 import java.net.URLConnection;
 
+/* loaded from: classes15.dex */
 public class Downloader {
-
     public static boolean downloadFile(String address, File file) {
         try {
             URL url = new URL(address);
             URLConnection connection = url.openConnection();
             connection.connect();
-
-            // download the file
             InputStream input = url.openStream();
-
-            // Output stream
             OutputStream output = new FileOutputStream(file.getAbsolutePath());
-
             byte[] data = new byte[1024];
-
-            int count;
-            while ((count = input.read(data)) != -1) {
-                output.write(data, 0, count);
+            while (true) {
+                int count = input.read(data);
+                if (count != -1) {
+                    output.write(data, 0, count);
+                } else {
+                    output.flush();
+                    output.close();
+                    input.close();
+                    return true;
+                }
             }
-
-            // flushing output
-            output.flush();
-
-            // closing streams
-            output.close();
-            input.close();
-            return true;
         } catch (Exception e) {
             e.printStackTrace();
             return false;
@@ -48,16 +41,18 @@ public class Downloader {
             URL url = new URL(address);
             URLConnection connection = url.openConnection();
             connection.connect();
-
             InputStream input = url.openStream();
             BufferedReader reader = new BufferedReader(new InputStreamReader(input));
             StringBuilder sb = new StringBuilder();
-            String line = null;
-            while ((line = reader.readLine()) != null) {
-                sb.append(line).append("\n");
+            while (true) {
+                String line = reader.readLine();
+                if (line != null) {
+                    sb.append(line).append("\n");
+                } else {
+                    reader.close();
+                    return sb.toString();
+                }
             }
-            reader.close();
-            return sb.toString();
         } catch (Exception e) {
             e.printStackTrace();
             return null;

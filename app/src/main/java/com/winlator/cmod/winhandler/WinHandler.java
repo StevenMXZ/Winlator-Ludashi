@@ -1,216 +1,125 @@
 package com.winlator.cmod.winhandler;
 
-import static com.winlator.cmod.inputcontrols.ExternalController.TRIGGER_IS_AXIS;
-
 import android.content.SharedPreferences;
+import android.hardware.input.InputManager;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-
 import androidx.preference.PreferenceManager;
-
 import com.winlator.cmod.XServerDisplayActivity;
 import com.winlator.cmod.core.StringUtils;
 import com.winlator.cmod.inputcontrols.ControlsProfile;
 import com.winlator.cmod.inputcontrols.ExternalController;
+import com.winlator.cmod.inputcontrols.FakeInputWriter;
 import com.winlator.cmod.inputcontrols.GamepadState;
-import com.winlator.cmod.math.Mathf;
 import com.winlator.cmod.xserver.XServer;
-
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.net.UnknownHostException;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+/* loaded from: classes12.dex */
 public class WinHandler {
-    private static final short SERVER_PORT = 7947;
     private static final short CLIENT_PORT = 7946;
-    public static final byte FLAG_DINPUT_MAPPER_STANDARD = 0x01;
-    public static final byte FLAG_DINPUT_MAPPER_XINPUT = 0x02;
-    public static final byte FLAG_INPUT_TYPE_XINPUT = 0x04;
-    public static final byte FLAG_INPUT_TYPE_DINPUT = 0x08;
-    public static final byte DEFAULT_INPUT_TYPE = FLAG_INPUT_TYPE_XINPUT;
-    public static final byte INPUT_TYPE_MIXED = 2;
+    public static final byte DEFAULT_INPUT_TYPE = 4;
+    public static final byte FLAG_INPUT_TYPE_DINPUT = 8;
+    public static final byte FLAG_INPUT_TYPE_XINPUT = 4;
+    private static final int MAX_CONTROLLERS = 4;
+    private static final int OSC_DEVICE_ID = -1;
+    private static final short SERVER_PORT = 7947;
+    private final XServerDisplayActivity activity;
+    private String fakeInputBasePath;
+    private final InputManager inputManager;
+    private InetAddress localhost;
+    private OnGetProcessInfoListener onGetProcessInfoListener;
+    private SharedPreferences preferences;
     private DatagramSocket socket;
+    private boolean xinputDisabled;
     private final ByteBuffer sendData = ByteBuffer.allocate(64).order(ByteOrder.LITTLE_ENDIAN);
     private final ByteBuffer receiveData = ByteBuffer.allocate(64).order(ByteOrder.LITTLE_ENDIAN);
-    private final DatagramPacket sendPacket = new DatagramPacket(sendData.array(), 64);
-    private final DatagramPacket receivePacket = new DatagramPacket(receiveData.array(), 64);
+    private final DatagramPacket sendPacket = new DatagramPacket(this.sendData.array(), 64);
+    private final DatagramPacket receivePacket = new DatagramPacket(this.receiveData.array(), 64);
     private final ArrayDeque<Runnable> actions = new ArrayDeque<>();
     private boolean initReceived = false;
     private boolean running = false;
-    private OnGetProcessInfoListener onGetProcessInfoListener;
-    private ExternalController currentController;
-    private InetAddress localhost;
-    private byte inputType = DEFAULT_INPUT_TYPE;
-    private final XServerDisplayActivity activity;
-    private final List<Integer> gamepadClients = new CopyOnWriteArrayList<>();
-    private SharedPreferences preferences;
-    private byte triggerType;
-
-    private boolean xinputDisabled; // Used for exclusive mouse controllegacy
+    private final Map<Integer, ExternalController> controllers = new HashMap();
+    private byte inputType = 4;
+    private final List<Integer> gamepadClients = new CopyOnWriteArrayList();
+    private FakeInputWriter[] writers = new FakeInputWriter[4];
+    private Map<Integer, Integer> deviceToSlot = new HashMap();
+    private Set<Integer> usedSlots = new HashSet();
     private boolean xinputDisabledInitialized = false;
-
-
-    private boolean useLegacyInputMethod = false; // Default to using the new input method
-    // Add this field near the other field declarations at the top of the class
-    // Add these constants at the top of the class where other constants are defined
-    public static final byte DINPUT_MAPPER_TYPE_STANDARD = 0;
-    public static final byte DINPUT_MAPPER_TYPE_XINPUT = 1;
-    private byte dinputMapperType = DINPUT_MAPPER_TYPE_XINPUT; // Default value, you can set this as needed
-
-
-
-    // Gyro related variables
-    private float gyroX = 0;
-    private float gyroY = 0;
-    // Add fields for sensitivity, smoothing, and inversion
-    private float gyroSensitivityX = 0.35f;
-    private float gyroSensitivityY = 0.25f;
-    private float smoothingFactor = 0.45f; // For exponential smoothing
-    private boolean invertGyroX = true;
-    private boolean invertGyroY = false;
-    private float gyroDeadzone = 0.01f;
-
-    // Implement exponential smoothing
-    private float smoothGyroX = 0;
-    private float smoothGyroY = 0;
-
-    private boolean processGyroWithLeftTrigger = false;
-
-    private int gyroTriggerButton;
-    private boolean isGyroActive = false;
-    private boolean isToggleMode;
-
-    public void setGyroSensitivityX(float sensitivity) {
-        this.gyroSensitivityX = sensitivity;
-    }
-
-    public void setGyroSensitivityY(float sensitivity) {
-        this.gyroSensitivityY = sensitivity;
-    }
-
-    public void setSmoothingFactor(float factor) {
-        this.smoothingFactor = factor;
-    }
-
-    public void setInvertGyroX(boolean invert) {
-        this.invertGyroX = invert;
-    }
-
-    public void setInvertGyroY(boolean invert) {
-        this.invertGyroY = invert;
-    }
-
-    public void setGyroDeadzone(float deadzone) {
-        this.gyroDeadzone = deadzone;
-    }
-
-    private boolean isLeftTriggerPressed() {
-        return currentController != null && currentController.state.triggerL > 0.5f; // Assuming 0.5f is the threshold for pressed
-    }
-
-
-    public void updateGyroData(float rawGyroX, float rawGyroY) {
-        // Check if gyro is enabled before processing the data
-        if (!preferences.getBoolean("gyro_enabled", false)) {
-            return; // Exit if the gyro is disabled
+    private final InputManager.InputDeviceListener inputDeviceListener = new InputManager.InputDeviceListener() { // from class: com.winlator.cmod.winhandler.WinHandler.1
+        @Override // android.hardware.input.InputManager.InputDeviceListener
+        public void onInputDeviceAdded(int deviceId) {
         }
 
-        boolean shouldProcessGyro = true;
-
-        // Check if processing gyro data only when the left trigger is held
-        if (processGyroWithLeftTrigger) {
-            shouldProcessGyro = isLeftTriggerPressed();
+        @Override // android.hardware.input.InputManager.InputDeviceListener
+        public void onInputDeviceRemoved(int deviceId) {
+            WinHandler.this.releaseSlot(deviceId);
         }
 
-
-
-        if (isGyroActive) {
-            // Apply deadzone
-            if (Math.abs(rawGyroX) < gyroDeadzone) rawGyroX = 0;
-            if (Math.abs(rawGyroY) < gyroDeadzone) rawGyroY = 0;
-
-            // Apply inversion
-            if (invertGyroX) rawGyroX = -rawGyroX;
-            if (invertGyroY) rawGyroY = -rawGyroY;
-
-            // Further reduce sensitivity by lowering the multiplier
-            float sensitivityMultiplier = 0.25f; // Reduce the sensitivity even more
-            rawGyroX *= gyroSensitivityX * sensitivityMultiplier;
-            rawGyroY *= gyroSensitivityY * sensitivityMultiplier;
-
-            // Apply smoothing
-            smoothGyroX = smoothGyroX * smoothingFactor + rawGyroX * (1 - smoothingFactor);
-            smoothGyroY = smoothGyroY * smoothingFactor + rawGyroY * (1 - smoothingFactor);
-
-            // Clamp the result to reduce the overall range of movement
-            smoothGyroX = Mathf.clamp(smoothGyroX, -0.25f, 0.25f); // Reduce clamping range for less movement
-            smoothGyroY = Mathf.clamp(smoothGyroY, -0.25f, 0.25f);
-
-            // Update the gyro data
-            this.gyroX = smoothGyroX;
-            this.gyroY = smoothGyroY;
-
-            // Send the updated gamepad state
-            sendGamepadState();
+        @Override // android.hardware.input.InputManager.InputDeviceListener
+        public void onInputDeviceChanged(int deviceId) {
         }
-    }
-
-
-
+    };
 
     public WinHandler(XServerDisplayActivity activity) {
         this.activity = activity;
-        preferences = PreferenceManager.getDefaultSharedPreferences(activity.getBaseContext());
+        this.inputManager = (InputManager) activity.getSystemService("input");
+        this.inputManager.registerInputDeviceListener(this.inputDeviceListener, null);
+        this.preferences = PreferenceManager.getDefaultSharedPreferences(activity.getBaseContext());
     }
+
     private boolean sendPacket(int port) {
         try {
-            int size = sendData.position();
-            if (size == 0) return false;
-            sendPacket.setAddress(localhost);
-            sendPacket.setPort(port);
-            socket.send(sendPacket);
+            int size = this.sendData.position();
+            if (size == 0) {
+                return false;
+            }
+            this.sendPacket.setAddress(this.localhost);
+            this.sendPacket.setPort(port);
+            this.socket.send(this.sendPacket);
             return true;
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             return false;
         }
     }
 
-    public void exec(String command) {
-        command = command.trim();
-        if (command.isEmpty()) return;
-
-        // The `split` function here should be sensitive to paths with spaces.
-        // Instead of splitting, let's assume that command is directly provided in two parts: filename and parameters.
-        // Adjust command splitting based on whether it contains quotes.
-
-        String filename;
-        String parameters;
-
-        if (command.contains("\"")) {
-            // If the command is quoted, extract the quoted part as the filename
-            int firstQuote = command.indexOf("\"");
-            int lastQuote = command.lastIndexOf("\"");
-            filename = command.substring(firstQuote + 1, lastQuote);
-            if (lastQuote + 1 < command.length()) {
-                parameters = command.substring(lastQuote + 1).trim();
+    /* renamed from: exec, reason: merged with bridge method [inline-methods] */
+    public void lambda$execWithDelay$10(String command) {
+        final String filename;
+        final String parameters;
+        String command2 = command.trim();
+        if (command2.isEmpty()) {
+            return;
+        }
+        if (command2.contains("\"")) {
+            int firstQuote = command2.indexOf("\"");
+            int lastQuote = command2.lastIndexOf("\"");
+            filename = command2.substring(firstQuote + 1, lastQuote);
+            if (lastQuote + 1 < command2.length()) {
+                parameters = command2.substring(lastQuote + 1).trim();
             } else {
                 parameters = "";
             }
         } else {
-            // Standard split when no quotes
-            String[] cmdList = command.split(" ", 2);
+            String[] cmdList = command2.split(" ", 2);
             filename = cmdList[0];
             if (cmdList.length > 1) {
                 parameters = cmdList[1];
@@ -218,526 +127,471 @@ public class WinHandler {
                 parameters = "";
             }
         }
-
-        addAction(() -> {
-            byte[] filenameBytes = filename.getBytes();
-            byte[] parametersBytes = parameters.getBytes();
-
-            sendData.rewind();
-            sendData.put(RequestCodes.EXEC);
-            sendData.putInt(filenameBytes.length + parametersBytes.length + 8);
-            sendData.putInt(filenameBytes.length);
-            sendData.putInt(parametersBytes.length);
-            sendData.put(filenameBytes);
-            sendData.put(parametersBytes);
-            sendPacket(CLIENT_PORT);
+        addAction(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda8
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$exec$0(filename, parameters);
+            }
         });
     }
 
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$exec$0(String filename, String parameters) {
+        byte[] filenameBytes = filename.getBytes();
+        byte[] parametersBytes = parameters.getBytes();
+        this.sendData.rewind();
+        this.sendData.put((byte) 2);
+        this.sendData.putInt(filenameBytes.length + parametersBytes.length + 8);
+        this.sendData.putInt(filenameBytes.length);
+        this.sendData.putInt(parametersBytes.length);
+        this.sendData.put(filenameBytes);
+        this.sendData.put(parametersBytes);
+        sendPacket(7946);
+    }
 
     public void killProcess(final String processName) {
-        addAction(() -> {
-            sendData.rewind();
-            sendData.put(RequestCodes.KILL_PROCESS);
-            byte[] bytes = processName.getBytes();
-            sendData.putInt(bytes.length);
-            sendData.put(bytes);
-            sendPacket(CLIENT_PORT);
+        addAction(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda5
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$killProcess$1(processName);
+            }
         });
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$killProcess$1(String processName) {
+        this.sendData.rewind();
+        this.sendData.put((byte) 3);
+        byte[] bytes = processName.getBytes();
+        this.sendData.putInt(bytes.length);
+        this.sendData.put(bytes);
+        sendPacket(7946);
     }
 
     public void listProcesses() {
-        addAction(() -> {
-            sendData.rewind();
-            sendData.put(RequestCodes.LIST_PROCESSES);
-            sendData.putInt(0);
-
-            if (!sendPacket(CLIENT_PORT) && onGetProcessInfoListener != null) {
-                onGetProcessInfoListener.onGetProcessInfo(0, 0, null);
+        addAction(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda2
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$listProcesses$2();
             }
         });
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$listProcesses$2() {
+        this.sendData.rewind();
+        this.sendData.put((byte) 4);
+        this.sendData.putInt(0);
+        if (!sendPacket(7946) && this.onGetProcessInfoListener != null) {
+            this.onGetProcessInfoListener.onGetProcessInfo(0, 0, null);
+        }
     }
 
     public void setProcessAffinity(final String processName, final int affinityMask) {
-        addAction(() -> {
-            byte[] bytes = processName.getBytes();
-            sendData.rewind();
-            sendData.put(RequestCodes.SET_PROCESS_AFFINITY);
-            sendData.putInt(9 + bytes.length);
-            sendData.putInt(0);
-            sendData.putInt(affinityMask);
-            sendData.put((byte)bytes.length);
-            sendData.put(bytes);
-            sendPacket(CLIENT_PORT);
+        addAction(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda7
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$setProcessAffinity$3(processName, affinityMask);
+            }
         });
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$setProcessAffinity$3(String processName, int affinityMask) {
+        byte[] bytes = processName.getBytes();
+        this.sendData.rewind();
+        this.sendData.put((byte) 6);
+        this.sendData.putInt(bytes.length + 9);
+        this.sendData.putInt(0);
+        this.sendData.putInt(affinityMask);
+        this.sendData.put((byte) bytes.length);
+        this.sendData.put(bytes);
+        sendPacket(7946);
     }
 
     public void setProcessAffinity(final int pid, final int affinityMask) {
-        addAction(() -> {
-            sendData.rewind();
-            sendData.put(RequestCodes.SET_PROCESS_AFFINITY);
-            sendData.putInt(9);
-            sendData.putInt(pid);
-            sendData.putInt(affinityMask);
-            sendData.put((byte)0);
-            sendPacket(CLIENT_PORT);
+        addAction(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda4
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$setProcessAffinity$4(pid, affinityMask);
+            }
         });
     }
 
-    public void mouseEvent(int flags, int dx, int dy, int wheelDelta) {
-        if (!initReceived) return;
-        addAction(() -> {
-            sendData.rewind();
-            sendData.put(RequestCodes.MOUSE_EVENT);
-            sendData.putInt(10);
-            sendData.putInt(flags);
-            sendData.putShort((short)dx);
-            sendData.putShort((short)dy);
-            sendData.putShort((short)wheelDelta);
-            sendData.put((byte)((flags & MouseEventFlags.MOVE) != 0 ? 1 : 0)); // cursor pos feedback
-            sendPacket(CLIENT_PORT);
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$setProcessAffinity$4(int pid, int affinityMask) {
+        this.sendData.rewind();
+        this.sendData.put((byte) 6);
+        this.sendData.putInt(9);
+        this.sendData.putInt(pid);
+        this.sendData.putInt(affinityMask);
+        this.sendData.put((byte) 0);
+        sendPacket(7946);
+    }
+
+    public void mouseEvent(final int flags, final int dx, final int dy, final int wheelDelta) {
+        if (!this.initReceived) {
+            return;
+        }
+        addAction(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda1
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$mouseEvent$5(flags, dx, dy, wheelDelta);
+            }
         });
     }
 
-    public void keyboardEvent(byte vkey, int flags) {
-        if (!initReceived) return;
-        addAction(() -> {
-            sendData.rewind();
-            sendData.put(RequestCodes.KEYBOARD_EVENT);
-            sendData.put(vkey);
-            sendData.putInt(flags);
-            sendPacket(CLIENT_PORT);
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$mouseEvent$5(int flags, int dx, int dy, int wheelDelta) {
+        this.sendData.rewind();
+        this.sendData.put((byte) 7);
+        this.sendData.putInt(10);
+        this.sendData.putInt(flags);
+        this.sendData.putShort((short) dx);
+        this.sendData.putShort((short) dy);
+        this.sendData.putShort((short) wheelDelta);
+        this.sendData.put((byte) ((flags & 1) != 0 ? 1 : 0));
+        sendPacket(7946);
+    }
+
+    public void keyboardEvent(final byte vkey, final int flags) {
+        if (!this.initReceived) {
+            return;
+        }
+        addAction(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda3
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$keyboardEvent$6(vkey, flags);
+            }
         });
     }
 
-    public void bringToFront(final String processName) {
-        bringToFront(processName, 0);
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$keyboardEvent$6(byte vkey, int flags) {
+        this.sendData.rewind();
+        this.sendData.put((byte) 11);
+        this.sendData.put(vkey);
+        this.sendData.putInt(flags);
+        sendPacket(7946);
+    }
+
+    public void bringToFront(String processName) {
+        bringToFront(processName, 0L);
     }
 
     public void bringToFront(final String processName, final long handle) {
-        addAction(() -> {
-            sendData.rewind();
-            try {
-                sendData.put(RequestCodes.BRING_TO_FRONT);
-                byte[] bytes = processName.getBytes();
-                sendData.putInt(bytes.length);
-                // FIXME: Chinese and Japanese got from winhandler.exe are broken, and they cause overflow.
-                sendData.put(bytes);
-                sendData.putLong(handle);
-            } catch (java.nio.BufferOverflowException e) {
-                e.printStackTrace();
-                sendData.rewind();
+        addAction(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda0
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$bringToFront$7(processName, handle);
             }
-            sendPacket(CLIENT_PORT);
         });
     }
 
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$bringToFront$7(String processName, long handle) {
+        this.sendData.rewind();
+        try {
+            this.sendData.put((byte) 12);
+            byte[] bytes = processName.getBytes();
+            this.sendData.putInt(bytes.length);
+            this.sendData.put(bytes);
+            this.sendData.putLong(handle);
+        } catch (BufferOverflowException e) {
+            e.printStackTrace();
+            this.sendData.rewind();
+        }
+        sendPacket(7946);
+    }
+
     private void addAction(Runnable action) {
-        synchronized (actions) {
-            actions.add(action);
-            actions.notify();
+        synchronized (this.actions) {
+            this.actions.add(action);
+            this.actions.notify();
         }
     }
 
     public OnGetProcessInfoListener getOnGetProcessInfoListener() {
-        return onGetProcessInfoListener;
+        return this.onGetProcessInfoListener;
     }
 
     public void setOnGetProcessInfoListener(OnGetProcessInfoListener onGetProcessInfoListener) {
-        synchronized (actions) {
+        synchronized (this.actions) {
             this.onGetProcessInfoListener = onGetProcessInfoListener;
         }
     }
 
     private void startSendThread() {
-        Executors.newSingleThreadExecutor().execute(() -> {
-            while (running) {
-                synchronized (actions) {
-                    while (initReceived && !actions.isEmpty()) actions.poll().run();
-                    try {
-                        actions.wait();
-                    }
-                    catch (InterruptedException e) {}
-                }
+        Executors.newSingleThreadExecutor().execute(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda10
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$startSendThread$8();
             }
         });
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$startSendThread$8() {
+        while (this.running) {
+            synchronized (this.actions) {
+                while (this.initReceived && !this.actions.isEmpty()) {
+                    this.actions.poll().run();
+                }
+                try {
+                    this.actions.wait();
+                } catch (InterruptedException e) {
+                }
+            }
+        }
     }
 
     public void stop() {
-        running = false;
-
-        if (socket != null) {
-            socket.close();
-            socket = null;
+        this.running = false;
+        closeFakeInputWriter();
+        if (this.socket != null) {
+            this.socket.close();
+            this.socket = null;
         }
-
-        synchronized (actions) {
-            actions.notify();
+        synchronized (this.actions) {
+            this.actions.notify();
         }
     }
 
-    private void handleRequest(byte requestCode, final int port) {
+    private void handleRequest(byte requestCode, int port) {
         switch (requestCode) {
-            case RequestCodes.INIT: {
-                initReceived = true;
-
-
-
-                preferences = PreferenceManager.getDefaultSharedPreferences(activity.getBaseContext());
-
-                gyroTriggerButton = preferences.getInt("gyro_trigger_button", KeyEvent.KEYCODE_BUTTON_L1);
-                isToggleMode = preferences.getInt("gyro_mode", 0) == 1; // 1 is toggle mode, 0 is hold mode
-
-
-                // Load and apply trigger mode and xinput toggle settings
-                triggerType = (byte) preferences.getInt("trigger_type", TRIGGER_IS_AXIS);
-
-                refreshControllerMappings();
-
-                // Only set xinputDisabled if it hasn't been set explicitly by XServerDisplayActivity
-                if (!xinputDisabledInitialized) {
-                    xinputDisabled = preferences.getBoolean("xinput_toggle", false);
+            case 1:
+                this.initReceived = true;
+                this.preferences = PreferenceManager.getDefaultSharedPreferences(this.activity.getBaseContext());
+                if (!this.xinputDisabledInitialized) {
+                    this.xinputDisabled = this.preferences.getBoolean("xinput_toggle", false);
                 }
-
-                // Load the flag to use legacy input method
-                useLegacyInputMethod = preferences.getBoolean("useLegacyInputMethod", false);
-
-                // Load and apply gyro settings
-                setGyroSensitivityX(preferences.getFloat("gyro_x_sensitivity", 1.0f));
-                setGyroSensitivityY(preferences.getFloat("gyro_y_sensitivity", 1.0f));
-                setSmoothingFactor(preferences.getFloat("gyro_smoothing", 0.9f));
-                setInvertGyroX(preferences.getBoolean("invert_gyro_x", false));
-                setInvertGyroY(preferences.getBoolean("invert_gyro_y", false));
-                setGyroDeadzone(preferences.getFloat("gyro_deadzone", 0.05f));
-
-                processGyroWithLeftTrigger = preferences.getBoolean("process_gyro_with_left_trigger", false);
-
-                synchronized (actions) {
-                    actions.notify();
+                synchronized (this.actions) {
+                    this.actions.notify();
                 }
-                break;
-            }
-
-            case RequestCodes.GET_PROCESS: {
-                if (onGetProcessInfoListener == null) return;
-                receiveData.position(receiveData.position() + 4);
-                int numProcesses = receiveData.getShort();
-                int index = receiveData.getShort();
-                int pid = receiveData.getInt();
-                long memoryUsage = receiveData.getLong();
-                int affinityMask = receiveData.getInt();
-                boolean wow64Process = receiveData.get() == 1;
-
-                byte[] bytes = new byte[32];
-                receiveData.get(bytes);
-                String name = StringUtils.fromANSIString(bytes);
-
-                onGetProcessInfoListener.onGetProcessInfo(index, numProcesses, new ProcessInfo(pid, name, memoryUsage, affinityMask, wow64Process));
-                break;
-            }
-            case RequestCodes.GET_GAMEPAD: {
-                if (xinputDisabled) return;
-                boolean isXInput = receiveData.get() == 1;
-                boolean notify = receiveData.get() == 1;
-                final ControlsProfile profile = activity.getInputControlsView().getProfile();
-                boolean useVirtualGamepad = profile != null && profile.isVirtualGamepad();
-
-                if (!useVirtualGamepad && (currentController == null || !currentController.isConnected())) {
-                    currentController = ExternalController.getController(0);
-                    if (currentController != null) {
-                        currentController.setTriggerType(triggerType);
-                    }
+                return;
+            case 5:
+                if (this.onGetProcessInfoListener != null) {
+                    this.receiveData.position(this.receiveData.position() + 4);
+                    int numProcesses = this.receiveData.getShort();
+                    int index = this.receiveData.getShort();
+                    int pid = this.receiveData.getInt();
+                    long memoryUsage = this.receiveData.getLong();
+                    int affinityMask = this.receiveData.getInt();
+                    boolean wow64Process = this.receiveData.get() == 1;
+                    byte[] bytes = new byte[32];
+                    this.receiveData.get(bytes);
+                    String name = StringUtils.fromANSIString(bytes);
+                    this.onGetProcessInfoListener.onGetProcessInfo(index, numProcesses, new ProcessInfo(pid, name, memoryUsage, affinityMask, wow64Process));
+                    return;
                 }
-
-                final boolean enabled = currentController != null || useVirtualGamepad;
-
-                if (enabled && notify) {
-                    if (!gamepadClients.contains(port)) gamepadClients.add(port);
-                } else {
-                    gamepadClients.remove(Integer.valueOf(port));
-                }
-
-                addAction(() -> {
-                    sendData.rewind();
-                    sendData.put(RequestCodes.GET_GAMEPAD);
-
-                    if (enabled) {
-                        sendData.putInt(!useVirtualGamepad ? currentController.getDeviceId() : profile.id);
-
-                        if (useLegacyInputMethod) {
-                            // Use legacy DInput mapper type
-                            sendData.put(dinputMapperType);
-                        } else {
-                            // Use new input type flags
-                            sendData.put(inputType);
-                        }
-
-                        byte[] bytes = (useVirtualGamepad ? profile.getName() : currentController.getName()).getBytes();
-                        sendData.putInt(bytes.length);
-                        sendData.put(bytes);
-                    } else {
-                        sendData.putInt(0);
-                    }
-
-                    sendPacket(port);
-                });
-                break;
-            }
-            case RequestCodes.GET_GAMEPAD_STATE: {
-                if (xinputDisabled) return;
-                int gamepadId = receiveData.getInt();
-                final ControlsProfile profile = activity.getInputControlsView().getProfile();
-                boolean useVirtualGamepad = profile != null && profile.isVirtualGamepad();
-                final boolean enabled = currentController != null || useVirtualGamepad;
-
-                if (currentController != null && currentController.getDeviceId() != gamepadId) currentController = null;
-
-                addAction(() -> {
-                    sendData.rewind();
-                    sendData.put(RequestCodes.GET_GAMEPAD_STATE);
-                    sendData.put((byte)(enabled ? 1 : 0));
-
-                    if (enabled) {
-                        sendData.putInt(gamepadId);
-                        if (useVirtualGamepad) {
-                            profile.getGamepadState().writeTo(sendData);
-                        } else {
-                            currentController.state.writeTo(sendData);
-                        }
-                    }
-
-                    sendPacket(port);
-                });
-                break;
-            }
-            case RequestCodes.RELEASE_GAMEPAD: {
-                currentController = null;
-                gamepadClients.clear();
-                break;
-            }
-            case RequestCodes.CURSOR_POS_FEEDBACK: {
-                short x = receiveData.getShort();
-                short y = receiveData.getShort();
-                XServer xServer = activity.getXServer();
+                return;
+            case 8:
+            case 9:
+            default:
+                return;
+            case 10:
+            case 13:
+                short x = this.receiveData.getShort();
+                short y = this.receiveData.getShort();
+                XServer xServer = this.activity.getXServer();
                 xServer.pointer.setX(x);
                 xServer.pointer.setY(y);
-                activity.getXServerView().requestRender();
-                break;
-            }
-            default: {
-                // Handle any other request codes if needed
-                break;
-            }
+                this.activity.getXServerView().requestRender();
+                return;
         }
     }
-
-
 
     public void start() {
         try {
-            localhost = InetAddress.getLocalHost();
-        }
-        catch (UnknownHostException e) {
+            this.localhost = InetAddress.getLocalHost();
+        } catch (UnknownHostException e) {
             try {
-                localhost = InetAddress.getByName("127.0.0.1");
+                this.localhost = InetAddress.getByName("127.0.0.1");
+            } catch (UnknownHostException e2) {
             }
-            catch (UnknownHostException ex) {}
         }
-
-        running = true;
+        this.running = true;
         startSendThread();
-        Executors.newSingleThreadExecutor().execute(() -> {
-            try {
-                socket = new DatagramSocket(null);
-                socket.setReuseAddress(true);
-                socket.bind(new InetSocketAddress((InetAddress)null, SERVER_PORT));
-
-                while (running) {
-                    socket.receive(receivePacket);
-
-                    synchronized (actions) {
-                        receiveData.rewind();
-                        byte requestCode = receiveData.get();
-                        handleRequest(requestCode, receivePacket.getPort());
-                    }
-                }
+        Executors.newSingleThreadExecutor().execute(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda6
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$start$9();
             }
-            catch (IOException e) {}
         });
     }
 
-    public void sendGamepadState() {
-        if (!initReceived || gamepadClients.isEmpty() || xinputDisabled ) return; // Add this check
-        final ControlsProfile profile = activity.getInputControlsView().getProfile();
-        final boolean useVirtualGamepad = profile != null && profile.isVirtualGamepad();
-        final boolean enabled = currentController != null || useVirtualGamepad;
-
-        for (final int port : gamepadClients) {
-            addAction(() -> {
-                sendData.rewind();
-                sendData.put(RequestCodes.GET_GAMEPAD_STATE);
-                sendData.put((byte)(enabled ? 1 : 0));
-
-                if (enabled) {
-                    sendData.putInt(!useVirtualGamepad ? currentController.getDeviceId() : profile.id);
-                    GamepadState state = useVirtualGamepad ? profile.getGamepadState() : currentController.state;
-
-                    // Combine gyro input with thumbstick input
-                    state.thumbRX = Mathf.clamp(state.thumbRX + gyroX, -1.0f, 1.0f); // Apply clamping
-                    state.thumbRY = Mathf.clamp(state.thumbRY + gyroY, -1.0f, 1.0f); // Apply clamping
-
-                    state.writeTo(sendData);
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$start$9() {
+        try {
+            this.socket = new DatagramSocket((SocketAddress) null);
+            this.socket.setReuseAddress(true);
+            this.socket.bind(new InetSocketAddress((InetAddress) null, 7947));
+            while (this.running) {
+                this.socket.receive(this.receivePacket);
+                synchronized (this.actions) {
+                    this.receiveData.rewind();
+                    byte requestCode = this.receiveData.get();
+                    handleRequest(requestCode, this.receivePacket.getPort());
                 }
+            }
+        } catch (IOException e) {
+        }
+    }
 
-                sendPacket(port);
-            });
+    public void sendGamepadState() {
+        ControlsProfile profile = this.activity.getInputControlsView().getProfile();
+        if (profile == null) {
+            return;
+        }
+        GamepadState gamepadState = profile.getGamepadState();
+        boolean useVirtualGamepad = profile.isVirtualGamepad() && this.activity.getInputControlsView().isShowTouchscreenControls();
+        if (useVirtualGamepad) {
+            int slot = assignSlot(-1);
+            if (slot >= 0 && this.writers[slot] != null) {
+                this.writers[slot].writeGamepadState(gamepadState);
+                return;
+            }
+            return;
+        }
+        releaseSlot(-1);
+    }
+
+    public void sendGamepadState(ExternalController controller) {
+        ExternalController profileController;
+        if (controller == null) {
+            return;
+        }
+        ControlsProfile profile = this.activity.getInputControlsView().getProfile();
+        if (profile != null && (profileController = profile.getController(controller.getDeviceId())) != null && profileController.getControllerBindingCount() > 0) {
+            int slot = assignSlot(controller.getDeviceId());
+            if (slot >= 0 && this.writers[slot] != null) {
+                this.writers[slot].writeGamepadState(controller.remappedState);
+                return;
+            }
+            return;
+        }
+        int slot2 = assignSlot(controller.getDeviceId());
+        if (slot2 >= 0 && this.writers[slot2] != null) {
+            this.writers[slot2].writeGamepadState(controller.state);
+        }
+    }
+
+    private int assignSlot(int deviceId) {
+        Integer existing = this.deviceToSlot.get(Integer.valueOf(deviceId));
+        if (existing != null) {
+            return existing.intValue();
+        }
+        for (int slot = 0; slot < 4; slot++) {
+            if (!this.usedSlots.contains(Integer.valueOf(slot))) {
+                this.usedSlots.add(Integer.valueOf(slot));
+                this.deviceToSlot.put(Integer.valueOf(deviceId), Integer.valueOf(slot));
+                if (this.fakeInputBasePath != null && this.writers[slot] == null) {
+                    this.writers[slot] = new FakeInputWriter(this.fakeInputBasePath, slot);
+                    this.writers[slot].open();
+                    Log.d("WinHandler", "Assigned device " + deviceId + " to slot " + slot);
+                }
+                return slot;
+            }
+        }
+        Log.w("WinHandler", "No slots available for device " + deviceId);
+        return -1;
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public void releaseSlot(int deviceId) {
+        Integer slot = this.deviceToSlot.remove(Integer.valueOf(deviceId));
+        if (slot != null) {
+            if (this.writers[slot.intValue()] != null) {
+                this.writers[slot.intValue()].softRelease();
+            }
+            this.usedSlots.remove(slot);
+            this.controllers.remove(Integer.valueOf(deviceId));
+            Log.d("WinHandler", "Device " + deviceId + " disconnected (or OSC disabled). Slot soft-released: " + slot);
         }
     }
 
     public void setXInputDisabled(boolean disabled) {
         this.xinputDisabled = disabled;
-        this.xinputDisabledInitialized = true; // Mark as initialized
-        Log.d("WinHandler", "XInput Disabled set to: " + xinputDisabled);
+        this.xinputDisabledInitialized = true;
+        Log.d("WinHandler", "XInput Disabled set to: " + this.xinputDisabled);
     }
 
+    public void setFakeInputPath(String fakeInputPath) {
+        if (fakeInputPath != null && !fakeInputPath.isEmpty()) {
+            this.fakeInputBasePath = fakeInputPath;
+            Log.d("WinHandler", "FakeInputWriter base path set: " + fakeInputPath);
+        }
+    }
 
+    public void closeFakeInputWriter() {
+        if (this.inputManager != null && this.inputDeviceListener != null) {
+            this.inputManager.unregisterInputDeviceListener(this.inputDeviceListener);
+        }
+        for (int i = 0; i < 4; i++) {
+            if (this.writers[i] != null) {
+                this.writers[i].destroy();
+                this.writers[i] = null;
+            }
+        }
+        this.deviceToSlot.clear();
+        this.usedSlots.clear();
+        this.controllers.clear();
+    }
 
-//    public boolean onGenericMotionEvent(MotionEvent event) {
-//        boolean handled = false;
-//        if (currentController != null && currentController.getDeviceId() == event.getDeviceId()) {
-//            handled = currentController.updateStateFromMotionEvent(event);
-//            if (handled) sendGamepadState();
-//        }
-//        return handled;
-//    }
+    private ExternalController getController(int deviceId) {
+        if (this.controllers.containsKey(Integer.valueOf(deviceId))) {
+            return this.controllers.get(Integer.valueOf(deviceId));
+        }
+        ExternalController controller = ExternalController.getController(deviceId);
+        if (controller != null) {
+            this.controllers.put(Integer.valueOf(deviceId), controller);
+        }
+        return controller;
+    }
 
     public boolean onGenericMotionEvent(MotionEvent event) {
         boolean handled = false;
-        if (currentController != null && currentController.getDeviceId() == event.getDeviceId()) {
-            handled = currentController.updateStateFromMotionEvent(event);
-            if (handled) sendGamepadState();
-
-            // Check if gyroTriggerButton is L2 or R2, and process accordingly
-            if (gyroTriggerButton == KeyEvent.KEYCODE_BUTTON_L2 || gyroTriggerButton == KeyEvent.KEYCODE_BUTTON_R2) {
-                float triggerValue = 0f;
-                if (gyroTriggerButton == KeyEvent.KEYCODE_BUTTON_L2) {
-                    triggerValue = event.getAxisValue(MotionEvent.AXIS_LTRIGGER);
-                } else if (gyroTriggerButton == KeyEvent.KEYCODE_BUTTON_R2) {
-                    triggerValue = event.getAxisValue(MotionEvent.AXIS_RTRIGGER);
-                }
-
-                boolean isPressed = triggerValue > 0.5f; // Adjust threshold as needed
-
-                if (isPressed) {
-                    if (!isGyroActive) {
-                        if (isToggleMode) {
-                            isGyroActive = !isGyroActive;
-                        } else {
-                            isGyroActive = true;
-                        }
-                    }
-                } else {
-                    if (isGyroActive && !isToggleMode) {
-                        isGyroActive = false;
-                    }
-                }
-            }
-
-            // Handle L3 and R3 if necessary
-            if (gyroTriggerButton == KeyEvent.KEYCODE_BUTTON_THUMBL || gyroTriggerButton == KeyEvent.KEYCODE_BUTTON_THUMBR) {
-                // Implement detection for L3 and R3 presses via MotionEvent if they don't generate KeyEvents
-                // You may need to check specific axes or custom input methods here
-            }
+        ExternalController controller = getController(event.getDeviceId());
+        if (controller != null && (handled = controller.updateStateFromMotionEvent(event))) {
+            sendGamepadState(controller);
         }
         return handled;
     }
-
 
     public boolean onKeyEvent(KeyEvent event) {
         boolean handled = false;
-
-        if (event.getKeyCode() == gyroTriggerButton) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                if (isToggleMode) {
-                    isGyroActive = !isGyroActive;
-                } else {
-                    isGyroActive = true;
-                }
-            } else if (event.getAction() == KeyEvent.ACTION_UP && !isToggleMode) {
-                isGyroActive = false;
-
-                // Reset the analog stick to center when the gyro activator is released
-                if (currentController != null) {
-                    currentController.state.thumbRX = 0.0f; // Reset X axis
-                    currentController.state.thumbRY = 0.0f; // Reset Y axis
-                }
-
-                // Immediately send the updated gamepad state
-                sendGamepadState();
-            }
-        }
-
-        if (currentController != null && currentController.getDeviceId() == event.getDeviceId() && event.getRepeatCount() == 0) {
+        ExternalController controller = getController(event.getDeviceId());
+        if (controller != null && event.getRepeatCount() == 0) {
             int action = event.getAction();
-
-            if (action == KeyEvent.ACTION_DOWN) {
-                handled = currentController.updateStateFromKeyEvent(event);
-            } else if (action == KeyEvent.ACTION_UP) {
-                handled = currentController.updateStateFromKeyEvent(event);
+            if (action == 0) {
+                handled = controller.updateStateFromKeyEvent(event);
+            } else if (action == 1) {
+                handled = controller.updateStateFromKeyEvent(event);
             }
-
-            if (handled) sendGamepadState();
+            if (handled) {
+                sendGamepadState(controller);
+            }
         }
         return handled;
     }
 
-
     public byte getInputType() {
-        return inputType;
+        return this.inputType;
     }
 
     public void setInputType(byte inputType) {
         this.inputType = inputType;
     }
 
-    public ExternalController getCurrentController() {
-        return currentController;
-    }
-
-    public void execWithDelay(String command, int delaySeconds) {
-        if (command == null || command.trim().isEmpty() || delaySeconds < 0) return;
-
-        // Use a scheduled executor for delay
-        Executors.newSingleThreadScheduledExecutor().schedule(() -> exec(command), delaySeconds, TimeUnit.SECONDS);
-    }
-
-    public void initializeController() {
-        currentController = ExternalController.getController(0);
-        if (currentController != null) {
-            currentController.setContext(activity); // Ensure context is set
-            // Enforce mappings upon initialization
-//            for (byte originalButton : ExternalController.buttonMappings.keySet()) {
-//                currentController.setButtonMapping(originalButton, ExternalController.buttonMappings.get(originalButton));
-//            }
-//
-//
-//            SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(activity.getBaseContext());
-//            triggerType = (byte) preferences.getInt("trigger_type", TRIGGER_IS_AXIS);
-//            currentController.setTriggerType(triggerType); // Ensure triggerType is set
-
-            Log.d("WinHandler", "Force mappings applied on initialization.");
+    public void execWithDelay(final String command, int delaySeconds) {
+        if (command == null || command.trim().isEmpty() || delaySeconds < 0) {
+            return;
         }
+        Executors.newSingleThreadScheduledExecutor().schedule(new Runnable() { // from class: com.winlator.cmod.winhandler.WinHandler$$ExternalSyntheticLambda9
+            @Override // java.lang.Runnable
+            public final void run() {
+                WinHandler.this.lambda$execWithDelay$10(command);
+            }
+        }, delaySeconds, TimeUnit.SECONDS);
     }
-
-
-
-    public void refreshControllerMappings() {
-        if (currentController != null) {
-            Log.d("WinHandler", "Refreshing controller mappings");
-            initializeController(); // Make sure controller state is up-to-date
-            sendGamepadState(); // Send updated state to Wine
-        }
-    }
-
-
 }

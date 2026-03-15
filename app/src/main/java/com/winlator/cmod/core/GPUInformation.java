@@ -1,25 +1,29 @@
 package com.winlator.cmod.core;
 
 import android.content.Context;
+import androidx.core.os.EnvironmentCompat;
 
+/* loaded from: classes10.dex */
 public abstract class GPUInformation {
+    public static native String[] enumerateExtensions(String str, Context context);
+
+    public static native String getRenderer(String str, Context context);
+
+    public static native int getVendorID(String str, Context context);
+
+    public static native String getVulkanVersion(String str, Context context);
 
     public static boolean isAdrenoGPU(Context context) {
         return getRenderer(null, context).toLowerCase().contains("adreno");
     }
 
     public static boolean isDriverSupported(String driverName, Context context) {
-        if (!isAdrenoGPU(context) && !driverName.equals("System"))
+        if (!isAdrenoGPU(context) && !driverName.equals(DefaultVersion.WRAPPER)) {
             return false;
-
+        }
         String renderer = getRenderer(driverName, context);
-
-        return !renderer.toLowerCase().contains("unknown");
+        return !renderer.toLowerCase().contains(EnvironmentCompat.MEDIA_UNKNOWN);
     }
-    public native static String getVulkanVersion(String driverName, Context context);
-    public native static int getVendorID(String driverName, Context context);
-    public native static String getRenderer(String driverName, Context context);
-    public native static String[] enumerateExtensions(String driverName, Context context);
 
     static {
         System.loadLibrary("winlator");

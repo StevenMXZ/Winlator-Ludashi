@@ -1,16 +1,15 @@
 package com.winlator.cmod.xserver.errors;
 
-// Corrected BadSHMSegment definition
+/* loaded from: classes13.dex */
 public class BadSHMSegment extends XRequestError {
     public static final int ERROR_CODE = 128;
 
     public BadSHMSegment(int id) {
-        super(ERROR_CODE, id);
+        super(128, id);
     }
 
-    // New constructor accepting a message
     public BadSHMSegment(String message) {
-        super(ERROR_CODE, 0);
+        super(128, 0);
         System.err.println("BadSHMSegment: " + message);
     }
 }

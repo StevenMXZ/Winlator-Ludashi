@@ -5,18 +5,11 @@ import android.content.SharedPreferences;
 import android.content.res.AssetManager;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
-import android.os.Environment;
 import android.util.JsonReader;
-
 import androidx.preference.PreferenceManager;
-
 import com.winlator.cmod.SettingsFragment;
 import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.FileUtils;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -26,11 +19,15 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
+import org.json.JSONException;
+import org.json.JSONObject;
 
+/* loaded from: classes14.dex */
 public class InputControlsManager {
     private final Context context;
-    private ArrayList<ControlsProfile> profiles;
     private int maxProfileId;
+    private ArrayList<ControlsProfile> profiles;
     private boolean profilesLoaded = false;
 
     public InputControlsManager(Context context) {
@@ -39,7 +36,9 @@ public class InputControlsManager {
 
     public static File getProfilesDir(Context context) {
         File profilesDir = new File(context.getFilesDir(), "profiles");
-        if (!profilesDir.isDirectory()) profilesDir.mkdir();
+        if (!profilesDir.isDirectory()) {
+            profilesDir.mkdir();
+        }
         return profilesDir;
     }
 
@@ -48,209 +47,279 @@ public class InputControlsManager {
     }
 
     public ArrayList<ControlsProfile> getProfiles(boolean ignoreTemplates) {
-        if (!profilesLoaded) loadProfiles(ignoreTemplates);
-        return profiles;
+        if (!this.profilesLoaded) {
+            loadProfiles(ignoreTemplates);
+        }
+        return this.profiles;
     }
 
     private void copyAssetProfilesIfNeeded() {
-        File profilesDir = InputControlsManager.getProfilesDir(context);
-        if (FileUtils.isEmpty(profilesDir)) {
-            FileUtils.copy(context, "inputcontrols/profiles", profilesDir);
+        AssetManager assetManager;
+        File profilesDir;
+        String[] assetFiles;
+        SharedPreferences preferences;
+        File profilesDir2 = getProfilesDir(this.context);
+        if (FileUtils.isEmpty(profilesDir2)) {
+            FileUtils.copy(this.context, "inputcontrols/profiles", profilesDir2);
             return;
         }
-
-        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
-
-        int newVersion = AppUtils.getVersionCode(context);
-        int oldVersion = preferences.getInt("inputcontrols_app_version", 0);
-        if (oldVersion == newVersion) return;
-        preferences.edit().putInt("inputcontrols_app_version", newVersion).apply();
-
-        File[] files = profilesDir.listFiles();
-        if (files == null) return;
-
+        SharedPreferences preferences2 = PreferenceManager.getDefaultSharedPreferences(this.context);
+        int newVersion = AppUtils.getVersionCode(this.context);
+        int i = 0;
+        int oldVersion = preferences2.getInt("inputcontrols_app_version", 0);
+        if (oldVersion == newVersion) {
+            return;
+        }
+        preferences2.edit().putInt("inputcontrols_app_version", newVersion).apply();
+        File[] files = profilesDir2.listFiles();
+        if (files == null) {
+            return;
+        }
         try {
-            AssetManager assetManager = context.getAssets();
-            String[] assetFiles = assetManager.list("inputcontrols/profiles");
-            for (String assetFile : assetFiles) {
-                String assetPath = "inputcontrols/profiles/"+assetFile;
-                ControlsProfile originProfile = loadProfile(context, assetManager.open(assetPath));
-
+            AssetManager assetManager2 = this.context.getAssets();
+            String[] assetFiles2 = assetManager2.list("inputcontrols/profiles");
+            int length = assetFiles2.length;
+            int i2 = 0;
+            while (i2 < length) {
+                String assetFile = assetFiles2[i2];
+                String assetPath = "inputcontrols/profiles/" + assetFile;
+                ControlsProfile originProfile = loadProfile(this.context, assetManager2.open(assetPath));
                 File targetFile = null;
-                for (File file : files) {
-                    ControlsProfile targetProfile = loadProfile(context, file);
-                    if (originProfile.id == targetProfile.id && originProfile.getName().equals(targetProfile.getName())) {
-                        targetFile = file;
+                int length2 = files.length;
+                while (true) {
+                    if (i >= length2) {
+                        assetManager = assetManager2;
+                        profilesDir = profilesDir2;
+                        assetFiles = assetFiles2;
+                        preferences = preferences2;
                         break;
                     }
+                    File file = files[i];
+                    assetManager = assetManager2;
+                    profilesDir = profilesDir2;
+                    try {
+                        ControlsProfile targetProfile = loadProfile(this.context, file);
+                        assetFiles = assetFiles2;
+                        preferences = preferences2;
+                        try {
+                            if (originProfile.id != targetProfile.id || !originProfile.getName().equals(targetProfile.getName())) {
+                                i++;
+                                assetManager2 = assetManager;
+                                assetFiles2 = assetFiles;
+                                profilesDir2 = profilesDir;
+                                preferences2 = preferences;
+                            } else {
+                                targetFile = file;
+                                break;
+                            }
+                        } catch (IOException e) {
+                            return;
+                        }
+                    } catch (IOException e2) {
+                        return;
+                    }
                 }
-
                 if (targetFile != null) {
-                    FileUtils.copy(context, assetPath, targetFile);
+                    FileUtils.copy(this.context, assetPath, targetFile);
                 }
+                i2++;
+                assetManager2 = assetManager;
+                assetFiles2 = assetFiles;
+                profilesDir2 = profilesDir;
+                preferences2 = preferences;
+                i = 0;
             }
+        } catch (IOException e3) {
         }
-        catch (IOException e) {}
     }
 
     public void loadProfiles(boolean ignoreTemplates) {
-        File profilesDir = InputControlsManager.getProfilesDir(context);
+        File profilesDir = getProfilesDir(this.context);
         copyAssetProfilesIfNeeded();
-
         ArrayList<ControlsProfile> profiles = new ArrayList<>();
         File[] files = profilesDir.listFiles();
         if (files != null) {
             for (File file : files) {
-                ControlsProfile profile = loadProfile(context, file);
-                if (!(ignoreTemplates && profile.isTemplate())) profiles.add(profile);
-                maxProfileId = Math.max(maxProfileId, profile.id);
+                ControlsProfile profile = loadProfile(this.context, file);
+                if (!ignoreTemplates || !profile.isTemplate()) {
+                    profiles.add(profile);
+                }
+                this.maxProfileId = Math.max(this.maxProfileId, profile.id);
             }
         }
-
         Collections.sort(profiles);
         this.profiles = profiles;
-        profilesLoaded = true;
+        this.profilesLoaded = true;
     }
 
     public ControlsProfile createProfile(String name) {
-        ControlsProfile profile = new ControlsProfile(context, ++maxProfileId);
+        Context context = this.context;
+        int i = this.maxProfileId + 1;
+        this.maxProfileId = i;
+        ControlsProfile profile = new ControlsProfile(context, i);
         profile.setName(name);
         profile.save();
-        profiles.add(profile);
+        this.profiles.add(profile);
         return profile;
     }
 
     public ControlsProfile duplicateProfile(ControlsProfile source) {
         String newName;
-        for (int i = 1;;i++) {
-            newName = source.getName() + " ("+i+")";
+        int i = 1;
+        while (true) {
+            newName = source.getName() + " (" + i + ")";
             boolean found = false;
-            for (ControlsProfile profile : profiles) {
-                if (profile.getName().equals(newName)) {
+            Iterator<ControlsProfile> it = this.profiles.iterator();
+            while (true) {
+                if (!it.hasNext()) {
+                    break;
+                }
+                if (it.next().getName().equals(newName)) {
                     found = true;
                     break;
                 }
             }
-            if (!found) break;
+            if (!found) {
+                break;
+            }
+            i++;
         }
-
-        int newId = ++maxProfileId;
-        File newFile = ControlsProfile.getProfileFile(context, newId);
-
+        int i2 = this.maxProfileId;
+        int newId = i2 + 1;
+        this.maxProfileId = newId;
+        File newFile = ControlsProfile.getProfileFile(this.context, newId);
         try {
-            JSONObject data = new JSONObject(FileUtils.readString(ControlsProfile.getProfileFile(context, source.id)));
+            JSONObject data = new JSONObject(FileUtils.readString(ControlsProfile.getProfileFile(this.context, source.id)));
             data.put("id", newId);
             data.put("name", newName);
-            if (data.has("template")) data.remove("template");
+            if (data.has("template")) {
+                data.remove("template");
+            }
             FileUtils.writeString(newFile, data.toString());
+        } catch (JSONException e) {
         }
-        catch (JSONException e) {}
-
-        ControlsProfile profile = loadProfile(context, newFile);
-        profiles.add(profile);
+        ControlsProfile profile = loadProfile(this.context, newFile);
+        this.profiles.add(profile);
         return profile;
     }
 
     public void removeProfile(ControlsProfile profile) {
-        File file = ControlsProfile.getProfileFile(context, profile.id);
-        if (file.isFile() && file.delete()) profiles.remove(profile);
+        File file = ControlsProfile.getProfileFile(this.context, profile.id);
+        if (!file.isFile() || !file.delete()) {
+            return;
+        }
+        this.profiles.remove(profile);
     }
 
     public ControlsProfile importProfile(JSONObject data) {
         try {
-            if (!data.has("id") || !data.has("name")) return null;
-            int newId = ++maxProfileId;
-            File newFile = ControlsProfile.getProfileFile(context, newId);
-            data.put("id", newId);
-            FileUtils.writeString(newFile, data.toString());
-            ControlsProfile newProfile = loadProfile(context, newFile);
-
-            int foundIndex = -1;
-            for (int i = 0; i < profiles.size(); i++) {
-                ControlsProfile profile = profiles.get(i);
-                if (profile.getName().equals(newProfile.getName())) {
-                    foundIndex = i;
-                    break;
+            if (data.has("id") && data.has("name")) {
+                int newId = this.maxProfileId + 1;
+                this.maxProfileId = newId;
+                File newFile = ControlsProfile.getProfileFile(this.context, newId);
+                data.put("id", newId);
+                FileUtils.writeString(newFile, data.toString());
+                ControlsProfile newProfile = loadProfile(this.context, newFile);
+                int foundIndex = -1;
+                int i = 0;
+                while (true) {
+                    if (i >= this.profiles.size()) {
+                        break;
+                    }
+                    ControlsProfile profile = this.profiles.get(i);
+                    if (!profile.getName().equals(newProfile.getName())) {
+                        i++;
+                    } else {
+                        foundIndex = i;
+                        break;
+                    }
                 }
+                if (foundIndex != -1) {
+                    this.profiles.set(foundIndex, newProfile);
+                } else {
+                    this.profiles.add(newProfile);
+                }
+                return newProfile;
             }
-
-            if (foundIndex != -1) {
-                profiles.set(foundIndex, newProfile);
-            }
-            else profiles.add(newProfile);
-            return newProfile;
-        }
-        catch (JSONException e) {
+            return null;
+        } catch (JSONException e) {
             return null;
         }
     }
 
     public File exportProfile(ControlsProfile profile) {
         File destination;
-        SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(context);
+        SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(this.context);
         String winlatorPath = sp.getString("winlator_path_uri", null);
         if (winlatorPath != null) {
             Uri winlatorUri = Uri.parse(winlatorPath);
-            destination = new File(FileUtils.getFilePathFromUri(context, winlatorUri), "profiles/" + profile.getName() + ".icp");
-        }
-        else {
+            destination = new File(FileUtils.getFilePathFromUri(this.context, winlatorUri), "profiles/" + profile.getName() + ".icp");
+        } else {
             destination = new File(SettingsFragment.DEFAULT_WINLATOR_PATH, "profiles/" + profile.getName() + ".icp");
         }
-        FileUtils.copy(ControlsProfile.getProfileFile(context, profile.id), destination);
-        MediaScannerConnection.scanFile(context, new String[]{destination.getAbsolutePath()}, null, null);
-        return destination.isFile() ? destination : null;
+        FileUtils.copy(ControlsProfile.getProfileFile(this.context, profile.id), destination);
+        MediaScannerConnection.scanFile(this.context, new String[]{destination.getAbsolutePath()}, null, null);
+        if (destination.isFile()) {
+            return destination;
+        }
+        return null;
     }
 
     public static ControlsProfile loadProfile(Context context, File file) {
         try {
             return loadProfile(context, new FileInputStream(file));
-        }
-        catch (FileNotFoundException e) {
+        } catch (FileNotFoundException e) {
             return null;
         }
     }
 
     public static ControlsProfile loadProfile(Context context, InputStream inStream) {
-        try (JsonReader reader = new JsonReader(new InputStreamReader(inStream, StandardCharsets.UTF_8))) {
+        try {
+            JsonReader reader = new JsonReader(new InputStreamReader(inStream, StandardCharsets.UTF_8));
             int profileId = 0;
             String profileName = null;
             float cursorSpeed = Float.NaN;
             int fieldsRead = 0;
-
-            reader.beginObject();
-            while (reader.hasNext()) {
-                String name = reader.nextName();
-
-                if (name.equals("id")) {
-                    profileId = reader.nextInt();
-                    fieldsRead++;
+            try {
+                reader.beginObject();
+                while (reader.hasNext()) {
+                    String name = reader.nextName();
+                    if (name.equals("id")) {
+                        profileId = reader.nextInt();
+                        fieldsRead++;
+                    } else if (name.equals("name")) {
+                        profileName = reader.nextString();
+                        fieldsRead++;
+                    } else if (name.equals("cursorSpeed")) {
+                        cursorSpeed = (float) reader.nextDouble();
+                        fieldsRead++;
+                    } else {
+                        if (fieldsRead == 3) {
+                            break;
+                        }
+                        reader.skipValue();
+                    }
                 }
-                else if (name.equals("name")) {
-                    profileName = reader.nextString();
-                    fieldsRead++;
-                }
-                else if (name.equals("cursorSpeed")) {
-                    cursorSpeed = (float) reader.nextDouble();
-                    fieldsRead++;
-                }
-                else {
-                    if (fieldsRead == 3) break;
-                    reader.skipValue();
-                }
+                ControlsProfile profile = new ControlsProfile(context, profileId);
+                profile.setName(profileName);
+                profile.setCursorSpeed(cursorSpeed);
+                reader.close();
+                return profile;
+            } finally {
             }
-
-            ControlsProfile profile = new ControlsProfile(context, profileId);
-            profile.setName(profileName);
-            profile.setCursorSpeed(cursorSpeed);
-            return profile;
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             return null;
         }
     }
 
     public ControlsProfile getProfile(int id) {
-        for (ControlsProfile profile : getProfiles()) if (profile.id == id) return profile;
+        Iterator<ControlsProfile> it = getProfiles().iterator();
+        while (it.hasNext()) {
+            ControlsProfile profile = it.next();
+            if (profile.id == id) {
+                return profile;
+            }
+        }
         return null;
     }
 }

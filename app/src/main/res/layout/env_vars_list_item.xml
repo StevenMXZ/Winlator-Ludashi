@@ -1,55 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:gravity="center_vertical"
     android:orientation="horizontal"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:gravity="center_vertical">
-
+    android:layout_height="wrap_content">
     <TextView
         android:id="@+id/TextView"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:maxLines="1" />
-
+        android:maxLines="1"
+        android:layout_weight="1"/>
     <LinearLayout
-        android:layout_width="100dp"
-        android:layout_height="42dp"
         android:gravity="center"
-        android:orientation="horizontal">
-
+        android:orientation="horizontal"
+        android:layout_width="100dp"
+        android:layout_height="42dp">
         <Spinner
-            style="@style/ComboBox"
-            android:layout_width="match_parent"
             android:id="@+id/Spinner"
             android:visibility="gone"
-            android:spinnerMode="dialog"/>
-
-        <com.winlator.cmod.widget.MultiSelectionComboBox
-            style="@style/MultiSelectionComboBox"
-            android:id="@+id/MultiSelectionComboBox"
             android:layout_width="match_parent"
+            android:spinnerMode="dialog"
+            style="@style/ComboBox"/>
+        <com.winlator.cmod.widget.MultiSelectionComboBox
+            android:id="@+id/MultiSelectionComboBox"
             android:visibility="gone"
-            android:spinnerMode="dialog"/>
-
+            android:layout_width="match_parent"
+            android:spinnerMode="dialog"
+            style="@style/MultiSelectionComboBox"/>
         <ToggleButton
             android:id="@+id/ToggleButton"
-            android:layout_width="64dp"
-            android:layout_height="32dp"
             android:background="@drawable/toggle_button_selector"
             android:visibility="gone"
+            android:layout_width="64dp"
+            android:layout_height="32dp"
             android:textOn=""
-            android:textOff="" />
-
+            android:textOff=""/>
         <EditText
-            style="@style/EditText"
             android:id="@+id/EditText"
+            android:visibility="gone"
             android:layout_width="match_parent"
-            android:visibility="gone" />
+            style="@style/EditText"/>
     </LinearLayout>
-
     <ImageButton
-        style="@style/ListMenuButton"
         android:id="@+id/BTRemove"
-        android:src="@drawable/icon_remove" />
+        android:src="@drawable/icon_remove"
+        style="@style/ListMenuButton"/>
 </LinearLayout>

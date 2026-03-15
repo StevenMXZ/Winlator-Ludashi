@@ -1,27 +1,31 @@
 package com.winlator.cmod.bigpicture.steamgrid;
 
 import com.google.gson.annotations.SerializedName;
-
 import java.util.List;
 
+/* loaded from: classes14.dex */
 public class SteamGridGridsResponse {
 
-    @SerializedName("success")
-    public boolean success;
-
-    @SerializedName("page")
-    public int page;
-
-    @SerializedName("total")
-    public int total;
+    @SerializedName("data")
+    public List<Grid> data;
 
     @SerializedName("limit")
     public int limit;
 
-    @SerializedName("data")
-    public List<Grid> data;  // The data field is a list of Grid objects
+    @SerializedName("page")
+    public int page;
+
+    @SerializedName("success")
+    public boolean success;
+
+    @SerializedName("total")
+    public int total;
 
     public class Grid {
+
+        @SerializedName("author")
+        public Author author;
+
         @SerializedName("id")
         public int id;
 
@@ -31,27 +35,31 @@ public class SteamGridGridsResponse {
         @SerializedName("style")
         public String style;
 
-        @SerializedName("url")
-        public String url;
+        @SerializedName("tags")
+        public List<String> tags;
 
         @SerializedName("thumb")
         public String thumb;
 
-        @SerializedName("tags")
-        public List<String> tags;
+        @SerializedName("url")
+        public String url;
 
-        @SerializedName("author")
-        public Author author;
+        public Grid() {
+        }
     }
 
     public class Author {
+
+        @SerializedName("avatar")
+        public String avatar;
+
         @SerializedName("name")
         public String name;
 
         @SerializedName("steam64")
         public String steam64;
 
-        @SerializedName("avatar")
-        public String avatar;
+        public Author() {
+        }
     }
 }

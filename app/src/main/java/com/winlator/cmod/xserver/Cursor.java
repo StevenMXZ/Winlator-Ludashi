@@ -1,15 +1,17 @@
 package com.winlator.cmod.xserver;
 
+/* loaded from: classes11.dex */
 public class Cursor extends XResource {
+    public final Drawable cursorImage;
     public final int hotSpotX;
     public final int hotSpotY;
-    public final Drawable cursorImage;
-    public final Drawable sourceImage;
     public final Drawable maskImage;
-    private boolean visible = true;
+    public final Drawable sourceImage;
+    private boolean visible;
 
     public Cursor(int id, int hotSpotX, int hotSpotY, Drawable cursorImage, Drawable sourceImage, Drawable maskImage) {
         super(id);
+        this.visible = true;
         this.hotSpotX = hotSpotX;
         this.hotSpotY = hotSpotY;
         this.cursorImage = cursorImage;
@@ -18,7 +20,7 @@ public class Cursor extends XResource {
     }
 
     public boolean isVisible() {
-        return visible;
+        return this.visible;
     }
 
     public void setVisible(boolean visible) {

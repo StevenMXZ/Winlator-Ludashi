@@ -1,26 +1,25 @@
 package com.winlator.cmod.core;
 
+/* loaded from: classes10.dex */
 public class VKD3DVersionItem {
-    private final String identifier; // Unique identifier based on verName and verCode
-    private final String displayName; // Name shown in the spinner
+    private final String displayName;
+    private final String identifier;
 
     public VKD3DVersionItem(String verName) {
-        this.identifier = verName; // Unique ID
-        this.displayName = identifier; // Display only the version name
+        this.identifier = verName;
+        this.displayName = this.identifier;
     }
 
     public VKD3DVersionItem(String verName, int verCode) {
-        this.identifier = verName + "-" + verCode; // Unique ID
-        this.displayName = identifier; // Display only the version name
+        this.identifier = verName + "-" + verCode;
+        this.displayName = this.identifier;
     }
 
     public String getIdentifier() {
-        return identifier;
+        return this.identifier;
     }
 
-    @Override
     public String toString() {
-        return displayName; // Spinner uses this for display
+        return this.displayName;
     }
 }
-

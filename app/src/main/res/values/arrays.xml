@@ -1,6 +1,176 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string-array name="screen_size_entries">
+    <array name="audio_driver_entries">
+        <item>ALSA</item>
+        <item>PulseAudio</item>
+    </array>
+    <array name="bcn_emulation_cache_entries">
+        <item>0</item>
+        <item>1</item>
+    </array>
+    <array name="bcn_emulation_entries">
+        <item>none</item>
+        <item>partial</item>
+        <item>full</item>
+        <item>auto</item>
+    </array>
+    <array name="bcn_emulation_type_entries">
+        <item>software</item>
+        <item>compute</item>
+    </array>
+    <array name="binding_type_entries">
+        <item>Keyboard</item>
+        <item>Mouse</item>
+        <item>Gamepad</item>
+    </array>
+    <array name="box64_version_entries">
+        <item>0.4.1</item>
+    </array>
+    <array name="button_keycodes">
+        <item>@integer/keycode_button_a</item>
+        <item>@integer/keycode_button_b</item>
+        <item>@integer/keycode_button_x</item>
+        <item>@integer/keycode_button_y</item>
+        <item>@integer/keycode_button_r1</item>
+        <item>@integer/keycode_button_r2</item>
+        <item>@integer/keycode_button_l1</item>
+        <item>@integer/keycode_button_l2</item>
+        <item>@integer/keycode_button_start</item>
+        <item>@integer/keycode_button_select</item>
+        <item>@integer/keycode_button_r3</item>
+        <item>@integer/keycode_button_l3</item>
+    </array>
+    <array name="button_options">
+        <item>A</item>
+        <item>B</item>
+        <item>X</item>
+        <item>Y</item>
+        <item>R1 (Right Bumper)</item>
+        <item>R2 (Right Trigger)</item>
+        <item>L1 (Left Bumper)</item>
+        <item>L2 (Left Trigger)</item>
+        <item>Start</item>
+        <item>Select</item>
+        <item>R3 (Right Stick Button)</item>
+        <item>L3 (Left Stick Button)</item>
+    </array>
+    <array name="ddrawrapper_entries">
+        <item>CnC-DDraw</item>
+        <item>Dd7To9</item>
+        <item>None</item>
+    </array>
+    <array name="desktop_background_type_entries">
+        <item>Image</item>
+        <item>Solid Color</item>
+    </array>
+    <array name="desktop_theme_entries">
+        <item>Light</item>
+        <item>Dark</item>
+    </array>
+    <array name="device_memory_entries">
+        <item>0 (Default)</item>
+        <item>512 MB</item>
+        <item>1024 MB</item>
+        <item>2048 MB</item>
+        <item>4096 MB</item>
+        <item>8192 MB</item>
+        <item>12288 MB</item>
+        <item>16384 MB</item>
+    </array>
+    <array name="displayResolution">
+        <item>320x200</item>
+        <item>320x240</item>
+        <item>352x288</item>
+        <item>400x240</item>
+        <item>640x350</item>
+        <item>640x480</item>
+        <item>800x480</item>
+        <item>800x600</item>
+        <item>1024x768</item>
+        <item>1280x720</item>
+        <item>1280x960</item>
+        <item>1280x1024</item>
+        <item>1400x1050</item>
+        <item>1600x1024</item>
+        <item>1600x1200</item>
+        <item>1366x768</item>
+        <item>1680x1050</item>
+        <item>1920x1080</item>
+        <item>1920x1200</item>
+        <item>2048x1536</item>
+        <item>2560x1600</item>
+        <item>2560x2048</item>
+        <item>3840x2160</item>
+        <item>7680x4320</item>
+    </array>
+    <array name="displayResolutionVariants">
+        <item>native</item>
+        <item>scaled</item>
+        <item>exact</item>
+        <item>custom</item>
+    </array>
+    <array name="dxvk_framerate_entries">
+        <item>0 (Default)</item>
+        <item>20</item>
+        <item>30</item>
+        <item>40</item>
+        <item>50</item>
+        <item>60</item>
+        <item>70</item>
+        <item>80</item>
+        <item>90</item>
+        <item>100</item>
+        <item>110</item>
+        <item>120</item>
+    </array>
+    <array name="dxvk_max_device_memory_entries">
+        <item>0 (Default)</item>
+        <item>512 MB</item>
+        <item>1024 MB</item>
+        <item>2048 MB</item>
+        <item>4096 MB</item>
+    </array>
+    <array name="dxvk_version_entries">
+        <item>1.11.1-sarek</item>
+        <item>1.10.3-arm64ec-async</item>
+        <item>1.10.3</item>
+        <item>2.3.1</item>
+        <item>2.3.1-arm64ec-gplasync</item>
+    </array>
+    <array name="dxwrapper_entries">
+        <item>WineD3D</item>
+        <item>DXVK+VKD3D</item>
+    </array>
+    <array name="emulator_entries">
+        <item>FEXCore</item>
+        <item>Box64</item>
+    </array>
+    <array name="fexcore_version_entries">
+        <item>2601</item>
+    </array>
+    <array name="forceOrientationVariants">
+        <item>auto</item>
+        <item>portrait</item>
+        <item>landscape</item>
+        <item>reverse portrait</item>
+        <item>reverse landscape</item>
+    </array>
+    <array name="graphics_driver_entries">
+        <item>Wrapper</item>
+    </array>
+    <array name="present_mode_entries">
+        <item>mailbox</item>
+        <item>fifo</item>
+        <item>immediate</item>
+        <item>relaxed</item>
+    </array>
+    <array name="resource_type_entries">
+        <item>auto</item>
+        <item>dmabuf</item>
+        <item>ahb</item>
+        <item>opaque</item>
+    </array>
+    <array name="screen_size_entries">
         <item>Custom</item>
         <item>690x360 (16:9)</item>
         <item>780x360 (19.5:9)</item>
@@ -17,148 +187,8 @@
         <item>1560x720 (19.5:9)</item>
         <item>1600x900 (16:9)</item>
         <item>1920x1080 (16:9)</item>
-    </string-array>
-    <string-array name="graphics_driver_entries">
-        <item>Wrapper</item>
-    </string-array>
-    <string-array name="wrapper_graphics_driver_version_entries">
-        <item>System</item>
-        <item>v819</item>
-        <item>turnip25.1.0</item>
-    </string-array>
-    <string-array name="audio_driver_entries">
-        <item>ALSA</item>
-        <item>PulseAudio</item>
-    </string-array>
-    <string-array name="binding_type_entries">
-        <item>Keyboard</item>
-        <item>Mouse</item>
-        <item>Gamepad</item>
-    </string-array>
-    <string-array name="dxwrapper_entries">
-        <item>WineD3D</item>
-        <item>DXVK+VKD3D</item>
-    </string-array>
-    <string-array name="ddrawrapper_entries">
-        <item>CnC-DDraw</item>
-        <item>Dd7To9</item>
-        <item>None</item>
-    </string-array>
-    <string-array name="dxvk_version_entries">
-        <item>1.11.1-sarek</item>
-        <item>1.10.3-arm64ec-async</item>
-        <item>1.10.3</item>
-        <item>2.3.1</item>
-        <item>2.3.1-arm64ec-gplasync</item>
-    </string-array>
-    <string-array name="dxvk_max_device_memory_entries">
-        <item>0 (Default)</item>
-        <item>512 MB</item>
-        <item>1024 MB</item>
-        <item>2048 MB</item>
-        <item>4096 MB</item>
-    </string-array>
-    <string-array name="device_memory_entries">
-    <item>0 (Default)</item>
-    <item>512 MB</item>
-    <item>1024 MB</item>
-    <item>2048 MB</item>
-    <item>4096 MB</item>
-    <item>8192 MB</item>
-    <item>12288 MB</item>
-    <item>16384 MB</item>
-    </string-array>
-    <string-array name="present_mode_entries">
-        <item>mailbox</item>
-        <item>fifo</item>
-        <item>immediate</item>
-        <item>relaxed</item>
-    </string-array>
-    <string-array name="resource_type_entries">
-        <item>auto</item>
-        <item>dmabuf</item>
-        <item>ahb</item>
-        <item>opaque</item>
-    </string-array>
-    <string-array name="vulkan_version_entries">
-        <item>1.1</item>
-        <item>1.2</item>
-        <item>1.3</item>
-    </string-array>
-    <string-array name="bcn_emulation_entries">
-        <item>none</item>
-        <item>partial</item>
-        <item>full</item>
-        <item>auto</item>
-    </string-array>
-    <string-array name="bcn_emulation_type_entries">
-        <item>software</item>
-        <item>compute</item>
-    </string-array>
-    <string-array name="bcn_emulation_cache_entries">
-        <item>0</item>
-        <item>1</item>
-    </string-array>
-    <string-array name="video_memory_size_entries">
-        <item>32 MB</item>
-        <item>64 MB</item>
-        <item>128 MB</item>
-        <item>256 MB</item>
-        <item>512 MB</item>
-        <item>1024 MB</item>
-        <item>2048 MB</item>
-        <item>4096 MB</item>
-    </string-array>
-    <string-array name="dxvk_framerate_entries">
-        <item>0 (Default)</item>
-        <item>20</item>
-        <item>30</item>
-        <item>40</item>
-        <item>50</item>
-        <item>60</item>
-        <item>70</item>
-        <item>80</item>
-        <item>90</item>
-        <item>100</item>
-        <item>110</item>
-        <item>120</item>
-    </string-array>
-    <string-array name="wincomponent_entries">
-        <item>Builtin (Wine)</item>
-        <item>Native (Windows)</item>
-    </string-array>
-    <string-array name="box64_version_entries">
-        <item>0.3.7</item>
-    </string-array>
-    <string-array name="wowbox64_version_entries">
-        <item>0.3.7</item>
-    </string-array>
-    <string-array name="fexcore_version_entries">
-        <item>2508</item>
-    </string-array>
-    <string-array name="dinput_mapper_type_entries">
-        <item>@string/dinput_legacy</item>
-        <item>@string/dinput_modern</item>
-    </string-array>
-    <string-array name="desktop_theme_entries">
-        <item>Light</item>
-        <item>Dark</item>
-    </string-array>
-    <string-array name="desktop_background_type_entries">
-        <item>Image</item>
-        <item>Solid Color</item>
-    </string-array>
-    <string-array name="startup_selection_entries">
-        <item>Normal (Load all services)</item>
-        <item>Essential (Load only essential services)</item>
-        <item>Aggressive (Stop services on startup)</item>
-    </string-array>
-    <string-array name="vkd3d_version_entries">
-        <item>None</item>
-        <item>2.8</item>
-        <item>2.14.1</item>
-    </string-array>
-    <string-array name="some_lc_all">
+    </array>
+    <array name="some_lc_all">
         <item>ar_EG</item>
         <item>ar_SA</item>
         <item>de_AT</item>
@@ -189,97 +219,41 @@
         <item>zh_HK</item>
         <item>zh_SG</item>
         <item>zh_TW</item>
-    </string-array>
-    <string-array name="xr_controllers">
-    <item>@string/left_controller</item>
-    <item>@string/right_controller</item>
-    </string-array>
-    <string-array name="button_options">
-        <item>A</item>
-        <item>B</item>
-        <item>X</item>
-        <item>Y</item>
-        <item>R1 (Right Bumper)</item>
-        <item>R2 (Right Trigger)</item>
-        <item>L1 (Left Bumper)</item>
-        <item>L2 (Left Trigger)</item>
-        <item>Start</item>
-        <item>Select</item>
-        <item>R3 (Right Stick Button)</item>
-        <item>L3 (Left Stick Button)</item>
-    </string-array>
-    <integer-array name="button_keycodes">
-        <item>@integer/keycode_button_a</item>
-        <item>@integer/keycode_button_b</item>
-        <item>@integer/keycode_button_x</item>
-        <item>@integer/keycode_button_y</item>
-        <item>@integer/keycode_button_r1</item> <!-- Right Bumper -->
-        <item>@integer/keycode_button_r2</item> <!-- Right Trigger -->
-        <item>@integer/keycode_button_l1</item> <!-- Left Bumper -->
-        <item>@integer/keycode_button_l2</item> <!-- Left Trigger -->
-        <item>@integer/keycode_button_start</item>
-        <item>@integer/keycode_button_select</item>
-        <item>@integer/keycode_button_r3</item> <!-- Right Stick Button -->
-        <item>@integer/keycode_button_l3</item> <!-- Left Stick Button -->
-    </integer-array>
-
-    <string-array name="touchscreenInputModesEntries">
+    </array>
+    <array name="startup_selection_entries">
+        <item>Normal (Load all services)</item>
+        <item>Essential (Load only essential services)</item>
+        <item>Aggressive (Stop services on startup)</item>
+    </array>
+    <array name="touchscreenInputModesEntries">
         <item>Trackpad</item>
         <item>Simulated touchscreen</item>
         <item>Direct touch</item>
-    </string-array>
-    <string-array name="touchscreenInputModesValues">
+    </array>
+    <array name="touchscreenInputModesValues">
         <item>1</item>
         <item>2</item>
         <item>3</item>
-    </string-array>
-    <string-array name="transformCapturedPointerEntries">
+    </array>
+    <array name="transformCapturedPointerEntries">
         <item>No</item>
         <item>Clockwise</item>
         <item>Counter clockwise</item>
         <item>Upside down</item>
         <item>Automatic (for touchpad)</item>
-    </string-array>
-    <string-array name="transformCapturedPointerValues">
+    </array>
+    <array name="transformCapturedPointerValues">
         <item>no</item>
         <item>c</item>
         <item>cc</item>
         <item>ud</item>
         <item>at</item>
-    </string-array>
-    <string-array name="displayResolutionVariants">
-        <item>native</item>
-        <item>scaled</item>
-        <item>exact</item>
-        <item>custom</item>
-    </string-array>
-    <string-array name="displayResolution">
-        <item>320x200</item>
-        <item>320x240</item>
-        <item>352x288</item>
-        <item>400x240</item>
-        <item>640x350</item>
-        <item>640x480</item>
-        <item>800x480</item>
-        <item>800x600</item>
-        <item>1024x768</item>
-        <item>1280x720</item>
-        <item>1280x960</item>
-        <item>1280x1024</item>
-        <item>1400x1050</item>
-        <item>1600x1024</item>
-        <item>1600x1200</item>
-        <item>1366x768</item>
-        <item>1680x1050</item>
-        <item>1920x1080</item>
-        <item>1920x1200</item>
-        <item>2048x1536</item>
-        <item>2560x1600</item>
-        <item>2560x2048</item>
-        <item>3840x2160</item>
-        <item>7680x4320</item>
-    </string-array>
-    <string-array name="userActionsValues">
+    </array>
+    <array name="userActionsMediaKeyValues">
+        <item>@array/userActionsValues</item>
+        <item>send media action</item>
+    </array>
+    <array name="userActionsValues">
         <item>no action</item>
         <item>toggle soft keyboard</item>
         <item>toggle additional key bar</item>
@@ -288,37 +262,58 @@
         <item>toggle fullscreen</item>
         <item>restart activity</item>
         <item>exit</item>
-    </string-array>
-    <string-array name="userActionsVolumeDownValues">
+    </array>
+    <array name="userActionsVolumeDownValues">
         <item>@array/userActionsValues</item>
         <item>send volume down</item>
-    </string-array>
-    <string-array name="userActionsVolumeUpValues">
+    </array>
+    <array name="userActionsVolumeUpValues">
         <item>@array/userActionsValues</item>
         <item>send volume up</item>
-    </string-array>
-    <string-array name="userActionsMediaKeyValues">
-        <item>@array/userActionsValues</item>
-        <item>send media action</item>
-    </string-array>
-    <string-array name="forceOrientationVariants">
-        <item>auto</item>
-        <item>portrait</item>
-        <item>landscape</item>
-        <item>reverse portrait</item>
-        <item>reverse landscape</item>
-    </string-array>
-    <string-array name="emulator_entries">
-        <item>FEXCore</item>
-        <item>Box64</item>
-    </string-array>
-    <string-array name="wine_entries">
-        <item>proton-9.0-x86_64</item>
-        <item>proton-9.0-arm64ec</item>
-    </string-array>
-    <string-array name="vkbasalt_sharpness_entries">
+    </array>
+    <array name="video_memory_size_entries">
+        <item>32 MB</item>
+        <item>64 MB</item>
+        <item>128 MB</item>
+        <item>256 MB</item>
+        <item>512 MB</item>
+        <item>1024 MB</item>
+        <item>2048 MB</item>
+        <item>4096 MB</item>
+    </array>
+    <array name="vkbasalt_sharpness_entries">
         <item>None</item>
         <item>CAS</item>
         <item>DLS</item>
-    </string-array>
+    </array>
+    <array name="vkd3d_version_entries">
+        <item>None</item>
+        <item>2.8</item>
+        <item>2.14.1</item>
+    </array>
+    <array name="vulkan_version_entries">
+        <item>1.1</item>
+        <item>1.2</item>
+        <item>1.3</item>
+    </array>
+    <array name="wincomponent_entries">
+        <item>Builtin (Wine)</item>
+        <item>Native (Windows)</item>
+    </array>
+    <array name="wine_entries">
+        <item>proton-9.0-x86_64</item>
+        <item>proton-9.0-arm64ec</item>
+    </array>
+    <array name="wowbox64_version_entries">
+        <item>0.4.1</item>
+    </array>
+    <array name="wrapper_graphics_driver_version_entries">
+        <item>System</item>
+        <item>v819</item>
+        <item>turnip26.0.0</item>
+    </array>
+    <array name="xr_controllers">
+        <item>@string/left_controller</item>
+        <item>@string/right_controller</item>
+    </array>
 </resources>

@@ -1,13 +1,12 @@
 package com.winlator.cmod.core;
 
+import android.R;
 import android.app.Activity;
 import android.app.Dialog;
 import android.view.Window;
-import android.view.WindowManager;
 import android.widget.TextView;
 
-import com.winlator.cmod.R;
-
+/* loaded from: classes10.dex */
 public class PreloaderDialog {
     private final Activity activity;
     private Dialog dialog;
@@ -17,46 +16,62 @@ public class PreloaderDialog {
     }
 
     private void create() {
-        if (dialog != null) return;
-        dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setCancelable(false);
-        dialog.setCanceledOnTouchOutside(false);
-        dialog.setContentView(R.layout.preloader_dialog);
-
-        Window window = dialog.getWindow();
+        if (this.dialog != null) {
+            return;
+        }
+        this.dialog = new Dialog(this.activity, R.style.Theme.Translucent.NoTitleBar.Fullscreen);
+        this.dialog.requestWindowFeature(1);
+        this.dialog.setCancelable(false);
+        this.dialog.setCanceledOnTouchOutside(false);
+        this.dialog.setContentView(com.ludashi.benchmark.R.layout.preloader_dialog);
+        Window window = this.dialog.getWindow();
         if (window != null) {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
-            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+            window.clearFlags(16);
+            window.clearFlags(8);
         }
     }
 
-    public synchronized void show(int textResId) {
-        if (isShowing()) return;
+    /* renamed from: show, reason: merged with bridge method [inline-methods] */
+    public synchronized void lambda$showOnUiThread$0(int textResId) {
+        if (isShowing()) {
+            return;
+        }
         close();
-        if (dialog == null) create();
-        ((TextView)dialog.findViewById(R.id.TextView)).setText(textResId);
-        dialog.show();
+        if (this.dialog == null) {
+            create();
+        }
+        ((TextView) this.dialog.findViewById(com.ludashi.benchmark.R.id.TextView)).setText(textResId);
+        this.dialog.show();
     }
 
     public void showOnUiThread(final int textResId) {
-        activity.runOnUiThread(() -> show(textResId));
+        this.activity.runOnUiThread(new Runnable() { // from class: com.winlator.cmod.core.PreloaderDialog$$ExternalSyntheticLambda1
+            @Override // java.lang.Runnable
+            public final void run() {
+                PreloaderDialog.this.lambda$showOnUiThread$0(textResId);
+            }
+        });
     }
 
     public synchronized void close() {
         try {
-            if (dialog != null) {
-                dialog.dismiss();
+            if (this.dialog != null) {
+                this.dialog.dismiss();
             }
+        } catch (Exception e) {
         }
-        catch (Exception e) {}
     }
 
     public void closeOnUiThread() {
-        activity.runOnUiThread(this::close);
+        this.activity.runOnUiThread(new Runnable() { // from class: com.winlator.cmod.core.PreloaderDialog$$ExternalSyntheticLambda0
+            @Override // java.lang.Runnable
+            public final void run() {
+                PreloaderDialog.this.close();
+            }
+        });
     }
 
     public boolean isShowing() {
-        return dialog != null && dialog.isShowing();
+        return this.dialog != null && this.dialog.isShowing();
     }
 }

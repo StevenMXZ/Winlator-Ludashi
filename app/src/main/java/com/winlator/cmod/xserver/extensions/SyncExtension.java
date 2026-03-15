@@ -1,142 +1,169 @@
 package com.winlator.cmod.xserver.extensions;
 
 import android.util.SparseBooleanArray;
-
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xserver.XClient;
 import com.winlator.cmod.xserver.errors.BadFence;
 import com.winlator.cmod.xserver.errors.BadIdChoice;
 import com.winlator.cmod.xserver.errors.BadImplementation;
-import com.winlator.cmod.xserver.errors.BadMatch;
 import com.winlator.cmod.xserver.errors.XRequestError;
-
 import java.io.IOException;
 
+/* loaded from: classes11.dex */
 public class SyncExtension implements Extension {
     public static final byte MAJOR_OPCODE = -104;
     private final SparseBooleanArray fences = new SparseBooleanArray();
+    private final Object fenceLock = new Object();
 
     private static abstract class ClientOpcodes {
-        private static final byte CREATE_FENCE = 14;
-        private static final byte TRIGGER_FENCE = 15;
-        private static final byte RESET_FENCE = 16;
-        private static final byte DESTROY_FENCE = 17;
         private static final byte AWAIT_FENCE = 19;
+        private static final byte CREATE_FENCE = 14;
+        private static final byte DESTROY_FENCE = 17;
+        private static final byte RESET_FENCE = 16;
+        private static final byte TRIGGER_FENCE = 15;
+
+        private ClientOpcodes() {
+        }
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.extensions.Extension
     public String getName() {
         return "SYNC";
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.extensions.Extension
     public byte getMajorOpcode() {
         return MAJOR_OPCODE;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.extensions.Extension
     public byte getFirstErrorId() {
-        return Byte.MIN_VALUE;
+        return (byte) 0;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.extensions.Extension
     public byte getFirstEventId() {
-        return 0;
+        return (byte) 0;
     }
 
     public void setTriggered(int id) {
-        synchronized (fences) {
-            if (fences.indexOfKey(id) >= 0) fences.put(id, true);
+        synchronized (this.fenceLock) {
+            if (this.fences.indexOfKey(id) >= 0) {
+                this.fences.put(id, true);
+                this.fenceLock.notifyAll();
+            }
         }
     }
 
     private void createFence(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
-        synchronized (fences) {
-            inputStream.skip(4);
-            int id = inputStream.readInt();
-
-            if (fences.indexOfKey(id) >= 0) throw new BadIdChoice(id);
-
-            boolean initiallyTriggered = inputStream.readByte() == 1;
-            inputStream.skip(3);
-
-            fences.put(id, initiallyTriggered);
+        inputStream.readInt();
+        int id = inputStream.readInt();
+        boolean initiallyTriggered = inputStream.readByte() == 1;
+        inputStream.skip(3);
+        synchronized (this.fenceLock) {
+            if (this.fences.indexOfKey(id) >= 0) {
+                throw new BadIdChoice(id);
+            }
+            this.fences.put(id, initiallyTriggered);
         }
     }
 
     private void triggerFence(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
-        synchronized (fences) {
-            int id = inputStream.readInt();
-            if (fences.indexOfKey(id) < 0) throw new BadFence(id);
-            fences.put(id, true);
+        int id = inputStream.readInt();
+        synchronized (this.fenceLock) {
+            if (this.fences.indexOfKey(id) < 0) {
+                throw new BadFence(id);
+            }
+            this.fences.put(id, true);
+            this.fenceLock.notifyAll();
         }
     }
 
     private void resetFence(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
-        synchronized (fences) {
-            int id = inputStream.readInt();
-            if (fences.indexOfKey(id) < 0) throw new BadFence(id);
-
-            boolean triggered = fences.get(id);
-            if (!triggered) throw new BadMatch();
-
-            fences.put(id, false);
+        int id = inputStream.readInt();
+        synchronized (this.fenceLock) {
+            if (this.fences.indexOfKey(id) < 0) {
+                throw new BadFence(id);
+            }
+            this.fences.put(id, false);
         }
     }
 
     private void destroyFence(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
-        synchronized (fences) {
-            int id = inputStream.readInt();
-            if (fences.indexOfKey(id) < 0) throw new BadFence(id);
-            fences.delete(id);
+        int id = inputStream.readInt();
+        synchronized (this.fenceLock) {
+            if (this.fences.indexOfKey(id) < 0) {
+                throw new BadFence(id);
+            }
+            this.fences.delete(id);
         }
     }
 
     private void awaitFence(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
-        synchronized (fences) {
-            int length = client.getRemainingRequestLength();
-            int[] ids = new int[length / 4];
-            int i = 0;
-
-            while (length != 0) {
-                ids[i++] = inputStream.readInt();
-                length -= 4;
-            }
-
-            boolean anyTriggered = false;
-            do {
+        int remainingBytes = client.getRemainingRequestLength();
+        if (remainingBytes < 0) {
+            remainingBytes = 0;
+        }
+        int numIds = remainingBytes / 4;
+        int[] ids = new int[numIds];
+        for (int i = 0; i < numIds; i++) {
+            ids[i] = inputStream.readInt();
+        }
+        int i2 = numIds * 4;
+        int leftover = remainingBytes - i2;
+        if (leftover > 0) {
+            inputStream.skip(leftover);
+        }
+        if (ids.length == 0) {
+            return;
+        }
+        boolean isNative = client.xServer.getRenderer() != null && client.xServer.getRenderer().isNativeMode();
+        boolean anyTriggered = false;
+        do {
+            synchronized (this.fenceLock) {
                 for (int id : ids) {
-                    if (fences.indexOfKey(id) < 0) throw new BadFence(id);
-                    anyTriggered = fences.get(id);
-                    if (anyTriggered) break;
+                    if (this.fences.indexOfKey(id) < 0) {
+                        throw new BadFence(id);
+                    }
+                    anyTriggered = this.fences.get(id);
+                    if (anyTriggered) {
+                        break;
+                    }
+                }
+                if (!anyTriggered && isNative) {
+                    try {
+                        this.fenceLock.wait(2L);
+                    } catch (InterruptedException e) {
+                        return;
+                    }
                 }
             }
-            while (!anyTriggered);
-        }
+        } while (!anyTriggered);
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.extensions.Extension
     public void handleRequest(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
         int opcode = client.getRequestData();
         switch (opcode) {
-            case ClientOpcodes.CREATE_FENCE :
+            case 14:
                 createFence(client, inputStream, outputStream);
-                break;
-            case ClientOpcodes.TRIGGER_FENCE:
+                return;
+            case 15:
                 triggerFence(client, inputStream, outputStream);
-                break;
-            case ClientOpcodes.RESET_FENCE:
+                return;
+            case 16:
                 resetFence(client, inputStream, outputStream);
-                break;
-            case ClientOpcodes.DESTROY_FENCE:
+                return;
+            case 17:
                 destroyFence(client, inputStream, outputStream);
-                break;
-            case ClientOpcodes.AWAIT_FENCE:
-                awaitFence(client, inputStream, outputStream);
-                break;
+                return;
+            case 18:
             default:
                 throw new BadImplementation();
+            case 19:
+                awaitFence(client, inputStream, outputStream);
+                return;
         }
     }
 }

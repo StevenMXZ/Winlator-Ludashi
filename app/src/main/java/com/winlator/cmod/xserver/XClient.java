@@ -1,24 +1,24 @@
 package com.winlator.cmod.xserver;
 
 import androidx.collection.ArrayMap;
-
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
+import com.winlator.cmod.xserver.XResourceManager;
 import com.winlator.cmod.xserver.events.Event;
-
 import java.io.IOException;
 import java.util.ArrayList;
 
+/* loaded from: classes11.dex */
 public class XClient implements XResourceManager.OnResourceLifecycleListener {
-    public final XServer xServer;
-    private boolean authenticated = false;
-    public final Integer resourceIDBase;
-    private short sequenceNumber = 0;
-    private int requestLength;
-    private byte requestData;
     private int initialLength;
     private final XInputStream inputStream;
     private final XOutputStream outputStream;
+    private byte requestData;
+    private int requestLength;
+    public final Integer resourceIDBase;
+    public final XServer xServer;
+    private boolean authenticated = false;
+    private short sequenceNumber = 0;
     private final ArrayMap<Window, EventListener> eventListeners = new ArrayMap<>();
     private final ArrayList<XResource> resources = new ArrayList<>();
 
@@ -26,45 +26,60 @@ public class XClient implements XResourceManager.OnResourceLifecycleListener {
         this.xServer = xServer;
         this.inputStream = inputStream;
         this.outputStream = outputStream;
-
-        try (XLock lock = xServer.lockAll()) {
-            resourceIDBase = xServer.resourceIDs.get();
+        XLock lock = xServer.lockAll();
+        try {
+            this.resourceIDBase = xServer.resourceIDs.get();
             xServer.windowManager.addOnResourceLifecycleListener(this);
             xServer.pixmapManager.addOnResourceLifecycleListener(this);
             xServer.graphicsContextManager.addOnResourceLifecycleListener(this);
             xServer.cursorManager.addOnResourceLifecycleListener(this);
+            if (lock != null) {
+                lock.close();
+            }
+        } catch (Throwable th) {
+            if (lock != null) {
+                try {
+                    lock.close();
+                } catch (Throwable th2) {
+                    th.addSuppressed(th2);
+                }
+            }
+            throw th;
         }
     }
 
     public void registerAsOwnerOfResource(XResource resource) {
-        resources.add(resource);
+        this.resources.add(resource);
     }
 
     public void setEventListenerForWindow(Window window, Bitmask eventMask) {
-        EventListener eventListener = eventListeners.get(window);
-        if (eventListener != null) window.removeEventListener(eventListener);
-        if (eventMask.isEmpty()) return;
-        eventListener = new EventListener(this, eventMask);
-        eventListeners.put(window, eventListener);
-        window.addEventListener(eventListener);
+        EventListener eventListener = this.eventListeners.get(window);
+        if (eventListener != null) {
+            window.removeEventListener(eventListener);
+        }
+        if (eventMask.isEmpty()) {
+            return;
+        }
+        EventListener eventListener2 = new EventListener(this, eventMask);
+        this.eventListeners.put(window, eventListener2);
+        window.addEventListener(eventListener2);
     }
 
     public void sendEvent(Event event) {
         try {
-            event.send(sequenceNumber, outputStream);
-        }
-        catch (IOException e) {
+            event.send(this.sequenceNumber, this.outputStream);
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     public boolean isInterestedIn(int eventId, Window window) {
-        EventListener eventListener = eventListeners.get(window);
+        EventListener eventListener = this.eventListeners.get(window);
         return eventListener != null && eventListener.isInterestedIn(eventId);
     }
 
     public boolean isAuthenticated() {
-        return authenticated;
+        return this.authenticated;
     }
 
     public void setAuthenticated(boolean authenticated) {
@@ -72,55 +87,63 @@ public class XClient implements XResourceManager.OnResourceLifecycleListener {
     }
 
     public void freeResources() {
-        try (XLock lock = xServer.lockAll()) {
-            while (!resources.isEmpty()) {
-                XResource resource = resources.remove(resources.size()-1);
+        XLock lock = this.xServer.lockAll();
+        while (!this.resources.isEmpty()) {
+            try {
+                XResource resource = this.resources.remove(this.resources.size() - 1);
                 if (resource instanceof Window) {
-                    xServer.windowManager.destroyWindow(resource.id);
+                    this.xServer.windowManager.destroyWindow(resource.id);
+                } else if (resource instanceof Pixmap) {
+                    this.xServer.pixmapManager.freePixmap(resource.id);
+                } else if (resource instanceof GraphicsContext) {
+                    this.xServer.graphicsContextManager.freeGraphicsContext(resource.id);
+                } else if (resource instanceof Cursor) {
+                    this.xServer.cursorManager.freeCursor(resource.id);
                 }
-                else if (resource instanceof Pixmap) {
-                    xServer.pixmapManager.freePixmap(resource.id);
+            } catch (Throwable th) {
+                if (lock != null) {
+                    try {
+                        lock.close();
+                    } catch (Throwable th2) {
+                        th.addSuppressed(th2);
+                    }
                 }
-                else if (resource instanceof GraphicsContext) {
-                    xServer.graphicsContextManager.freeGraphicsContext(resource.id);
-                }
-                else if (resource instanceof Cursor) {
-                    xServer.cursorManager.freeCursor(resource.id);
-                }
+                throw th;
             }
-
-            while (!eventListeners.isEmpty()) {
-                int i = eventListeners.size()-1;
-                eventListeners.keyAt(i).removeEventListener(eventListeners.removeAt(i));
-            }
-
-            xServer.windowManager.removeOnResourceLifecycleListener(this);
-            xServer.pixmapManager.removeOnResourceLifecycleListener(this);
-            xServer.graphicsContextManager.removeOnResourceLifecycleListener(this);
-            xServer.cursorManager.removeOnResourceLifecycleListener(this);
-            xServer.resourceIDs.free(resourceIDBase);
+        }
+        while (!this.eventListeners.isEmpty()) {
+            int i = this.eventListeners.size() - 1;
+            this.eventListeners.keyAt(i).removeEventListener(this.eventListeners.removeAt(i));
+        }
+        this.xServer.windowManager.removeOnResourceLifecycleListener(this);
+        this.xServer.pixmapManager.removeOnResourceLifecycleListener(this);
+        this.xServer.graphicsContextManager.removeOnResourceLifecycleListener(this);
+        this.xServer.cursorManager.removeOnResourceLifecycleListener(this);
+        this.xServer.resourceIDs.free(this.resourceIDBase);
+        if (lock != null) {
+            lock.close();
         }
     }
 
     public void generateSequenceNumber() {
-        sequenceNumber++;
+        this.sequenceNumber = (short) (this.sequenceNumber + 1);
     }
 
     public short getSequenceNumber() {
-        return sequenceNumber;
+        return this.sequenceNumber;
     }
 
     public int getRequestLength() {
-        return requestLength;
+        return this.requestLength;
     }
 
     public void setRequestLength(int requestLength) {
         this.requestLength = requestLength;
-        initialLength = inputStream.available();
+        this.initialLength = this.inputStream.available();
     }
 
     public byte getRequestData() {
-        return requestData;
+        return this.requestData;
     }
 
     public void setRequestData(byte requestData) {
@@ -128,34 +151,36 @@ public class XClient implements XResourceManager.OnResourceLifecycleListener {
     }
 
     public int getRemainingRequestLength() {
-        int actualLength = initialLength - inputStream.available();
-        return requestLength - actualLength;
+        int actualLength = this.initialLength - this.inputStream.available();
+        return this.requestLength - actualLength;
     }
 
     public void skipRequest() {
-        inputStream.skip(getRemainingRequestLength());
+        this.inputStream.skip(getRemainingRequestLength());
     }
 
     public XInputStream getInputStream() {
-        return inputStream;
+        return this.inputStream;
     }
 
     public XOutputStream getOutputStream() {
-        return outputStream;
+        return this.outputStream;
     }
 
     public Bitmask getEventMaskForWindow(Window window) {
-        EventListener eventListener = eventListeners.get(window);
+        EventListener eventListener = this.eventListeners.get(window);
         return eventListener != null ? eventListener.eventMask : new Bitmask();
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.XResourceManager.OnResourceLifecycleListener
     public void onFreeResource(XResource resource) {
-        if (resource instanceof Window) eventListeners.remove(resource);
-        resources.remove(resource);
+        if (resource instanceof Window) {
+            this.eventListeners.remove(resource);
+        }
+        this.resources.remove(resource);
     }
 
     public boolean isValidResourceId(int id) {
-        return xServer.resourceIDs.isInInterval(id, resourceIDBase);
+        return this.xServer.resourceIDs.isInInterval(id, this.resourceIDBase.intValue());
     }
 }

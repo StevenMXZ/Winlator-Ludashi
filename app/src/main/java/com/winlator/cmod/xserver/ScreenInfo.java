@@ -1,30 +1,30 @@
 package com.winlator.cmod.xserver;
 
+/* loaded from: classes11.dex */
 public class ScreenInfo {
-    public final short width;
     public final short height;
+    public final short width;
 
     public ScreenInfo(String value) {
         String[] parts = value.split("x");
-        width = Short.parseShort(parts[0]);
-        height = Short.parseShort(parts[1]);
+        this.width = Short.parseShort(parts[0]);
+        this.height = Short.parseShort(parts[1]);
     }
 
     public ScreenInfo(int width, int height) {
-        this.width = (short)width;
-        this.height = (short)height;
+        this.width = (short) width;
+        this.height = (short) height;
     }
 
     public short getWidthInMillimeters() {
-        return (short)(width / 10);
+        return (short) (this.width / 10);
     }
 
     public short getHeightInMillimeters() {
-        return (short)(height / 10);
+        return (short) (this.height / 10);
     }
 
-    @Override
     public String toString() {
-        return width+"x"+height;
+        return ((int) this.width) + "x" + ((int) this.height);
     }
 }

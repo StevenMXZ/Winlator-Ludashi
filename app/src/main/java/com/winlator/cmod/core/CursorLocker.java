@@ -2,26 +2,26 @@ package com.winlator.cmod.core;
 
 import com.winlator.cmod.math.Mathf;
 import com.winlator.cmod.xserver.XServer;
-
 import java.util.Timer;
 import java.util.TimerTask;
 
+/* loaded from: classes10.dex */
 public class CursorLocker extends TimerTask {
+    private short maxDistance;
     private final XServer xServer;
     private float damping = 0.25f;
-    private short maxDistance;
     private boolean enabled = true;
     private final Object pauseLock = new Object();
 
     public CursorLocker(XServer xServer) {
         this.xServer = xServer;
-        maxDistance = (short)(xServer.screenInfo.width * 0.05f);
+        this.maxDistance = (short) (xServer.screenInfo.width * 0.05f);
         Timer timer = new Timer();
-        timer.scheduleAtFixedRate(this, 0, 1000 / 60);
+        timer.scheduleAtFixedRate(this, 0L, 16L);
     }
 
     public short getMaxDistance() {
-        return maxDistance;
+        return this.maxDistance;
     }
 
     public void setMaxDistance(short maxDistance) {
@@ -29,7 +29,7 @@ public class CursorLocker extends TimerTask {
     }
 
     public float getDamping() {
-        return damping;
+        return this.damping;
     }
 
     public void setDamping(float damping) {
@@ -37,44 +37,41 @@ public class CursorLocker extends TimerTask {
     }
 
     public boolean isEnabled() {
-        return enabled;
+        return this.enabled;
     }
 
     public void setEnabled(boolean enabled) {
         if (enabled) {
-            synchronized (pauseLock) {
+            synchronized (this.pauseLock) {
                 this.enabled = true;
-                pauseLock.notifyAll();
+                this.pauseLock.notifyAll();
             }
+            return;
         }
-        else this.enabled = enabled;
+        this.enabled = enabled;
     }
 
-    @Override
+    @Override // java.util.TimerTask, java.lang.Runnable
     public void run() {
-        synchronized (pauseLock) {
-            if (!enabled) {
+        synchronized (this.pauseLock) {
+            if (!this.enabled) {
                 try {
-                    pauseLock.wait();
+                    this.pauseLock.wait();
+                } catch (InterruptedException e) {
                 }
-                catch (InterruptedException e) {}
             }
         }
-
-        short x = (short)Mathf.clamp(xServer.pointer.getX(), -maxDistance, xServer.screenInfo.width + maxDistance);
-        short y = (short)Mathf.clamp(xServer.pointer.getY(), -maxDistance, xServer.screenInfo.height + maxDistance);
-
+        short x = (short) Mathf.clamp((int) this.xServer.pointer.getX(), -this.maxDistance, this.xServer.screenInfo.width + this.maxDistance);
+        short y = (short) Mathf.clamp((int) this.xServer.pointer.getY(), -this.maxDistance, this.xServer.screenInfo.height + this.maxDistance);
         if (x < 0) {
-            xServer.pointer.setX((short)Math.ceil(x * damping));
-        }
-        else if (x >= xServer.screenInfo.width) {
-            xServer.pointer.setX((short)Math.floor(xServer.screenInfo.width + (x - xServer.screenInfo.width) * damping));
+            this.xServer.pointer.setX((short) Math.ceil(x * this.damping));
+        } else if (x >= this.xServer.screenInfo.width) {
+            this.xServer.pointer.setX((short) Math.floor(this.xServer.screenInfo.width + ((x - this.xServer.screenInfo.width) * this.damping)));
         }
         if (y < 0) {
-            xServer.pointer.setY((short)Math.ceil(y * damping));
-        }
-        else if (y >= xServer.screenInfo.height) {
-            xServer.pointer.setY((short)Math.floor(xServer.screenInfo.height + (y - xServer.screenInfo.height) * damping));
+            this.xServer.pointer.setY((short) Math.ceil(y * this.damping));
+        } else if (y >= this.xServer.screenInfo.height) {
+            this.xServer.pointer.setY((short) Math.floor(this.xServer.screenInfo.height + ((y - this.xServer.screenInfo.height) * this.damping)));
         }
     }
 }

@@ -6,6 +6,7 @@ import com.winlator.cmod.xconnector.UnixSocketConfig;
 import com.winlator.cmod.xconnector.XConnectorEpoll;
 import com.winlator.cmod.xenvironment.EnvironmentComponent;
 
+/* loaded from: classes10.dex */
 public class ALSAServerComponent extends EnvironmentComponent {
     private XConnectorEpoll connector;
     private final UnixSocketConfig socketConfig;
@@ -14,19 +15,21 @@ public class ALSAServerComponent extends EnvironmentComponent {
         this.socketConfig = socketConfig;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xenvironment.EnvironmentComponent
     public void start() {
-        if (connector != null) return;
-        connector = new XConnectorEpoll(socketConfig, new ALSAClientConnectionHandler(), new ALSARequestHandler());
-        connector.setMultithreadedClients(true);
-        connector.start();
+        if (this.connector != null) {
+            return;
+        }
+        this.connector = new XConnectorEpoll(this.socketConfig, new ALSAClientConnectionHandler(), new ALSARequestHandler());
+        this.connector.setMultithreadedClients(true);
+        this.connector.start();
     }
 
-    @Override
+    @Override // com.winlator.cmod.xenvironment.EnvironmentComponent
     public void stop() {
-        if (connector != null) {
-            connector.stop();
-            connector = null;
+        if (this.connector != null) {
+            this.connector.stop();
+            this.connector = null;
         }
     }
 }

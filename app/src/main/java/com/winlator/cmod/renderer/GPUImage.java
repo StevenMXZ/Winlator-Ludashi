@@ -1,92 +1,109 @@
 package com.winlator.cmod.renderer;
 
-import androidx.annotation.Keep;
 import com.winlator.cmod.xserver.Drawable;
 import java.nio.ByteBuffer;
 
+/* loaded from: classes12.dex */
 public class GPUImage extends Texture {
+    private static boolean supported = false;
     private long hardwareBufferPtr;
     private long imageKHRPtr;
-    private ByteBuffer virtualData;
     private short stride;
-    private static boolean supported = false;
+    private ByteBuffer virtualData;
+
+    private native long createHardwareBuffer(short s, short s2);
+
+    private native long createImageKHR(long j, int i);
+
+    private native void destroyHardwareBuffer(long j);
+
+    private native void destroyImageKHR(long j);
+
+    private native long hardwareBufferFromSocket(int i);
+
+    private native ByteBuffer lockHardwareBuffer(long j);
 
     static {
         System.loadLibrary("winlator");
     }
 
     public GPUImage(short width, short height) {
-        hardwareBufferPtr = createHardwareBuffer(width, height);
-        if (hardwareBufferPtr != 0) {
-            virtualData = lockHardwareBuffer(hardwareBufferPtr);
-            if (virtualData == null) {
+        this.hardwareBufferPtr = createHardwareBuffer(width, height);
+        if (this.hardwareBufferPtr != 0) {
+            this.virtualData = lockHardwareBuffer(this.hardwareBufferPtr);
+            if (this.virtualData == null) {
                 System.err.println("Error: Failed to lock hardware buffer");
-                destroyHardwareBuffer(hardwareBufferPtr);
-                hardwareBufferPtr = 0;
+                destroyHardwareBuffer(this.hardwareBufferPtr);
+                this.hardwareBufferPtr = 0L;
+                return;
             }
-        } else {
-            System.err.println("Error: Failed to create hardware buffer");
+            return;
         }
+        System.err.println("Error: Failed to create hardware buffer");
     }
-    
+
     public GPUImage(int socketFd) {
-        hardwareBufferPtr = hardwareBufferFromSocket(socketFd);
-        if (hardwareBufferPtr != 0) {
-            virtualData = lockHardwareBuffer(hardwareBufferPtr);
-            if (virtualData == null) {
+        this.hardwareBufferPtr = hardwareBufferFromSocket(socketFd);
+        if (this.hardwareBufferPtr != 0) {
+            this.virtualData = lockHardwareBuffer(this.hardwareBufferPtr);
+            if (this.virtualData == null) {
                 System.err.println("Error: Failed to lock hardware buffer");
-                destroyHardwareBuffer(hardwareBufferPtr);
-                hardwareBufferPtr = 0;
+                destroyHardwareBuffer(this.hardwareBufferPtr);
+                this.hardwareBufferPtr = 0L;
+                return;
             }
-        } else {
-            System.err.println("Error: Failed to create hardware buffer");
+            return;
         }
+        System.err.println("Error: Failed to create hardware buffer");
     }
 
-    @Override
+    @Override // com.winlator.cmod.renderer.Texture
     public void allocateTexture(short width, short height, ByteBuffer data) {
-        if (isAllocated()) return;
+        if (isAllocated()) {
+            return;
+        }
         super.allocateTexture(width, height, null);
-        if (hardwareBufferPtr != 0) {
-            imageKHRPtr = createImageKHR(hardwareBufferPtr, textureId);
-            if (imageKHRPtr == 0) {
+        if (this.hardwareBufferPtr != 0) {
+            this.imageKHRPtr = createImageKHR(this.hardwareBufferPtr, this.textureId);
+            if (this.imageKHRPtr == 0) {
                 System.err.println("Error: Failed to create EGL image");
-                destroyHardwareBuffer(hardwareBufferPtr);
-                hardwareBufferPtr = 0;
+                destroyHardwareBuffer(this.hardwareBufferPtr);
+                this.hardwareBufferPtr = 0L;
             }
         }
     }
 
-    @Override
+    @Override // com.winlator.cmod.renderer.Texture
     public void updateFromDrawable(Drawable drawable) {
-        if (!isAllocated()) allocateTexture(drawable.width, drawable.height, null);
-        needsUpdate = false;
+        if (!isAllocated()) {
+            allocateTexture(drawable.width, drawable.height, null);
+        }
+        this.needsUpdate = false;
     }
 
     public short getStride() {
-        return stride;
+        return this.stride;
     }
 
-    @Keep
     private void setStride(short stride) {
         this.stride = stride;
     }
 
     public ByteBuffer getVirtualData() {
-        return virtualData;
+        return this.virtualData;
     }
 
-    @Override
+    @Override // com.winlator.cmod.renderer.Texture
     public void destroy() {
-        if (imageKHRPtr != 0) {
-            destroyImageKHR(imageKHRPtr);
-            imageKHRPtr = 0;
+        if (this.imageKHRPtr != 0) {
+            destroyImageKHR(this.imageKHRPtr);
+            this.imageKHRPtr = 0L;
         }
-        if (hardwareBufferPtr != 0) {
-            destroyHardwareBuffer(hardwareBufferPtr);
-            hardwareBufferPtr = 0;
+        if (this.hardwareBufferPtr != 0) {
+            destroyHardwareBuffer(this.hardwareBufferPtr);
+            this.hardwareBufferPtr = 0L;
         }
-        virtualData = null;
+        this.virtualData = null;
         super.destroy();
     }
 
@@ -95,22 +112,9 @@ public class GPUImage extends Texture {
     }
 
     public static void checkIsSupported() {
-        final short size = 8;
-        GPUImage gpuImage = new GPUImage(size, size);
-        gpuImage.allocateTexture(size, size, null);
-        supported = gpuImage.hardwareBufferPtr != 0 && gpuImage.imageKHRPtr != 0 && gpuImage.virtualData != null;
+        GPUImage gpuImage = new GPUImage((short) 8, (short) 8);
+        gpuImage.allocateTexture((short) 8, (short) 8, null);
+        supported = (gpuImage.hardwareBufferPtr == 0 || gpuImage.imageKHRPtr == 0 || gpuImage.virtualData == null) ? false : true;
         gpuImage.destroy();
     }
-
-    private native long hardwareBufferFromSocket(int fd);
-    
-    private native long createHardwareBuffer(short width, short height);
-
-    private native void destroyHardwareBuffer(long hardwareBufferPtr);
-
-    private native ByteBuffer lockHardwareBuffer(long hardwareBufferPtr);
-
-    private native long createImageKHR(long hardwareBufferPtr, int textureId);
-
-    private native void destroyImageKHR(long imageKHRPtr);
 }

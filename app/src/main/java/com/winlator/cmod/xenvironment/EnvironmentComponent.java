@@ -1,5 +1,6 @@
 package com.winlator.cmod.xenvironment;
 
+/* loaded from: classes12.dex */
 public abstract class EnvironmentComponent {
     protected XEnvironment environment;
 

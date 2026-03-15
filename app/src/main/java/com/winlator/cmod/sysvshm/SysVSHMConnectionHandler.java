@@ -3,6 +3,7 @@ package com.winlator.cmod.sysvshm;
 import com.winlator.cmod.xconnector.Client;
 import com.winlator.cmod.xconnector.ConnectionHandler;
 
+/* loaded from: classes11.dex */
 public class SysVSHMConnectionHandler implements ConnectionHandler {
     private final SysVSharedMemory sysVSharedMemory;
 
@@ -10,12 +11,13 @@ public class SysVSHMConnectionHandler implements ConnectionHandler {
         this.sysVSharedMemory = sysVSharedMemory;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xconnector.ConnectionHandler
     public void handleNewConnection(Client client) {
         client.createIOStreams();
-        client.setTag(sysVSharedMemory);
+        client.setTag(this.sysVSharedMemory);
     }
 
-    @Override
-    public void handleConnectionShutdown(Client client) {}
+    @Override // com.winlator.cmod.xconnector.ConnectionHandler
+    public void handleConnectionShutdown(Client client) {
+    }
 }

@@ -1,45 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:gravity="center_vertical"
     android:orientation="horizontal"
     android:layout_width="match_parent"
-    android:layout_height="38dp"
-    android:gravity="center_vertical">
-
+    android:layout_height="38dp">
     <ImageView
         android:id="@+id/IVIcon"
+        android:paddingLeft="4dp"
         android:layout_width="26dp"
-        android:layout_height="26dp"
-        android:paddingLeft="4dp" />
-
+        android:layout_height="26dp"/>
     <TextView
+        android:ellipsize="end"
         android:id="@+id/TVName"
+        android:paddingLeft="6dp"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
         android:maxLines="1"
-        android:ellipsize="end"
-        android:paddingLeft="6dp" />
-
+        android:layout_weight="1"/>
     <TextView
         android:id="@+id/TVPID"
+        android:paddingLeft="4dp"
         android:layout_width="60dp"
-        android:layout_height="wrap_content"
-        android:paddingLeft="4dp" />
-
+        android:layout_height="wrap_content"/>
     <TextView
         android:id="@+id/TVMemoryUsage"
+        android:paddingLeft="4dp"
         android:layout_width="110dp"
-        android:layout_height="wrap_content"
-        android:paddingLeft="4dp" />
-
+        android:layout_height="wrap_content"/>
     <RelativeLayout
+        android:gravity="center"
         android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:gravity="center">
-
+        android:layout_height="40dp">
         <ImageButton
-            style="@style/ListMenuButton"
             android:id="@+id/BTMenu"
-            android:src="@drawable/icon_list_item_menu" />
+            android:src="@drawable/icon_list_item_menu"
+            style="@style/ListMenuButton"/>
     </RelativeLayout>
 </LinearLayout>

@@ -3,8 +3,9 @@ package com.winlator.cmod.core;
 import java.util.HashMap;
 import java.util.Map;
 
+/* loaded from: classes10.dex */
 public class EnvironmentManager {
-    private static final Map<String, String> envVars = new HashMap<>();
+    private static final Map<String, String> envVars = new HashMap();
 
     public static void setEnvVars(String[] envp) {
         envVars.clear();
@@ -19,6 +20,6 @@ public class EnvironmentManager {
     }
 
     public static Map<String, String> getEnvVars() {
-        return new HashMap<>(envVars);
+        return new HashMap(envVars);
     }
 }

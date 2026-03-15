@@ -2,119 +2,99 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="200dp">
-
     <LinearLayout
+        android:orientation="vertical"
         android:layout_width="300dp"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-
+        android:layout_height="wrap_content">
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/vkd3d_version" />
-
+            android:text="@string/vkd3d_version"/>
         <Spinner
-            style="@style/ComboBox"
-            android:layout_width="match_parent"
-            android:id="@+id/SVKD3DVersion"
             android:entries="@array/vkd3d_version_entries"
-            android:spinnerMode="dialog" />
-
+            android:id="@+id/SVKD3DVersion"
+            android:layout_width="match_parent"
+            android:spinnerMode="dialog"
+            style="@style/ComboBox"/>
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/vkd3d_feature_level" />
-
+            android:text="@string/vkd3d_feature_level"/>
         <Spinner
-            style="@style/ComboBox"
-            android:layout_width="match_parent"
             android:id="@+id/SVKD3DFeatureLevel"
-            android:spinnerMode="dialog" />
-
+            android:layout_width="match_parent"
+            android:spinnerMode="dialog"
+            style="@style/ComboBox"/>
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/dxvk_version" />
-
+            android:text="@string/dxvk_version"/>
         <Spinner
-            style="@style/ComboBox"
-            android:layout_width="match_parent"
-            android:id="@+id/SDXVKVersion"
             android:entries="@array/dxvk_version_entries"
-            android:spinnerMode="dialog"/>
-
+            android:id="@+id/SDXVKVersion"
+            android:layout_width="match_parent"
+            android:spinnerMode="dialog"
+            style="@style/ComboBox"/>
         <LinearLayout
+            android:orientation="horizontal"
             android:id="@+id/LLAsync"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_marginTop="8dp"
-            android:orientation="horizontal">
-
+            android:layout_marginTop="8dp">
             <TextView
+                android:layout_gravity="center"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_weight="1"
-                android:text="@string/enabled_async" />
-
+                android:text="@string/enabled_async"
+                android:layout_weight="1"/>
             <ToggleButton
                 android:id="@+id/SWAsync"
+                android:background="@drawable/toggle_button_selector"
                 android:layout_width="64dp"
                 android:layout_height="32dp"
-                android:background="@drawable/toggle_button_selector"
                 android:textOn=""
-                android:textOff="" />
-
+                android:textOff=""/>
         </LinearLayout>
-
         <LinearLayout
+            android:orientation="horizontal"
             android:id="@+id/LLAsyncCache"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_marginTop="8dp"
-            android:layout_marginBottom="8dp"
-            android:orientation="horizontal">
-
+            android:layout_marginBottom="8dp">
             <TextView
+                android:layout_gravity="center"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_weight="1"
-                android:text="@string/enabled_async_cache" />
-
+                android:text="@string/enabled_async_cache"
+                android:layout_weight="1"/>
             <ToggleButton
                 android:id="@+id/SWAsyncCache"
+                android:background="@drawable/toggle_button_selector"
                 android:layout_width="64dp"
                 android:layout_height="32dp"
-                android:background="@drawable/toggle_button_selector"
                 android:textOn=""
-                android:textOff="" />
-
+                android:textOff=""/>
         </LinearLayout>
-
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/ddraw_wrapper" />
-
+            android:text="@string/ddraw_wrapper"/>
         <Spinner
-            style="@style/ComboBox"
-            android:layout_width="match_parent"
-            android:id="@+id/SDDRAWrapper"
             android:entries="@array/ddrawrapper_entries"
-            android:spinnerMode="dialog" />
-
+            android:id="@+id/SDDRAWrapper"
+            android:layout_width="match_parent"
+            android:spinnerMode="dialog"
+            style="@style/ComboBox"/>
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/frame_rate" />
-
+            android:text="@string/frame_rate"/>
         <Spinner
-            style="@style/ComboBox"
-            android:layout_width="match_parent"
-            android:id="@+id/SFramerate"
             android:entries="@array/dxvk_framerate_entries"
-            android:spinnerMode="dialog"/>
-
+            android:id="@+id/SFramerate"
+            android:layout_width="match_parent"
+            android:spinnerMode="dialog"
+            style="@style/ComboBox"/>
     </LinearLayout>
 </ScrollView>

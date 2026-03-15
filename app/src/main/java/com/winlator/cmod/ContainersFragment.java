@@ -1,18 +1,11 @@
 package com.winlator.cmod;
 
-import static com.winlator.cmod.core.AppUtils.showToast;
-
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -23,133 +16,117 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.PopupMenu;
 import android.widget.TextView;
-import android.widget.Toast;
-
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.documentfile.provider.DocumentFile;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.recyclerview.widget.DividerItemDecoration;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-
-import com.winlator.cmod.R;
+import com.winlator.cmod.ContainersFragment;
 import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.container.Shortcut;
 import com.winlator.cmod.contentdialog.ContentDialog;
 import com.winlator.cmod.contentdialog.StorageInfoDialog;
-import com.winlator.cmod.core.AppUtils;
-import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.PreloaderDialog;
 import com.winlator.cmod.xenvironment.ImageFs;
-
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
+/* loaded from: classes8.dex */
 public class ContainersFragment extends Fragment {
-    private RecyclerView recyclerView;
     private TextView emptyTextView;
     private ContainerManager manager;
     private PreloaderDialog preloaderDialog;
+    private RecyclerView recyclerView;
 
-    @Override
-    public void onCreate(@Nullable Bundle savedInstanceState) {
+    @Override // androidx.fragment.app.Fragment
+    public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setHasOptionsMenu(true);
-        preloaderDialog = new PreloaderDialog(getActivity());
+        this.preloaderDialog = new PreloaderDialog(getActivity());
     }
 
-    @Override
-    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+    @Override // androidx.fragment.app.Fragment
+    public void onViewCreated(View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        manager = new ContainerManager(getContext());
+        this.manager = new ContainerManager(getContext());
         loadContainersList();
-        ((AppCompatActivity) getActivity()).getSupportActionBar().setTitle(R.string.containers);
+        ((AppCompatActivity) getActivity()).getSupportActionBar().setTitle(com.ludashi.benchmark.R.string.containers);
     }
 
-    @Nullable
-    @Override
-    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-        FrameLayout frameLayout = (FrameLayout) inflater.inflate(R.layout.containers_fragment, container, false);
-        recyclerView = frameLayout.findViewById(R.id.RecyclerView);
-        emptyTextView = frameLayout.findViewById(R.id.TVEmptyText);
-        recyclerView.setLayoutManager(new LinearLayoutManager(recyclerView.getContext()));
-        recyclerView.addItemDecoration(new DividerItemDecoration(recyclerView.getContext(), DividerItemDecoration.VERTICAL));
+    @Override // androidx.fragment.app.Fragment
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        FrameLayout frameLayout = (FrameLayout) inflater.inflate(com.ludashi.benchmark.R.layout.containers_fragment, container, false);
+        this.recyclerView = (RecyclerView) frameLayout.findViewById(com.ludashi.benchmark.R.id.RecyclerView);
+        this.emptyTextView = (TextView) frameLayout.findViewById(com.ludashi.benchmark.R.id.TVEmptyText);
+        this.recyclerView.setLayoutManager(new LinearLayoutManager(this.recyclerView.getContext()));
+        this.recyclerView.addItemDecoration(new DividerItemDecoration(this.recyclerView.getContext(), 1));
         return frameLayout;
     }
 
-    private void loadContainersList() {
-        ArrayList<Container> containers = manager.getContainers();
-        recyclerView.setAdapter(new ContainersAdapter(containers));
-        if (containers.isEmpty()) emptyTextView.setVisibility(View.VISIBLE);
-    }
-
-    @Override
-    public void onCreateOptionsMenu(Menu menu, MenuInflater menuInflater) {
-        // Clear any existing menu items to prevent duplication
-        menu.clear();
-        menuInflater.inflate(R.menu.containers_menu, menu);
-        MenuItem bigPictureItem = menu.findItem(R.id.action_big_picture_mode);
-        Drawable icon = bigPictureItem.getIcon();
-        if (icon != null) {
-            icon.mutate(); // Ensure we don't modify other instances of this drawable
-            icon.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);
+    /* JADX INFO: Access modifiers changed from: private */
+    public void loadContainersList() {
+        ArrayList<Container> containers = this.manager.getContainers();
+        this.recyclerView.setAdapter(new ContainersAdapter(containers));
+        if (containers.isEmpty()) {
+            this.emptyTextView.setVisibility(0);
         }
     }
 
-    @Override
+    @Override // androidx.fragment.app.Fragment
+    public void onCreateOptionsMenu(Menu menu, MenuInflater menuInflater) {
+        menu.clear();
+        menuInflater.inflate(com.ludashi.benchmark.R.menu.containers_menu, menu);
+        MenuItem bigPictureItem = menu.findItem(com.ludashi.benchmark.R.id.action_big_picture_mode);
+        Drawable icon = bigPictureItem.getIcon();
+        if (icon != null) {
+            icon.mutate();
+            icon.setColorFilter(-1, PorterDuff.Mode.SRC_IN);
+        }
+    }
+
+    @Override // androidx.fragment.app.Fragment
     public boolean onOptionsItemSelected(MenuItem menuItem) {
         switch (menuItem.getItemId()) {
-            case R.id.containers_menu_add:
-                if (!ImageFs.find(getContext()).isValid()) return false;
-                FragmentManager fragmentManager = getParentFragmentManager();
-                fragmentManager.beginTransaction()
-                        .setCustomAnimations(R.anim.slide_in_up, R.anim.slide_out_down, R.anim.slide_in_down, R.anim.slide_out_up)
-                        .addToBackStack(null)
-                        .replace(R.id.FLFragmentContainer, new ContainerDetailFragment())
-                        .commit();
-                return true;
-
-            case R.id.action_big_picture_mode:
+            case com.ludashi.benchmark.R.id.action_big_picture_mode /* 2131296696 */:
                 toggleBigPictureMode();
                 return true;
-
+            case com.ludashi.benchmark.R.id.containers_menu_add /* 2131296766 */:
+                if (!ImageFs.find(getContext()).isValid()) {
+                    return false;
+                }
+                FragmentManager fragmentManager = getParentFragmentManager();
+                fragmentManager.beginTransaction().setCustomAnimations(com.ludashi.benchmark.R.anim.slide_in_up, com.ludashi.benchmark.R.anim.slide_out_down, com.ludashi.benchmark.R.anim.slide_in_down, com.ludashi.benchmark.R.anim.slide_out_up).addToBackStack(null).replace(com.ludashi.benchmark.R.id.FLFragmentContainer, new ContainerDetailFragment()).commit();
+                return true;
             default:
                 return super.onOptionsItemSelected(menuItem);
         }
     }
 
     private void toggleBigPictureMode() {
-        // Start BigPictureActivity without passing shortcut data explicitly
-        Intent intent = new Intent(getContext(), BigPictureActivity.class);
+        Intent intent = new Intent(getContext(), (Class<?>) BigPictureActivity.class);
         startActivity(intent);
-        getActivity().overridePendingTransition(R.anim.fade_in, R.anim.fade_out);
+        getActivity().overridePendingTransition(com.ludashi.benchmark.R.anim.fade_in, com.ludashi.benchmark.R.anim.fade_out);
     }
 
-
-    private class ContainersAdapter extends RecyclerView.Adapter<ContainersAdapter.ViewHolder> {
+    /* JADX INFO: Access modifiers changed from: private */
+    class ContainersAdapter extends RecyclerView.Adapter<ViewHolder> {
         private final List<Container> data;
 
         private class ViewHolder extends RecyclerView.ViewHolder {
-            private final ImageView runButton; // Changed to ImageButton
-            private final ImageView menuButton; // Changed to ImageButton
             private final ImageView imageView;
+            private final ImageView menuButton;
+            private final ImageView runButton;
             private final TextView title;
 
             private ViewHolder(View view) {
                 super(view);
-                this.runButton = view.findViewById(R.id.BTRun); // Find by correct ID
-                this.imageView = view.findViewById(R.id.ImageView);
-                this.title = view.findViewById(R.id.TVTitle);
-                this.menuButton = view.findViewById(R.id.BTMenu);
+                this.runButton = (ImageView) view.findViewById(com.ludashi.benchmark.R.id.BTRun);
+                this.imageView = (ImageView) view.findViewById(com.ludashi.benchmark.R.id.ImageView);
+                this.title = (TextView) view.findViewById(com.ludashi.benchmark.R.id.TVTitle);
+                this.menuButton = (ImageView) view.findViewById(com.ludashi.benchmark.R.id.BTMenu);
             }
         }
 
@@ -157,93 +134,147 @@ public class ContainersFragment extends Fragment {
             this.data = data;
         }
 
-        @Override
+        @Override // androidx.recyclerview.widget.RecyclerView.Adapter
         public final ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-            return new ViewHolder(LayoutInflater.from(parent.getContext()).inflate(R.layout.container_list_item, parent, false));
+            return new ViewHolder(LayoutInflater.from(parent.getContext()).inflate(com.ludashi.benchmark.R.layout.container_list_item, parent, false));
         }
 
-        @Override
-        public void onViewRecycled(@NonNull ViewHolder holder) {
-            holder.runButton.setOnClickListener(null); // Remove listeners
-            holder.menuButton.setOnClickListener(null); // Remove listeners
-            super.onViewRecycled(holder);
+        @Override // androidx.recyclerview.widget.RecyclerView.Adapter
+        public void onViewRecycled(ViewHolder holder) {
+            holder.runButton.setOnClickListener(null);
+            holder.menuButton.setOnClickListener(null);
+            super.onViewRecycled((ContainersAdapter) holder);
         }
 
-        @Override
-        public void onBindViewHolder(final ViewHolder holder, int position) {
-            final Container item = data.get(position); // Use 'item' instead of undefined 'container'
-            holder.imageView.setImageResource(R.drawable.icon_container);
+        @Override // androidx.recyclerview.widget.RecyclerView.Adapter
+        public void onBindViewHolder(ViewHolder holder, int position) {
+            final Container item = this.data.get(position);
+            holder.imageView.setImageResource(com.ludashi.benchmark.R.drawable.icon_container);
             holder.title.setText(item.getName());
-
-            holder.runButton.setOnClickListener(view -> runContainer(item)); // Correct item reference
-
-            holder.menuButton.setOnClickListener(view -> showListItemMenu(view, item));
+            holder.runButton.setOnClickListener(new View.OnClickListener() { // from class: com.winlator.cmod.ContainersFragment$ContainersAdapter$$ExternalSyntheticLambda5
+                @Override // android.view.View.OnClickListener
+                public final void onClick(View view) {
+                    ContainersFragment.ContainersAdapter.this.lambda$onBindViewHolder$0(item, view);
+                }
+            });
+            holder.menuButton.setOnClickListener(new View.OnClickListener() { // from class: com.winlator.cmod.ContainersFragment$ContainersAdapter$$ExternalSyntheticLambda6
+                @Override // android.view.View.OnClickListener
+                public final void onClick(View view) {
+                    ContainersFragment.ContainersAdapter.this.lambda$onBindViewHolder$1(item, view);
+                }
+            });
         }
 
-        @Override
+        /* JADX INFO: Access modifiers changed from: private */
+        public /* synthetic */ void lambda$onBindViewHolder$0(Container item, View view) {
+            runContainer(item);
+        }
+
+        @Override // androidx.recyclerview.widget.RecyclerView.Adapter
         public final int getItemCount() {
-            return data.size();
+            return this.data.size();
         }
 
         private void runContainer(Container container) {
-            final Context context = getContext();
-            if (!XrActivity.isEnabled(getContext())) {
-                Intent intent = new Intent(context, XServerDisplayActivity.class);
+            Context context = ContainersFragment.this.getContext();
+            if (!XrActivity.isEnabled(ContainersFragment.this.getContext())) {
+                Intent intent = new Intent(context, (Class<?>) XServerDisplayActivity.class);
                 intent.putExtra("container_id", container.id);
-                requireActivity().startActivity(intent);
-            } else {
-                XrActivity.openIntent(getActivity(), container.id, null);
+                ContainersFragment.this.requireActivity().startActivity(intent);
+                return;
             }
+            XrActivity.openIntent(ContainersFragment.this.getActivity(), container.id, null);
         }
 
-        private void showListItemMenu(View anchorView, Container container) {
-            final Context context = getContext();
+        /* JADX INFO: Access modifiers changed from: private */
+        /* renamed from: showListItemMenu, reason: merged with bridge method [inline-methods] */
+        public void lambda$onBindViewHolder$1(View anchorView, final Container container) {
+            final Context context = ContainersFragment.this.getContext();
             PopupMenu listItemMenu = new PopupMenu(context, anchorView);
-            listItemMenu.inflate(R.menu.container_popup_menu);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) listItemMenu.setForceShowIcon(true);
-
-            listItemMenu.setOnMenuItemClickListener((menuItem) -> {
-                switch (menuItem.getItemId()) {
-                    case R.id.container_edit:
-                        FragmentManager fragmentManager = getParentFragmentManager();
-                        fragmentManager.beginTransaction()
-                                .setCustomAnimations(R.anim.slide_in_up, R.anim.slide_out_down, R.anim.slide_in_down, R.anim.slide_out_up)
-                                .addToBackStack(null)
-                                .replace(R.id.FLFragmentContainer, new ContainerDetailFragment(container.id))
-                                .commit();
-                        break;
-                    case R.id.container_duplicate:
-                        ContentDialog.confirm(getContext(), R.string.do_you_want_to_duplicate_this_container, () -> {
-                            preloaderDialog.show(R.string.duplicating_container);
-                            manager.duplicateContainerAsync(container, () -> {
-                                preloaderDialog.close();
-                                loadContainersList();
-                            });
-                        });
-                        break;
-                    case R.id.container_remove:
-                        ContentDialog.confirm(getContext(), R.string.do_you_want_to_remove_this_container, () -> {
-                            preloaderDialog.show(R.string.removing_container);
-                            for (Shortcut shortcut : manager.loadShortcuts()) {
-                                if (shortcut.container == container)
-                                    ShortcutsFragment.disableShortcutOnScreen(context, shortcut);
-                            }
-                            manager.removeContainerAsync(container, () -> {
-                                preloaderDialog.close();
-                                loadContainersList();
-                            });
-                        });
-                        break;
-                    case R.id.container_info:
-                        (new StorageInfoDialog(getActivity(), container)).show();
-                        break;
+            listItemMenu.inflate(com.ludashi.benchmark.R.menu.container_popup_menu);
+            if (Build.VERSION.SDK_INT >= 29) {
+                listItemMenu.setForceShowIcon(true);
+            }
+            listItemMenu.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() { // from class: com.winlator.cmod.ContainersFragment$ContainersAdapter$$ExternalSyntheticLambda1
+                @Override // android.widget.PopupMenu.OnMenuItemClickListener
+                public final boolean onMenuItemClick(MenuItem menuItem) {
+                    boolean lambda$showListItemMenu$6;
+                    lambda$showListItemMenu$6 = ContainersFragment.ContainersAdapter.this.lambda$showListItemMenu$6(container, context, menuItem);
+                    return lambda$showListItemMenu$6;
                 }
-                return true;
             });
             listItemMenu.show();
         }
+
+        /* JADX INFO: Access modifiers changed from: private */
+        public /* synthetic */ boolean lambda$showListItemMenu$6(final Container container, final Context context, MenuItem menuItem) {
+            switch (menuItem.getItemId()) {
+                case com.ludashi.benchmark.R.id.container_duplicate /* 2131296762 */:
+                    ContentDialog.confirm(ContainersFragment.this.getContext(), com.ludashi.benchmark.R.string.do_you_want_to_duplicate_this_container, new Runnable() { // from class: com.winlator.cmod.ContainersFragment$ContainersAdapter$$ExternalSyntheticLambda2
+                        @Override // java.lang.Runnable
+                        public final void run() {
+                            ContainersFragment.ContainersAdapter.this.lambda$showListItemMenu$3(container);
+                        }
+                    });
+                    break;
+                case com.ludashi.benchmark.R.id.container_edit /* 2131296763 */:
+                    FragmentManager fragmentManager = ContainersFragment.this.getParentFragmentManager();
+                    fragmentManager.beginTransaction().setCustomAnimations(com.ludashi.benchmark.R.anim.slide_in_up, com.ludashi.benchmark.R.anim.slide_out_down, com.ludashi.benchmark.R.anim.slide_in_down, com.ludashi.benchmark.R.anim.slide_out_up).addToBackStack(null).replace(com.ludashi.benchmark.R.id.FLFragmentContainer, new ContainerDetailFragment(container.id)).commit();
+                    break;
+                case com.ludashi.benchmark.R.id.container_info /* 2131296764 */:
+                    new StorageInfoDialog(ContainersFragment.this.getActivity(), container).show();
+                    break;
+                case com.ludashi.benchmark.R.id.container_remove /* 2131296765 */:
+                    ContentDialog.confirm(ContainersFragment.this.getContext(), com.ludashi.benchmark.R.string.do_you_want_to_remove_this_container, new Runnable() { // from class: com.winlator.cmod.ContainersFragment$ContainersAdapter$$ExternalSyntheticLambda3
+                        @Override // java.lang.Runnable
+                        public final void run() {
+                            ContainersFragment.ContainersAdapter.this.lambda$showListItemMenu$5(container, context);
+                        }
+                    });
+                    break;
+            }
+            return true;
+        }
+
+        /* JADX INFO: Access modifiers changed from: private */
+        public /* synthetic */ void lambda$showListItemMenu$3(Container container) {
+            ContainersFragment.this.preloaderDialog.lambda$showOnUiThread$0(com.ludashi.benchmark.R.string.duplicating_container);
+            ContainersFragment.this.manager.duplicateContainerAsync(container, new Runnable() { // from class: com.winlator.cmod.ContainersFragment$ContainersAdapter$$ExternalSyntheticLambda0
+                @Override // java.lang.Runnable
+                public final void run() {
+                    ContainersFragment.ContainersAdapter.this.lambda$showListItemMenu$2();
+                }
+            });
+        }
+
+        /* JADX INFO: Access modifiers changed from: private */
+        public /* synthetic */ void lambda$showListItemMenu$2() {
+            ContainersFragment.this.preloaderDialog.close();
+            ContainersFragment.this.loadContainersList();
+        }
+
+        /* JADX INFO: Access modifiers changed from: private */
+        public /* synthetic */ void lambda$showListItemMenu$5(Container container, Context context) {
+            ContainersFragment.this.preloaderDialog.lambda$showOnUiThread$0(com.ludashi.benchmark.R.string.removing_container);
+            Iterator<Shortcut> it = ContainersFragment.this.manager.loadShortcuts().iterator();
+            while (it.hasNext()) {
+                Shortcut shortcut = it.next();
+                if (shortcut.container == container) {
+                    ShortcutsFragment.disableShortcutOnScreen(context, shortcut);
+                }
+            }
+            ContainersFragment.this.manager.removeContainerAsync(container, new Runnable() { // from class: com.winlator.cmod.ContainersFragment$ContainersAdapter$$ExternalSyntheticLambda4
+                @Override // java.lang.Runnable
+                public final void run() {
+                    ContainersFragment.ContainersAdapter.this.lambda$showListItemMenu$4();
+                }
+            });
+        }
+
+        /* JADX INFO: Access modifiers changed from: private */
+        public /* synthetic */ void lambda$showListItemMenu$4() {
+            ContainersFragment.this.preloaderDialog.close();
+            ContainersFragment.this.loadContainersList();
+        }
     }
-
-
-
 }

@@ -2,6 +2,7 @@ package com.winlator.cmod.renderer;
 
 import com.winlator.cmod.xserver.Drawable;
 
+/* loaded from: classes12.dex */
 class RenderableWindow {
     final Drawable content;
     short rootX;

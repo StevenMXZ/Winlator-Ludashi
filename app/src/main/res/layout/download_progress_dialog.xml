@@ -1,74 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
     android:gravity="center"
+    android:focusable="false"
     android:clickable="false"
-    android:focusable="false">
-
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
     <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingTop="22dp"
-        android:paddingBottom="22dp"
-        android:paddingLeft="32dp"
-        android:paddingRight="32dp"
-        android:layout_gravity="center"
         android:gravity="right"
-        android:background="@drawable/preloader_background">
-
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:background="@drawable/preloader_background"
+        android:paddingLeft="32dp"
+        android:paddingTop="22dp"
+        android:paddingRight="32dp"
+        android:paddingBottom="22dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
         <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:gravity="center_vertical">
-
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content">
             <FrameLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginRight="16dp">
-
                 <com.google.android.material.progressindicator.CircularProgressIndicator
+                    android:layout_gravity="center"
                     android:id="@+id/CircularProgressIndicator"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:trackThickness="10dp"
-                    app:trackColor="#bdbdbd"
                     app:indicatorColor="@color/colorAccent"
                     app:indicatorSize="64dp"
-                    android:layout_gravity="center" />
-
+                    app:trackColor="#bdbdbd"
+                    app:trackThickness="10dp"/>
                 <TextView
+                    android:textSize="14dp"
+                    android:layout_gravity="center"
                     android:id="@+id/TVProgress"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="14dp"
-                    android:layout_gravity="center" />
+                    android:layout_height="wrap_content"/>
             </FrameLayout>
-
             <TextView
+                android:textSize="20dp"
+                android:textColor="@color/colorPrimaryDark"
                 android:id="@+id/TextView"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="20dp"
-                android:textColor="@color/colorPrimaryDark"
-                android:text="@string/downloading_file" />
+                android:text="@string/downloading_file"/>
         </LinearLayout>
-
         <LinearLayout
             android:id="@+id/LLBottomBar"
+            android:visibility="gone"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:visibility="gone">
-
-            <View style="@style/HorizontalLine" />
-
+            android:layout_height="wrap_content">
+            <View style="@style/HorizontalLine"/>
             <Button
-                style="@style/ButtonNeutral"
+                android:id="@+id/BTCancel"
                 android:text="@string/cancel"
-                android:id="@+id/BTCancel" />
+                style="@style/ButtonNeutral"/>
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

@@ -1,37 +1,38 @@
 package com.winlator.cmod.midi;
 
+import cn.sherlock.com.sun.media.sound.SF2Soundbank;
+import cn.sherlock.com.sun.media.sound.SoftSynthesizer;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-
-import cn.sherlock.com.sun.media.sound.SF2Soundbank;
-import cn.sherlock.com.sun.media.sound.SoftSynthesizer;
 import jp.kshoji.javax.sound.midi.Receiver;
 import jp.kshoji.javax.sound.midi.ShortMessage;
 
+/* loaded from: classes5.dex */
 public class MidiHandler {
-    private static final String TAG = "MidiHandler";
-    private DatagramSocket socket;
-    private boolean running = false;
-    private static final short SERVER_PORT = 7942;
-    private static final short CLIENT_PORT = 7941;
     private static final int BUF_SIZE = 9;
-    private final ByteBuffer receiveData = ByteBuffer.allocate(BUF_SIZE).order(ByteOrder.LITTLE_ENDIAN);
-    private final DatagramPacket receivePacket = new DatagramPacket(receiveData.array(), BUF_SIZE);
-    private SoftSynthesizer synth;
+    private static final long CHECK_DELAY = 200;
+    private static final short CLIENT_PORT = 7941;
+    private static final short SERVER_PORT = 7942;
+    private static final String TAG = "MidiHandler";
     private Receiver recv;
+    private ScheduledExecutorService scheduler;
     private SF2Soundbank sf2SoundBank;
+    private DatagramSocket socket;
+    private SoftSynthesizer synth;
+    private boolean running = false;
+    private final ByteBuffer receiveData = ByteBuffer.allocate(9).order(ByteOrder.LITTLE_ENDIAN);
+    private final DatagramPacket receivePacket = new DatagramPacket(this.receiveData.array(), 9);
     private long lastMidiMsgTime = 0;
     private ShortMessage message = new ShortMessage();
-    private ScheduledExecutorService scheduler;
-    private static final long CHECK_DELAY = 200;
 
     public void setSoundBank(SF2Soundbank soundBank) {
         clearRecv();
@@ -40,102 +41,99 @@ public class MidiHandler {
     }
 
     public void start() {
-        running = true;
-        Executors.newSingleThreadExecutor().execute(() -> {
-            try {
-                socket = new DatagramSocket(null);
-                socket.setReuseAddress(true);
-                socket.bind(new InetSocketAddress((InetAddress) null, SERVER_PORT));
-
-                while (running) {
-                    socket.receive(receivePacket);
-                    receiveData.rewind();
-                    handleRequest(receiveData);
-
-                }
-            } catch (IOException e) {
+        this.running = true;
+        Executors.newSingleThreadExecutor().execute(new Runnable() { // from class: com.winlator.cmod.midi.MidiHandler$$ExternalSyntheticLambda0
+            @Override // java.lang.Runnable
+            public final void run() {
+                MidiHandler.this.lambda$start$0();
             }
         });
     }
 
-    public void stop() {
-        running = false;
-
-        if (socket != null) {
-            socket.close();
-            socket = null;
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$start$0() {
+        try {
+            this.socket = new DatagramSocket((SocketAddress) null);
+            this.socket.setReuseAddress(true);
+            this.socket.bind(new InetSocketAddress((InetAddress) null, 7942));
+            while (this.running) {
+                this.socket.receive(this.receivePacket);
+                this.receiveData.rewind();
+                handleRequest(this.receiveData);
+            }
+        } catch (IOException e) {
         }
+    }
 
+    public void stop() {
+        this.running = false;
+        if (this.socket != null) {
+            this.socket.close();
+            this.socket = null;
+        }
         clearRecv();
         clearSynth();
-
-        if (scheduler != null) {
-            scheduler.shutdown();
-            scheduler = null;
+        if (this.scheduler != null) {
+            this.scheduler.shutdown();
+            this.scheduler = null;
         }
     }
 
     private void handleRequest(ByteBuffer received) {
         byte requestCode = received.get();
         switch (requestCode) {
-            case RequestCodes.MIDI_SHORT:
-                if (recv != null) {
+            case 1:
+                if (this.recv != null) {
                     try {
-                        lastMidiMsgTime = System.currentTimeMillis();
-                        message.setMessage(received.get(), received.get(), received.get());
-                        recv.send(message, -1);
-                    } catch (Exception e) {}
+                        this.lastMidiMsgTime = System.currentTimeMillis();
+                        this.message.setMessage(received.get(), received.get(), received.get());
+                        this.recv.send(this.message, -1L);
+                        break;
+                    } catch (Exception e) {
+                        return;
+                    }
                 }
                 break;
-            case RequestCodes.MIDI_LONG:
-                // FIXME: not implemented.
-                break;
-            case RequestCodes.MIDI_PREPARE:
-                // stub
-                break;
-            case RequestCodes.MIDI_UNPREPARE:
-                // stub
-                break;
-            case RequestCodes.MIDI_OPEN:
-                if (synth == null || recv == null) {
+            case 5:
+                if (this.synth == null || this.recv == null) {
                     clearRecv();
                     clearSynth();
                     prepareSynthAndRecv();
                     startMidiDataChecking();
+                    break;
                 }
                 break;
-            case RequestCodes.MIDI_CLOSE:
+            case 6:
                 clearRecv();
                 clearSynth();
-                if (scheduler != null)
-                    scheduler.shutdown();
-                break;
-            case RequestCodes.MIDI_RESET:
-                // stub
+                if (this.scheduler != null) {
+                    this.scheduler.shutdown();
+                    break;
+                }
                 break;
         }
     }
 
     private void clearRecv() {
-        if (recv != null) {
-            recv.close();
-            recv = null;
+        if (this.recv != null) {
+            this.recv.close();
+            this.recv = null;
         }
     }
 
     private void clearSynth() {
-        if (synth != null) {
-            synth.close();
-            synth = null;
+        if (this.synth != null) {
+            this.synth.close();
+            this.synth = null;
         }
     }
 
     private void prepareSynthAndRecv() {
         try {
-            synth = new SoftSynthesizer();
-            synth.open();
-            synth.loadAllInstruments(sf2SoundBank);
-            recv = synth.getReceiver();
+            this.synth = new SoftSynthesizer();
+            this.synth.open();
+            this.synth.loadAllInstruments(this.sf2SoundBank);
+            this.recv = this.synth.getReceiver();
         } catch (Exception e) {
             clearRecv();
             clearSynth();
@@ -143,14 +141,13 @@ public class MidiHandler {
     }
 
     private void sendAllOff() {
-        // FIXME: A bad implement.
-        if (recv != null) {
+        if (this.recv != null) {
             try {
                 ShortMessage msg = new ShortMessage();
                 for (int i = 0; i < 128; i++) {
                     for (int j = 0; j < 16; j++) {
-                        msg.setMessage(ShortMessage.NOTE_OFF, j, i, 0);
-                        recv.send(msg, -1);
+                        msg.setMessage(128, j, i, 0);
+                        this.recv.send(msg, -1L);
                     }
                 }
             } catch (Exception e) {
@@ -160,19 +157,25 @@ public class MidiHandler {
     }
 
     public void startMidiDataChecking() {
-        // FIXME: A bad implement.
-        //  Since this synth doesn't supported 0xB0 0x7B 0x00 as ALL_NOTES_OFF
-        if (scheduler != null)
-            scheduler.shutdown();
-
-        scheduler = Executors.newScheduledThreadPool(1);
-        Runnable checkTask = () -> {
-            long currentTime = System.currentTimeMillis();
-            if (lastMidiMsgTime != 0 && currentTime - lastMidiMsgTime > (CHECK_DELAY /2)) {
-                sendAllOff();
-                lastMidiMsgTime = 0;
+        if (this.scheduler != null) {
+            this.scheduler.shutdown();
+        }
+        this.scheduler = Executors.newScheduledThreadPool(1);
+        Runnable checkTask = new Runnable() { // from class: com.winlator.cmod.midi.MidiHandler$$ExternalSyntheticLambda1
+            @Override // java.lang.Runnable
+            public final void run() {
+                MidiHandler.this.lambda$startMidiDataChecking$1();
             }
         };
-        scheduler.scheduleWithFixedDelay(checkTask, 0, CHECK_DELAY, TimeUnit.MILLISECONDS);
+        this.scheduler.scheduleWithFixedDelay(checkTask, 0L, CHECK_DELAY, TimeUnit.MILLISECONDS);
+    }
+
+    /* JADX INFO: Access modifiers changed from: private */
+    public /* synthetic */ void lambda$startMidiDataChecking$1() {
+        long currentTime = System.currentTimeMillis();
+        if (this.lastMidiMsgTime != 0 && currentTime - this.lastMidiMsgTime > 100) {
+            sendAllOff();
+            this.lastMidiMsgTime = 0L;
+        }
     }
 }

@@ -2,31 +2,32 @@ package com.winlator.cmod.winhandler;
 
 import com.winlator.cmod.xserver.Pointer;
 
+/* loaded from: classes12.dex */
 public abstract class MouseEventFlags {
-    public static final int MOVE = 0x0001;
-    public static final int LEFTDOWN = 0x0002;
-    public static final int LEFTUP = 0x0004;
-    public static final int RIGHTDOWN = 0x0008;
-    public static final int RIGHTUP = 0x0010;
-    public static final int MIDDLEDOWN = 0x0020;
-    public static final int MIDDLEUP = 0x0040;
-    public static final int XDOWN = 0x0080;
-    public static final int XUP = 0x0100;
-    public static final int WHEEL = 0x0800;
-    public static final int VIRTUALDESK = 0x4000;
-    public static final int ABSOLUTE = 0x8000;
+    public static final int ABSOLUTE = 32768;
+    public static final int LEFTDOWN = 2;
+    public static final int LEFTUP = 4;
+    public static final int MIDDLEDOWN = 32;
+    public static final int MIDDLEUP = 64;
+    public static final int MOVE = 1;
+    public static final int RIGHTDOWN = 8;
+    public static final int RIGHTUP = 16;
+    public static final int VIRTUALDESK = 16384;
+    public static final int WHEEL = 2048;
+    public static final int XDOWN = 128;
+    public static final int XUP = 256;
 
     public static int getFlagFor(Pointer.Button button, boolean isActionDown) {
         switch (button) {
             case BUTTON_LEFT:
-                return isActionDown ? MouseEventFlags.LEFTDOWN : MouseEventFlags.LEFTUP;
+                return isActionDown ? 2 : 4;
             case BUTTON_MIDDLE:
-                return isActionDown ? MouseEventFlags.MIDDLEDOWN : MouseEventFlags.MIDDLEUP;
+                return isActionDown ? 32 : 64;
             case BUTTON_RIGHT:
-                return isActionDown ? MouseEventFlags.RIGHTDOWN : MouseEventFlags.RIGHTUP;
+                return isActionDown ? 8 : 16;
             case BUTTON_SCROLL_DOWN:
             case BUTTON_SCROLL_UP:
-                return MouseEventFlags.WHEEL;
+                return 2048;
             default:
                 return 0;
         }

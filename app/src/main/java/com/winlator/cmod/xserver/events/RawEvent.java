@@ -2,9 +2,9 @@ package com.winlator.cmod.xserver.events;
 
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
-
 import java.io.IOException;
 
+/* loaded from: classes6.dex */
 public class RawEvent extends Event {
     private final byte[] data;
 
@@ -13,10 +13,23 @@ public class RawEvent extends Event {
         this.data = data;
     }
 
-    @Override
+    @Override // com.winlator.cmod.xserver.events.Event
     public void send(short sequenceNumber, XOutputStream outputStream) throws IOException {
-        try (XStreamLock lock = outputStream.lock()) {
-            outputStream.write(data);
+        XStreamLock lock = outputStream.lock();
+        try {
+            outputStream.write(this.data);
+            if (lock != null) {
+                lock.close();
+            }
+        } catch (Throwable th) {
+            if (lock != null) {
+                try {
+                    lock.close();
+                } catch (Throwable th2) {
+                    th.addSuppressed(th2);
+                }
+            }
+            throw th;
         }
     }
 }

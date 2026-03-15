@@ -1,7 +1,5 @@
 package com.winlator.cmod.xserver.requests;
 
-import static com.winlator.cmod.xserver.XClientRequestHandler.RESPONSE_CODE_SUCCESS;
-
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
@@ -12,13 +10,22 @@ import com.winlator.cmod.xserver.errors.BadDrawable;
 import com.winlator.cmod.xserver.errors.BadGraphicsContext;
 import com.winlator.cmod.xserver.errors.BadMatch;
 import com.winlator.cmod.xserver.errors.XRequestError;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+/* loaded from: classes4.dex */
 public abstract class DrawRequests {
-    public enum Format {BITMAP, XY_PIXMAP, Z_PIXMAP}
-    private enum CoordinateMode {ORIGIN, PREVIOUS}
+
+    private enum CoordinateMode {
+        ORIGIN,
+        PREVIOUS
+    }
+
+    public enum Format {
+        BITMAP,
+        XY_PIXMAP,
+        Z_PIXMAP
+    }
 
     public static void putImage(XClient client, XInputStream inputStream, XOutputStream outputStream) throws XRequestError {
         Format format = Format.values()[client.getRequestData()];
@@ -33,34 +40,40 @@ public abstract class DrawRequests {
         inputStream.skip(2);
         int length = client.getRemainingRequestLength();
         ByteBuffer data = inputStream.readByteBuffer(length);
-
-        Drawable drawable =  client.xServer.drawableManager.getDrawable(drawableId);
-        if (drawable == null) throw new BadDrawable(drawableId);
-
+        Drawable drawable = client.xServer.drawableManager.getDrawable(drawableId);
+        if (drawable == null) {
+            throw new BadDrawable(drawableId);
+        }
         GraphicsContext graphicsContext = client.xServer.graphicsContextManager.getGraphicsContext(gcId);
-        if (graphicsContext == null) throw new BadGraphicsContext(gcId);
-
-        if (!(graphicsContext.getFunction() == GraphicsContext.Function.COPY || format == Format.Z_PIXMAP)) {
+        if (graphicsContext == null) {
+            throw new BadGraphicsContext(gcId);
+        }
+        if (graphicsContext.getFunction() != GraphicsContext.Function.COPY && format != Format.Z_PIXMAP) {
             throw new UnsupportedOperationException("GC Function other than COPY is not supported.");
         }
-
         switch (format) {
             case BITMAP:
-                if (leftPad != 0) throw new UnsupportedOperationException("PutImage.leftPad cannot be != 0.");
-                if (depth == 1) {
-                    drawable.drawImage((short)0, (short)0, dstX, dstY, width, height, (byte)1, data, width, height);
+                if (leftPad != 0) {
+                    throw new UnsupportedOperationException("PutImage.leftPad cannot be != 0.");
                 }
-                else throw new BadMatch();
-                break;
+                if (depth == 1) {
+                    drawable.drawImage((short) 0, (short) 0, dstX, dstY, width, height, (byte) 1, data, width, height);
+                    return;
+                }
+                throw new BadMatch();
             case XY_PIXMAP:
-                if (drawable.visual.depth != depth) throw new BadMatch();
-                break;
+                if (drawable.visual.depth != depth) {
+                    throw new BadMatch();
+                }
+                return;
             case Z_PIXMAP:
                 if (leftPad == 0) {
-                    drawable.drawImage((short)0, (short)0, dstX, dstY, width, height, depth, data, width, height);
+                    drawable.drawImage((short) 0, (short) 0, dstX, dstY, width, height, depth, data, width, height);
+                    return;
                 }
-                else throw new BadMatch();
-                break;
+                throw new BadMatch();
+            default:
+                return;
         }
     }
 
@@ -72,24 +85,40 @@ public abstract class DrawRequests {
         short width = inputStream.readShort();
         short height = inputStream.readShort();
         inputStream.skip(4);
-
-        if (format != Format.Z_PIXMAP) throw new UnsupportedOperationException("Only Z_PIXMAP is supported.");
-
-        Drawable drawable =  client.xServer.drawableManager.getDrawable(drawableId);
-        if (drawable == null) throw new BadDrawable(drawableId);
+        if (format != Format.Z_PIXMAP) {
+            throw new UnsupportedOperationException("Only Z_PIXMAP is supported.");
+        }
+        Drawable drawable = client.xServer.drawableManager.getDrawable(drawableId);
+        if (drawable == null) {
+            throw new BadDrawable(drawableId);
+        }
         int visualId = client.xServer.pixmapManager.getPixmap(drawableId) == null ? drawable.visual.id : 0;
         ByteBuffer data = drawable.getImage(x, y, width, height);
         int length = data.limit();
-
-        try (XStreamLock lock = outputStream.lock()) {
-            outputStream.writeByte(RESPONSE_CODE_SUCCESS);
+        XStreamLock lock = outputStream.lock();
+        try {
+            outputStream.writeByte((byte) 1);
             outputStream.writeByte(drawable.visual.depth);
             outputStream.writeShort(client.getSequenceNumber());
             outputStream.writeInt((length + 3) / 4);
             outputStream.writeInt(visualId);
             outputStream.writePad(20);
             outputStream.write(data);
-            if ((-length & 3) > 0) outputStream.writePad(-length & 3);
+            if (((-length) & 3) > 0) {
+                outputStream.writePad((-length) & 3);
+            }
+            if (lock != null) {
+                lock.close();
+            }
+        } catch (Throwable th) {
+            if (lock != null) {
+                try {
+                    lock.close();
+                } catch (Throwable th2) {
+                    th.addSuppressed(th2);
+                }
+            }
+            throw th;
         }
     }
 
@@ -103,25 +132,27 @@ public abstract class DrawRequests {
         short dstY = inputStream.readShort();
         short width = inputStream.readShort();
         short height = inputStream.readShort();
-
         Drawable srcDrawable = client.xServer.drawableManager.getDrawable(srcDrawableId);
-        if (srcDrawable == null) throw new BadDrawable(srcDrawableId);
+        if (srcDrawable == null) {
+            throw new BadDrawable(srcDrawableId);
+        }
         if (srcDrawable.getData() == null) {
             throw new IllegalStateException("srcDrawable has null data!");
         }
-
         Drawable dstDrawable = client.xServer.drawableManager.getDrawable(dstDrawableId);
-        if (dstDrawable == null) throw new BadDrawable(dstDrawableId);
+        if (dstDrawable == null) {
+            throw new BadDrawable(dstDrawableId);
+        }
         if (dstDrawable.getData() == null) {
             throw new IllegalStateException("dstDrawable has null data!");
         }
-
-
-        GraphicsContext graphicsContext =  client.xServer.graphicsContextManager.getGraphicsContext(gcId);
-        if (graphicsContext == null) throw new BadGraphicsContext(gcId);
-
-        if (srcDrawable.visual.depth != dstDrawable.visual.depth) throw new BadMatch();
-
+        GraphicsContext graphicsContext = client.xServer.graphicsContextManager.getGraphicsContext(gcId);
+        if (graphicsContext == null) {
+            throw new BadGraphicsContext(gcId);
+        }
+        if (srcDrawable.visual.depth != dstDrawable.visual.depth) {
+            throw new BadMatch();
+        }
         dstDrawable.copyArea(srcX, srcY, dstX, dstY, width, height, srcDrawable, graphicsContext.getFunction());
     }
 
@@ -129,21 +160,24 @@ public abstract class DrawRequests {
         CoordinateMode coordinateMode = CoordinateMode.values()[client.getRequestData()];
         int drawableId = inputStream.readInt();
         int gcId = inputStream.readInt();
-
         Drawable drawable = client.xServer.drawableManager.getDrawable(drawableId);
-        if (drawable == null) throw new BadDrawable(drawableId);
+        if (drawable == null) {
+            throw new BadDrawable(drawableId);
+        }
         GraphicsContext graphicsContext = client.xServer.graphicsContextManager.getGraphicsContext(gcId);
-        if (graphicsContext == null) throw new BadGraphicsContext(gcId);
+        if (graphicsContext == null) {
+            throw new BadGraphicsContext(gcId);
+        }
         int length = client.getRemainingRequestLength();
-
         short[] points = new short[length / 2];
         int i = 0;
         while (length != 0) {
-            points[i++] = inputStream.readShort();
-            points[i++] = inputStream.readShort();
+            int i2 = i + 1;
+            points[i] = inputStream.readShort();
+            i = i2 + 1;
+            points[i2] = inputStream.readShort();
             length -= 4;
         }
-
         if (coordinateMode == CoordinateMode.ORIGIN && graphicsContext.getLineWidth() > 0) {
             drawable.drawLines(graphicsContext.getForeground(), graphicsContext.getLineWidth(), points);
         }
@@ -152,20 +186,20 @@ public abstract class DrawRequests {
     public static void polyFillRectangle(XClient client, XInputStream inputStream, XOutputStream outputStream) throws XRequestError {
         int drawableId = inputStream.readInt();
         int gcId = inputStream.readInt();
-
         Drawable drawable = client.xServer.drawableManager.getDrawable(drawableId);
-        if (drawable == null) throw new BadDrawable(drawableId);
+        if (drawable == null) {
+            throw new BadDrawable(drawableId);
+        }
         GraphicsContext graphicsContext = client.xServer.graphicsContextManager.getGraphicsContext(gcId);
-        if (graphicsContext == null) throw new BadGraphicsContext(gcId);
-        int length = client.getRemainingRequestLength();
-
-        while (length != 0) {
+        if (graphicsContext == null) {
+            throw new BadGraphicsContext(gcId);
+        }
+        for (int length = client.getRemainingRequestLength(); length != 0; length -= 8) {
             short x = inputStream.readShort();
             short y = inputStream.readShort();
             short width = inputStream.readShort();
             short height = inputStream.readShort();
             drawable.fillRect(x, y, width, height, graphicsContext.getBackground());
-            length -= 8;
         }
     }
 }

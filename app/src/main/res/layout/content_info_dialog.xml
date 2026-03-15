@@ -2,106 +2,88 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="200dp">
-
     <LinearLayout
+        android:orientation="vertical"
         android:layout_width="300dp"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-
+        android:layout_height="wrap_content">
         <LinearLayout
+            android:orientation="horizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_margin="10dp"
-            android:orientation="horizontal">
-
+            android:layout_margin="10dp">
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/type" />
-
+                android:text="@string/type"/>
             <TextView
+                android:gravity="end"
                 android:id="@+id/TVType"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="end" />
+                android:layout_weight="1"/>
         </LinearLayout>
-
         <LinearLayout
+            android:orientation="horizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_margin="10dp"
-            android:orientation="horizontal">
-
+            android:layout_margin="10dp">
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/version" />
-
+                android:text="@string/version"/>
             <TextView
+                android:gravity="end"
                 android:id="@+id/TVVersion"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="end" />
+                android:layout_weight="1"/>
         </LinearLayout>
-
         <LinearLayout
+            android:orientation="horizontal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_margin="10dp"
-            android:orientation="horizontal">
-
+            android:layout_margin="10dp">
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/version_code" />
-
+                android:text="@string/version_code"/>
             <TextView
+                android:gravity="end"
                 android:id="@+id/TVVersionCode"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="end" />
+                android:layout_weight="1"/>
         </LinearLayout>
-
-        <View style="@style/HorizontalLine" />
-
+        <View style="@style/HorizontalLine"/>
         <LinearLayout
+            android:orientation="vertical"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_margin="10dp"
-            android:orientation="vertical">
-
+            android:layout_margin="10dp">
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/description" />
-
+                android:text="@string/description"/>
             <TextView
                 android:id="@+id/TVDesc"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
+                android:layout_height="wrap_content"/>
         </LinearLayout>
-
-        <View style="@style/HorizontalLine" />
-
+        <View style="@style/HorizontalLine"/>
         <LinearLayout
+            android:orientation="vertical"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_margin="10dp"
-            android:orientation="vertical">
-
+            android:layout_margin="10dp">
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/file_list" />
-
+                android:text="@string/file_list"/>
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recyclerView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:nestedScrollingEnabled="false" />
+                android:nestedScrollingEnabled="false"/>
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

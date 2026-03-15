@@ -4,15 +4,16 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+/* loaded from: classes13.dex */
 public class Client {
     public final ClientSocket clientSocket;
+    protected boolean connected;
     private final XConnectorEpoll connector;
     private XInputStream inputStream;
     private XOutputStream outputStream;
-    private Object tag;
     protected Thread pollThread;
     protected int shutdownFd;
-    protected boolean connected;
+    private Object tag;
 
     public Client(XConnectorEpoll connector, ClientSocket clientSocket) {
         this.connector = connector;
@@ -20,23 +21,25 @@ public class Client {
     }
 
     public void createIOStreams() {
-        if (inputStream != null || outputStream != null) return;
-        inputStream = new XInputStream(clientSocket, connector.getInitialInputBufferCapacity());
-        outputStream = new XOutputStream(clientSocket, connector.getInitialOutputBufferCapacity());
-        inputStream.setByteOrder(ByteOrder.LITTLE_ENDIAN);
-        outputStream.setByteOrder(ByteOrder.LITTLE_ENDIAN);
+        if (this.inputStream != null || this.outputStream != null) {
+            return;
+        }
+        this.inputStream = new XInputStream(this.clientSocket, this.connector.getInitialInputBufferCapacity());
+        this.outputStream = new XOutputStream(this.clientSocket, this.connector.getInitialOutputBufferCapacity());
+        this.inputStream.setByteOrder(ByteOrder.LITTLE_ENDIAN);
+        this.outputStream.setByteOrder(ByteOrder.LITTLE_ENDIAN);
     }
 
     public XInputStream getInputStream() {
-        return inputStream;
+        return this.inputStream;
     }
 
     public XOutputStream getOutputStream() {
-        return outputStream;
+        return this.outputStream;
     }
 
     public Object getTag() {
-        return tag;
+        return this.tag;
     }
 
     public void setTag(Object tag) {
@@ -46,9 +49,9 @@ public class Client {
     protected void requestShutdown() {
         try {
             ByteBuffer data = ByteBuffer.allocateDirect(8);
-            data.asLongBuffer().put(1);
-            (new ClientSocket(shutdownFd)).write(data);
+            data.asLongBuffer().put(1L);
+            new ClientSocket(this.shutdownFd).write(data);
+        } catch (IOException e) {
         }
-        catch (IOException e) {}
     }
 }

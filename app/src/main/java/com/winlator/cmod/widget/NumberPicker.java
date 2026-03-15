@@ -6,22 +6,23 @@ import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-
-import com.winlator.cmod.R;
+import com.ludashi.benchmark.R;
 import com.winlator.cmod.math.Mathf;
 
+/* loaded from: classes14.dex */
 public class NumberPicker extends FrameLayout implements View.OnTouchListener {
-    private int value = 0;
-    private int minValue = 0;
-    private int maxValue = 100;
-    private int step = 1;
     private final EditText editText;
+    private int maxValue;
+    private int minValue;
     private OnValueChangeListener onValueChangeListener;
+    private int step;
+    private int value;
 
     public interface OnValueChangeListener {
-        void onValueChange(NumberPicker numberPicker, int value);
+        void onValueChange(NumberPicker numberPicker, int i);
     }
 
     public NumberPicker(Context context) {
@@ -34,35 +35,38 @@ public class NumberPicker extends FrameLayout implements View.OnTouchListener {
 
     public NumberPicker(Context context, AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-
-        LayoutInflater.from(context).inflate(R.layout.number_picker, this, true);
-        editText = findViewById(R.id.EditText);
+        this.value = 0;
+        this.minValue = 0;
+        this.maxValue = 100;
+        this.step = 1;
+        LayoutInflater.from(context).inflate(R.layout.number_picker, (ViewGroup) this, true);
+        this.editText = (EditText) findViewById(R.id.EditText);
         findViewById(R.id.BTDecrement).setOnTouchListener(this);
         findViewById(R.id.BTIncrement).setOnTouchListener(this);
-
         if (attrs != null) {
-            TypedArray ta = context.obtainStyledAttributes(attrs, R.styleable.NumberPicker);
-            minValue = ta.getInt(R.styleable.NumberPicker_minValue, minValue);
-            maxValue = ta.getInt(R.styleable.NumberPicker_maxValue, maxValue);
-            setStep(ta.getInt(R.styleable.NumberPicker_step, step));
-            int value = ta.getInt(R.styleable.NumberPicker_value, 0);
+            TypedArray ta = context.obtainStyledAttributes(attrs, com.winlator.cmod.R.styleable.NumberPicker);
+            this.minValue = ta.getInt(1, this.minValue);
+            this.maxValue = ta.getInt(0, this.maxValue);
+            setStep(ta.getInt(2, this.step));
+            int value = ta.getInt(4, 0);
             ta.recycle();
             setValue(value);
+            return;
         }
-        else setStep(step);
+        setStep(this.step);
     }
 
     public void setValue(int value) {
-        this.value = Mathf.clamp(value, minValue, maxValue);
-        editText.setText(String.valueOf(this.value));
+        this.value = Mathf.clamp(value, this.minValue, this.maxValue);
+        this.editText.setText(String.valueOf(this.value));
     }
 
     public int getValue() {
-        return value;
+        return this.value;
     }
 
     public int getMinValue() {
-        return minValue;
+        return this.minValue;
     }
 
     public void setMinValue(int minValue) {
@@ -70,7 +74,7 @@ public class NumberPicker extends FrameLayout implements View.OnTouchListener {
     }
 
     public int getMaxValue() {
-        return maxValue;
+        return this.maxValue;
     }
 
     public void setMaxValue(int maxValue) {
@@ -78,15 +82,15 @@ public class NumberPicker extends FrameLayout implements View.OnTouchListener {
     }
 
     public void increment() {
-        setValue(value+step);
+        setValue(this.value + this.step);
     }
 
     public void decrement() {
-        setValue(value-step);
+        setValue(this.value - this.step);
     }
 
     public int getStep() {
-        return step;
+        return this.step;
     }
 
     public void setStep(int step) {
@@ -94,7 +98,7 @@ public class NumberPicker extends FrameLayout implements View.OnTouchListener {
     }
 
     public OnValueChangeListener getOnValueChangeListener() {
-        return onValueChangeListener;
+        return this.onValueChangeListener;
     }
 
     public void setOnValueChangeListener(OnValueChangeListener onValueChangeListener) {
@@ -102,24 +106,23 @@ public class NumberPicker extends FrameLayout implements View.OnTouchListener {
     }
 
     private void onButtonClick(View v) {
-        if (!isEnabled()) return;
-
-        int id = v.getId();
-        if (id == R.id.BTIncrement) {
-            increment();
-        }
-        else if (id == R.id.BTDecrement) {
-            decrement();
-        }
-        if (onValueChangeListener != null) {
-            onValueChangeListener.onValueChange(NumberPicker.this, value);
+        if (isEnabled()) {
+            int id = v.getId();
+            if (id == R.id.BTIncrement) {
+                increment();
+            } else if (id == R.id.BTDecrement) {
+                decrement();
+            }
+            if (this.onValueChangeListener != null) {
+                this.onValueChangeListener.onValueChange(this, this.value);
+            }
         }
     }
 
-    @Override
-    public boolean onTouch(final View v, MotionEvent event) {
+    @Override // android.view.View.OnTouchListener
+    public boolean onTouch(View v, MotionEvent event) {
         int action = event.getAction();
-        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+        if (action == 1 || action == 3) {
             onButtonClick(v);
         }
         return true;
