@@ -96,126 +96,82 @@ public class WineRegistryEditor implements Closeable {
         this.createKeyIfNotExist = createKeyIfNotExist;
     }
 
-    /* JADX WARN: Multi-variable type inference failed */
-    /* JADX WARN: Type inference failed for: r10v0, types: [java.io.BufferedReader] */
-    /* JADX WARN: Type inference failed for: r2v17, types: [java.io.BufferedReader] */
-    /* JADX WARN: Type inference failed for: r2v19 */
-    /* JADX WARN: Type inference failed for: r2v2 */
-    /* JADX WARN: Type inference failed for: r2v3, types: [java.io.BufferedReader] */
     private Location createKey(String str) {
-        ?? bufferedReader;
-        ?? r2;
-        Throwable th;
-        BufferedWriter bufferedWriter;
-        int i;
-        int length;
-        Throwable th2;
-        ?? r22;
         this.lastParentKeyPosition = 0;
         Location parentKeyLocation = getParentKeyLocation(str);
-        boolean z = false;
-        int i2 = 0;
-        int i3 = 0;
-        char[] cArr = new char[65536];
-        File createTempFile = FileUtils.createTempFile(this.file.getParentFile(), FileUtils.getBasename(this.file.getPath()));
+        boolean success = false;
+        int offset = 0;
+        int start = 0;
+        char[] buffer = new char[65536];
+        File tempFile = FileUtils.createTempFile(this.file.getParentFile(), FileUtils.getBasename(this.file.getPath()));
+        BufferedReader bufferedReader = null;
+        BufferedWriter bufferedWriter = null;
+        
         try {
-            try {
-                bufferedReader = new BufferedReader(new FileReader(this.cloneFile), 65536);
-                try {
-                    bufferedWriter = new BufferedWriter(new FileWriter(createTempFile), 65536);
-                    i = 0;
-                } catch (Throwable th3) {
-                    r2 = bufferedReader;
-                    th = th3;
-                }
-            } catch (IOException e) {
-            }
-        } catch (IOException e2) {
-        }
-        try {
+            bufferedReader = new BufferedReader(new FileReader(this.cloneFile), 65536);
+            bufferedWriter = new BufferedWriter(new FileWriter(tempFile), 65536);
+            
+            int length;
             if (parentKeyLocation != null) {
-                try {
-                    length = parentKeyLocation.end + 1;
-                } catch (Throwable th4) {
-                    th2 = th4;
-                    parentKeyLocation = bufferedReader;
-                    try {
-                        bufferedWriter.close();
-                        throw th2;
-                    } catch (Throwable th5) {
-                        th2.addSuppressed(th5);
-                        throw th2;
-                    }
-                }
+                length = parentKeyLocation.end + 1;
             } else {
-                try {
-                    length = (int) this.cloneFile.length();
-                } catch (Throwable th6) {
-                    parentKeyLocation = bufferedReader;
-                    th2 = th6;
-                    bufferedWriter.close();
-                    throw th2;
-                }
+                length = (int) this.cloneFile.length();
             }
+            
+            int i = 0;
             while (i < length) {
-                int min = Math.min(cArr.length, length - i);
-                bufferedReader.read(cArr, 0, min);
-                bufferedWriter.write(cArr, 0, min);
-                i3 += min;
+                int min = Math.min(buffer.length, length - i);
+                bufferedReader.read(buffer, 0, min);
+                bufferedWriter.write(buffer, 0, min);
+                start += min;
                 i += min;
             }
-            i2 = i3;
+            offset = start;
+            
             long currentTimeMillis = System.currentTimeMillis() + 116444736000000000L;
-            Location location = bufferedReader;
-            try {
-                try {
-                    String str2 = "\n[" + escape(str) + "] " + ((currentTimeMillis - 116444736000000000L) / 1000) + String.format(Locale.ENGLISH, "\n#time=%x%08x", Long.valueOf(currentTimeMillis >> 32), Integer.valueOf((int) currentTimeMillis)) + "\n";
-                    bufferedWriter.write(str2);
-                    i3 += str2.length() - 1;
-                    while (true) {
-                        r22 = location;
-                        try {
-                            int read = r22.read(cArr);
-                            if (read == -1) {
-                                break;
-                            }
-                            bufferedWriter.write(cArr, 0, read);
-                            location = r22;
-                        } catch (Throwable th7) {
-                            th2 = th7;
-                            parentKeyLocation = r22;
-                            bufferedWriter.close();
-                            throw th2;
-                        }
-                    }
-                    z = true;
-                    bufferedWriter.close();
-                    r22.close();
-                    if (z) {
-                        this.modified = true;
-                        createTempFile.renameTo(this.cloneFile);
-                        return new Location(i2, i3, i3);
-                    }
-                    createTempFile.delete();
-                    return null;
-                } catch (Throwable th8) {
-                    parentKeyLocation = location;
-                    th2 = th8;
+            String str2 = "\n[" + escape(str) + "] " + ((currentTimeMillis - 116444736000000000L) / 1000) + 
+                          String.format(Locale.ENGLISH, "\n#time=%x%08x", 
+                                        Long.valueOf(currentTimeMillis >> 32), 
+                                        Integer.valueOf((int) currentTimeMillis)) + "\n";
+            bufferedWriter.write(str2);
+            start += str2.length() - 1;
+            
+            while (true) {
+                int read = bufferedReader.read(buffer);
+                if (read == -1) {
+                    break;
                 }
-            } catch (Throwable th9) {
-                parentKeyLocation = location;
-                th2 = th9;
+                bufferedWriter.write(buffer, 0, read);
             }
-        } catch (Throwable th10) {
-            th = th10;
-            r2 = parentKeyLocation;
+            
+            success = true;
+            
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
             try {
-                r2.close();
-                throw th;
-            } catch (Throwable th11) {
-                th.addSuppressed(th11);
-                throw th;
+                if (bufferedWriter != null) {
+                    bufferedWriter.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
             }
+            try {
+                if (bufferedReader != null) {
+                    bufferedReader.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        
+        if (success) {
+            this.modified = true;
+            tempFile.renameTo(this.cloneFile);
+            return new Location(offset, start, start);
+        } else {
+            tempFile.delete();
+            return null;
         }
     }
 
@@ -282,15 +238,21 @@ public class WineRegistryEditor implements Closeable {
         }
         boolean success = false;
         char[] buffer = new char[valueLocation.length()];
+        BufferedReader reader = null;
         try {
-            BufferedReader reader = new BufferedReader(new FileReader(this.cloneFile), 65536);
-            try {
-                reader.skip(valueLocation.start);
-                success = reader.read(buffer) == buffer.length;
-                reader.close();
-            } finally {
-            }
+            reader = new BufferedReader(new FileReader(this.cloneFile), 65536);
+            reader.skip(valueLocation.start);
+            success = reader.read(buffer) == buffer.length;
         } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
         }
         if (success) {
             return unescape(new String(buffer));
@@ -299,9 +261,6 @@ public class WineRegistryEditor implements Closeable {
     }
 
     private void setRawValue(String key, String name, String value) {
-        BufferedReader reader;
-        BufferedWriter writer;
-        int i;
         resetLastParentKeyPositionIfNeed(key);
         Location keyLocation = getKeyLocation(key);
         if (keyLocation == null) {
@@ -315,47 +274,63 @@ public class WineRegistryEditor implements Closeable {
         char[] buffer = new char[65536];
         boolean success = false;
         File tempFile = FileUtils.createTempFile(this.file.getParentFile(), FileUtils.getBasename(this.file.getPath()));
+        BufferedReader reader = null;
+        BufferedWriter writer = null;
+        
         try {
             reader = new BufferedReader(new FileReader(this.cloneFile), 65536);
-            try {
-                writer = new BufferedWriter(new FileWriter(tempFile), 65536);
-                i = 0;
-            } finally {
-            }
-        } catch (IOException e) {
-        }
-        try {
+            writer = new BufferedWriter(new FileWriter(tempFile), 65536);
+            
             int end = valueLocation != null ? valueLocation.start : keyLocation.end;
+            int i = 0;
             while (i < end) {
                 int length = Math.min(buffer.length, end - i);
                 reader.read(buffer, 0, length);
                 writer.write(buffer, 0, length);
                 i += length;
             }
+            
             if (valueLocation == null) {
                 writer.write("\n" + (name != null ? "\"" + escape(name) + "\"" : "@") + "=" + value);
             } else {
                 writer.write(value);
                 reader.skip(valueLocation.length());
             }
+            
             while (true) {
                 int length2 = reader.read(buffer);
                 if (length2 == -1) {
                     break;
-                } else {
-                    writer.write(buffer, 0, length2);
                 }
+                writer.write(buffer, 0, length2);
             }
+            
             success = true;
-            writer.close();
-            reader.close();
-            if (success) {
-                this.modified = true;
-                tempFile.renameTo(this.cloneFile);
-            } else {
-                tempFile.delete();
-            }
+            
+        } catch (IOException e) {
+            e.printStackTrace();
         } finally {
+            try {
+                if (writer != null) {
+                    writer.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            try {
+                if (reader != null) {
+                    reader.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        
+        if (success) {
+            this.modified = true;
+            tempFile.renameTo(this.cloneFile);
+        } else {
+            tempFile.delete();
         }
     }
 
@@ -396,37 +371,54 @@ public class WineRegistryEditor implements Closeable {
         char[] buffer = new char[65536];
         boolean success = false;
         File tempFile = FileUtils.createTempFile(this.file.getParentFile(), FileUtils.getBasename(this.file.getPath()));
+        BufferedReader reader = null;
+        BufferedWriter writer = null;
+        
         try {
-            BufferedReader reader = new BufferedReader(new FileReader(this.cloneFile), 65536);
-            try {
-                BufferedWriter writer = new BufferedWriter(new FileWriter(tempFile), 65536);
-                int length = 0;
-                int i = 0;
-                while (i < location.offset) {
-                    try {
-                        length = Math.min(buffer.length, location.offset - i);
-                        reader.read(buffer, 0, length);
-                        writer.write(buffer, 0, length);
-                        i += length;
-                    } finally {
-                    }
-                }
-                boolean skipLine = length > 1 && buffer[length + (-1)] == '\n';
-                reader.skip((location.end - location.offset) + (skipLine ? 1 : 0));
-                while (true) {
-                    int length2 = reader.read(buffer);
-                    if (length2 == -1) {
-                        break;
-                    }
-                    writer.write(buffer, 0, length2);
-                }
-                success = true;
-                writer.close();
-                reader.close();
-            } finally {
+            reader = new BufferedReader(new FileReader(this.cloneFile), 65536);
+            writer = new BufferedWriter(new FileWriter(tempFile), 65536);
+            
+            int length = 0;
+            int i = 0;
+            while (i < location.offset) {
+                length = Math.min(buffer.length, location.offset - i);
+                reader.read(buffer, 0, length);
+                writer.write(buffer, 0, length);
+                i += length;
             }
+            
+            boolean skipLine = length > 1 && buffer[length - 1] == '\n';
+            reader.skip((location.end - location.offset) + (skipLine ? 1 : 0));
+            
+            while (true) {
+                int length2 = reader.read(buffer);
+                if (length2 == -1) {
+                    break;
+                }
+                writer.write(buffer, 0, length2);
+            }
+            
+            success = true;
+            
         } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (writer != null) {
+                    writer.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            try {
+                if (reader != null) {
+                    reader.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
+        
         if (success) {
             this.modified = true;
             tempFile.renameTo(this.cloneFile);
@@ -441,69 +433,63 @@ public class WineRegistryEditor implements Closeable {
     }
 
     private Location getKeyLocation(String key, boolean keyAsPrefix) {
-        Throwable th;
+        BufferedReader reader = null;
         try {
-            BufferedReader reader = new BufferedReader(new FileReader(this.cloneFile), 65536);
-            try {
-                try {
-                    int lastIndex = key.lastIndexOf("\\");
-                    String parentKey = (this.lastParentKeyPosition != 0 || lastIndex == -1) ? null : "[" + escape(key.substring(0, lastIndex));
-                    if (this.lastParentKeyPosition > 0) {
-                        reader.skip(this.lastParentKeyPosition);
-                    }
-                    String key2 = "[" + escape(key) + (!keyAsPrefix ? "]" : "");
-                    try {
-                        int totalLength = this.lastParentKeyPosition;
-                        int start = -1;
-                        int end = -1;
-                        int emptyLines = 0;
-                        int offset = 0;
-                        while (true) {
-                            String line = reader.readLine();
-                            if (line == null) {
-                                break;
-                            }
-                            if (start == -1) {
-                                if (parentKey != null && line.startsWith(parentKey)) {
-                                    this.lastParentKeyPosition = totalLength;
-                                    parentKey = null;
-                                }
-                                if (parentKey == null && line.startsWith(key2)) {
-                                    offset = totalLength - 1;
-                                    start = line.length() + totalLength + 1;
-                                }
-                            } else {
-                                if (line.startsWith("[")) {
-                                    end = Math.max(-1, (totalLength - emptyLines) - 1);
-                                    break;
-                                }
-                                emptyLines = line.isEmpty() ? emptyLines + 1 : 0;
-                            }
-                            totalLength += line.length() + 1;
-                        }
-                        if (end == -1) {
-                            end = totalLength - 1;
-                        }
-                        Location location = start != -1 ? new Location(offset, start, end) : null;
-                        reader.close();
-                        return location;
-                    } catch (Throwable th2) {
-                        th = th2;
-                        try {
-                            reader.close();
-                            throw th;
-                        } catch (Throwable th3) {
-                            th.addSuppressed(th3);
-                            throw th;
-                        }
-                    }
-                } catch (IOException e) {
-                    return null;
-                }
-            } catch (Throwable th4) {
-                th = th4;
+            reader = new BufferedReader(new FileReader(this.cloneFile), 65536);
+            
+            int lastIndex = key.lastIndexOf("\\");
+            String parentKey = (this.lastParentKeyPosition != 0 || lastIndex == -1) ? null : "[" + escape(key.substring(0, lastIndex));
+            
+            if (this.lastParentKeyPosition > 0) {
+                reader.skip(this.lastParentKeyPosition);
             }
-        } catch (IOException e2) {
+            
+            String key2 = "[" + escape(key) + (!keyAsPrefix ? "]" : "");
+            
+            int totalLength = this.lastParentKeyPosition;
+            int start = -1;
+            int end = -1;
+            int emptyLines = 0;
+            int offset = 0;
+            
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (start == -1) {
+                    if (parentKey != null && line.startsWith(parentKey)) {
+                        this.lastParentKeyPosition = totalLength;
+                        parentKey = null;
+                    }
+                    if (parentKey == null && line.startsWith(key2)) {
+                        offset = totalLength - 1;
+                        start = line.length() + totalLength + 1;
+                    }
+                } else {
+                    if (line.startsWith("[")) {
+                        end = Math.max(-1, (totalLength - emptyLines) - 1);
+                        break;
+                    }
+                    emptyLines = line.isEmpty() ? emptyLines + 1 : 0;
+                }
+                totalLength += line.length() + 1;
+            }
+            
+            if (end == -1) {
+                end = totalLength - 1;
+            }
+            
+            Location location = start != -1 ? new Location(offset, start, end) : null;
+            return location;
+            
+        } catch (IOException e) {
+            return null;
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
         }
     }
 
@@ -521,117 +507,71 @@ public class WineRegistryEditor implements Closeable {
         return null;
     }
 
-    /* JADX WARN: Code restructure failed: missing block: B:29:0x0077, code lost:
-    
-        r4 = r1 - 1;
-     */
-    /*
-        Code decompiled incorrectly, please refer to instructions dump.
-        To view partially-correct add '--show-bad-code' argument
-    */
-    private com.winlator.cmod.core.WineRegistryEditor.Location getValueLocation(com.winlator.cmod.core.WineRegistryEditor.Location r12, java.lang.String r13) {
-        /*
-            r11 = this;
-            int r0 = r12.start
-            int r1 = r12.end
-            r2 = 0
-            if (r0 != r1) goto L8
-            return r2
-        L8:
-            java.io.BufferedReader r0 = new java.io.BufferedReader     // Catch: java.io.IOException -> L9e
-            java.io.FileReader r1 = new java.io.FileReader     // Catch: java.io.IOException -> L9e
-            java.io.File r3 = r11.cloneFile     // Catch: java.io.IOException -> L9e
-            r1.<init>(r3)     // Catch: java.io.IOException -> L9e
-            r3 = 65536(0x10000, float:9.18355E-41)
-            r0.<init>(r1, r3)     // Catch: java.io.IOException -> L9e
-            int r1 = r12.start     // Catch: java.lang.Throwable -> L94
-            long r3 = (long) r1     // Catch: java.lang.Throwable -> L94
-            r0.skip(r3)     // Catch: java.lang.Throwable -> L94
-            if (r13 == 0) goto L3c
-            java.lang.StringBuilder r1 = new java.lang.StringBuilder     // Catch: java.lang.Throwable -> L94
-            r1.<init>()     // Catch: java.lang.Throwable -> L94
-            java.lang.String r3 = "\""
-            java.lang.StringBuilder r1 = r1.append(r3)     // Catch: java.lang.Throwable -> L94
-            java.lang.String r3 = escape(r13)     // Catch: java.lang.Throwable -> L94
-            java.lang.StringBuilder r1 = r1.append(r3)     // Catch: java.lang.Throwable -> L94
-            java.lang.String r3 = "\"="
-            java.lang.StringBuilder r1 = r1.append(r3)     // Catch: java.lang.Throwable -> L94
-            java.lang.String r1 = r1.toString()     // Catch: java.lang.Throwable -> L94
-            goto L3e
-        L3c:
-            java.lang.String r1 = "@="
-        L3e:
-            r13 = r1
-            r1 = 0
-            r3 = -1
-            r4 = -1
-            r5 = 0
-        L43:
-            java.lang.String r6 = r0.readLine()     // Catch: java.lang.Throwable -> L94
-            r7 = r6
-            r8 = -1
-            if (r6 == 0) goto L7a
-            int r6 = r12.length()     // Catch: java.lang.Throwable -> L94
-            if (r1 >= r6) goto L7a
-            if (r3 != r8) goto L62
-            boolean r6 = r7.startsWith(r13)     // Catch: java.lang.Throwable -> L94
-            if (r6 == 0) goto L6f
-            int r5 = r1 + (-1)
-            int r6 = r13.length()     // Catch: java.lang.Throwable -> L94
-            int r6 = r6 + r1
-            r3 = r6
-            goto L6f
-        L62:
-            boolean r6 = r7.isEmpty()     // Catch: java.lang.Throwable -> L94
-            if (r6 != 0) goto L77
-            boolean r6 = lineHasName(r7)     // Catch: java.lang.Throwable -> L94
-            if (r6 == 0) goto L6f
-            goto L77
-        L6f:
-            int r6 = r7.length()     // Catch: java.lang.Throwable -> L94
-            int r6 = r6 + 1
-            int r1 = r1 + r6
-            goto L43
-        L77:
-            int r4 = r1 + (-1)
-        L7a:
-            if (r4 != r8) goto L7e
-            int r4 = r1 + (-1)
-        L7e:
-            if (r3 == r8) goto L8f
-            com.winlator.cmod.core.WineRegistryEditor$Location r6 = new com.winlator.cmod.core.WineRegistryEditor$Location     // Catch: java.lang.Throwable -> L94
-            int r8 = r12.start     // Catch: java.lang.Throwable -> L94
-            int r8 = r8 + r5
-            int r9 = r12.start     // Catch: java.lang.Throwable -> L94
-            int r9 = r9 + r3
-            int r10 = r12.start     // Catch: java.lang.Throwable -> L94
-            int r10 = r10 + r4
-            r6.<init>(r8, r9, r10)     // Catch: java.lang.Throwable -> L94
-            goto L90
-        L8f:
-            r6 = r2
-        L90:
-            r0.close()     // Catch: java.io.IOException -> L9e
-            return r6
-        L94:
-            r1 = move-exception
-            r0.close()     // Catch: java.lang.Throwable -> L99
-            goto L9d
-        L99:
-            r3 = move-exception
-            r1.addSuppressed(r3)     // Catch: java.io.IOException -> L9e
-        L9d:
-            throw r1     // Catch: java.io.IOException -> L9e
-        L9e:
-            r0 = move-exception
-            return r2
-        */
-        throw new UnsupportedOperationException("Method not decompiled: com.winlator.cmod.core.WineRegistryEditor.getValueLocation(com.winlator.cmod.core.WineRegistryEditor$Location, java.lang.String):com.winlator.cmod.core.WineRegistryEditor$Location");
+    private Location getValueLocation(Location keyLocation, String name) {
+        if (keyLocation.start == keyLocation.end) {
+            return null;
+        }
+        
+        BufferedReader reader = null;
+        try {
+            reader = new BufferedReader(new FileReader(this.cloneFile), 65536);
+            reader.skip(keyLocation.start);
+            
+            String searchStr;
+            if (name != null) {
+                searchStr = "\"" + escape(name) + "\"=";
+            } else {
+                searchStr = "@=";
+            }
+            
+            int currentPos = 0;
+            int valueStart = -1;
+            int valueEnd = -1;
+            int nameStart = -1;
+            
+            String line;
+            while ((line = reader.readLine()) != null && currentPos < keyLocation.length()) {
+                if (valueStart == -1) {
+                    if (line.startsWith(searchStr)) {
+                        nameStart = currentPos - 1;
+                        valueStart = currentPos + searchStr.length();
+                    }
+                } else {
+                    if (line.isEmpty() || !lineHasName(line)) {
+                        valueEnd = currentPos - 1;
+                        break;
+                    } else {
+                        break;
+                    }
+                }
+                currentPos += line.length() + 1;
+            }
+            
+            if (valueEnd == -1) {
+                valueEnd = currentPos - 1;
+            }
+            
+            if (valueStart != -1) {
+                return new Location(keyLocation.start + nameStart, 
+                                   keyLocation.start + valueStart, 
+                                   keyLocation.start + valueEnd);
+            }
+            return null;
+            
+        } catch (IOException e) {
+            return null;
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
     }
 
-    /* JADX WARN: Can't fix incorrect switch cases order, some code will duplicate */
     public void importReg(String regFile) {
-        char c;
         try {
             JSONObject jobj = new JSONObject(regFile);
             Iterator<String> iterator = jobj.keys();
@@ -643,32 +583,11 @@ public class WineRegistryEditor implements Closeable {
                     String type = entry.getString(ContentProfile.MARK_TYPE);
                     String name = entry.getString("name").isEmpty() ? null : entry.getString("name");
                     String value = entry.getString("value");
-                    switch (type.hashCode()) {
-                        case -1808118735:
-                            if (type.equals("String")) {
-                                c = 0;
-                                break;
-                            }
-                            c = 65535;
-                            break;
-                        case 66454862:
-                            if (type.equals("Dword")) {
-                                c = 1;
-                                break;
-                            }
-                            c = 65535;
-                            break;
-                        default:
-                            c = 65535;
-                            break;
-                    }
-                    switch (c) {
-                        case 0:
-                            setStringValue(key, name, value);
-                            break;
-                        case 1:
-                            setDwordValue(key, name, Integer.parseInt(value));
-                            break;
+                    
+                    if ("String".equals(type)) {
+                        setStringValue(key, name, value);
+                    } else if ("Dword".equals(type)) {
+                        setDwordValue(key, name, Integer.parseInt(value));
                     }
                 }
             }

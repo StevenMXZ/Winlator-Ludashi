@@ -329,8 +329,7 @@ public class InputControlsFragment extends Fragment {
     }
 
     /* JADX INFO: Access modifiers changed from: private */
-    /* renamed from: downloadSelectedProfiles, reason: merged with bridge method [inline-methods] */
-    public void lambda$downloadProfileList$16(final Spinner sProfile, String[] items, final ArrayList<Integer> positions) {
+    public void downloadSelectedProfiles(final Spinner sProfile, String[] items, final ArrayList<Integer> positions) {
         final MainActivity activity = (MainActivity) getActivity();
         activity.preloaderDialog.lambda$showOnUiThread$0(com.ludashi.benchmark.R.string.downloading_file);
         this.currentProfile = null;
@@ -415,7 +414,7 @@ public class InputControlsFragment extends Fragment {
             ContentDialog.confirm(activity, com.ludashi.benchmark.R.string.do_you_want_to_download_the_selected_profiles, new Runnable() { // from class: com.winlator.cmod.InputControlsFragment$$ExternalSyntheticLambda0
                 @Override // java.lang.Runnable
                 public final void run() {
-                    InputControlsFragment.this.lambda$downloadProfileList$16(sProfile, items, positions);
+                    InputControlsFragment.this.downloadSelectedProfiles(sProfile, items, positions);
                 }
             });
         }
@@ -457,16 +456,11 @@ public class InputControlsFragment extends Fragment {
     }
 
     /* JADX INFO: Access modifiers changed from: private */
-    /* JADX WARN: Multi-variable type inference failed */
-    /* JADX WARN: Type inference failed for: r9v0 */
-    /* JADX WARN: Type inference failed for: r9v1, types: [boolean, int] */
-    /* JADX WARN: Type inference failed for: r9v3 */
-    /* renamed from: loadExternalControllers, reason: merged with bridge method [inline-methods] */
-    public void lambda$onCreateView$0(final View view) {
+    public void loadExternalControllers(final View view) {
         LinearLayout container = (LinearLayout) view.findViewById(com.ludashi.benchmark.R.id.LLExternalControllers);
         container.removeAllViews();
         Context context = getContext();
-        LayoutInflater from = LayoutInflater.from(context);
+        LayoutInflater inflater = LayoutInflater.from(context);
         ArrayList<ExternalController> connectedControllers = ExternalController.getControllers();
         ArrayList<ExternalController> controllers = this.currentProfile != null ? this.currentProfile.loadControllers() : new ArrayList<>();
         Iterator<ExternalController> it = connectedControllers.iterator();
@@ -476,14 +470,15 @@ public class InputControlsFragment extends Fragment {
                 controllers.add(controller);
             }
         }
-        ?? r9 = 0;
+        
+        boolean isFirstItem = true;
         if (!controllers.isEmpty()) {
             view.findViewById(com.ludashi.benchmark.R.id.TVEmptyText).setVisibility(8);
             String bindingsText = context.getString(com.ludashi.benchmark.R.string.bindings);
             Iterator<ExternalController> it2 = controllers.iterator();
             while (it2.hasNext()) {
                 final ExternalController controller2 = it2.next();
-                View itemView = from.inflate(com.ludashi.benchmark.R.layout.external_controller_list_item, container, (boolean) r9);
+                View itemView = inflater.inflate(com.ludashi.benchmark.R.layout.external_controller_list_item, container, false);
                 ((TextView) itemView.findViewById(com.ludashi.benchmark.R.id.TVTitle)).setText(controller2.getName());
                 int controllerBindingCount = controller2.getControllerBindingCount();
                 ((TextView) itemView.findViewById(com.ludashi.benchmark.R.id.TVSubtitle)).setText(controllerBindingCount + " " + bindingsText);
@@ -492,7 +487,7 @@ public class InputControlsFragment extends Fragment {
                 ImageViewCompat.setImageTintList(imageView, ColorStateList.valueOf(tintColor));
                 if (controllerBindingCount > 0) {
                     ImageButton imageButton = (ImageButton) itemView.findViewById(com.ludashi.benchmark.R.id.BTRemove);
-                    imageButton.setVisibility(r9);
+                    imageButton.setVisibility(View.VISIBLE);
                     imageButton.setOnClickListener(new View.OnClickListener() { // from class: com.winlator.cmod.InputControlsFragment$$ExternalSyntheticLambda20
                         @Override // android.view.View.OnClickListener
                         public final void onClick(View view2) {
@@ -507,11 +502,11 @@ public class InputControlsFragment extends Fragment {
                     }
                 });
                 container.addView(itemView);
-                r9 = 0;
+                isFirstItem = false;
             }
-            return;
+        } else {
+            view.findViewById(com.ludashi.benchmark.R.id.TVEmptyText).setVisibility(0);
         }
-        view.findViewById(com.ludashi.benchmark.R.id.TVEmptyText).setVisibility(0);
     }
 
     /* JADX INFO: Access modifiers changed from: private */
@@ -528,7 +523,7 @@ public class InputControlsFragment extends Fragment {
     public /* synthetic */ void lambda$loadExternalControllers$20(ExternalController controller, View view) {
         this.currentProfile.removeController(controller);
         this.currentProfile.save();
-        lambda$onCreateView$0(view);
+        loadExternalControllers(view);
     }
 
     /* JADX INFO: Access modifiers changed from: private */
