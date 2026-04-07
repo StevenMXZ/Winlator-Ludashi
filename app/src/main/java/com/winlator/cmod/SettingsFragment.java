@@ -152,7 +152,7 @@ public class SettingsFragment extends Fragment {
 
         // Initialize the cursor lock checkbox
         cbCursorLock = view.findViewById(R.id.CBCursorLock);
-        cbCursorLock.setChecked(preferences.getBoolean("cursor_lock", false));
+        cbCursorLock.setChecked(preferences.getBoolean("cursor_lock", true));
 
         // Initialize the xinput toggle checkbox
         cbXinputToggle = view.findViewById(R.id.CBXinputToggle);
