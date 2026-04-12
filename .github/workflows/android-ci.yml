@@ -1,4 +1,4 @@
-name: Android CI Bionic (Optimized Layer Stack)
+name: Android CI Bionic
 
 on:
   workflow_dispatch:
