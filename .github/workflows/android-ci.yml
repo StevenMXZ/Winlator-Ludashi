@@ -20,38 +20,56 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Install Build Dependencies
+    - name: Install Latest Meson and Build Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y python3-pip ninja-build gettext
-        pip3 install meson mako
+        # Force upgrade to the absolute latest stable Meson for Mesa 26 support
+        pip3 install --upgrade meson mako
+        meson --version
+
+    - name: Create Android Cross-File
+      run: |
+        mkdir -p .github/workflows
+        cat <<EOF > .github/workflows/android-arm64.txt
+        [binaries]
+        c = 'aarch64-linux-android33-clang'
+        cpp = 'aarch64-linux-android33-clang++'
+        ar = 'aarch64-linux-android-ar'
+        strip = 'aarch64-linux-android-strip'
+        pkgconfig = 'pkg-config'
+
+        [host_machine]
+        system = 'android'
+        cpu_family = 'aarch64'
+        cpu = 'armv8-a'
+        endian = 'little'
+
+        [properties]
+        android_sdk_cache_dir = '/home/runner/android_sdk_cache'
+        EOF
 
     - name: Fetch and Compile Mesa 26.0.4
       run: |
-        # 1. Download source
         wget https://archive.mesa3d.org/mesa-26.0.4.tar.xz
         tar -xvf mesa-26.0.4.tar.xz
         cd mesa-26.0.4
-
-        # 2. Configure for Android Bionic (Universal Public Build)
-        # Enabling panfrost (Mali), turnip (Adreno), and zink (Generic)
-        meson setup build-android \
+        
           --cross-file ../.github/workflows/android-arm64.txt \
           -Dplatforms=android \
           -Dplatform-sdk-version=33 \
-          -Dgallium-drivers=panfrost,zink,virgl \
-          -Dvulkan-drivers=panfrost,turnip \
+          -Dgallium-drivers=panfrost,zink,freedreno \
+          -Dvulkan-drivers=panfrost,freedreno,swrast \
           -Dbuildtype=release \
           -Doptimization=3 \
-          -Degl=enabled \
           -Dgles1=disabled \
           -Dgles2=enabled \
-          -Dopengl=true
+          -Dopengl=true \
+          -Degl=enabled
 
-        # 3. Compile
         ninja -C build-android
 
-        # 4. Move binaries to app assets for inclusion in APK
+        # Move compiled binaries to app assets
         mkdir -p ../app/src/main/assets/graphics_driver/mesa
         cp build-android/src/gallium/targets/dri/libgallium_dri.so ../app/src/main/assets/graphics_driver/mesa/
         cp build-android/src/panfrost/vulkan/libvulkan_panfrost.so ../app/src/main/assets/graphics_driver/mesa/
@@ -60,8 +78,9 @@ jobs:
     - name: Update Version Registry
       run: |
         JSON_FILE="app/src/main/assets/graphics_driver/graphics_drivers.json"
-        # Ensure the UI reflects the new version
-        sed -i 's/"version": "[0-9.]*"/"version": "26.0.4"/g' $JSON_FILE
+        if [ -f "$JSON_FILE" ]; then
+          sed -i 's/"version": "[0-9.]*"/"version": "26.0.4"/g' $JSON_FILE
+        fi
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
@@ -72,5 +91,5 @@ jobs:
     - name: Attach release in action
       uses: actions/upload-artifact@v4
       with:
-       name: Winlator-Mmod-Mesa26
+       name: Winlator-Ludashi-Mesa26-Public
        path: ./app/build/outputs/apk/debug/app-debug.apk
