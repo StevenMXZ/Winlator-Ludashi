@@ -36,7 +36,7 @@ jobs:
     - name: Attach release in action
       uses: actions/upload-artifact@v4
       with:
-       name: Winlator-Ludashi-Optimized-G85
+       name: Winlator-Ludashi-Mmod
        path: ./app/build/outputs/apk/debug/app-debug.apk
 
     - name: "Get Short SHA"
