@@ -20,11 +20,9 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-        - name: Standard Driver Configuration
+    - name: Standard Driver Configuration
       run: |
         echo "Resetting to standard public build configuration..."
-        # No hardcoded overrides - let the app use its default detection logic
-        # Ensure the directories exist for the standard build process
         mkdir -p app/src/main/assets/graphics_driver/mesa
 
     - name: Grant execute permission for gradlew
