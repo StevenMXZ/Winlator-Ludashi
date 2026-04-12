@@ -1,4 +1,4 @@
-name: Android CI Bionic
+name: Android CI Bionic - Mesa 26.0.4 Upgrade
 
 on:
   workflow_dispatch:
@@ -20,10 +20,48 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Standard Driver Configuration
+    - name: Install Build Dependencies
       run: |
-        echo "Resetting to standard public build configuration..."
-        mkdir -p app/src/main/assets/graphics_driver/mesa
+        sudo apt-get update
+        sudo apt-get install -y python3-pip ninja-build gettext
+        pip3 install meson mako
+
+    - name: Fetch and Compile Mesa 26.0.4
+      run: |
+        # 1. Download source
+        wget https://archive.mesa3d.org/mesa-26.0.4.tar.xz
+        tar -xvf mesa-26.0.4.tar.xz
+        cd mesa-26.0.4
+
+        # 2. Configure for Android Bionic (Universal Public Build)
+        # Enabling panfrost (Mali), turnip (Adreno), and zink (Generic)
+        meson setup build-android \
+          --cross-file ../.github/workflows/android-arm64.txt \
+          -Dplatforms=android \
+          -Dplatform-sdk-version=33 \
+          -Dgallium-drivers=panfrost,zink,virgl \
+          -Dvulkan-drivers=panfrost,turnip \
+          -Dbuildtype=release \
+          -Doptimization=3 \
+          -Degl=enabled \
+          -Dgles1=disabled \
+          -Dgles2=enabled \
+          -Dopengl=true
+
+        # 3. Compile
+        ninja -C build-android
+
+        # 4. Move binaries to app assets for inclusion in APK
+        mkdir -p ../app/src/main/assets/graphics_driver/mesa
+        cp build-android/src/gallium/targets/dri/libgallium_dri.so ../app/src/main/assets/graphics_driver/mesa/
+        cp build-android/src/panfrost/vulkan/libvulkan_panfrost.so ../app/src/main/assets/graphics_driver/mesa/
+        cp build-android/src/freedreno/vulkan/libvulkan_freedreno.so ../app/src/main/assets/graphics_driver/mesa/
+
+    - name: Update Version Registry
+      run: |
+        JSON_FILE="app/src/main/assets/graphics_driver/graphics_drivers.json"
+        # Ensure the UI reflects the new version
+        sed -i 's/"version": "[0-9.]*"/"version": "26.0.4"/g' $JSON_FILE
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
@@ -34,8 +72,5 @@ jobs:
     - name: Attach release in action
       uses: actions/upload-artifact@v4
       with:
-       name: Winlator-Ludashi-Mmod
+       name: Winlator-Mmod-Mesa26
        path: ./app/build/outputs/apk/debug/app-debug.apk
-
-    - name: "Get Short SHA"
-      run: echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
