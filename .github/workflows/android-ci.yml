@@ -20,33 +20,12 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Optimize Graphics Layers (Pre-Compile Edits)
+        - name: Standard Driver Configuration
       run: |
-        echo "Applying layer reduction patches..."
-
-        # 1. Force Layer 1 & 2 Merge: Hardcode Panfrost and WineD3D in the init script
-        # This bypasses Zink translation and forces the native G52 driver path
-        INIT_SCRIPT="app/src/main/assets/scripts/shell/init_container.sh"
-        if [ -f "$INIT_SCRIPT" ]; then
-          echo "export MESA_LOADER_DRIVER_OVERRIDE=panfrost" >> $INIT_SCRIPT
-          echo "export WINE_D3D_CONFIG='renderer=gl'" >> $INIT_SCRIPT
-          echo "export PAN_MESA_DEBUG=sync" >> $INIT_SCRIPT
-        fi
-
-        # 2. Modify Layer 3 (The Hook): Edit Vulkan.c to use Internal Pathing
-        # This reduces the overhead of searching for external libraries
-        VULKAN_C="app/src/main/cpp/winlator/vulkan.c"
-        if [ -f "$VULKAN_C" ]; then
-          # Change the default search path to prioritize the Bionic internal storage
-          sed -i 's|/system/lib64/libvulkan.so|/data/data/com.winlator.ludashi/files/contents/drivers/mesa/libvulkan_panfrost.so|g' $VULKAN_C
-        fi
-
-        # 3. Update Graphics JSON: Register Mesa 26.0.4 as the default
-        JSON_CONFIG="app/src/main/assets/graphics_driver/graphics_drivers.json"
-        if [ -f "$JSON_CONFIG" ]; then
-          # Add Mesa 26.0.4 to the top of the version list
-          sed -i '0,/\[/{s/\[/\[\n    {"name": "Mesa 26.0.4 (Bifrost Optimized)", "version": "26.0.4", "path": "mesa" },/}' $JSON_CONFIG
-        fi
+        echo "Resetting to standard public build configuration..."
+        # No hardcoded overrides - let the app use its default detection logic
+        # Ensure the directories exist for the standard build process
+        mkdir -p app/src/main/assets/graphics_driver/mesa
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
