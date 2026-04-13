@@ -20,36 +20,37 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Prepare Vortek Assets and UI
+    - name: Patch Files (Wherever they are)
       run: |
-        # 1. Create the directory for Vortek assets
-        mkdir -p app/src/main/assets/graphics_driver/vortek
-
-        # 2. Download the Vortek version files
-        wget -O app/src/main/assets/graphics_driver/vortek/vortek-2.0.tzst https://github.com/Disco-sys/Winlator-Ludashi/raw/winlator_bionic/app/src/main/assets/graphics_driver/vortek-2.0.tzst
-        wget -O app/src/main/assets/graphics_driver/vortek/vortek-2.1.tzst https://github.com/Disco-sys/Winlator-Ludashi/raw/winlator_bionic/app/src/main/assets/graphics_driver/vortek-2.1.tzst
-
-        # 3. Add Vortek to the Graphics Driver selection JSON
-        JSON_FILE="app/src/main/assets/graphics_driver/graphics_drivers.json"
-        if [ -f "$JSON_FILE" ]; then
-          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vortek Wrapper", "version": "vortek", "path": "vortek" },/}' $JSON_FILE
+        # 1. Register Vortek in the JSON
+        JSON_FILE=$(find . -name "graphics_drivers.json")
+        if [ -n "$JSON_FILE" ]; then
+          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vortek Wrapper", "version": "vortek", "path": "vortek" },/}' "$JSON_FILE"
         fi
 
-        # 4. Patch Java logic to switch between 2.0 and 2.1 based on selection
-        # This assumes the fragment uses a standard switch/case for driver paths
-        JAVA_FILE="app/src/main/java/com/winlator/container/ContainerConfigFragment.java"
-        if [ -f "$JAVA_FILE" ]; then
-          sed -i '/case "vortek":/a \                driverPath = version.equals("2.1") ? "vortek/vortek-2.1.tzst" : "vortek/vortek-2.0.tzst";' $JAVA_FILE
+        # 2. Add the 2.1 vs 2.0 logic to the Detail/Editor file
+        # This searches for the file that handles container settings
+        DETAIL_FILE=$(find . -name "ContainersDetailFragment.java" -o -name "ContainerConfigFragment.java")
+        if [ -n "$DETAIL_FILE" ]; then
+          sed -i '/case "vortek":/a \                driverPath = version.equals("2.1") ? "vortek/vortek-2.1.tzst" : "vortek/vortek-2.0.tzst";' "$DETAIL_FILE"
+        fi
+
+        # 3. Create asset dir and download files
+        ASSETS_DIR=$(find . -type d -name "assets" | head -n 1)
+        if [ -n "$ASSETS_DIR" ]; then
+          mkdir -p "$ASSETS_DIR/graphics_driver/vortek"
+          wget -O "$ASSETS_DIR/graphics_driver/vortek/vortek-2.0.tzst" https://github.com/Disco-sys/Winlator-Ludashi/raw/winlator_bionic/app/src/main/assets/graphics_driver/vortek-2.0.tzst
+          wget -O "$ASSETS_DIR/graphics_driver/vortek/vortek-2.1.tzst" https://github.com/Disco-sys/Winlator-Ludashi/raw/winlator_bionic/app/src/main/assets/graphics_driver/vortek-2.1.tzst
         fi
 
     - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      run: find . -name gradlew -exec chmod +x {} +
 
     - name: Build with Gradle
       run: ./gradlew assembleDebug
 
-    - name: Attach release in action
+    - name: Attach release
       uses: actions/upload-artifact@v4
       with:
        name: Winlator-Ludashi-M-Mod
-       path: ./app/build/outputs/apk/debug/app-debug.apk
+       path: "**/build/outputs/apk/debug/*.apk"
