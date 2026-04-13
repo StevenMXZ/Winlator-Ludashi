@@ -13,16 +13,23 @@ jobs:
         tar -xf mesa-26.0.4.tar.xz
         mv mesa-26.0.4 mesa-src
 
-    - name: Fast Tool Setup
+    - name: Comprehensive Dependency Injection
       run: |
         sudo apt-get update
-        # Minimal tools: pkg-config for dependencies, ninja for speed
-        sudo apt-get install -y pkg-config gettext flex bison ninja-build \
-                             libclc-18-dev cmake
+        # Installing EVERYTHING: Essential, Optional, and Tooling
+        sudo apt-get install -y \
+          pkg-config gettext flex bison ninja-build cmake \
+          libclc-18-dev libelf-dev libwayland-dev libx11-dev \
+          libxext-dev libxdamage-dev libxfixes-dev libxcb-glx0-dev \
+          libxcb-shm0-dev libxcb-dri2-0-dev libxcb-dri3-dev \
+          libxcb-present-dev libxshmfence-dev libxxf86vm-dev \
+          libxrandr-dev libxrender-dev libxnvctrl-dev \
+          libglvnd-dev glslang-tools llvm-18-dev libclang-18-dev \
+          python3-mako python3-pil python3-requests python3-setuptools
         
         python -m venv venv
         source venv/bin/activate
-        pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2"
+        pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2" "pyyaml"
 
     - name: Setup Android NDK
       uses: nttld/setup-ndk@v1
@@ -30,7 +37,7 @@ jobs:
       with:
         ndk-version: r27b
 
-    - name: Create Clang Cross File
+    - name: Create Highly-Compatible Cross File
       run: |
         NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
         TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
@@ -42,6 +49,8 @@ jobs:
         ar = '$TOOLCHAIN/bin/llvm-ar'
         strip = '$TOOLCHAIN/bin/llvm-strip'
         pkg-config = '/usr/bin/pkg-config'
+        cmake = '/usr/bin/cmake'
+        llvm-config = '/usr/bin/llvm-config-18'
 
         [host_machine]
         system = 'android'
@@ -51,33 +60,54 @@ jobs:
 
         [properties]
         needs_exe_wrapper = true
-        pkg_config_libdir = ['/usr/share/pkgconfig']
-        # Helio G85 Optimization (Cortex-A75/A55 mix)
-        c_args = ['-O3', '-march=armv8-a', '-mtune=cortex-a75', '-fomit-frame-pointer']
-        cpp_args = ['-O3', '-march=armv8-a', '-mtune=cortex-a75', '-fomit-frame-pointer']
+        # Explicitly pointing to both host and target pkgconfig paths
+        pkg_config_libdir = [
+          '/usr/share/pkgconfig',
+          '/usr/lib/aarch64-linux-gnu/pkgconfig',
+          '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig'
+        ]
+        # Compatibility & Performance Logic
+        c_link_args = ['-fuse-ld=lld']
+        cpp_link_args = ['-fuse-ld=lld']
+        c_args = ['-O3', '-march=armv8-a', '-mtune=cortex-a75', '-fomit-frame-pointer', '-fPIC']
+        cpp_args = ['-O3', '-march=armv8-a', '-mtune=cortex-a75', '-fomit-frame-pointer', '-fPIC']
         EOF
 
-    - name: Compile Mesa
+    - name: Compile Mesa with Strict Logic
       run: |
         source venv/bin/activate
+        # Force environmental variables to recognize the injected dependencies
         export PKG_CONFIG_PATH=/usr/share/pkgconfig
+        export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
         
         cd mesa-src
-        # llvm=disabled here refers to the LLVM-shared libraries which 
-        # usually cause the "libclc" and "giving up" errors.
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
+          -Dplatform-sdk-version=35 \
           -Dgallium-drivers=panfrost,zink \
           -Dvulkan-drivers=panfrost \
           -Dbuildtype=release \
           -Dllvm=disabled \
-          -Dandroid-stub=true
+          -Dandroid-stub=true \
+          -Dgallium-opencl=disabled \
+          -Dintel-clc=disabled \
+          -Dmicrosoft-clc=disabled \
+          -Dgallium-rusticl=false \
+          -Dopengl=true \
+          -Dgles1=enabled \
+          -Dgles2=enabled \
+          -Dshared-glapi=enabled \
+          -Degl=enabled \
+          -Dgbm=disabled
           
         meson compile -C build-android
 
     - name: Upload Drivers
       uses: actions/upload-artifact@v4
       with:
-        name: Mesa-26-Clang-Drivers
-        path: mesa-src/build-android/src/gallium/targets/dri/*.so
+        name: Mesa-26-Extreme-Build
+        path: |
+          mesa-src/build-android/src/gallium/targets/dri/*.so
+          mesa-src/build-android/src/vulkan/device-select/*.so
+          mesa-src/build-android/src/panfrost/vulkan/*.so
