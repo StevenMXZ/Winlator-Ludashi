@@ -13,34 +13,28 @@ jobs:
         tar -xf mesa-26.0.4.tar.xz
         mv mesa-26.0.4 mesa-src
 
-    - name: Install and Map Dependencies
+    - name: Prepare 'installed' Directory
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          libclc-18-dev libelf-dev \
-          pkg-config gettext flex bison ninja-build cmake \
-          llvm-18-dev libclang-18-dev zlib1g-dev libexpat1-dev glslang-tools
+        sudo apt-get install -y libclc-18-dev libelf-dev pkg-config llvm-18-dev glslang-tools
         
-        # Create the 'installed' directory as requested
-        mkdir -p installed/pkgconfig
+        # Create our local 'installed' vault
+        mkdir -p ${{ github.workspace }}/installed/pkgconfig
+        mkdir -p ${{ github.workspace }}/installed/clc
         
-        # Copy the libclc bitcode files into our local 'installed' dir
-        cp -r /usr/share/clc ./installed/
+        # Move the files into our vault
+        cp -r /usr/share/clc/* ${{ github.workspace }}/installed/clc/
         
-        # Create the registration file inside our new 'installed' directory
-        cat <<EOF > installed/pkgconfig/libclc.pc
+        # Create a foolproof registration file
+        cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libclc.pc
         prefix=${{ github.workspace }}/installed
         includedir=/usr/include
         libexecdir=\${prefix}/clc
         Name: libclc
-        Description: Library requirements for OpenCL C
+        Description: Hand-mapped libclc for Vortex
         Version: 18.1.0
         Cflags: -I\${includedir}
         EOF
-        
-        python -m venv venv
-        source venv/bin/activate
-        pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2"
 
     - name: Setup Android NDK
       uses: nttld/setup-ndk@v1
@@ -48,7 +42,7 @@ jobs:
       with:
         ndk-version: r27b
 
-    - name: Create Cross File with 'installed' Paths
+    - name: Create Cross File
       run: |
         NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
         TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
@@ -60,7 +54,6 @@ jobs:
         ar = '$TOOLCHAIN/bin/llvm-ar'
         strip = '$TOOLCHAIN/bin/llvm-strip'
         pkg-config = '/usr/bin/pkg-config'
-        glslangValidator = '/usr/bin/glslangValidator'
         llvm-config = '/usr/bin/llvm-config-18'
 
         [host_machine]
@@ -69,26 +62,25 @@ jobs:
         cpu = 'armv8-a'
         endian = 'little'
 
-        [built-in options]
-        c_args = ['-O3', '-march=armv8-a', '-mtune=cortex-a75', '-fomit-frame-pointer', '-fPIC']
-        cpp_args = ['-O3', '-march=armv8-a', '-mtune=cortex-a75', '-fomit-frame-pointer', '-fPIC']
-        c_link_args = ['-fuse-ld=lld']
-        cpp_link_args = ['-fuse-ld=lld']
-
         [properties]
         needs_exe_wrapper = true
-        # We point directly to our custom 'installed' directory
+        # The key fix: pointing Mesa directly to our vault
         libclc_path = '${{ github.workspace }}/installed/clc'
-        pkg_config_libdir = ['${{ github.workspace }}/installed/pkgconfig', '/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig', '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig']
+        pkg_config_libdir = ['${{ github.workspace }}/installed/pkgconfig']
         EOF
 
-    - name: Compile Mesa (Vortex-emu Core)
+    - name: Compile Mesa
       run: |
+        # Setup Python environment
+        python -m venv venv
         source venv/bin/activate
+        pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2"
+        
         cd mesa-src
         
-        # We add the PKG_CONFIG_PATH export to make sure it looks in 'installed' first
-        export PKG_CONFIG_PATH="${{ github.workspace }}/installed/pkgconfig:$PKG_CONFIG_PATH"
+        # Tell the system to look at our 'installed' vault first
+        export PKG_CONFIG_PATH="${{ github.workspace }}/installed/pkgconfig"
+        export PKG_CONFIG_LIBDIR="${{ github.workspace }}/installed/pkgconfig"
         
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
@@ -99,9 +91,6 @@ jobs:
           -Dbuildtype=release \
           -Dllvm=enabled \
           -Dandroid-stub=true \
-          -Dopengl=true \
-          -Dgles1=enabled \
-          -Dgles2=enabled \
           -Dglvnd=disabled
           
         meson compile -C build-android
