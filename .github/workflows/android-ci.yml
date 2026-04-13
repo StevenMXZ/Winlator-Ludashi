@@ -41,7 +41,6 @@ jobs:
         NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
         TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
         
-        # Fixed the formatting of the pkg_config_libdir list
         cat <<EOF > android-aarch64.txt
         [binaries]
         c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
@@ -61,10 +60,12 @@ jobs:
         [properties]
         needs_exe_wrapper = true
         pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig', '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig']
-        c_link_args = ['-fuse-ld=lld']
-        cpp_link_args = ['-fuse-ld=lld']
+
+        [built-in options]
         c_args = ['-O3', '-march=armv8-a', '-mtune=cortex-a75', '-fomit-frame-pointer', '-fPIC']
         cpp_args = ['-O3', '-march=armv8-a', '-mtune=cortex-a75', '-fomit-frame-pointer', '-fPIC']
+        c_link_args = ['-fuse-ld=lld']
+        cpp_link_args = ['-fuse-ld=lld']
         EOF
 
     - name: Compile Mesa with Strict Logic
@@ -74,6 +75,7 @@ jobs:
         export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
         
         cd mesa-src
+        # Removed gallium-opencl (Unknown option in Mesa 26)
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -83,7 +85,6 @@ jobs:
           -Dbuildtype=release \
           -Dllvm=disabled \
           -Dandroid-stub=true \
-          -Dgallium-opencl=disabled \
           -Dintel-clc=disabled \
           -Dmicrosoft-clc=disabled \
           -Dgallium-rusticl=false \
