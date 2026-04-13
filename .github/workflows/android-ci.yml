@@ -13,7 +13,7 @@ jobs:
         tar -xf mesa-26.0.4.tar.xz
         mv mesa-26.0.4 mesa-src
 
-    - name: Prepare 'installed' Directory
+    - name: Prepare 'installed' Directory (The Dependency Vault)
       run: |
         sudo apt-get update
         sudo apt-get install -y libclc-18 libclc-18-dev libelf-dev pkg-config llvm-18-dev glslang-tools ninja-build
@@ -21,30 +21,44 @@ jobs:
         mkdir -p ${{ github.workspace }}/installed/pkgconfig
         mkdir -p ${{ github.workspace }}/installed/clc
         
-        # Map bitcode files
+        # Map bitcode files for Panfrost/Freedreno
         find /usr/share/clc /usr/lib/clc -name "*.bc" -exec cp {} ${{ github.workspace }}/installed/clc/ \; || true
         
-        # 1. Registration for libclc
+        # 1. libclc.pc (Real)
         cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libclc.pc
         prefix=${{ github.workspace }}/installed
         includedir=/usr/include
         libexecdir=\${prefix}/clc
         Name: libclc
-        Description: Hand-mapped libclc for Vortex
         Version: 18.1.0
         Cflags: -I\${includedir}
         EOF
 
-        # 2. THE FIX: Stub for libdrm to satisfy the requirement
+        # 2. libdrm.pc (Stub)
         cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libdrm.pc
-        prefix=${{ github.workspace }}/installed
-        libdir=\${prefix}
-        includedir=/usr/include
         Name: libdrm
-        Description: Stub libdrm for Android Build
+        Description: Android Stub
         Version: 2.4.120
-        Cflags: -I\${includedir}
-        Libs: -L\${libdir}
+        Cflags: -I/usr/include
+        Libs: -L${{ github.workspace }}/installed
+        EOF
+
+        # 3. libudev.pc (Stub)
+        cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libudev.pc
+        Name: libudev
+        Description: Android Stub
+        Version: 251
+        Cflags: -I/usr/include
+        Libs: -L${{ github.workspace }}/installed
+        EOF
+
+        # 4. LLVMSPIRVLib.pc (Stub)
+        cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/LLVMSPIRVLib.pc
+        Name: LLVMSPIRVLib
+        Description: Android Stub
+        Version: 18.1.0
+        Cflags: -I/usr/include
+        Libs: -L${{ github.workspace }}/installed
         EOF
 
     - name: Setup Android NDK
@@ -104,7 +118,11 @@ jobs:
           -Dopengl=true \
           -Dgles1=enabled \
           -Dgles2=enabled \
-          -Dglvnd=disabled
+          -Dglvnd=disabled \
+          -Dlibudev=disabled \
+          -Dgallium-vdpau=disabled \
+          -Dgallium-va=disabled \
+          -Dgallium-xa=disabled
           
         meson compile -C build-android
 
