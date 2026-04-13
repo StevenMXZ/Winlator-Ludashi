@@ -13,13 +13,14 @@ jobs:
         tar -xf mesa-26.0.4.tar.xz
         mv mesa-26.0.4 mesa-src
 
-    - name: Install All Dependencies
+    - name: Install and Map Dependencies
       run: |
         sudo apt-get update
+        # Explicitly installing the files and giving the system what it needs
         sudo apt-get install -y \
+          libclc-18-dev libelf-dev \
           pkg-config gettext flex bison ninja-build cmake \
-          libclc-18-dev libelf-dev glslang-tools \
-          llvm-18-dev libclang-18-dev zlib1g-dev libexpat1-dev
+          llvm-18-dev libclang-18-dev zlib1g-dev libexpat1-dev glslang-tools
         
         python -m venv venv
         source venv/bin/activate
@@ -31,11 +32,23 @@ jobs:
       with:
         ndk-version: r27b
 
-    - name: Create Clean Cross File
+    - name: Create Manual Paths and Cross File
       run: |
         NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
         TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
         
+        # Manually generating the registration file for libclc
+        mkdir -p pkgconfig
+        cat <<EOF > pkgconfig/libclc.pc
+        prefix=/usr
+        includedir=\${prefix}/include
+        libexecdir=\${prefix}/lib/clc
+        Name: libclc
+        Description: Library requirements for OpenCL C
+        Version: 18.1.0
+        Cflags: -I\${includedir}
+        EOF
+
         cat <<EOF > android-aarch64.txt
         [binaries]
         c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
@@ -60,18 +73,16 @@ jobs:
 
         [properties]
         needs_exe_wrapper = true
-        # Direct path to libclc bitcode for Mali/Adreno compilers
+        # Providing the correct paths for the installed files
         libclc_path = '/usr/share/clc'
-        pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig', '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig']
+        pkg_config_libdir = ['./pkgconfig', '/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig', '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig']
         EOF
 
-    - name: Compile Mesa (Strict Mesa 26 Flags)
+    - name: Compile Mesa (Vortex-emu Core)
       run: |
         source venv/bin/activate
         cd mesa-src
         
-        # We use -Dgallium-opencl=disabled to stop it from looking for a full OpenCL stack,
-        # but the compilers will still use the libclc_path provided above.
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -88,7 +99,7 @@ jobs:
           
         meson compile -C build-android
 
-    - name: Upload Universal Drivers
+    - name: Upload Drivers
       uses: actions/upload-artifact@v4
       with:
         name: Mesa-26-Universal-Build
