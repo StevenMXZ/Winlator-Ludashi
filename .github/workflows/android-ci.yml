@@ -20,37 +20,40 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Patch Files (Wherever they are)
+    - name: Patch Branding and Vortek Logic
       run: |
-        # 1. Register Vortek in the JSON
-        JSON_FILE=$(find . -name "graphics_drivers.json")
-        if [ -n "$JSON_FILE" ]; then
+        # 1. SET INTERNAL APP NAME
+        STRINGS_PATH="app/src/main/res/values/strings.xml"
+        if [ -f "$STRINGS_PATH" ]; then
+          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Vortex Emu<\/string>/g' "$STRINGS_PATH"
+        fi
+
+        # 2. APPLY LOGO (1776048162593.png)
+        find app/src/main/res -name "ic_launcher.png" -exec cp "1776048162593.png" {} \;
+        find app/src/main/res -name "ic_launcher_round.png" -exec cp "1776048162593.png" {} \;
+
+        # 3. VORTEK DRIVER UI LOGIC
+        DETAIL_JAVA="app/src/main/java/com/winlator/cmod/ContainersDetailFragment.java"
+        if [ -f "$DETAIL_JAVA" ]; then
+          sed -i '/case "vortek":/a \                driverPath = version.equals("2.1") ? "vortek/vortek-2.1.tzst" : "vortek/vortek-2.0.tzst";' "$DETAIL_JAVA"
+        fi
+
+        # 4. REGISTER VORTEK IN ASSETS
+        JSON_FILE="app/src/main/assets/graphics_driver/graphics_drivers.json"
+        if [ -f "$JSON_FILE" ]; then
           sed -i '0,/\[/{s/\[/\[\n    {"name": "Vortek Wrapper", "version": "vortek", "path": "vortek" },/}' "$JSON_FILE"
         fi
 
-        # 2. Add the 2.1 vs 2.0 logic to the Detail/Editor file
-        # This searches for the file that handles container settings
-        DETAIL_FILE=$(find . -name "ContainersDetailFragment.java" -o -name "ContainerConfigFragment.java")
-        if [ -n "$DETAIL_FILE" ]; then
-          sed -i '/case "vortek":/a \                driverPath = version.equals("2.1") ? "vortek/vortek-2.1.tzst" : "vortek/vortek-2.0.tzst";' "$DETAIL_FILE"
-        fi
-
-        # 3. Create asset dir and download files
-        ASSETS_DIR=$(find . -type d -name "assets" | head -n 1)
-        if [ -n "$ASSETS_DIR" ]; then
-          mkdir -p "$ASSETS_DIR/graphics_driver/vortek"
-          wget -O "$ASSETS_DIR/graphics_driver/vortek/vortek-2.0.tzst" https://github.com/Disco-sys/Winlator-Ludashi/raw/winlator_bionic/app/src/main/assets/graphics_driver/vortek-2.0.tzst
-          wget -O "$ASSETS_DIR/graphics_driver/vortek/vortek-2.1.tzst" https://github.com/Disco-sys/Winlator-Ludashi/raw/winlator_bionic/app/src/main/assets/graphics_driver/vortek-2.1.tzst
-        fi
-
     - name: Grant execute permission for gradlew
-      run: find . -name gradlew -exec chmod +x {} +
+      run: chmod +x gradlew
 
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug
+    - name: Build and Rename APK
+      run: |
+        ./gradlew assembleDebug
+        mv app/build/outputs/apk/debug/*.apk app/build/outputs/apk/debug/Vortex.apk
 
-    - name: Attach release
+    - name: Upload Vortex Artifact
       uses: actions/upload-artifact@v4
       with:
-       name: Winlator-Ludashi-M-Mod
-       path: "**/build/outputs/apk/debug/*.apk"
+       name: Vortex-Build
+       path: app/build/outputs/apk/debug/Vortex.apk
