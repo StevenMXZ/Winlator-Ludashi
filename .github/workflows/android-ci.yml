@@ -20,25 +20,24 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Patch UI, Logic, and Config Menu
+    - name: Patch UI, Logic, and Config
       run: |
-        STRINGS_FILE="app/src/main/res/values/strings.xml"
-        if [ -f "$STRINGS_FILE" ]; then
-          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Vortex<\/string>/g' "$STRINGS_FILE"
-        fi
-
         ARRAYS_FILE="app/src/main/res/values/arrays.xml"
         if [ -f "$ARRAYS_FILE" ]; then
           sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vortek</item>' "$ARRAYS_FILE"
           sed -i '/<string-array name="graphics_driver_values">/a \        <item>vortek</item>' "$ARRAYS_FILE"
         fi
 
+        STRINGS_FILE="app/src/main/res/values/strings.xml"
+        if [ -f "$STRINGS_FILE" ]; then
+          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Vortex<\/string>/g' "$STRINGS_FILE"
+        fi
+
         LOGIC_FILE="app/src/main/java/com/winlator/cmod/ContainerDetailFragment.java"
         if [ -f "$LOGIC_FILE" ]; then
-          sed -i '/case "wrapper":/i \            case "vortek":' "$LOGIC_FILE"
-          sed -i '/case "vortek":/a \                driverPath = version.equals("2.1") ? "vortek/vortek-2.1.tzst" : "vortek/vortek-2.0.tzst";\n                showVortekConfig();' "$LOGIC_FILE"
-          
-          echo -e "\nprivate void showVortekConfig() {\n    // Implementation to mirror wrapper config UI\n    showWrapperConfig(); \n}" >> "$LOGIC_FILE"
+          sed -i 's/case "wrapper":/case "vortek":\n            case "wrapper":/g' "$LOGIC_FILE"
+          sed -i '/if (graphicsDriver.equals("wrapper"))/s/)/ || graphicsDriver.equals("vortek"))/' "$LOGIC_FILE"
+          sed -i '/case "vortek":/a \                driverPath = version.equals("2.1") ? "vortek/vortek-2.1.tzst" : "vortek/vortek-2.0.tzst";' "$LOGIC_FILE"
         fi
 
         JSON_FILE="app/src/main/assets/graphics_drivers.json"
