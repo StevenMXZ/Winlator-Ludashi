@@ -16,16 +16,16 @@ jobs:
     - name: Prepare 'installed' Directory
       run: |
         sudo apt-get update
-        # We need the base libclc and the -dev package
         sudo apt-get install -y libclc-18 libclc-18-dev libelf-dev pkg-config llvm-18-dev glslang-tools
         
+        # Create our local vault
         mkdir -p ${{ github.workspace }}/installed/pkgconfig
         mkdir -p ${{ github.workspace }}/installed/clc
         
-        # Find where the .bc files actually live and copy them
-        # Usually /usr/lib/clc or /usr/share/clc
+        # Find and copy bitcode files to our vault
         find /usr/share/clc /usr/lib/clc -name "*.bc" -exec cp {} ${{ github.workspace }}/installed/clc/ \; || true
         
+        # Create the manual registration for Meson
         cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libclc.pc
         prefix=${{ github.workspace }}/installed
         includedir=/usr/include
@@ -68,17 +68,20 @@ jobs:
         pkg_config_libdir = ['${{ github.workspace }}/installed/pkgconfig']
         EOF
 
-    - name: Compile Mesa
+    - name: Compile Mesa (Vortex-emu Core)
       run: |
+        # 1. Prepare Python with PyYAML (the final hurdle)
         python -m venv venv
         source venv/bin/activate
-        pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2"
+        pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2" PyYAML
         
         cd mesa-src
         
+        # 2. Tell Meson to use our vault
         export PKG_CONFIG_PATH="${{ github.workspace }}/installed/pkgconfig"
         export PKG_CONFIG_LIBDIR="${{ github.workspace }}/installed/pkgconfig"
         
+        # 3. Setup the build
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -88,8 +91,12 @@ jobs:
           -Dbuildtype=release \
           -Dllvm=enabled \
           -Dandroid-stub=true \
+          -Dopengl=true \
+          -Dgles1=enabled \
+          -Dgles2=enabled \
           -Dglvnd=disabled
           
+        # 4. Execute the actual compilation
         meson compile -C build-android
 
     - name: Upload Drivers
