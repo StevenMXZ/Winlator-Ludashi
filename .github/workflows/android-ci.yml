@@ -45,6 +45,7 @@ jobs:
         TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
         SYSROOT="$TOOLCHAIN/sysroot"
         
+        # Cleanly formatted cross-file to avoid parsing errors
         cat <<EOF > android-aarch64.txt
         [binaries]
         c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
@@ -63,11 +64,7 @@ jobs:
         [properties]
         needs_exe_wrapper = true
         libclc_path = '${{ github.workspace }}/installed/clc'
-        # Prioritize local pkgconfig and NDK sysroot
-        pkg_config_libdir = [
-          '${{ github.workspace }}/installed/pkgconfig',
-          '$SYSROOT/usr/lib/aarch64-linux-android/pkgconfig'
-        ]
+        pkg_config_libdir = ['${{ github.workspace }}/installed/pkgconfig', '$SYSROOT/usr/lib/aarch64-linux-android/pkgconfig']
         EOF
 
     - name: Compile Mesa (Vortex-emu Core)
@@ -82,7 +79,6 @@ jobs:
         export PKG_CONFIG_PATH="${{ github.workspace }}/installed/pkgconfig"
         export PKG_CONFIG_LIBDIR="${{ github.workspace }}/installed/pkgconfig"
         
-        # Removed the invalid libdrm option
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
