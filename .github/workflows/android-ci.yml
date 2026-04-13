@@ -60,18 +60,18 @@ jobs:
 
         [properties]
         needs_exe_wrapper = true
-        # Fix for libclc not being found:
-        # We manually define the paths because pkg-config often fails for libclc in cross-builds
+        # Direct path to libclc bitcode for Mali/Adreno compilers
         libclc_path = '/usr/share/clc'
         pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig', '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig']
         EOF
 
-    - name: Compile Mesa (Mali + Adreno)
+    - name: Compile Mesa (Strict Mesa 26 Flags)
       run: |
         source venv/bin/activate
         cd mesa-src
         
-        # Removed deprecated 'shared-glapi' as noticed in your log
+        # We use -Dgallium-opencl=disabled to stop it from looking for a full OpenCL stack,
+        # but the compilers will still use the libclc_path provided above.
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
