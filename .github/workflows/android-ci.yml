@@ -13,13 +13,14 @@ jobs:
         tar -xf mesa-26.0.4.tar.xz
         mv mesa-26.0.4 mesa-src
 
-    - name: Install Build Tools
+    - name: Install Build Tools (Optimized for Zig)
       run: |
         sudo apt-get update
+        # Removed heavy LLVM/Clang dev packages; Zig handles the heavy lifting.
         sudo apt-get install -y pkg-config gettext flex bison libwayland-dev \
                              libx11-dev ninja-build libglvnd-dev glslang-tools \
-                             libclc-18-dev llvm-18-dev libclang-18-dev cmake
-        # Install Zig compiler
+                             libclc-18-dev cmake
+        
         sudo snap install zig --classic --beta
         
         python -m venv venv
@@ -29,15 +30,12 @@ jobs:
 
     - name: Create Meson Configuration Files
       run: |
-        # NATIVE FILE
         cat <<EOF > native.txt
         [binaries]
-        llvm-config = '/usr/bin/llvm-config-18'
         pkg-config = '/usr/bin/pkg-config'
         cmake = '/usr/bin/cmake'
         EOF
 
-        # CROSS FILE (Using Zig for aarch64-linux-android)
         cat <<EOF > android-aarch64.txt
         [binaries]
         c = ['zig', 'cc', '-target', 'aarch64-linux-android.35']
@@ -56,7 +54,6 @@ jobs:
         [properties]
         needs_exe_wrapper = true
         pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig']
-        # Optimizing for your Helio G85 (Cortex-A75/A55)
         c_args = ['-O3', '-mtune=cortex-a75']
         cpp_args = ['-O3', '-mtune=cortex-a75']
         EOF
@@ -67,6 +64,9 @@ jobs:
         export PKG_CONFIG_PATH=/usr/share/pkgconfig
         
         cd mesa-src
+        # Note: -Dllvm=disabled is used here because Zig provides its own 
+        # backend, though some drivers might still check for system LLVM.
+        # If the build fails on LLVM, change to -Dllvm=enabled.
         meson setup build-android \
           --native-file ../native.txt \
           --cross-file ../android-aarch64.txt \
@@ -76,7 +76,7 @@ jobs:
           -Dvulkan-drivers=panfrost,freedreno \
           -Dbuildtype=release \
           -Dandroid-stub=true \
-          -Dllvm=enabled \
+          -Dllvm=disabled \
           -Dopengl=true \
           -Dgles1=enabled \
           -Dgles2=enabled
@@ -124,7 +124,7 @@ jobs:
 
         JSON_FILE="app/src/main/assets/graphics_drivers.json"
         if [ -f "$JSON_FILE" ]; then
-          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "Mesa 26.0.4-Vortex-Zig", "path": "graphics_driver/vulkan" },/}' "$JSON_FILE"
+          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "Mesa 26.0.4-Zig", "path": "graphics_driver/vulkan" },/}' "$JSON_FILE"
         fi
 
     - name: Build Vortex APK
