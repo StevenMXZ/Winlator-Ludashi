@@ -44,6 +44,7 @@ jobs:
         strip = '$TOOLCHAIN/bin/llvm-strip'
         pkg-config = '/usr/bin/pkg-config'
         glslangValidator = '/usr/bin/glslangValidator'
+        llvm-config = '/usr/bin/llvm-config-18'
 
         [host_machine]
         system = 'android'
@@ -62,13 +63,12 @@ jobs:
         pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig', '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig']
         EOF
 
-        - name: Compile Mesa (Mali + Adreno + LLVM Fixed)
+    - name: Compile Mesa (Mali + Adreno)
       run: |
         source venv/bin/activate
         cd mesa-src
         
-        # We MUST enable LLVM because 'clc' (required by Panfrost/Adreno) needs it.
-        # We use 'system' or 'enabled' and let the cross-file handle the rest.
+        # Combined setup and compile into one 'run' block to avoid YAML errors
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -82,15 +82,9 @@ jobs:
           -Dgles1=enabled \
           -Dgles2=enabled \
           -Dglvnd=disabled \
-          -Dshared-glapi=enabled \
-          -Dgallium-vdpau=disabled \
-          -Dgallium-va=disabled \
-          -Dgallium-xa=disabled \
-          -Dintel-clc=disabled \
-          -Dmicrosoft-clc=disabled
+          -Dshared-glapi=enabled
           
         meson compile -C build-android
-
 
     - name: Upload Universal Drivers
       uses: actions/upload-artifact@v4
