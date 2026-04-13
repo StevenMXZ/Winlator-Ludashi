@@ -18,7 +18,7 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install Build Tools (Mesa 26 Requirements)
+    - name: Install Build Tools
       run: |
         sudo apt-get update
         sudo apt-get install -y pkg-config gettext flex bison libwayland-dev \
@@ -35,12 +35,11 @@ jobs:
       with:
         ndk-version: r27b
 
-    - name: Create Meson Native and Cross Files
+    - name: Create Meson Configuration Files
       run: |
         NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
         TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
         
-        # NATIVE FILE: Fixed pkgconfig -> pkg-config
         cat <<EOF > native.txt
         [binaries]
         llvm-config = '/usr/bin/llvm-config-18'
@@ -48,7 +47,6 @@ jobs:
         cmake = '/usr/bin/cmake'
         EOF
 
-        # CROSS FILE: Fixed pkgconfig -> pkg-config
         cat <<EOF > android-aarch64.txt
         [binaries]
         c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
@@ -65,18 +63,15 @@ jobs:
 
         [properties]
         needs_exe_wrapper = true
-        pkg_config_libdir = ['/usr/lib/aarch64-linux-gnu/pkgconfig', '/usr/share/pkgconfig']
+        pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig']
         EOF
 
     - name: Compile Mesa 26.0.4
       run: |
         source venv/bin/activate
-        
-        # Keep these to ensure libclc is found during the dependency phase
-        export PKG_CONFIG_PATH=/usr/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig
+        export PKG_CONFIG_PATH=/usr/share/pkgconfig
         
         cd mesa-src
-        # Cleaned up flags: removed unknown "gallium-opencl", "intel-clc", and "microsoft-clc"
         meson setup build-android \
           --native-file ../native.txt \
           --cross-file ../android-aarch64.txt \
@@ -87,6 +82,8 @@ jobs:
           -Dbuildtype=release \
           -Dandroid-stub=true \
           -Dllvm=enabled \
+          -Dintel-clc=disabled \
+          -Dmicrosoft-clc=disabled \
           -Dgallium-rusticl=false \
           -Dopengl=true \
           -Dgles1=enabled \
@@ -97,7 +94,7 @@ jobs:
     - name: Upload Driver Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: Mesa-26-Vulkan-Drivers
+        name: Mesa-26-Drivers
         path: |
           mesa-src/build-android/src/gallium/targets/dri/*.so
           mesa-src/build-android/src/vulkan/device-select/*.so
@@ -120,7 +117,7 @@ jobs:
         java-version: '23'
         distribution: 'temurin'
 
-    - name: Inject Vulkan Driver Logic
+    - name: Inject Driver Logic
       run: |
         mkdir -p app/src/main/assets/graphics_driver/vulkan
         
@@ -147,5 +144,5 @@ jobs:
     - name: Upload Final APK
       uses: actions/upload-artifact@v4
       with:
-        name: Vortex-Vulkan-Build
+        name: Vortex-Build
         path: Vortex.apk
