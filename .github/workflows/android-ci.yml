@@ -21,7 +21,6 @@ jobs:
         mkdir -p ${{ github.workspace }}/installed/pkgconfig
         mkdir -p ${{ github.workspace }}/installed/clc
         
-        # Map bitcode files for Panfrost/Freedreno
         find /usr/share/clc /usr/lib/clc -name "*.bc" -exec cp {} ${{ github.workspace }}/installed/clc/ \; || true
         
         # 1. libclc.pc (Real)
@@ -34,32 +33,16 @@ jobs:
         Cflags: -I\${includedir}
         EOF
 
-        # 2. libdrm.pc (Stub)
-        cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libdrm.pc
-        Name: libdrm
-        Description: Android Stub
-        Version: 2.4.120
+        # 2. Stub Vault: Trick Meson into seeing missing dependencies
+        for pkg in libdrm libudev LLVMSPIRVLib libzstd; do
+          cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/$pkg.pc
+        Name: $pkg
+        Description: Android Stub for Vortex
+        Version: 99.9.9
         Cflags: -I/usr/include
         Libs: -L${{ github.workspace }}/installed
         EOF
-
-        # 3. libudev.pc (Stub)
-        cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libudev.pc
-        Name: libudev
-        Description: Android Stub
-        Version: 251
-        Cflags: -I/usr/include
-        Libs: -L${{ github.workspace }}/installed
-        EOF
-
-        # 4. LLVMSPIRVLib.pc (Stub)
-        cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/LLVMSPIRVLib.pc
-        Name: LLVMSPIRVLib
-        Description: Android Stub
-        Version: 18.1.0
-        Cflags: -I/usr/include
-        Libs: -L${{ github.workspace }}/installed
-        EOF
+        done
 
     - name: Setup Android NDK
       uses: nttld/setup-ndk@v1
@@ -106,6 +89,7 @@ jobs:
         export PKG_CONFIG_PATH="${{ github.workspace }}/installed/pkgconfig"
         export PKG_CONFIG_LIBDIR="${{ github.workspace }}/installed/pkgconfig"
         
+        # Cleaned options: Removed invalid -Dlibudev and -Dlibdrm
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -119,7 +103,6 @@ jobs:
           -Dgles1=enabled \
           -Dgles2=enabled \
           -Dglvnd=disabled \
-          -Dlibudev=disabled \
           -Dgallium-vdpau=disabled \
           -Dgallium-va=disabled \
           -Dgallium-xa=disabled
