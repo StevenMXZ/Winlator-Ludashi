@@ -18,11 +18,12 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install Build Tools
+    - name: Install Build Tools (Mesa 26 Requirements)
       run: |
         sudo apt-get update
+        # Added libclc-dev to satisfy the dependency checker
         sudo apt-get install -y pkg-config gettext flex bison libwayland-dev \
-                             libx11-dev ninja-build libglvnd-dev glslang-tools
+                             libx11-dev ninja-build libglvnd-dev glslang-tools libclc-dev
         python -m venv venv
         source venv/bin/activate
         pip install --upgrade pip
@@ -36,7 +37,8 @@ jobs:
 
     - name: Create Meson Cross File
       run: |
-        TOOLCHAIN="${{ steps.setup_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64"
+        NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
+        TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
         cat <<EOF > android-aarch64.txt
         [binaries]
         c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
@@ -59,6 +61,7 @@ jobs:
       run: |
         source venv/bin/activate
         cd mesa-src
+        # Added -Dgallium-opencl=disabled to prevent libclc issues
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -69,7 +72,8 @@ jobs:
           -Dandroid-stub=true \
           -Dopengl=true \
           -Dgles1=enabled \
-          -Dgles2=enabled
+          -Dgles2=enabled \
+          -Dgallium-opencl=disabled
         meson compile -C build-android
 
     - name: Upload Driver Artifacts
