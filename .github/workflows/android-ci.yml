@@ -21,7 +21,6 @@ jobs:
         mkdir -p ${{ github.workspace }}/installed/pkgconfig
         mkdir -p ${{ github.workspace }}/installed/clc
         
-        # Map the math bitcode files for Mali/Adreno
         find /usr/share/clc /usr/lib/clc -name "*.bc" -exec cp {} ${{ github.workspace }}/installed/clc/ \; || true
         
         cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libclc.pc
@@ -44,6 +43,7 @@ jobs:
       run: |
         NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
         TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
+        SYSROOT="$TOOLCHAIN/sysroot"
         
         cat <<EOF > android-aarch64.txt
         [binaries]
@@ -63,12 +63,15 @@ jobs:
         [properties]
         needs_exe_wrapper = true
         libclc_path = '${{ github.workspace }}/installed/clc'
-        pkg_config_libdir = ['${{ github.workspace }}/installed/pkgconfig']
+        # Prioritize local pkgconfig and NDK sysroot
+        pkg_config_libdir = [
+          '${{ github.workspace }}/installed/pkgconfig',
+          '$SYSROOT/usr/lib/aarch64-linux-android/pkgconfig'
+        ]
         EOF
 
     - name: Compile Mesa (Vortex-emu Core)
       run: |
-        # 1. Prepare Python with PyYAML (final check)
         python -m venv venv
         source venv/bin/activate
         pip install --upgrade pip
@@ -79,7 +82,7 @@ jobs:
         export PKG_CONFIG_PATH="${{ github.workspace }}/installed/pkgconfig"
         export PKG_CONFIG_LIBDIR="${{ github.workspace }}/installed/pkgconfig"
         
-        # 2. Setup build - -Dlibdrm=disabled is the fix for your latest error
+        # Removed the invalid libdrm option
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -92,10 +95,8 @@ jobs:
           -Dopengl=true \
           -Dgles1=enabled \
           -Dgles2=enabled \
-          -Dglvnd=disabled \
-          -Dlibdrm=disabled
+          -Dglvnd=disabled
           
-        # 3. Compile everything
         meson compile -C build-android
 
     - name: Upload Drivers
