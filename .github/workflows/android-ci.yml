@@ -1,16 +1,79 @@
-name: Android CI Bionic
+name: Android CI Bionic - Vulkan Build
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-mesa:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Clone repository
+    - name: Clone Mesa
       uses: actions/checkout@v4
       with:
+        repository: mesa3d/mesa
+        ref: main
+
+    - name: Set up Python and Meson
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Build Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y meson ninja-build pkg-config python3-mako \
+                             gettext flex bison libwayland-dev libx11-dev
+
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r27b
+
+    - name: Create Meson Cross File
+      run: |
+        cat <<EOF > android-aarch64.txt
+        [binaries]
+        c = '$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang'
+        cpp = '$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang++'
+        ar = '$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar'
+        strip = '$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
+        pkgconfig = 'pkg-config'
+        [host_machine]
+        system = 'android'
+        cpu_family = 'aarch64'
+        cpu = 'armv8-a'
+        endian = 'little'
+        [properties]
+        needs_exe_wrapper = true
+        EOF
+
+    - name: Compile Mesa 26 (Vulkan Driver)
+      run: |
+        meson setup build-android \
+          --cross-file android-aarch64.txt \
+          -Dplatforms=android \
+          -Dplatform-sdk-version=35 \
+          -Dgallium-drivers=panfrost,zink,freedreno \
+          -Dvulkan-drivers=panfrost,freedreno \
+          -Dbuildtype=release \
+          -Dandroid-stub=true
+        meson compile -C build-android
+
+    - name: Upload Driver Binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: Mesa-26-Vulkan-Drivers
+        path: build-android/src/gallium/targets/dri/*.so
+
+  build-vortex:
+    needs: build-mesa
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clone Vortex Repository
+      uses: actions/checkout@v4
+      with:
+        repository: Disco-sys/Vortex-emu
+        ref: winlator_bionic
         submodules: recursive
 
     - name: Set up JDK 23
@@ -20,39 +83,48 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Patch UI, Logic, and Config
+    - name: Patch for Vortex & Vulkan Driver
       run: |
-        ARRAYS_FILE="app/src/main/res/values/arrays.xml"
-        if [ -f "$ARRAYS_FILE" ]; then
-          sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vortek</item>' "$ARRAYS_FILE"
-          sed -i '/<string-array name="graphics_driver_values">/a \        <item>vortek</item>' "$ARRAYS_FILE"
-        fi
-
+        # Update App Name to Vortex
         STRINGS_FILE="app/src/main/res/values/strings.xml"
         if [ -f "$STRINGS_FILE" ]; then
           sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Vortex<\/string>/g' "$STRINGS_FILE"
         fi
 
+        # Update Manifest Label
+        MANIFEST_FILE="app/src/main/AndroidManifest.xml"
+        if [ -f "$MANIFEST_FILE" ]; then
+          sed -i 's/android:label="[^"]*"/android:label="Vortex"/g' "$MANIFEST_FILE"
+        fi
+
+        # Inject Vulkan Driver into UI Arrays
+        ARRAYS_FILE="app/src/main/res/values/arrays.xml"
+        if [ -f "$ARRAYS_FILE" ]; then
+          sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vulkan</item>' "$ARRAYS_FILE"
+          sed -i '/<string-array name="graphics_driver_values">/a \        <item>vulkan_hub</item>' "$ARRAYS_FILE"
+        fi
+
+        # Path Logic: Points to assets/graphics_driver/vulkan
         LOGIC_FILE="app/src/main/java/com/winlator/cmod/ContainerDetailFragment.java"
         if [ -f "$LOGIC_FILE" ]; then
-          sed -i 's/case "wrapper":/case "vortek":\n            case "wrapper":/g' "$LOGIC_FILE"
-          sed -i '/if (graphicsDriver.equals("wrapper"))/s/)/ || graphicsDriver.equals("vortek"))/' "$LOGIC_FILE"
-          sed -i '/case "vortek":/a \                driverPath = version.equals("2.1") ? "vortek/vortek-2.1.tzst" : "vortek/vortek-2.0.tzst";' "$LOGIC_FILE"
+          sed -i 's/case "wrapper":/case "vulkan_hub":\n            case "wrapper":/g' "$LOGIC_FILE"
+          sed -i '/case "vulkan_hub":/a \                driverPath = "vulkan_hub";\n                envVars.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");\n                envVars.put("GALLIUM_DRIVER", "zink");\n                envVars.put("ZINK_DESCRIPTORS", "lazy");' "$LOGIC_FILE"
         fi
 
+        # Update JSON for Driver Selection
         JSON_FILE="app/src/main/assets/graphics_drivers.json"
         if [ -f "$JSON_FILE" ]; then
-          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vortek", "version": "vortek", "path": "vortek" },/}' "$JSON_FILE"
+          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "vulkan_hub", "path": "vulkan_hub" },/}' "$JSON_FILE"
         fi
 
-    - name: Build and Rename
+    - name: Build Vortex APK
       run: |
         chmod +x gradlew
         ./gradlew assembleDebug
         mv app/build/outputs/apk/debug/*.apk Vortex.apk
 
-    - name: Upload Vortex
+    - name: Upload Finished APK
       uses: actions/upload-artifact@v4
       with:
-       name: Vortex-Build
+       name: Vortex-Official-Vulkan-Build
        path: Vortex.apk
