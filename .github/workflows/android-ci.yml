@@ -21,7 +21,7 @@ jobs:
     - name: Install Build Tools (Mesa 26 Requirements)
       run: |
         sudo apt-get update
-        # Added libclc-dev to satisfy the dependency checker
+        # Added libclc-dev to fix the latest build log error
         sudo apt-get install -y pkg-config gettext flex bison libwayland-dev \
                              libx11-dev ninja-build libglvnd-dev glslang-tools libclc-dev
         python -m venv venv
@@ -61,7 +61,7 @@ jobs:
       run: |
         source venv/bin/activate
         cd mesa-src
-        # Added -Dgallium-opencl=disabled to prevent libclc issues
+        # Added explicit disabled flags for OpenCL to bypass libclc
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -73,7 +73,8 @@ jobs:
           -Dopengl=true \
           -Dgles1=enabled \
           -Dgles2=enabled \
-          -Dgallium-opencl=disabled
+          -Dgallium-opencl=disabled \
+          -Dmicrosoft-clc=disabled
         meson compile -C build-android
 
     - name: Upload Driver Artifacts
