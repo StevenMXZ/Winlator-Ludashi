@@ -13,16 +13,17 @@ jobs:
         tar -xf mesa-26.0.4.tar.xz
         mv mesa-26.0.4 mesa-src
 
-    - name: Set up Python and Meson
+    - name: Set up Python 3.11
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    - name: Install Build Dependencies
+    - name: Install Latest Meson and Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y meson ninja-build pkg-config python3-mako \
-                             gettext flex bison libwayland-dev libx11-dev
+        sudo apt-get install -y pkg-config gettext flex bison libwayland-dev libx11-dev
+        pip install --upgrade pip
+        pip install meson ninja mako packaging
 
     - name: Setup Android NDK
       uses: nttld/setup-ndk@v1
@@ -92,14 +93,14 @@ jobs:
         sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vulkan</item>' app/src/main/res/values/arrays.xml
         sed -i '/<string-array name="graphics_driver_values">/a \        <item>vulkan_hub</item>' app/src/main/res/values/arrays.xml
 
-        # Add logic to point to assets/graphics_driver/vulkan
+        # Point to assets/graphics_driver/vulkan
         LOGIC_FILE="app/src/main/java/com/winlator/cmod/ContainerDetailFragment.java"
         if [ -f "$LOGIC_FILE" ]; then
           sed -i 's/case "wrapper":/case "vulkan_hub":\n            case "wrapper":/g' "$LOGIC_FILE"
-          sed -i '/case "vulkan_hub":/a \                driverPath = "vulkan_hub";\n                envVars.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");\n                envVars.put("GALLIUM_DRIVER", "zink");' "$LOGIC_FILE"
+          sed -i '/case "vulkan_hub":/a \                driverPath = "graphics_driver/vulkan";\n                envVars.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");\n                envVars.put("GALLIUM_DRIVER", "zink");' "$LOGIC_FILE"
         fi
 
-        # Update Graphics JSON to match assets structure
+        # Update Graphics JSON
         JSON_FILE="app/src/main/assets/graphics_drivers.json"
         if [ -f "$JSON_FILE" ]; then
           sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "vulkan_hub", "path": "graphics_driver/vulkan" },/}' "$JSON_FILE"
