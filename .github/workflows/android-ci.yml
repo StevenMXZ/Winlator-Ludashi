@@ -20,6 +20,28 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    - name: Prepare Vortek Assets and UI
+      run: |
+        # 1. Create the directory for Vortek assets
+        mkdir -p app/src/main/assets/graphics_driver/vortek
+
+        # 2. Download the Vortek version files
+        wget -O app/src/main/assets/graphics_driver/vortek/vortek-2.0.tzst https://github.com/Disco-sys/Winlator-Ludashi/raw/winlator_bionic/app/src/main/assets/graphics_driver/vortek-2.0.tzst
+        wget -O app/src/main/assets/graphics_driver/vortek/vortek-2.1.tzst https://github.com/Disco-sys/Winlator-Ludashi/raw/winlator_bionic/app/src/main/assets/graphics_driver/vortek-2.1.tzst
+
+        # 3. Add Vortek to the Graphics Driver selection JSON
+        JSON_FILE="app/src/main/assets/graphics_driver/graphics_drivers.json"
+        if [ -f "$JSON_FILE" ]; then
+          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vortek Wrapper", "version": "vortek", "path": "vortek" },/}' $JSON_FILE
+        fi
+
+        # 4. Patch Java logic to switch between 2.0 and 2.1 based on selection
+        # This assumes the fragment uses a standard switch/case for driver paths
+        JAVA_FILE="app/src/main/java/com/winlator/container/ContainerConfigFragment.java"
+        if [ -f "$JAVA_FILE" ]; then
+          sed -i '/case "vortek":/a \                driverPath = version.equals("2.1") ? "vortek/vortek-2.1.tzst" : "vortek/vortek-2.0.tzst";' $JAVA_FILE
+        fi
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
