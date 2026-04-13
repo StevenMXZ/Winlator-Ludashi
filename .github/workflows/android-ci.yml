@@ -21,8 +21,10 @@ jobs:
         mkdir -p ${{ github.workspace }}/installed/pkgconfig
         mkdir -p ${{ github.workspace }}/installed/clc
         
+        # Map bitcode files
         find /usr/share/clc /usr/lib/clc -name "*.bc" -exec cp {} ${{ github.workspace }}/installed/clc/ \; || true
         
+        # 1. Registration for libclc
         cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libclc.pc
         prefix=${{ github.workspace }}/installed
         includedir=/usr/include
@@ -31,6 +33,18 @@ jobs:
         Description: Hand-mapped libclc for Vortex
         Version: 18.1.0
         Cflags: -I\${includedir}
+        EOF
+
+        # 2. THE FIX: Stub for libdrm to satisfy the requirement
+        cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libdrm.pc
+        prefix=${{ github.workspace }}/installed
+        libdir=\${prefix}
+        includedir=/usr/include
+        Name: libdrm
+        Description: Stub libdrm for Android Build
+        Version: 2.4.120
+        Cflags: -I\${includedir}
+        Libs: -L\${libdir}
         EOF
 
     - name: Setup Android NDK
@@ -45,7 +59,6 @@ jobs:
         TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
         SYSROOT="$TOOLCHAIN/sysroot"
         
-        # Cleanly formatted cross-file to avoid parsing errors
         cat <<EOF > android-aarch64.txt
         [binaries]
         c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
