@@ -16,11 +16,27 @@ jobs:
     - name: Install and Map Dependencies
       run: |
         sudo apt-get update
-        # Explicitly installing the files and giving the system what it needs
         sudo apt-get install -y \
           libclc-18-dev libelf-dev \
           pkg-config gettext flex bison ninja-build cmake \
           llvm-18-dev libclang-18-dev zlib1g-dev libexpat1-dev glslang-tools
+        
+        # Create the 'installed' directory as requested
+        mkdir -p installed/pkgconfig
+        
+        # Copy the libclc bitcode files into our local 'installed' dir
+        cp -r /usr/share/clc ./installed/
+        
+        # Create the registration file inside our new 'installed' directory
+        cat <<EOF > installed/pkgconfig/libclc.pc
+        prefix=${{ github.workspace }}/installed
+        includedir=/usr/include
+        libexecdir=\${prefix}/clc
+        Name: libclc
+        Description: Library requirements for OpenCL C
+        Version: 18.1.0
+        Cflags: -I\${includedir}
+        EOF
         
         python -m venv venv
         source venv/bin/activate
@@ -32,23 +48,11 @@ jobs:
       with:
         ndk-version: r27b
 
-    - name: Create Manual Paths and Cross File
+    - name: Create Cross File with 'installed' Paths
       run: |
         NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
         TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
         
-        # Manually generating the registration file for libclc
-        mkdir -p pkgconfig
-        cat <<EOF > pkgconfig/libclc.pc
-        prefix=/usr
-        includedir=\${prefix}/include
-        libexecdir=\${prefix}/lib/clc
-        Name: libclc
-        Description: Library requirements for OpenCL C
-        Version: 18.1.0
-        Cflags: -I\${includedir}
-        EOF
-
         cat <<EOF > android-aarch64.txt
         [binaries]
         c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
@@ -73,15 +77,18 @@ jobs:
 
         [properties]
         needs_exe_wrapper = true
-        # Providing the correct paths for the installed files
-        libclc_path = '/usr/share/clc'
-        pkg_config_libdir = ['./pkgconfig', '/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig', '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig']
+        # We point directly to our custom 'installed' directory
+        libclc_path = '${{ github.workspace }}/installed/clc'
+        pkg_config_libdir = ['${{ github.workspace }}/installed/pkgconfig', '/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig', '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig']
         EOF
 
     - name: Compile Mesa (Vortex-emu Core)
       run: |
         source venv/bin/activate
         cd mesa-src
+        
+        # We add the PKG_CONFIG_PATH export to make sure it looks in 'installed' first
+        export PKG_CONFIG_PATH="${{ github.workspace }}/installed/pkgconfig:$PKG_CONFIG_PATH"
         
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
