@@ -18,12 +18,13 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install Build Tools (Mesa 26 Requirements)
+    - name: Install Build Tools (Official Mesa Deps)
       run: |
         sudo apt-get update
-        # Added cmake to provide a fallback lookup method for libclc
+        # Installing the full suite of dependencies mentioned in the Mesa docs
         sudo apt-get install -y pkg-config gettext flex bison libwayland-dev \
-                             libx11-dev ninja-build libglvnd-dev glslang-tools libclc-dev cmake
+                             libx11-dev ninja-build libglvnd-dev glslang-tools \
+                             libclc-18-dev llvm-18-dev libclang-18-dev cmake
         python -m venv venv
         source venv/bin/activate
         pip install --upgrade pip
@@ -45,8 +46,9 @@ jobs:
         cpp = '$TOOLCHAIN/bin/aarch64-linux-android35-clang++'
         ar = '$TOOLCHAIN/bin/llvm-ar'
         strip = '$TOOLCHAIN/bin/llvm-strip'
-        pkgconfig = 'pkg-config'
-        cmake = 'cmake'
+        pkgconfig = '/usr/bin/pkg-config'
+        llvm-config = '/usr/bin/llvm-config-18'
+        cmake = '/usr/bin/cmake'
 
         [host_machine]
         system = 'android'
@@ -56,13 +58,15 @@ jobs:
 
         [properties]
         needs_exe_wrapper = true
+        # Explicitly pointing to the search path for arch-independent pc files
+        pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/x86_64-linux-gnu/pkgconfig']
         EOF
 
     - name: Compile Mesa 26.0.4
       run: |
         source venv/bin/activate
         
-        # CRITICAL FIX: Force pkg-config to check the /usr/share/ directory for libclc.pc
+        # Manually exported to assist the cross-compiler's logic
         export PKG_CONFIG_PATH=/usr/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig
         
         cd mesa-src
@@ -77,10 +81,9 @@ jobs:
           -Dopengl=true \
           -Dgles1=enabled \
           -Dgles2=enabled \
+          -Dllvm=enabled \
           -Dgallium-opencl=disabled \
-          -Dmicrosoft-clc=disabled \
-          -Dintel-clc=disabled \
-          -Dgallium-rusticl=false
+          -Dmicrosoft-clc=disabled
           
         meson compile -C build-android
 
@@ -112,6 +115,7 @@ jobs:
     - name: Inject Vulkan Driver Logic
       run: |
         mkdir -p app/src/main/assets/graphics_driver/vulkan
+        
         sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vulkan</item>' app/src/main/res/values/arrays.xml
         sed -i '/<string-array name="graphics_driver_values">/a \        <item>vulkan_hub</item>' app/src/main/res/values/arrays.xml
 
