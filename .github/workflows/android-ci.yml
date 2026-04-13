@@ -25,7 +25,6 @@ jobs:
         python -m venv venv
         source venv/bin/activate
         pip install --upgrade pip
-        # CRITICAL: Mesa 26.0.4 requires these specific versions to avoid InvalidVersion logs
         pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2" "setuptools<70.0"
 
     - name: Setup Android NDK
@@ -36,7 +35,6 @@ jobs:
 
     - name: Create Meson Cross File
       run: |
-        # Use absolute paths to ensure the compiler is found immediately
         TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
         cat <<EOF > android-aarch64.txt
         [binaries]
@@ -45,22 +43,19 @@ jobs:
         ar = '$TOOLCHAIN/bin/llvm-ar'
         strip = '$TOOLCHAIN/bin/llvm-strip'
         pkgconfig = 'pkg-config'
-
         [host_machine]
         system = 'android'
         cpu_family = 'aarch64'
         cpu = 'armv8-a'
         endian = 'little'
-
         [properties]
         needs_exe_wrapper = true
         EOF
 
-    - name: Compile Mesa 26.0.4 (Vulkan & Zink)
+    - name: Compile Mesa 26.0.4
       run: |
         source venv/bin/activate
         cd mesa-src
-        # We target Panfrost (Mali), Freedreno (Adreno), and Zink (The Bridge)
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -101,28 +96,23 @@ jobs:
 
     - name: Inject Vulkan Driver Logic
       run: |
-        # Ensure directory exists for our new drivers
         mkdir -p app/src/main/assets/graphics_driver/vulkan
-        
-        # Patch UI selection
         sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vulkan</item>' app/src/main/res/values/arrays.xml
         sed -i '/<string-array name="graphics_driver_values">/a \        <item>vulkan_hub</item>' app/src/main/res/values/arrays.xml
 
-        # Point Java code to assets/graphics_driver/vulkan
         LOGIC_FILE="app/src/main/java/com/winlator/cmod/ContainerDetailFragment.java"
         if [ -f "$LOGIC_FILE" ]; then
           sed -i 's/case "wrapper":/case "vulkan_hub":\n            case "wrapper":/g' "$LOGIC_FILE"
           sed -i '/case "vulkan_hub":/a \                driverPath = "graphics_driver/vulkan";\n                envVars.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");\n                envVars.put("GALLIUM_DRIVER", "zink");' "$LOGIC_FILE"
         fi
 
-        # Update JSON mapping
         JSON_FILE="app/src/main/assets/graphics_drivers.json"
         if [ -f "$JSON_FILE" ]; then
           sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "Mesa 26.0.4-Vortex", "path": "graphics_driver/vulkan" },/}' "$JSON_FILE"
         fi
 
     - name: Build Vortex APK
-        run: |
+      run: |
         chmod +x gradlew
         ./gradlew assembleDebug
         mv app/build/outputs/apk/debug/*.apk Vortex.apk
@@ -130,5 +120,5 @@ jobs:
     - name: Upload Final APK
       uses: actions/upload-artifact@v4
       with:
-       name: Vortex-Vulkan-Build
-       path: Vortex.apk
+        name: Vortex-Vulkan-Build
+        path: Vortex.apk
