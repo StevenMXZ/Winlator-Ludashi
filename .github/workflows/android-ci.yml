@@ -1,4 +1,4 @@
-name: Android CI Bionic - Vulkan Build
+name: Android CI Bionic
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ jobs:
   build-mesa:
     runs-on: ubuntu-latest
     steps:
-    - name: Clone Mesa
-      uses: actions/checkout@v4
-      with:
-        repository: mesa3d/mesa
-        ref: main
+    - name: Download Mesa 26.0.4 Stable
+      run: |
+        wget https://archive.mesa3d.org/mesa-26.0.4.tar.xz
+        tar -xf mesa-26.0.4.tar.xz
+        mv mesa-26.0.4 mesa-src
 
     - name: Set up Python and Meson
       uses: actions/setup-python@v5
@@ -47,10 +47,11 @@ jobs:
         needs_exe_wrapper = true
         EOF
 
-    - name: Compile Mesa 26 (Vulkan Driver)
+    - name: Compile Mesa 26.0.4
       run: |
+        cd mesa-src
         meson setup build-android \
-          --cross-file android-aarch64.txt \
+          --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
           -Dplatform-sdk-version=35 \
           -Dgallium-drivers=panfrost,zink,freedreno \
@@ -63,7 +64,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: Mesa-26-Vulkan-Drivers
-        path: build-android/src/gallium/targets/dri/*.so
+        path: |
+          mesa-src/build-android/src/gallium/targets/dri/*.so
+          mesa-src/build-android/src/vulkan/device-select/*.so
 
   build-vortex:
     needs: build-mesa
@@ -83,38 +86,23 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Patch for Vortex & Vulkan Driver
+    - name: Patch Vulkan Driver Path
       run: |
-        # Update App Name to Vortex
-        STRINGS_FILE="app/src/main/res/values/strings.xml"
-        if [ -f "$STRINGS_FILE" ]; then
-          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Vortex<\/string>/g' "$STRINGS_FILE"
-        fi
+        # Inject "Vulkan" into UI Arrays
+        sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vulkan</item>' app/src/main/res/values/arrays.xml
+        sed -i '/<string-array name="graphics_driver_values">/a \        <item>vulkan_hub</item>' app/src/main/res/values/arrays.xml
 
-        # Update Manifest Label
-        MANIFEST_FILE="app/src/main/AndroidManifest.xml"
-        if [ -f "$MANIFEST_FILE" ]; then
-          sed -i 's/android:label="[^"]*"/android:label="Vortex"/g' "$MANIFEST_FILE"
-        fi
-
-        # Inject Vulkan Driver into UI Arrays
-        ARRAYS_FILE="app/src/main/res/values/arrays.xml"
-        if [ -f "$ARRAYS_FILE" ]; then
-          sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vulkan</item>' "$ARRAYS_FILE"
-          sed -i '/<string-array name="graphics_driver_values">/a \        <item>vulkan_hub</item>' "$ARRAYS_FILE"
-        fi
-
-        # Path Logic: Points to assets/graphics_driver/vulkan
+        # Add logic to point to assets/graphics_driver/vulkan
         LOGIC_FILE="app/src/main/java/com/winlator/cmod/ContainerDetailFragment.java"
         if [ -f "$LOGIC_FILE" ]; then
           sed -i 's/case "wrapper":/case "vulkan_hub":\n            case "wrapper":/g' "$LOGIC_FILE"
-          sed -i '/case "vulkan_hub":/a \                driverPath = "vulkan_hub";\n                envVars.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");\n                envVars.put("GALLIUM_DRIVER", "zink");\n                envVars.put("ZINK_DESCRIPTORS", "lazy");' "$LOGIC_FILE"
+          sed -i '/case "vulkan_hub":/a \                driverPath = "vulkan_hub";\n                envVars.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");\n                envVars.put("GALLIUM_DRIVER", "zink");' "$LOGIC_FILE"
         fi
 
-        # Update JSON for Driver Selection
+        # Update Graphics JSON to match assets structure
         JSON_FILE="app/src/main/assets/graphics_drivers.json"
         if [ -f "$JSON_FILE" ]; then
-          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "vulkan_hub", "path": "vulkan_hub" },/}' "$JSON_FILE"
+          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "vulkan_hub", "path": "graphics_driver/vulkan" },/}' "$JSON_FILE"
         fi
 
     - name: Build Vortex APK
