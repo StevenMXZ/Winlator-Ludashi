@@ -16,16 +16,16 @@ jobs:
     - name: Prepare 'installed' Directory
       run: |
         sudo apt-get update
-        sudo apt-get install -y libclc-18-dev libelf-dev pkg-config llvm-18-dev glslang-tools
+        # We need the base libclc and the -dev package
+        sudo apt-get install -y libclc-18 libclc-18-dev libelf-dev pkg-config llvm-18-dev glslang-tools
         
-        # Create our local 'installed' vault
         mkdir -p ${{ github.workspace }}/installed/pkgconfig
         mkdir -p ${{ github.workspace }}/installed/clc
         
-        # Move the files into our vault
-        cp -r /usr/share/clc/* ${{ github.workspace }}/installed/clc/
+        # Find where the .bc files actually live and copy them
+        # Usually /usr/lib/clc or /usr/share/clc
+        find /usr/share/clc /usr/lib/clc -name "*.bc" -exec cp {} ${{ github.workspace }}/installed/clc/ \; || true
         
-        # Create a foolproof registration file
         cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libclc.pc
         prefix=${{ github.workspace }}/installed
         includedir=/usr/include
@@ -64,21 +64,18 @@ jobs:
 
         [properties]
         needs_exe_wrapper = true
-        # The key fix: pointing Mesa directly to our vault
         libclc_path = '${{ github.workspace }}/installed/clc'
         pkg_config_libdir = ['${{ github.workspace }}/installed/pkgconfig']
         EOF
 
     - name: Compile Mesa
       run: |
-        # Setup Python environment
         python -m venv venv
         source venv/bin/activate
         pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2"
         
         cd mesa-src
         
-        # Tell the system to look at our 'installed' vault first
         export PKG_CONFIG_PATH="${{ github.workspace }}/installed/pkgconfig"
         export PKG_CONFIG_LIBDIR="${{ github.workspace }}/installed/pkgconfig"
         
