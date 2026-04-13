@@ -13,33 +13,23 @@ jobs:
         tar -xf mesa-26.0.4.tar.xz
         mv mesa-26.0.4 mesa-src
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
     - name: Install Build Tools
       run: |
         sudo apt-get update
         sudo apt-get install -y pkg-config gettext flex bison libwayland-dev \
                              libx11-dev ninja-build libglvnd-dev glslang-tools \
                              libclc-18-dev llvm-18-dev libclang-18-dev cmake
+        # Install Zig compiler
+        sudo snap install zig --classic --beta
+        
         python -m venv venv
         source venv/bin/activate
         pip install --upgrade pip
         pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2" "setuptools<70.0"
 
-    - name: Setup Android NDK
-      uses: nttld/setup-ndk@v1
-      id: setup_ndk
-      with:
-        ndk-version: r27b
-
     - name: Create Meson Configuration Files
       run: |
-        NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
-        TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
-        
+        # NATIVE FILE
         cat <<EOF > native.txt
         [binaries]
         llvm-config = '/usr/bin/llvm-config-18'
@@ -47,12 +37,14 @@ jobs:
         cmake = '/usr/bin/cmake'
         EOF
 
+        # CROSS FILE (Using Zig for aarch64-linux-android)
         cat <<EOF > android-aarch64.txt
         [binaries]
-        c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
-        cpp = '$TOOLCHAIN/bin/aarch64-linux-android35-clang++'
-        ar = '$TOOLCHAIN/bin/llvm-ar'
-        strip = '$TOOLCHAIN/bin/llvm-strip'
+        c = ['zig', 'cc', '-target', 'aarch64-linux-android.35']
+        cpp = ['zig', 'c++', '-target', 'aarch64-linux-android.35']
+        ar = 'zig ar'
+        ranlib = 'zig ranlib'
+        strip = 'zig strip'
         pkg-config = '/usr/bin/pkg-config'
 
         [host_machine]
@@ -64,6 +56,9 @@ jobs:
         [properties]
         needs_exe_wrapper = true
         pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig']
+        # Optimizing for your Helio G85 (Cortex-A75/A55)
+        c_args = ['-O3', '-mtune=cortex-a75']
+        cpp_args = ['-O3', '-mtune=cortex-a75']
         EOF
 
     - name: Compile Mesa 26.0.4
@@ -82,9 +77,6 @@ jobs:
           -Dbuildtype=release \
           -Dandroid-stub=true \
           -Dllvm=enabled \
-          -Dintel-clc=disabled \
-          -Dmicrosoft-clc=disabled \
-          -Dgallium-rusticl=false \
           -Dopengl=true \
           -Dgles1=enabled \
           -Dgles2=enabled
@@ -94,7 +86,7 @@ jobs:
     - name: Upload Driver Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: Mesa-26-Drivers
+        name: Mesa-26-Zig-Drivers
         path: |
           mesa-src/build-android/src/gallium/targets/dri/*.so
           mesa-src/build-android/src/vulkan/device-select/*.so
@@ -132,7 +124,7 @@ jobs:
 
         JSON_FILE="app/src/main/assets/graphics_drivers.json"
         if [ -f "$JSON_FILE" ]; then
-          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "Mesa 26.0.4-Vortex", "path": "graphics_driver/vulkan" },/}' "$JSON_FILE"
+          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "Mesa 26.0.4-Vortex-Zig", "path": "graphics_driver/vulkan" },/}' "$JSON_FILE"
         fi
 
     - name: Build Vortex APK
@@ -144,5 +136,5 @@ jobs:
     - name: Upload Final APK
       uses: actions/upload-artifact@v4
       with:
-        name: Vortex-Build
+        name: Vortex-Zig-Build
         path: Vortex.apk
