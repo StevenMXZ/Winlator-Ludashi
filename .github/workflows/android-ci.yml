@@ -20,40 +20,39 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Patch Branding and Vortek Logic
+    - name: Patch UI and Vortek Logic
       run: |
-        # 1. SET INTERNAL APP NAME
-        STRINGS_PATH="app/src/main/res/values/strings.xml"
-        if [ -f "$STRINGS_PATH" ]; then
-          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Vortex Emu<\/string>/g' "$STRINGS_PATH"
+        ARRAYS_FILE="app/src/main/res/values/arrays.xml"
+        if [ -f "$ARRAYS_FILE" ]; then
+          sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vortek Wrapper</item>' "$ARRAYS_FILE"
+          sed -i '/<string-array name="graphics_driver_values">/a \        <item>vortek</item>' "$ARRAYS_FILE"
         fi
 
-        # 2. APPLY LOGO (1776048162593.png)
-        find app/src/main/res -name "ic_launcher.png" -exec cp "1776048162593.png" {} \;
-        find app/src/main/res -name "ic_launcher_round.png" -exec cp "1776048162593.png" {} \;
-
-        # 3. VORTEK DRIVER UI LOGIC
-        DETAIL_JAVA="app/src/main/java/com/winlator/cmod/ContainersDetailFragment.java"
-        if [ -f "$DETAIL_JAVA" ]; then
-          sed -i '/case "vortek":/a \                driverPath = version.equals("2.1") ? "vortek/vortek-2.1.tzst" : "vortek/vortek-2.0.tzst";' "$DETAIL_JAVA"
+        STRINGS_FILE="app/src/main/res/values/strings.xml"
+        if [ -f "$STRINGS_FILE" ]; then
+          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">Vortex<\/string>/g' "$STRINGS_FILE"
         fi
 
-        # 4. REGISTER VORTEK IN ASSETS
-        JSON_FILE="app/src/main/assets/graphics_driver/graphics_drivers.json"
+        LOGIC_FILE="app/src/main/java/com/winlator/cmod/ContainerDetailFragment.java"
+        if [ -f "$LOGIC_FILE" ]; then
+          sed -i '/case "vortek":/a \                driverPath = version.equals("2.1") ? "vortek/vortek-2.1.tzst" : "vortek/vortek-2.0.tzst";' "$LOGIC_FILE"
+        fi
+
+        find app/src/main/res -name "ic_launcher*.png" -exec cp "1776048162593.png" {} \;
+
+        JSON_FILE="app/src/main/assets/graphics_drivers.json"
         if [ -f "$JSON_FILE" ]; then
           sed -i '0,/\[/{s/\[/\[\n    {"name": "Vortek Wrapper", "version": "vortek", "path": "vortek" },/}' "$JSON_FILE"
         fi
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-
-    - name: Build and Rename APK
+    - name: Build and Rename
       run: |
+        chmod +x gradlew
         ./gradlew assembleDebug
-        mv app/build/outputs/apk/debug/*.apk app/build/outputs/apk/debug/Vortex.apk
+        mv app/build/outputs/apk/debug/*.apk Vortex.apk
 
-    - name: Upload Vortex Artifact
+    - name: Upload Vortex
       uses: actions/upload-artifact@v4
       with:
        name: Vortex-Build
-       path: app/build/outputs/apk/debug/Vortex.apk
+       path: Vortex.apk
