@@ -18,10 +18,9 @@ jobs:
       with:
         python-version: '3.11'
 
-        - name: Install Build Tools (Pinned for Mesa 26)
+    - name: Install Build Tools
       run: |
         sudo apt-get update
-        # Added libglvnd-dev and glslang-tools to fix the latest build errors
         sudo apt-get install -y pkg-config gettext flex bison libwayland-dev \
                              libx11-dev ninja-build libglvnd-dev glslang-tools
         python -m venv venv
@@ -31,13 +30,13 @@ jobs:
 
     - name: Setup Android NDK
       uses: nttld/setup-ndk@v1
-      id: setup-ndk
+      id: setup_ndk
       with:
         ndk-version: r27b
 
     - name: Create Meson Cross File
       run: |
-        TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
+        TOOLCHAIN="${{ steps.setup_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64"
         cat <<EOF > android-aarch64.txt
         [binaries]
         c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
@@ -45,11 +44,13 @@ jobs:
         ar = '$TOOLCHAIN/bin/llvm-ar'
         strip = '$TOOLCHAIN/bin/llvm-strip'
         pkgconfig = 'pkg-config'
+
         [host_machine]
         system = 'android'
         cpu_family = 'aarch64'
         cpu = 'armv8-a'
         endian = 'little'
+
         [properties]
         needs_exe_wrapper = true
         EOF
