@@ -18,38 +18,46 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install Latest Meson and Dependencies
+    - name: Install Build Tools (Pinned for Mesa 26)
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config gettext flex bison libwayland-dev libx11-dev
+        sudo apt-get install -y pkg-config gettext flex bison libwayland-dev libx11-dev ninja-build
+        python -m venv venv
+        source venv/bin/activate
         pip install --upgrade pip
-        pip install meson ninja mako packaging
+        # Pinning packaging and setuptools fixes the InvalidVersion error in the logs
+        pip install "meson>=1.4.0" mako "packaging<24.0" "setuptools<70.0"
 
     - name: Setup Android NDK
       uses: nttld/setup-ndk@v1
+      id: setup-ndk
       with:
         ndk-version: r27b
 
     - name: Create Meson Cross File
       run: |
+        TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
         cat <<EOF > android-aarch64.txt
         [binaries]
-        c = '$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang'
-        cpp = '$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang++'
-        ar = '$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar'
-        strip = '$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
+        c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
+        cpp = '$TOOLCHAIN/bin/aarch64-linux-android35-clang++'
+        ar = '$TOOLCHAIN/bin/llvm-ar'
+        strip = '$TOOLCHAIN/bin/llvm-strip'
         pkgconfig = 'pkg-config'
+
         [host_machine]
         system = 'android'
         cpu_family = 'aarch64'
         cpu = 'armv8-a'
         endian = 'little'
+
         [properties]
         needs_exe_wrapper = true
         EOF
 
     - name: Compile Mesa 26.0.4
       run: |
+        source venv/bin/activate
         cd mesa-src
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
@@ -58,7 +66,10 @@ jobs:
           -Dgallium-drivers=panfrost,zink,freedreno \
           -Dvulkan-drivers=panfrost,freedreno \
           -Dbuildtype=release \
-          -Dandroid-stub=true
+          -Dandroid-stub=true \
+          -Dopengl=true \
+          -Dgles1=enabled \
+          -Dgles2=enabled
         meson compile -C build-android
 
     - name: Upload Driver Binaries
@@ -87,20 +98,20 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Patch Vulkan Driver Path
+    - name: Patch Vulkan Driver Logic
       run: |
-        # Inject "Vulkan" into UI Arrays
+        # Add "Vulkan" to UI arrays
         sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vulkan</item>' app/src/main/res/values/arrays.xml
         sed -i '/<string-array name="graphics_driver_values">/a \        <item>vulkan_hub</item>' app/src/main/res/values/arrays.xml
 
-        # Point to assets/graphics_driver/vulkan
+        # Point logic to graphics_driver/vulkan
         LOGIC_FILE="app/src/main/java/com/winlator/cmod/ContainerDetailFragment.java"
         if [ -f "$LOGIC_FILE" ]; then
           sed -i 's/case "wrapper":/case "vulkan_hub":\n            case "wrapper":/g' "$LOGIC_FILE"
           sed -i '/case "vulkan_hub":/a \                driverPath = "graphics_driver/vulkan";\n                envVars.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");\n                envVars.put("GALLIUM_DRIVER", "zink");' "$LOGIC_FILE"
         fi
 
-        # Update Graphics JSON
+        # Update JSON mapping to match your folder structure
         JSON_FILE="app/src/main/assets/graphics_drivers.json"
         if [ -f "$JSON_FILE" ]; then
           sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "vulkan_hub", "path": "graphics_driver/vulkan" },/}' "$JSON_FILE"
