@@ -60,6 +60,9 @@ jobs:
 
         [properties]
         needs_exe_wrapper = true
+        # Fix for libclc not being found:
+        # We manually define the paths because pkg-config often fails for libclc in cross-builds
+        libclc_path = '/usr/share/clc'
         pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig', '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig']
         EOF
 
@@ -68,7 +71,7 @@ jobs:
         source venv/bin/activate
         cd mesa-src
         
-        # Combined setup and compile into one 'run' block to avoid YAML errors
+        # Removed deprecated 'shared-glapi' as noticed in your log
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -81,8 +84,7 @@ jobs:
           -Dopengl=true \
           -Dgles1=enabled \
           -Dgles2=enabled \
-          -Dglvnd=disabled \
-          -Dshared-glapi=enabled
+          -Dglvnd=disabled
           
         meson compile -C build-android
 
