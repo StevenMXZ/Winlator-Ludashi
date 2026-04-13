@@ -62,13 +62,13 @@ jobs:
         pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig', '$TOOLCHAIN/sysroot/usr/lib/aarch64-linux-android/pkgconfig']
         EOF
 
-    - name: Compile Mesa (Strict Mesa 26 Flags)
+        - name: Compile Mesa (Mali + Adreno + LLVM Fixed)
       run: |
         source venv/bin/activate
         cd mesa-src
         
-        # We only use flags that are guaranteed to exist in Mesa 26.
-        # -Dgallium-vdpau, -Dgallium-va, etc. have been REMOVED from this list.
+        # We MUST enable LLVM because 'clc' (required by Panfrost/Adreno) needs it.
+        # We use 'system' or 'enabled' and let the cross-file handle the rest.
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -76,15 +76,21 @@ jobs:
           -Dgallium-drivers=panfrost,zink,freedreno \
           -Dvulkan-drivers=panfrost,freedreno \
           -Dbuildtype=release \
-          -Dllvm=disabled \
+          -Dllvm=enabled \
           -Dandroid-stub=true \
           -Dopengl=true \
           -Dgles1=enabled \
           -Dgles2=enabled \
           -Dglvnd=disabled \
-          -Dshared-glapi=enabled
+          -Dshared-glapi=enabled \
+          -Dgallium-vdpau=disabled \
+          -Dgallium-va=disabled \
+          -Dgallium-xa=disabled \
+          -Dintel-clc=disabled \
+          -Dmicrosoft-clc=disabled
           
         meson compile -C build-android
+
 
     - name: Upload Universal Drivers
       uses: actions/upload-artifact@v4
