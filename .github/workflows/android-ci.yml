@@ -7,42 +7,40 @@ jobs:
   build-mesa:
     runs-on: ubuntu-latest
     steps:
-    - name: Download Mesa 26.0.4 Stable
+    - name: Download Mesa 26.0.4
       run: |
         wget https://archive.mesa3d.org/mesa-26.0.4.tar.xz
         tar -xf mesa-26.0.4.tar.xz
         mv mesa-26.0.4 mesa-src
 
-    - name: Install Build Tools (Optimized for Zig)
+    - name: Fast Tool Setup
       run: |
         sudo apt-get update
-        # Removed heavy LLVM/Clang dev packages; Zig handles the heavy lifting.
-        sudo apt-get install -y pkg-config gettext flex bison libwayland-dev \
-                             libx11-dev ninja-build libglvnd-dev glslang-tools \
+        # Minimal tools: pkg-config for dependencies, ninja for speed
+        sudo apt-get install -y pkg-config gettext flex bison ninja-build \
                              libclc-18-dev cmake
-        
-        sudo snap install zig --classic --beta
         
         python -m venv venv
         source venv/bin/activate
-        pip install --upgrade pip
-        pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2" "setuptools<70.0"
+        pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2"
 
-    - name: Create Meson Configuration Files
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      id: setup_ndk
+      with:
+        ndk-version: r27b
+
+    - name: Create Clang Cross File
       run: |
-        cat <<EOF > native.txt
-        [binaries]
-        pkg-config = '/usr/bin/pkg-config'
-        cmake = '/usr/bin/cmake'
-        EOF
-
+        NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
+        TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
+        
         cat <<EOF > android-aarch64.txt
         [binaries]
-        c = ['zig', 'cc', '-target', 'aarch64-linux-android.35']
-        cpp = ['zig', 'c++', '-target', 'aarch64-linux-android.35']
-        ar = 'zig ar'
-        ranlib = 'zig ranlib'
-        strip = 'zig strip'
+        c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
+        cpp = '$TOOLCHAIN/bin/aarch64-linux-android35-clang++'
+        ar = '$TOOLCHAIN/bin/llvm-ar'
+        strip = '$TOOLCHAIN/bin/llvm-strip'
         pkg-config = '/usr/bin/pkg-config'
 
         [host_machine]
@@ -53,88 +51,33 @@ jobs:
 
         [properties]
         needs_exe_wrapper = true
-        pkg_config_libdir = ['/usr/share/pkgconfig', '/usr/lib/aarch64-linux-gnu/pkgconfig']
-        c_args = ['-O3', '-mtune=cortex-a75']
-        cpp_args = ['-O3', '-mtune=cortex-a75']
+        pkg_config_libdir = ['/usr/share/pkgconfig']
+        # Helio G85 Optimization (Cortex-A75/A55 mix)
+        c_args = ['-O3', '-march=armv8-a', '-mtune=cortex-a75', '-fomit-frame-pointer']
+        cpp_args = ['-O3', '-march=armv8-a', '-mtune=cortex-a75', '-fomit-frame-pointer']
         EOF
 
-    - name: Compile Mesa 26.0.4
+    - name: Compile Mesa
       run: |
         source venv/bin/activate
         export PKG_CONFIG_PATH=/usr/share/pkgconfig
         
         cd mesa-src
-        # Note: -Dllvm=disabled is used here because Zig provides its own 
-        # backend, though some drivers might still check for system LLVM.
-        # If the build fails on LLVM, change to -Dllvm=enabled.
+        # llvm=disabled here refers to the LLVM-shared libraries which 
+        # usually cause the "libclc" and "giving up" errors.
         meson setup build-android \
-          --native-file ../native.txt \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
-          -Dplatform-sdk-version=35 \
-          -Dgallium-drivers=panfrost,zink,freedreno \
-          -Dvulkan-drivers=panfrost,freedreno \
+          -Dgallium-drivers=panfrost,zink \
+          -Dvulkan-drivers=panfrost \
           -Dbuildtype=release \
-          -Dandroid-stub=true \
           -Dllvm=disabled \
-          -Dopengl=true \
-          -Dgles1=enabled \
-          -Dgles2=enabled
+          -Dandroid-stub=true
           
         meson compile -C build-android
 
-    - name: Upload Driver Artifacts
+    - name: Upload Drivers
       uses: actions/upload-artifact@v4
       with:
-        name: Mesa-26-Zig-Drivers
-        path: |
-          mesa-src/build-android/src/gallium/targets/dri/*.so
-          mesa-src/build-android/src/vulkan/device-select/*.so
-          mesa-src/build-android/src/panfrost/vulkan/*.so
-
-  build-vortex:
-    needs: build-mesa
-    runs-on: ubuntu-latest
-    steps:
-    - name: Clone Vortex Repository
-      uses: actions/checkout@v4
-      with:
-        repository: Disco-sys/Vortex-emu
-        ref: winlator_bionic
-        submodules: recursive
-
-    - name: Set up JDK 23
-      uses: actions/setup-java@v4
-      with:
-        java-version: '23'
-        distribution: 'temurin'
-
-    - name: Inject Driver Logic
-      run: |
-        mkdir -p app/src/main/assets/graphics_driver/vulkan
-        
-        sed -i '/<string-array name="graphics_driver_entries">/a \        <item>Vulkan</item>' app/src/main/res/values/arrays.xml
-        sed -i '/<string-array name="graphics_driver_values">/a \        <item>vulkan_hub</item>' app/src/main/res/values/arrays.xml
-
-        LOGIC_FILE="app/src/main/java/com/winlator/cmod/ContainerDetailFragment.java"
-        if [ -f "$LOGIC_FILE" ]; then
-          sed -i 's/case "wrapper":/case "vulkan_hub":\n            case "wrapper":/g' "$LOGIC_FILE"
-          sed -i '/case "vulkan_hub":/a \                driverPath = "graphics_driver/vulkan";\n                envVars.put("MESA_LOADER_DRIVER_OVERRIDE", "zink");\n                envVars.put("GALLIUM_DRIVER", "zink");' "$LOGIC_FILE"
-        fi
-
-        JSON_FILE="app/src/main/assets/graphics_drivers.json"
-        if [ -f "$JSON_FILE" ]; then
-          sed -i '0,/\[/{s/\[/\[\n    {"name": "Vulkan", "version": "Mesa 26.0.4-Zig", "path": "graphics_driver/vulkan" },/}' "$JSON_FILE"
-        fi
-
-    - name: Build Vortex APK
-      run: |
-        chmod +x gradlew
-        ./gradlew assembleDebug
-        mv app/build/outputs/apk/debug/*.apk Vortex.apk
-
-    - name: Upload Final APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: Vortex-Zig-Build
-        path: Vortex.apk
+        name: Mesa-26-Clang-Drivers
+        path: mesa-src/build-android/src/gallium/targets/dri/*.so
