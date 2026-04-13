@@ -21,9 +21,9 @@ jobs:
     - name: Install Build Tools (Mesa 26 Requirements)
       run: |
         sudo apt-get update
-        # Added libclc-dev to fix the latest build log error
+        # Added cmake to provide a fallback lookup method for libclc
         sudo apt-get install -y pkg-config gettext flex bison libwayland-dev \
-                             libx11-dev ninja-build libglvnd-dev glslang-tools libclc-dev
+                             libx11-dev ninja-build libglvnd-dev glslang-tools libclc-dev cmake
         python -m venv venv
         source venv/bin/activate
         pip install --upgrade pip
@@ -46,6 +46,7 @@ jobs:
         ar = '$TOOLCHAIN/bin/llvm-ar'
         strip = '$TOOLCHAIN/bin/llvm-strip'
         pkgconfig = 'pkg-config'
+        cmake = 'cmake'
 
         [host_machine]
         system = 'android'
@@ -60,8 +61,11 @@ jobs:
     - name: Compile Mesa 26.0.4
       run: |
         source venv/bin/activate
+        
+        # CRITICAL FIX: Force pkg-config to check the /usr/share/ directory for libclc.pc
+        export PKG_CONFIG_PATH=/usr/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig
+        
         cd mesa-src
-        # Added explicit disabled flags for OpenCL to bypass libclc
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -74,7 +78,10 @@ jobs:
           -Dgles1=enabled \
           -Dgles2=enabled \
           -Dgallium-opencl=disabled \
-          -Dmicrosoft-clc=disabled
+          -Dmicrosoft-clc=disabled \
+          -Dintel-clc=disabled \
+          -Dgallium-rusticl=false
+          
         meson compile -C build-android
 
     - name: Upload Driver Artifacts
