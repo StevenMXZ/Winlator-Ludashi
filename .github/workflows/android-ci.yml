@@ -7,34 +7,27 @@ jobs:
   build-mesa:
     runs-on: ubuntu-latest
     steps:
-    - name: Download Mesa 26.0.4
+    - name: Clone Mesa Repository
       run: |
-        wget https://archive.mesa3d.org/mesa-26.0.4.tar.xz
-        tar -xf mesa-26.0.4.tar.xz
-        mv mesa-26.0.4 mesa-src
+        git clone https://gitlab.freedesktop.org/mesa/mesa.git mesa-src
+        cd mesa-src
+        git checkout mesa-26.0.4
 
-    - name: Prepare 'installed' Directory (The Dependency Vault)
+    - name: Prepare 'installed' Directory & Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libclc-18 libclc-18-dev libelf-dev pkg-config llvm-18-dev glslang-tools ninja-build
+        # Added flex and bison from your instructions
+        sudo apt-get install -y \
+          libclc-18 libclc-18-dev libelf-dev pkg-config llvm-18-dev \
+          glslang-tools ninja-build flex bison
         
         mkdir -p ${{ github.workspace }}/installed/pkgconfig
         mkdir -p ${{ github.workspace }}/installed/clc
         
         find /usr/share/clc /usr/lib/clc -name "*.bc" -exec cp {} ${{ github.workspace }}/installed/clc/ \; || true
         
-        # 1. libclc.pc (Real)
-        cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/libclc.pc
-        prefix=${{ github.workspace }}/installed
-        includedir=/usr/include
-        libexecdir=\${prefix}/clc
-        Name: libclc
-        Version: 18.1.0
-        Cflags: -I\${includedir}
-        EOF
-
-        # 2. Stub Vault: Trick Meson into seeing missing dependencies
-        for pkg in libdrm libudev LLVMSPIRVLib libzstd; do
+        # Stub Vault (Registration)
+        for pkg in libclc libdrm libudev LLVMSPIRVLib libzstd; do
           cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/$pkg.pc
         Name: $pkg
         Description: Android Stub for Vortex
@@ -89,7 +82,7 @@ jobs:
         export PKG_CONFIG_PATH="${{ github.workspace }}/installed/pkgconfig"
         export PKG_CONFIG_LIBDIR="${{ github.workspace }}/installed/pkgconfig"
         
-        # Cleaned options: Removed invalid -Dlibudev and -Dlibdrm
+        # Configure the Build (Modified for Android Cross-Compilation)
         meson setup build-android \
           --cross-file ../android-aarch64.txt \
           -Dplatforms=android \
@@ -102,11 +95,9 @@ jobs:
           -Dopengl=true \
           -Dgles1=enabled \
           -Dgles2=enabled \
-          -Dglvnd=disabled \
-          -Dgallium-vdpau=disabled \
-          -Dgallium-va=disabled \
-          -Dgallium-xa=disabled
+          -Dglvnd=disabled
           
+        # Compile and Install (Using meson compile which calls ninja)
         meson compile -C build-android
 
     - name: Upload Drivers
