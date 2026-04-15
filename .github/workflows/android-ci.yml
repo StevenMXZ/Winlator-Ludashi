@@ -1,111 +1,177 @@
-name: Android CI Bionic
+name: Build Vortex APK with Microphone Feature (Auto-Patch)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ winlator_bionic ]
 
 jobs:
-  build-mesa:
+  build:
     runs-on: ubuntu-latest
     steps:
-    - name: Clone Mesa Repository
-      run: |
-        git clone https://gitlab.freedesktop.org/mesa/mesa.git mesa-src
-        cd mesa-src
-        git checkout mesa-26.0.4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: winlator_bionic
 
-    - name: Prepare 'installed' Directory & Dependencies
-      run: |
-        sudo apt-get update
-        # Added flex and bison from your instructions
-        sudo apt-get install -y \
-          libclc-18 libclc-18-dev libelf-dev pkg-config llvm-18-dev \
-          glslang-tools ninja-build flex bison
-        
-        mkdir -p ${{ github.workspace }}/installed/pkgconfig
-        mkdir -p ${{ github.workspace }}/installed/clc
-        
-        find /usr/share/clc /usr/lib/clc -name "*.bc" -exec cp {} ${{ github.workspace }}/installed/clc/ \; || true
-        
-        # Stub Vault (Registration)
-        for pkg in libclc libdrm libudev LLVMSPIRVLib libzstd; do
-          cat <<EOF > ${{ github.workspace }}/installed/pkgconfig/$pkg.pc
-        Name: $pkg
-        Description: Android Stub for Vortex
-        Version: 99.9.9
-        Cflags: -I/usr/include
-        Libs: -L${{ github.workspace }}/installed
-        EOF
-        done
+      # ------------------------------------------------------------
+      # 1. Add microphone item to the sidebar menu
+      # ------------------------------------------------------------
+      - name: Patch xserver_menu.xml to add microphone item
+        run: |
+          MENU_FILE="app/src/main/res/menu/xserver_menu.xml"
+          # Check if already added (avoid duplicates)
+          if ! grep -q "main_menu_microphone" "$MENU_FILE"; then
+            # Insert before the closing </group>
+            sed -i '/<\/group>/i\
+        <item\
+            android:id="@+id/main_menu_microphone"\
+            android:icon="@drawable/ic_mic"\
+            android:title="Microphone" />' "$MENU_FILE"
+          fi
 
-    - name: Setup Android NDK
-      uses: nttld/setup-ndk@v1
-      id: setup_ndk
-      with:
-        ndk-version: r27b
+      # ------------------------------------------------------------
+      # 2. Create native microphone capture C++ file
+      # ------------------------------------------------------------
+      - name: Create MicrophoneCapture.cpp
+        run: |
+          mkdir -p app/src/main/cpp
+          cat > app/src/main/cpp/MicrophoneCapture.cpp << 'EOF'
+          #include <jni.h>
+          #include <android/log.h>
+          #include <SLES/OpenSLES.h>
+          #include <SLES/OpenSLES_Android.h>
+          #include <pthread.h>
+          #include <unistd.h>
+          #include <cstring>
+          #include <cstdio>
 
-    - name: Create Cross File
-      run: |
-        NDK_PATH="${{ steps.setup_ndk.outputs.ndk-path }}"
-        TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64"
-        SYSROOT="$TOOLCHAIN/sysroot"
-        
-        cat <<EOF > android-aarch64.txt
-        [binaries]
-        c = '$TOOLCHAIN/bin/aarch64-linux-android35-clang'
-        cpp = '$TOOLCHAIN/bin/aarch64-linux-android35-clang++'
-        ar = '$TOOLCHAIN/bin/llvm-ar'
-        strip = '$TOOLCHAIN/bin/llvm-strip'
-        pkg-config = '/usr/bin/pkg-config'
-        llvm-config = '/usr/bin/llvm-config-18'
+          #define LOG_TAG "MicrophoneCapture"
+          #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-        [host_machine]
-        system = 'android'
-        cpu_family = 'aarch64'
-        cpu = 'armv8-a'
-        endian = 'little'
+          static volatile int isCapturing = 0;
+          static pthread_t captureThread;
 
-        [properties]
-        needs_exe_wrapper = true
-        libclc_path = '${{ github.workspace }}/installed/clc'
-        pkg_config_libdir = ['${{ github.workspace }}/installed/pkgconfig', '$SYSROOT/usr/lib/aarch64-linux-android/pkgconfig']
-        EOF
+          static void* captureLoop(void* arg) {
+              const char* pipePath = "/data/data/com.winlator.vortex/cache/mic_pipe";
+              FILE* pipe = fopen(pipePath, "wb");
+              if (!pipe) {
+                  LOGI("Failed to open pipe");
+                  return nullptr;
+              }
+              const int bufferSize = 48000 * 2; // 1 second, stereo 16-bit
+              short* buffer = new short[bufferSize];
+              while (isCapturing) {
+                  memset(buffer, 0, bufferSize * sizeof(short));
+                  // In a real implementation you would capture from OpenSL ES
+                  // For now, write silence (replace with actual capture later)
+                  fwrite(buffer, sizeof(short), bufferSize, pipe);
+                  usleep(10000);
+              }
+              delete[] buffer;
+              fclose(pipe);
+              return nullptr;
+          }
 
-    - name: Compile Mesa (Vortex-emu Core)
-      run: |
-        python -m venv venv
-        source venv/bin/activate
-        pip install --upgrade pip
-        pip install "meson>=1.4.0" "mako>=1.2.0" "packaging==23.2" PyYAML
-        
-        cd mesa-src
-        
-        export PKG_CONFIG_PATH="${{ github.workspace }}/installed/pkgconfig"
-        export PKG_CONFIG_LIBDIR="${{ github.workspace }}/installed/pkgconfig"
-        
-        # Configure the Build (Modified for Android Cross-Compilation)
-        meson setup build-android \
-          --cross-file ../android-aarch64.txt \
-          -Dplatforms=android \
-          -Dplatform-sdk-version=35 \
-          -Dgallium-drivers=panfrost,zink,freedreno \
-          -Dvulkan-drivers=panfrost,freedreno \
-          -Dbuildtype=release \
-          -Dllvm=enabled \
-          -Dandroid-stub=true \
-          -Dopengl=true \
-          -Dgles1=enabled \
-          -Dgles2=enabled \
-          -Dglvnd=disabled
-          
-        # Compile and Install (Using meson compile which calls ninja)
-        meson compile -C build-android
+          extern "C" {
+          JNIEXPORT void JNICALL
+          Java_com_winlator_container_ContainerActivity_nativeEnableMicrophone(JNIEnv* env, jobject thiz, jboolean enable) {
+              if (enable && !isCapturing) {
+                  isCapturing = 1;
+                  pthread_create(&captureThread, nullptr, captureLoop, nullptr);
+                  LOGI("Microphone capture started");
+              } else if (!enable && isCapturing) {
+                  isCapturing = 0;
+                  pthread_join(captureThread, nullptr);
+                  LOGI("Microphone capture stopped");
+              }
+          }
+          }
+          EOF
 
-    - name: Upload Drivers
-      uses: actions/upload-artifact@v4
-      with:
-        name: Mesa-26-Universal-Build
-        path: |
-          mesa-src/build-android/src/gallium/targets/dri/*.so
-          mesa-src/build-android/src/vulkan/device-select/*.so
-          mesa-src/build-android/src/panfrost/vulkan/*.so
-          mesa-src/build-android/src/freedreno/vulkan/*.so
+      # ------------------------------------------------------------
+      # 3. Update CMakeLists.txt to include the new library
+      # ------------------------------------------------------------
+      - name: Update CMakeLists.txt
+        run: |
+          CMAKE_FILE="app/src/main/cpp/CMakeLists.txt"
+          if ! grep -q "microphone" "$CMAKE_FILE"; then
+            # Add library definition before the final target_link_libraries line
+            sed -i '/add_library(.*SHARED.*)/a\
+            add_library(microphone SHARED MicrophoneCapture.cpp)\
+            target_link_libraries(microphone log OpenSLES)' "$CMAKE_FILE"
+          fi
+
+      # ------------------------------------------------------------
+      # 4. Patch ContainerActivity.java to add native method and toggle logic
+      # ------------------------------------------------------------
+      - name: Patch ContainerActivity.java
+        run: |
+          ACTIVITY_FILE="app/src/main/java/com/winlator/container/ContainerActivity.java"
+          # Add static block and native method after class declaration
+          if ! grep -q "nativeEnableMicrophone" "$ACTIVITY_FILE"; then
+            sed -i '/public class ContainerActivity extends AppCompatActivity {/a\
+        private boolean isMicEnabled = false;\
+        private native void nativeEnableMicrophone(boolean enable);\
+        static {\
+            System.loadLibrary("microphone");\
+        }' "$ACTIVITY_FILE"
+          fi
+          # Add menu item handling inside onOptionsItemSelected
+          # Find the line with 'switch (item.getItemId())' or similar and insert case
+          if ! grep -q "main_menu_microphone" "$ACTIVITY_FILE"; then
+            sed -i '/case R.id.main_menu_exit:/i\
+                case R.id.main_menu_microphone:\
+                    isMicEnabled = !isMicEnabled;\
+                    nativeEnableMicrophone(isMicEnabled);\
+                    if (isMicEnabled) {\
+                        item.setTitle("Microphone ON");\
+                        item.getIcon().setTint(android.graphics.Color.BLUE);\
+                    } else {\
+                        item.setTitle("Microphone");\
+                        item.getIcon().setTint(android.graphics.Color.WHITE);\
+                    }\
+                    return true;' "$ACTIVITY_FILE"
+          fi
+
+      # ------------------------------------------------------------
+      # 5. Patch container startup script to create pipe and PulseAudio source
+      # ------------------------------------------------------------
+      - name: Patch startup script (add mic pipe and pulse module)
+        run: |
+          START_SCRIPT="assets/scripts/start.sh"
+          # Assuming the script uses pulseaudio; add lines after pulseaudio start
+          if ! grep -q "mic_pipe" "$START_SCRIPT"; then
+            sed -i '/pulseaudio --start/a\
+            # Create FIFO for microphone capture\
+            PIPE_PATH="/data/data/com.winlator.vortex/cache/mic_pipe"\
+            mkfifo $PIPE_PATH 2>/dev/null || true\
+            # Load pipe source into PulseAudio\
+            pactl load-module module-pipe-source source_name=vortex_mic file=$PIPE_PATH format=s16le rate=48000 channels=2\
+            # Set as default source (optional)\
+            pactl set-default-source vortex_mic' "$START_SCRIPT"
+          fi
+
+      # ------------------------------------------------------------
+      # 6. Build the APK (no Mesa compile, just Android app)
+      # ------------------------------------------------------------
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vortex-Mic-Feature-APK
+          path: app/build/outputs/apk/debug/*.apk
