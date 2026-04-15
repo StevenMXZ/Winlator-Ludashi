@@ -1,0 +1,15 @@
+[binaries]
+c = 'aarch64-linux-android33-clang'
+cpp = 'aarch64-linux-android33-clang++'
+ar = 'aarch64-linux-android-ar'
+strip = 'aarch64-linux-android-strip'
+pkgconfig = 'pkg-config'
+
+[host_machine]
+system = 'android'
+cpu_family = 'aarch64'
+cpu = 'armv8-a'
+endian = 'little'
+
+[properties]
+android_sdk_cache_dir = '/home/runner/android_sdk_cache'
