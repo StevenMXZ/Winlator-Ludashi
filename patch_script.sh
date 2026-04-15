@@ -1,14 +1,27 @@
 #!/bin/bash
 set -e
 
-# 0. Fix missing adrenotools subdirectory (if needed)
-ADRENOTOOLS_DIR="app/src/main/cpp/adrenotools"
-if [ ! -f "$ADRENOTOOLS_DIR/CMakeLists.txt" ]; then
-  mkdir -p "$ADRENOTOOLS_DIR"
-  cat > "$ADRENOTOOLS_DIR/CMakeLists.txt" << 'EOF'
-# Dummy CMakeLists.txt to satisfy add_subdirectory
-# This is a placeholder for adrenotools which is not present.
-# Real adrenotools would be added if needed.
+# 0. Create dummy adrenotools header to satisfy #include
+ADRENOTOOLS_DIR="app/src/main/cpp/adrenotools/include/adrenotools"
+mkdir -p "$ADRENOTOOLS_DIR"
+cat > "$ADRENOTOOLS_DIR/driver.h" << 'EOF'
+#ifndef ADRENOTOOLS_DRIVER_H
+#define ADRENOTOOLS_DRIVER_H
+
+// Dummy header to satisfy build
+typedef struct adrenotools_driver {
+    int dummy;
+} adrenotools_driver;
+
+#endif // ADRENOTOOLS_DRIVER_H
+EOF
+echo "Created dummy adrenotools/driver.h"
+
+# Also create a dummy CMakeLists.txt in adrenotools directory (if not exists)
+if [ ! -f "app/src/main/cpp/adrenotools/CMakeLists.txt" ]; then
+  mkdir -p app/src/main/cpp/adrenotools
+  cat > app/src/main/cpp/adrenotools/CMakeLists.txt << 'EOF'
+# Dummy CMakeLists.txt for adrenotools
 EOF
   echo "Created dummy adrenotools CMakeLists.txt"
 fi
@@ -20,7 +33,7 @@ if ! grep -q "RECORD_AUDIO" "$MANIFEST"; then
     <uses-permission android:name="android.permission.RECORD_AUDIO" />' "$MANIFEST"
 fi
 
-# 2. Add microphone menu item (drawable name is ic_mic)
+# 2. Add microphone menu item
 MENU_FILE="app/src/main/res/menu/xserver_menu.xml"
 if ! grep -q "main_menu_microphone" "$MENU_FILE"; then
   sed -i '/<\/group>/i\
@@ -35,6 +48,7 @@ ACTIVITY_FILE="app/src/main/java/com/winlator/cmod/XServerDisplayActivity.java"
 if ! grep -q "nativeEnableMicrophone" "$ACTIVITY_FILE"; then
   # Add imports
   sed -i 's/import androidx.core.view.GravityCompat;/import androidx.core.view.GravityCompat;\nimport androidx.core.app.ActivityCompat;\nimport androidx.core.content.ContextCompat;\nimport android.Manifest;\nimport android.widget.Toast;/' "$ACTIVITY_FILE"
+
   # Add fields and native method
   sed -i '/private boolean isRelativeMouseMovement = false;/a\
     private boolean isMicEnabled = false;\
@@ -43,7 +57,8 @@ if ! grep -q "nativeEnableMicrophone" "$ACTIVITY_FILE"; then
     static {\
         System.loadLibrary("microphone");\
     }' "$ACTIVITY_FILE"
-  # Add permission methods
+
+  # Add permission methods and fixed updateMicMenuItem
   sed -i '/^}/i\
     private void checkAndRequestMicrophonePermission() {\
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {\
@@ -67,17 +82,21 @@ if ! grep -q "nativeEnableMicrophone" "$ACTIVITY_FILE"; then
     }\
     \
     private void updateMicMenuItem() {\
-        MenuItem item = findViewById(R.id.NavigationView).getMenu().findItem(R.id.main_menu_microphone);\
-        if (item != null) {\
-            if (isMicEnabled) {\
-                item.setTitle("Microphone ON");\
-                item.getIcon().setTint(android.graphics.Color.BLUE);\
-            } else {\
-                item.setTitle("Microphone");\
-                item.getIcon().setTint(android.graphics.Color.WHITE);\
+        NavigationView navigationView = findViewById(R.id.NavigationView);\
+        if (navigationView != null) {\
+            MenuItem item = navigationView.getMenu().findItem(R.id.main_menu_microphone);\
+            if (item != null) {\
+                if (isMicEnabled) {\
+                    item.setTitle("Microphone ON");\
+                    item.getIcon().setTint(android.graphics.Color.BLUE);\
+                } else {\
+                    item.setTitle("Microphone");\
+                    item.getIcon().setTint(android.graphics.Color.WHITE);\
+                }\
             }\
         }\
     }' "$ACTIVITY_FILE"
+
   # Add menu handling
   sed -i '/case R.id.main_menu_exit:/i\
             case R.id.main_menu_microphone:\
@@ -119,6 +138,7 @@ static void* captureLoop(void* arg) {
     const int bufferSize = 48000 * 2;
     short* buffer = new short[bufferSize];
     while (isCapturing) {
+        // TODO: replace with actual OpenSL ES capture
         memset(buffer, 0, bufferSize * sizeof(short));
         fwrite(buffer, sizeof(short), bufferSize, pipe);
         usleep(10000);
@@ -144,14 +164,14 @@ Java_com_winlator_cmod_XServerDisplayActivity_nativeEnableMicrophone(JNIEnv* env
 }
 CPP_EOF
 
-# 5. Update CMakeLists.txt (append our library, but also ensure adrenotools dummy is there)
+# 5. Update CMakeLists.txt to include our library
 CMAKE_FILE="app/src/main/cpp/CMakeLists.txt"
 if ! grep -q "microphone" "$CMAKE_FILE"; then
   echo 'add_library(microphone SHARED MicrophoneCapture.cpp)' >> "$CMAKE_FILE"
   echo 'target_link_libraries(microphone log OpenSLES)' >> "$CMAKE_FILE"
 fi
 
-# 6. Patch startup script (optional)
+# 6. Patch startup script for PulseAudio mic source (optional)
 START_SCRIPT="assets/scripts/start.sh"
 if [ -f "$START_SCRIPT" ] && ! grep -q "mic_pipe" "$START_SCRIPT"; then
   sed -i '/pulseaudio --start/a\
