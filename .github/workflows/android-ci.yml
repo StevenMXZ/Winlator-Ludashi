@@ -14,13 +14,8 @@ jobs:
         with:
           ref: winlator_bionic
 
-      - name: Create patch script
+      - name: Add microphone menu item
         run: |
-          cat > apply_patches.sh << 'EOF'
-          #!/bin/bash
-          set -e
-
-          # 1. Add microphone menu item
           MENU_FILE="app/src/main/res/menu/xserver_menu.xml"
           if ! grep -q "main_menu_microphone" "$MENU_FILE"; then
             sed -i '/<\/group>/i\
@@ -28,10 +23,10 @@ jobs:
             android:id="@+id/main_menu_microphone"\
             android:icon="@drawable/ic_mic"\
             android:title="Microphone" />' "$MENU_FILE"
-            echo "Patched menu"
           fi
 
-          # 2. Patch XServerDisplayActivity.java
+      - name: Patch XServerDisplayActivity.java (add fields and native method)
+        run: |
           ACTIVITY_FILE="app/src/main/java/com/winlator/cmod/XServerDisplayActivity.java"
           if ! grep -q "nativeEnableMicrophone" "$ACTIVITY_FILE"; then
             sed -i '/private boolean isRelativeMouseMovement = false;/a\
@@ -40,7 +35,12 @@ jobs:
         static {\
             System.loadLibrary("microphone");\
         }' "$ACTIVITY_FILE"
+          fi
 
+      - name: Patch XServerDisplayActivity.java (add menu handling)
+        run: |
+          ACTIVITY_FILE="app/src/main/java/com/winlator/cmod/XServerDisplayActivity.java"
+          if ! grep -q "main_menu_microphone" "$ACTIVITY_FILE"; then
             sed -i '/case R.id.main_menu_exit:/i\
             case R.id.main_menu_microphone:\
                 isMicEnabled = !isMicEnabled;\
@@ -53,12 +53,12 @@ jobs:
                     item.getIcon().setTint(android.graphics.Color.WHITE);\
                 }\
                 return true;' "$ACTIVITY_FILE"
-            echo "Patched activity"
           fi
 
-          # 3. Create native capture file
+      - name: Create native microphone capture source file
+        run: |
           mkdir -p app/src/main/cpp
-          cat > app/src/main/cpp/MicrophoneCapture.cpp << 'CPP_EOF'
+          cat > app/src/main/cpp/MicrophoneCapture.cpp <<CPP_EOF
           #include <jni.h>
           #include <android/log.h>
           #include <SLES/OpenSLES.h>
@@ -84,7 +84,7 @@ jobs:
               const int bufferSize = 48000 * 2;
               short* buffer = new short[bufferSize];
               while (isCapturing) {
-                  // TODO: actual capture
+                  // TODO: replace with actual OpenSL ES capture
                   memset(buffer, 0, bufferSize * sizeof(short));
                   fwrite(buffer, sizeof(short), bufferSize, pipe);
                   usleep(10000);
@@ -100,26 +100,26 @@ jobs:
               if (enable && !isCapturing) {
                   isCapturing = 1;
                   pthread_create(&captureThread, nullptr, captureLoop, nullptr);
-                  LOGI("Mic start");
+                  LOGI("Microphone capture started");
               } else if (!enable && isCapturing) {
                   isCapturing = 0;
                   pthread_join(captureThread, nullptr);
-                  LOGI("Mic stop");
+                  LOGI("Microphone capture stopped");
               }
           }
           }
           CPP_EOF
-          echo "Created native file"
 
-          # 4. Update CMakeLists.txt
+      - name: Update CMakeLists.txt
+        run: |
           CMAKE_FILE="app/src/main/cpp/CMakeLists.txt"
           if ! grep -q "microphone" "$CMAKE_FILE"; then
             echo 'add_library(microphone SHARED MicrophoneCapture.cpp)' >> "$CMAKE_FILE"
             echo 'target_link_libraries(microphone log OpenSLES)' >> "$CMAKE_FILE"
-            echo "Patched CMake"
           fi
 
-          # 5. Patch startup script (optional)
+      - name: Patch startup script for PulseAudio mic source
+        run: |
           START_SCRIPT="assets/scripts/start.sh"
           if [ -f "$START_SCRIPT" ] && ! grep -q "mic_pipe" "$START_SCRIPT"; then
             sed -i '/pulseaudio --start/a\
@@ -127,15 +127,7 @@ jobs:
             mkfifo $PIPE_PATH 2>/dev/null || true\
             pactl load-module module-pipe-source source_name=vortex_mic file=$PIPE_PATH format=s16le rate=48000 channels=2\
             pactl set-default-source vortex_mic' "$START_SCRIPT"
-            echo "Patched startup script"
           fi
-
-          echo "All patches applied"
-          EOF
-          chmod +x apply_patches.sh
-
-      - name: Run patches
-        run: ./apply_patches.sh
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -156,4 +148,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Vortex-Mic-Feature-APK
-          path: app/build/outputs/apk/debug/*.apk 
+          path: app/build/outputs/apk/debug/*.apk
