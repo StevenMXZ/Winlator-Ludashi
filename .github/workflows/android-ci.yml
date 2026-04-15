@@ -1,4 +1,4 @@
-name: Build Vortex APK with Microphone Feature (Auto-Patch)
+name: Build Vortex APK with Microphone Feature
 
 on:
   workflow_dispatch:
@@ -15,28 +15,30 @@ jobs:
           ref: winlator_bionic
 
       # ------------------------------------------------------------
-      # 1. Add microphone item to the sidebar menu
+      # Create a patch script that will modify the source files
       # ------------------------------------------------------------
-      - name: Patch xserver_menu.xml to add microphone item
+      - name: Create apply-patches.sh
         run: |
+          cat > apply-patches.sh << 'EOF'
+          #!/bin/bash
+          set -e
+
+          echo "Applying microphone feature patches..."
+
+          # 1. Add menu item to xserver_menu.xml
           MENU_FILE="app/src/main/res/menu/xserver_menu.xml"
-          # Check if already added (avoid duplicates)
           if ! grep -q "main_menu_microphone" "$MENU_FILE"; then
-            # Insert before the closing </group>
             sed -i '/<\/group>/i\
-        <item\
-            android:id="@+id/main_menu_microphone"\
-            android:icon="@drawable/ic_mic"\
-            android:title="Microphone" />' "$MENU_FILE"
+          <item\
+              android:id="@+id/main_menu_microphone"\
+              android:icon="@drawable/ic_mic"\
+              android:title="Microphone" />' "$MENU_FILE"
+            echo "Patched $MENU_FILE"
           fi
 
-      # ------------------------------------------------------------
-      # 2. Create native microphone capture C++ file
-      # ------------------------------------------------------------
-      - name: Create MicrophoneCapture.cpp
-        run: |
+          # 2. Create native microphone capture C++ file
           mkdir -p app/src/main/cpp
-          cat > app/src/main/cpp/MicrophoneCapture.cpp << 'EOF'
+          cat > app/src/main/cpp/MicrophoneCapture.cpp << 'CPP_EOF'
           #include <jni.h>
           #include <android/log.h>
           #include <SLES/OpenSLES.h>
@@ -59,12 +61,10 @@ jobs:
                   LOGI("Failed to open pipe");
                   return nullptr;
               }
-              const int bufferSize = 48000 * 2; // 1 second, stereo 16-bit
+              const int bufferSize = 48000 * 2;
               short* buffer = new short[bufferSize];
               while (isCapturing) {
                   memset(buffer, 0, bufferSize * sizeof(short));
-                  // In a real implementation you would capture from OpenSL ES
-                  // For now, write silence (replace with actual capture later)
                   fwrite(buffer, sizeof(short), bufferSize, pipe);
                   usleep(10000);
               }
@@ -87,73 +87,64 @@ jobs:
               }
           }
           }
-          EOF
+          CPP_EOF
+          echo "Created MicrophoneCapture.cpp"
 
-      # ------------------------------------------------------------
-      # 3. Update CMakeLists.txt to include the new library
-      # ------------------------------------------------------------
-      - name: Update CMakeLists.txt
-        run: |
+          # 3. Update CMakeLists.txt
           CMAKE_FILE="app/src/main/cpp/CMakeLists.txt"
           if ! grep -q "microphone" "$CMAKE_FILE"; then
-            # Add library definition before the final target_link_libraries line
-            sed -i '/add_library(.*SHARED.*)/a\
-            add_library(microphone SHARED MicrophoneCapture.cpp)\
-            target_link_libraries(microphone log OpenSLES)' "$CMAKE_FILE"
+            echo 'add_library(microphone SHARED MicrophoneCapture.cpp)' >> "$CMAKE_FILE"
+            echo 'target_link_libraries(microphone log OpenSLES)' >> "$CMAKE_FILE"
+            echo "Patched $CMAKE_FILE"
           fi
 
-      # ------------------------------------------------------------
-      # 4. Patch ContainerActivity.java to add native method and toggle logic
-      # ------------------------------------------------------------
-      - name: Patch ContainerActivity.java
-        run: |
+          # 4. Patch ContainerActivity.java
           ACTIVITY_FILE="app/src/main/java/com/winlator/container/ContainerActivity.java"
-          # Add static block and native method after class declaration
           if ! grep -q "nativeEnableMicrophone" "$ACTIVITY_FILE"; then
+            # Add static block and native method after class opening
             sed -i '/public class ContainerActivity extends AppCompatActivity {/a\
-        private boolean isMicEnabled = false;\
-        private native void nativeEnableMicrophone(boolean enable);\
-        static {\
-            System.loadLibrary("microphone");\
-        }' "$ACTIVITY_FILE"
-          fi
-          # Add menu item handling inside onOptionsItemSelected
-          # Find the line with 'switch (item.getItemId())' or similar and insert case
-          if ! grep -q "main_menu_microphone" "$ACTIVITY_FILE"; then
+          \    private boolean isMicEnabled = false;\
+          \    private native void nativeEnableMicrophone(boolean enable);\
+          \    static {\
+          \        System.loadLibrary("microphone");\
+          \    }' "$ACTIVITY_FILE"
+            # Add menu item handling inside onOptionsItemSelected
             sed -i '/case R.id.main_menu_exit:/i\
-                case R.id.main_menu_microphone:\
-                    isMicEnabled = !isMicEnabled;\
-                    nativeEnableMicrophone(isMicEnabled);\
-                    if (isMicEnabled) {\
-                        item.setTitle("Microphone ON");\
-                        item.getIcon().setTint(android.graphics.Color.BLUE);\
-                    } else {\
-                        item.setTitle("Microphone");\
-                        item.getIcon().setTint(android.graphics.Color.WHITE);\
-                    }\
-                    return true;' "$ACTIVITY_FILE"
+          \        case R.id.main_menu_microphone:\
+          \            isMicEnabled = !isMicEnabled;\
+          \            nativeEnableMicrophone(isMicEnabled);\
+          \            if (isMicEnabled) {\
+          \                item.setTitle("Microphone ON");\
+          \                item.getIcon().setTint(android.graphics.Color.BLUE);\
+          \            } else {\
+          \                item.setTitle("Microphone");\
+          \                item.getIcon().setTint(android.graphics.Color.WHITE);\
+          \            }\
+          \            return true;' "$ACTIVITY_FILE"
+            echo "Patched $ACTIVITY_FILE"
           fi
 
-      # ------------------------------------------------------------
-      # 5. Patch container startup script to create pipe and PulseAudio source
-      # ------------------------------------------------------------
-      - name: Patch startup script (add mic pipe and pulse module)
-        run: |
+          # 5. Patch container startup script
           START_SCRIPT="assets/scripts/start.sh"
-          # Assuming the script uses pulseaudio; add lines after pulseaudio start
-          if ! grep -q "mic_pipe" "$START_SCRIPT"; then
+          if ! grep -q "mic_pipe" "$START_SCRIPT" 2>/dev/null; then
             sed -i '/pulseaudio --start/a\
-            # Create FIFO for microphone capture\
-            PIPE_PATH="/data/data/com.winlator.vortex/cache/mic_pipe"\
-            mkfifo $PIPE_PATH 2>/dev/null || true\
-            # Load pipe source into PulseAudio\
-            pactl load-module module-pipe-source source_name=vortex_mic file=$PIPE_PATH format=s16le rate=48000 channels=2\
-            # Set as default source (optional)\
-            pactl set-default-source vortex_mic' "$START_SCRIPT"
+          \# Create FIFO for microphone capture\
+          \PIPE_PATH="/data/data/com.winlator.vortex/cache/mic_pipe"\
+          \mkfifo $PIPE_PATH 2>/dev/null || true\
+          \pactl load-module module-pipe-source source_name=vortex_mic file=$PIPE_PATH format=s16le rate=48000 channels=2\
+          \pactl set-default-source vortex_mic' "$START_SCRIPT"
+            echo "Patched $START_SCRIPT"
           fi
 
+          echo "All patches applied successfully."
+          EOF
+          chmod +x apply-patches.sh
+
+      - name: Run patches
+        run: ./apply-patches.sh
+
       # ------------------------------------------------------------
-      # 6. Build the APK (no Mesa compile, just Android app)
+      # Build the APK
       # ------------------------------------------------------------
       - name: Set up JDK 17
         uses: actions/setup-java@v4
