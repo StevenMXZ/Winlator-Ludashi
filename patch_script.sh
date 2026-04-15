@@ -8,7 +8,7 @@ if ! grep -q "RECORD_AUDIO" "$MANIFEST"; then
     <uses-permission android:name="android.permission.RECORD_AUDIO" />' "$MANIFEST"
 fi
 
-# 2. Add microphone menu item
+# 2. Add microphone menu item (drawable name is ic_mic)
 MENU_FILE="app/src/main/res/menu/xserver_menu.xml"
 if ! grep -q "main_menu_microphone" "$MENU_FILE"; then
   sed -i '/<\/group>/i\
@@ -18,7 +18,7 @@ if ! grep -q "main_menu_microphone" "$MENU_FILE"; then
             android:title="Microphone" />' "$MENU_FILE"
 fi
 
-# 3. Patch XServerDisplayActivity.java (add imports, fields, methods, menu handling)
+# 3. Patch XServerDisplayActivity.java
 ACTIVITY_FILE="app/src/main/java/com/winlator/cmod/XServerDisplayActivity.java"
 if ! grep -q "nativeEnableMicrophone" "$ACTIVITY_FILE"; then
   # Add imports
