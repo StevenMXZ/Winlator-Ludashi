@@ -1,39 +1,67 @@
 #!/bin/bash
 set -e
 
-# 0. Create dummy adrenotools header to satisfy #include
-ADRENOTOOLS_DIR="app/src/main/cpp/adrenotools/include/adrenotools"
-mkdir -p "$ADRENOTOOLS_DIR"
-cat > "$ADRENOTOOLS_DIR/driver.h" << 'EOF'
+# ------------------------------------------------------------
+# 0. Create dummy adrenotools library to satisfy vulkan.c
+# ------------------------------------------------------------
+ADRENOTOOLS_DIR="app/src/main/cpp/adrenotools"
+mkdir -p "$ADRENOTOOLS_DIR/include/adrenotools"
+
+# Header file
+cat > "$ADRENOTOOLS_DIR/include/adrenotools/driver.h" << 'EOF'
 #ifndef ADRENOTOOLS_DRIVER_H
 #define ADRENOTOOLS_DRIVER_H
 
-// Dummy header to satisfy build
-typedef struct adrenotools_driver {
-    int dummy;
-} adrenotools_driver;
+#include <dlfcn.h>
+
+#define ADRENOTOOLS_DRIVER_CUSTOM 0
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void* adrenotools_open_libvulkan(int flags, int driver_type, const char* tmpdir,
+                                 const char* native_library_dir, const char* driver_path,
+                                 const char* library_name, void* unused1, void* unused2);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // ADRENOTOOLS_DRIVER_H
 EOF
-echo "Created dummy adrenotools/driver.h"
 
-# Also create a dummy CMakeLists.txt in adrenotools directory (if not exists)
-if [ ! -f "app/src/main/cpp/adrenotools/CMakeLists.txt" ]; then
-  mkdir -p app/src/main/cpp/adrenotools
-  cat > app/src/main/cpp/adrenotools/CMakeLists.txt << 'EOF'
-# Dummy CMakeLists.txt for adrenotools
+# Implementation source
+cat > "$ADRENOTOOLS_DIR/adrenotools.c" << 'EOF'
+#include "include/adrenotools/driver.h"
+#include <dlfcn.h>
+
+void* adrenotools_open_libvulkan(int flags, int driver_type, const char* tmpdir,
+                                 const char* native_library_dir, const char* driver_path,
+                                 const char* library_name, void* unused1, void* unused2) {
+    // Just open the system Vulkan loader
+    return dlopen("libvulkan.so", flags);
+}
 EOF
-  echo "Created dummy adrenotools CMakeLists.txt"
-fi
 
+# CMakeLists.txt for the adrenotools subdirectory
+cat > "$ADRENOTOOLS_DIR/CMakeLists.txt" << 'EOF'
+add_library(adrenotools STATIC adrenotools.c)
+target_include_directories(adrenotools PUBLIC include)
+EOF
+
+# ------------------------------------------------------------
 # 1. Add RECORD_AUDIO permission
+# ------------------------------------------------------------
 MANIFEST="app/src/main/AndroidManifest.xml"
 if ! grep -q "RECORD_AUDIO" "$MANIFEST"; then
   sed -i '/<uses-permission android:name="android.permission.INTERNET"\/>/a\
     <uses-permission android:name="android.permission.RECORD_AUDIO" />' "$MANIFEST"
 fi
 
+# ------------------------------------------------------------
 # 2. Add microphone menu item
+# ------------------------------------------------------------
 MENU_FILE="app/src/main/res/menu/xserver_menu.xml"
 if ! grep -q "main_menu_microphone" "$MENU_FILE"; then
   sed -i '/<\/group>/i\
@@ -43,7 +71,9 @@ if ! grep -q "main_menu_microphone" "$MENU_FILE"; then
             android:title="Microphone" />' "$MENU_FILE"
 fi
 
+# ------------------------------------------------------------
 # 3. Patch XServerDisplayActivity.java
+# ------------------------------------------------------------
 ACTIVITY_FILE="app/src/main/java/com/winlator/cmod/XServerDisplayActivity.java"
 if ! grep -q "nativeEnableMicrophone" "$ACTIVITY_FILE"; then
   # Add imports
@@ -58,7 +88,7 @@ if ! grep -q "nativeEnableMicrophone" "$ACTIVITY_FILE"; then
         System.loadLibrary("microphone");\
     }' "$ACTIVITY_FILE"
 
-  # Add permission methods and fixed updateMicMenuItem
+  # Add permission methods and updateMicMenuItem
   sed -i '/^}/i\
     private void checkAndRequestMicrophonePermission() {\
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {\
@@ -110,7 +140,9 @@ if ! grep -q "nativeEnableMicrophone" "$ACTIVITY_FILE"; then
                 return true;' "$ACTIVITY_FILE"
 fi
 
-# 4. Create native capture source
+# ------------------------------------------------------------
+# 4. Create native microphone capture source
+# ------------------------------------------------------------
 mkdir -p app/src/main/cpp
 cat > app/src/main/cpp/MicrophoneCapture.cpp << 'CPP_EOF'
 #include <jni.h>
@@ -164,14 +196,18 @@ Java_com_winlator_cmod_XServerDisplayActivity_nativeEnableMicrophone(JNIEnv* env
 }
 CPP_EOF
 
+# ------------------------------------------------------------
 # 5. Update CMakeLists.txt to include our library
+# ------------------------------------------------------------
 CMAKE_FILE="app/src/main/cpp/CMakeLists.txt"
 if ! grep -q "microphone" "$CMAKE_FILE"; then
   echo 'add_library(microphone SHARED MicrophoneCapture.cpp)' >> "$CMAKE_FILE"
   echo 'target_link_libraries(microphone log OpenSLES)' >> "$CMAKE_FILE"
 fi
 
+# ------------------------------------------------------------
 # 6. Patch startup script for PulseAudio mic source (optional)
+# ------------------------------------------------------------
 START_SCRIPT="assets/scripts/start.sh"
 if [ -f "$START_SCRIPT" ] && ! grep -q "mic_pipe" "$START_SCRIPT"; then
   sed -i '/pulseaudio --start/a\
