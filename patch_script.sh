@@ -1,6 +1,18 @@
 #!/bin/bash
 set -e
 
+# 0. Fix missing adrenotools subdirectory (if needed)
+ADRENOTOOLS_DIR="app/src/main/cpp/adrenotools"
+if [ ! -f "$ADRENOTOOLS_DIR/CMakeLists.txt" ]; then
+  mkdir -p "$ADRENOTOOLS_DIR"
+  cat > "$ADRENOTOOLS_DIR/CMakeLists.txt" << 'EOF'
+# Dummy CMakeLists.txt to satisfy add_subdirectory
+# This is a placeholder for adrenotools which is not present.
+# Real adrenotools would be added if needed.
+EOF
+  echo "Created dummy adrenotools CMakeLists.txt"
+fi
+
 # 1. Add RECORD_AUDIO permission
 MANIFEST="app/src/main/AndroidManifest.xml"
 if ! grep -q "RECORD_AUDIO" "$MANIFEST"; then
@@ -132,7 +144,7 @@ Java_com_winlator_cmod_XServerDisplayActivity_nativeEnableMicrophone(JNIEnv* env
 }
 CPP_EOF
 
-# 5. Update CMakeLists.txt
+# 5. Update CMakeLists.txt (append our library, but also ensure adrenotools dummy is there)
 CMAKE_FILE="app/src/main/cpp/CMakeLists.txt"
 if ! grep -q "microphone" "$CMAKE_FILE"; then
   echo 'add_library(microphone SHARED MicrophoneCapture.cpp)' >> "$CMAKE_FILE"
