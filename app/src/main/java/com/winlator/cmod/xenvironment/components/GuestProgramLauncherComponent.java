@@ -21,6 +21,7 @@ import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.GPUInformation;
 import com.winlator.cmod.core.KeyValueSet;
+import com.winlator.cmod.core.LsfgVkManager;
 import com.winlator.cmod.core.ProcessHelper;
 import com.winlator.cmod.core.TarCompressorUtils;
 import com.winlator.cmod.core.WineInfo;
@@ -371,6 +372,10 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         if (this.envVars != null) {
             envVars.putAll(this.envVars);
         }
+
+        LsfgVkManager.ensureRuntimeInstalled(context, container);
+        LsfgVkManager.writeConfig(container);
+        LsfgVkManager.applyLaunchEnv(container, envVars);
 
         String emulator = container.getEmulator();
         if (shortcut != null)
