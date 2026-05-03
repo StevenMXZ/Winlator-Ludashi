@@ -25,7 +25,11 @@ import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
+import android.widget.SeekBar;
 import android.widget.Spinner;
+import android.widget.Toast;
 import android.widget.Switch;
 import android.widget.TextView;
 
@@ -58,6 +62,8 @@ import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.GPUInformation;
 import com.winlator.cmod.core.KeyValueSet;
+import com.winlator.cmod.core.LsfgQuickMenuHelper;
+import com.winlator.cmod.core.LsfgVkManager;
 import com.winlator.cmod.core.OnExtractFileListener;
 import com.winlator.cmod.core.PreloaderDialog;
 import com.winlator.cmod.core.ProcessHelper;
@@ -1187,6 +1193,109 @@ private void setupLeftSidebar() {
         if (hasShortcutGraphicsPreset) {
             applySidebarSettings();
         }
+
+        View btLsfg = findViewById(R.id.BTLsfgSettings);
+        if (btLsfg != null) {
+            btLsfg.setOnClickListener(v -> {
+                showLsfgQuickDialog();
+                drawerLayout.closeDrawers();
+            });
+        }
+    }
+
+    private void showLsfgQuickDialog() {
+        if (container == null) {
+            Toast.makeText(this, "Container is not ready", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        boolean dllAvailable = LsfgVkManager.containerDllPath(container) != null
+                || LsfgVkManager.isGlobalDllAvailable(this)
+                || LsfgVkManager.isBundledDllAvailable(this);
+        if (!dllAvailable) {
+            new androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("LSFG-VK")
+                    .setMessage("Lossless.dll not found. Import it from app settings or place it inside the container.")
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
+
+        final int[] selectedMultiplier = {LsfgVkManager.multiplier(container)};
+        final float[] selectedFlowScale = {LsfgVkManager.flowScale(container)};
+        final boolean[] selectedPerformanceMode = {LsfgVkManager.performanceMode(container)};
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = (int) (getResources().getDisplayMetrics().density * 16f);
+        layout.setPadding(padding, padding / 2, padding, 0);
+
+        TextView description = new TextView(this);
+        description.setText("Frame multiplier — generates intermediate frames between rendered ones.");
+        layout.addView(description);
+
+        RadioGroup multiplierGroup = new RadioGroup(this);
+        multiplierGroup.setOrientation(RadioGroup.VERTICAL);
+        int[] multiplierValues = {0, 2, 3, 4};
+        for (int value : multiplierValues) {
+            RadioButton rb = new RadioButton(this);
+            rb.setId(View.generateViewId());
+            rb.setTag(value);
+            rb.setText(value == 0 ? "Off" : value + "x");
+            boolean checked = (value == selectedMultiplier[0])
+                    || (value == 0 && selectedMultiplier[0] < 2);
+            rb.setChecked(checked);
+            multiplierGroup.addView(rb);
+        }
+        multiplierGroup.setOnCheckedChangeListener((group, checkedId) -> {
+            View checked = group.findViewById(checkedId);
+            if (checked != null && checked.getTag() instanceof Integer) {
+                selectedMultiplier[0] = (Integer) checked.getTag();
+            }
+        });
+        layout.addView(multiplierGroup);
+
+        TextView flowLabel = new TextView(this);
+        flowLabel.setPadding(0, padding, 0, 0);
+        flowLabel.setText(String.format(java.util.Locale.US, "Flow scale: %.2f", selectedFlowScale[0]));
+        layout.addView(flowLabel);
+
+        SeekBar flowScaleSeekBar = new SeekBar(this);
+        flowScaleSeekBar.setMax(15);
+        flowScaleSeekBar.setProgress(Math.round((selectedFlowScale[0] - 0.25f) / 0.05f));
+        flowScaleSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
+                selectedFlowScale[0] = 0.25f + progress * 0.05f;
+                flowLabel.setText(String.format(java.util.Locale.US, "Flow scale: %.2f", selectedFlowScale[0]));
+            }
+            @Override public void onStartTrackingTouch(SeekBar sb) {}
+            @Override public void onStopTrackingTouch(SeekBar sb) {}
+        });
+        layout.addView(flowScaleSeekBar);
+
+        CheckBox performanceModeCheckBox = new CheckBox(this);
+        performanceModeCheckBox.setText("Performance mode (lower quality, higher FPS)");
+        performanceModeCheckBox.setChecked(selectedPerformanceMode[0]);
+        performanceModeCheckBox.setOnCheckedChangeListener((cb, isChecked) -> selectedPerformanceMode[0] = isChecked);
+        layout.addView(performanceModeCheckBox);
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("LSFG-VK")
+                .setView(layout)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    int multiplier = selectedMultiplier[0];
+                    boolean enabled = multiplier > 0;
+                    LsfgQuickMenuHelper.applySettings(container,
+                            new LsfgQuickMenuHelper.Settings(multiplier, selectedFlowScale[0], selectedPerformanceMode[0]));
+                    if (enabled) {
+                        LsfgVkManager.ensureRuntimeInstalled(this, container);
+                        LsfgVkManager.writeConfig(container);
+                    }
+                    String label = enabled ? (multiplier + "x") : "Off";
+                    Toast.makeText(this, "LSFG: " + label, Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void updateSidebarHud() {
