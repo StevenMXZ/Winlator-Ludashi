@@ -555,12 +555,10 @@
             </FrameLayout>
 
             <FrameLayout
-                style="@style/FieldSetWrapper"
-                android:layout_marginTop="16dp">
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
 
-                <LinearLayout
-                    style="@style/FieldSet"
-                    android:orientation="vertical">
+                <LinearLayout style="@style/FieldSet">
 
                     <TextView
                         android:layout_width="wrap_content"
