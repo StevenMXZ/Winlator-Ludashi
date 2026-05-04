@@ -13,7 +13,6 @@ import java.io.InputStream;
 import java.util.Locale;
 
 public abstract class LsfgVkManager {
-    private static final String ASSET_DLL = "lsfg_vk/Lossless.dll";
     private static final String ASSET_LIB = "lsfg_vk/android_arm64_v8a/liblsfg-vk-layer.so";
     private static final String ASSET_MANIFEST = "lsfg_vk/android_arm64_v8a/VkLayer_LS_frame_generation.json";
     private static final String CONFIG_RELATIVE_PATH = ".config/lsfg-vk/conf.toml";
@@ -35,10 +34,6 @@ public abstract class LsfgVkManager {
     public static boolean isGlobalDllAvailable(Context context) {
         File dllFile = globalDllFile(context);
         return dllFile != null && dllFile.isFile() && dllFile.length() > 0;
-    }
-
-    public static boolean isBundledDllAvailable(Context context) {
-        return bundledDllSize(context) > 0;
     }
 
     public static File globalDllFile(Context context) {
@@ -158,31 +153,16 @@ public abstract class LsfgVkManager {
         }
 
         File globalDll = globalDllFile(context);
-        File sourceDll = (globalDll != null && globalDll.isFile()) ? globalDll : null;
         File dllFile = new File(dllDir, LOSSLESS_DLL_NAME);
 
-        if (sourceDll == null) {
-            if (isBundledDllAvailable(context)) {
-                try {
-                    long bundledSize = bundledDllSize(context);
-                    if (!dllFile.isFile() || dllFile.length() != bundledSize) {
-                        dllDir.mkdirs();
-                        FileUtils.copy(context, ASSET_DLL, dllFile);
-                        FileUtils.chmod(dllFile, 420);
-                    }
-                    return success;
-                } catch (Throwable t) {
-                    Log.e(TAG, "Failed to copy bundled Lossless.dll into container", t);
-                    return false;
-                }
-            }
+        if (globalDll == null || !globalDll.isFile()) {
             return !isEnabled(container) && success;
         }
 
         try {
-            if (!dllFile.isFile() || dllFile.length() != sourceDll.length()) {
+            if (!dllFile.isFile() || dllFile.length() != globalDll.length()) {
                 dllDir.mkdirs();
-                FileUtils.copy(sourceDll, dllFile);
+                FileUtils.copy(globalDll, dllFile);
                 FileUtils.chmod(dllFile, 420);
             }
             return success;
@@ -246,19 +226,6 @@ public abstract class LsfgVkManager {
         File manifest = new File(container.getRootDir(), ".local/share/vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json");
         if (manifest.exists() && !manifest.delete()) {
             Log.w(TAG, "Failed to remove disabled LSFG manifest: " + manifest);
-        }
-    }
-
-    private static long bundledDllSize(Context context) {
-        if (context == null) return 0L;
-        try (InputStream in = context.getAssets().open(ASSET_DLL)) {
-            byte[] buffer = new byte[131072];
-            long total = 0;
-            int len;
-            while ((len = in.read(buffer)) > 0) total += len;
-            return total;
-        } catch (Throwable t) {
-            return 0L;
         }
     }
 

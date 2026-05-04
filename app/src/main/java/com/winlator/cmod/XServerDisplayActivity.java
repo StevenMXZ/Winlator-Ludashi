@@ -1210,8 +1210,7 @@ private void setupLeftSidebar() {
         }
 
         boolean dllAvailable = LsfgVkManager.containerDllPath(container) != null
-                || LsfgVkManager.isGlobalDllAvailable(this)
-                || LsfgVkManager.isBundledDllAvailable(this);
+                || LsfgVkManager.isGlobalDllAvailable(this);
         if (!dllAvailable) {
             new androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("LSFG-VK")
