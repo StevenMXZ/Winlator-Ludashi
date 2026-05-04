@@ -48,6 +48,7 @@ import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.ArrayUtils;
 import com.winlator.cmod.core.Callback;
+import com.winlator.cmod.core.LsfgVkManager;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.PreloaderDialog;
 import com.winlator.cmod.core.TarCompressorUtils;
@@ -97,6 +98,7 @@ public class SettingsFragment extends Fragment {
     private static final int REQUEST_CODE_INSTALL_SOUNDFONT = 1001;
     private static final int REQUEST_CODE_IMPORT_BOX64_PRESET = 1004;
     private static final int REQUEST_CODE_IMPORT_FEXCORE_PRESET = 1005;
+    private static final int REQUEST_CODE_IMPORT_LOSSLESS_DLL = 1006;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -343,9 +345,31 @@ public class SettingsFragment extends Fragment {
             }
         });
 
-
+        setupLosslessDllImport(view);
 
         return view;
+    }
+
+    private void setupLosslessDllImport(View view) {
+        View importButton = view.findViewById(R.id.BTImportLosslessDll);
+        if (importButton != null) {
+            importButton.setOnClickListener(v -> openFile(REQUEST_CODE_IMPORT_LOSSLESS_DLL));
+        }
+        updateLosslessDllStatus(view);
+    }
+
+    private void updateLosslessDllStatus(View view) {
+        if (view == null) return;
+        TextView statusView = view.findViewById(R.id.TVLosslessDllStatus);
+        if (statusView == null) return;
+        Context ctx = getContext();
+        if (ctx == null) return;
+        String dllPath = LsfgVkManager.globalDllPath(ctx);
+        if (dllPath != null) {
+            statusView.setText("Imported: " + dllPath);
+        } else {
+            statusView.setText("Lossless.dll not present. Import it to enable LSFG-VK.");
+        }
     }
 
     private void updateTheme(boolean isDarkMode) {
@@ -740,6 +764,12 @@ public class SettingsFragment extends Fragment {
                             FEXCorePresetManager.loadSpinner(sFEXCorePreset, preferences.getString("fexcore_preset", FEXCorePreset.INTERMEDIATE));
                         } catch (FileNotFoundException e) {
                         }
+                        break;
+                    case REQUEST_CODE_IMPORT_LOSSLESS_DLL:
+                        boolean imported = LsfgVkManager.importGlobalLosslessDll(requireContext(), uri);
+                        AppUtils.showToast(getContext(),
+                                imported ? "Lossless.dll imported" : "Failed to import Lossless.dll");
+                        updateLosslessDllStatus(getView());
                         break;
                     default:
                         break;
