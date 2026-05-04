@@ -367,8 +367,6 @@ public class SettingsFragment extends Fragment {
         String dllPath = LsfgVkManager.globalDllPath(ctx);
         if (dllPath != null) {
             statusView.setText("Imported: " + dllPath);
-        } else if (LsfgVkManager.isBundledDllAvailable(ctx)) {
-            statusView.setText("Using bundled Lossless.dll (override by importing your own).");
         } else {
             statusView.setText("Lossless.dll not present. Import it to enable LSFG-VK.");
         }
