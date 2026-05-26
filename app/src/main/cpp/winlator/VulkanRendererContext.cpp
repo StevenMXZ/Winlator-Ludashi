@@ -1907,17 +1907,34 @@ void VulkanRendererContext::applyScanoutBuffer() {
      * (COMPATIBILITY_DEFAULT) lets SF pick the nearest panel rate it
      * supports — so 58 fps → 60 Hz, 88 fps → 90 Hz, 118 fps → 120 Hz.
      *
-     * g_vsync_period_us_measured is defined in ahb_layer.c and updated
-     * by the release-reader thread (no mutex needed here — reading a 64-bit
-     * value written by another thread is safe on ARM64 with relaxed ordering
-     * for this advisory purpose).
+     * Measured locally from the interval between successive applyScanoutBuffer
+     * calls using a simple EMA (alpha=0.1). This avoids the need for a cross-SO
+     * extern into ahb_layer.c (which is built as a separate Wine-side .so and is
+     * NOT linked with vulkan_renderer.so).
      */
-    extern uint64_t g_vsync_period_us_measured;
     if (fnSTSetFrameRate) {
         static int frameRateUpdateCounter = 0;
+        static uint64_t s_last_present_us = 0;
+        static uint64_t s_period_ema_us   = 0;
+
+        /* Measure interval between successive presents. */
+        struct timespec ts_now;
+        clock_gettime(CLOCK_MONOTONIC, &ts_now);
+        uint64_t nowUs = (uint64_t)ts_now.tv_sec * 1000000ULL + (uint64_t)(ts_now.tv_nsec / 1000);
+        if (s_last_present_us != 0) {
+            uint64_t intervalUs = nowUs - s_last_present_us;
+            /* Clamp interval to plausible range (4ms–50ms = 20–240 Hz) before EMA. */
+            if (intervalUs >= 4000 && intervalUs <= 50000) {
+                s_period_ema_us = (s_period_ema_us == 0)
+                    ? intervalUs
+                    : (s_period_ema_us * 9 + intervalUs) / 10;
+            }
+        }
+        s_last_present_us = nowUs;
+
         if (++frameRateUpdateCounter >= 60) {
             frameRateUpdateCounter = 0;
-            uint64_t periodUs = g_vsync_period_us_measured;
+            uint64_t periodUs = s_period_ema_us;
             if (periodUs > 0) {
                 float fps = 1000000.0f / (float)periodUs;
                 /* Clamp to sane range — don't hint below 24 or above 144. */

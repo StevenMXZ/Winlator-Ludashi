@@ -24,9 +24,7 @@ import android.net.LocalSocket;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 
-import java.io.FileDescriptor;
 import java.io.IOException;
-import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayDeque;
@@ -51,6 +49,8 @@ public class WinHandler {
      */
     private static final String SERVER_SOCKET_NAME = "winlator_input_srv";
     private static final String CLIENT_SOCKET_NAME = "winlator_input_cli";
+    /* CLIENT_PORT kept for call-site compatibility; ignored by Unix-socket sendPacket(). */
+    private static final int CLIENT_PORT = 0;
     public static final byte FLAG_INPUT_TYPE_XINPUT = 0x04;
     public static final byte FLAG_INPUT_TYPE_DINPUT = 0x08;
     public static final byte DEFAULT_INPUT_TYPE = FLAG_INPUT_TYPE_XINPUT;
