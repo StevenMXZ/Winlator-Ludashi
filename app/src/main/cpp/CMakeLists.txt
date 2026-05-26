@@ -36,6 +36,7 @@ target_link_libraries(winlator
         GLESv2
         GLESv3
         adrenotools
+        dl
 )
 
 add_library(fakeinput SHARED

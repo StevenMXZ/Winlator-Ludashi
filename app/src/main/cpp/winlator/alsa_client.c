@@ -22,6 +22,7 @@
 
 #include <aaudio/AAudio.h>
 #include <android/log.h>
+#include <dlfcn.h>     /* dlopen/dlsym for API 28+ AAudio functions */
 #include <jni.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -167,20 +168,36 @@ static StreamCtx *aaudioCreate(int32_t format, int8_t channelCount,
 
     /*
      * AAUDIO_PERFORMANCE_MODE_LOW_LATENCY: request the smallest buffer the
-     * HAL will give us (FAST path on Qualcomm = ~5 ms round-trip).
-     *
-     * AAUDIO_USAGE_GAME / CONTENT_TYPE_SONIFICATION (Android 9.0 / API 28+):
-     * On SM8550/OOS this routes through the game mixing path in the ADSP —
-     * different from MEDIA in scheduler priority and DSP latency budget.
-     * The functions are explicitly marked unavailable below API 28, so we
-     * guard them with __builtin_available — at API 26/27 the stream still
-     * works, just without the game-specific routing hint.
+     * HAL will give us (FAST path on Qualcomm = ~5 ms round-trip). Available
+     * since API 26, so no guard needed.
      */
     AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
-    if (__builtin_available(android 28, *)) {
-        AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_GAME);
-        AAudioStreamBuilder_setContentType(builder, AAUDIO_CONTENT_TYPE_SONIFICATION);
+
+    /* setUsage / setContentType are API 28+. The NDK headers mark them
+     * __INTRODUCED_IN(28), which makes them a hard compile error below the
+     * project's minSdk=26 (yes, even when wrapped in __builtin_available — a
+     * known NDK quirk). Load them dynamically via dlsym instead: present at
+     * runtime on Android 9.0+, absent (and silently skipped) on 8.0/8.1.
+     *
+     * Resolved once, cached in static pointers — the dlsym calls happen on
+     * the first stream open, never on the hot audio path. */
+    typedef void (*pfn_setUsage)(AAudioStreamBuilder*, aaudio_usage_t);
+    typedef void (*pfn_setContentType)(AAudioStreamBuilder*, aaudio_content_type_t);
+    static pfn_setUsage       s_setUsage       = NULL;
+    static pfn_setContentType s_setContentType = NULL;
+    static int                s_aaudio_probed  = 0;
+    if (!s_aaudio_probed) {
+        s_aaudio_probed = 1;
+        /* libaaudio.so is already loaded (we use core AAudio functions above);
+         * RTLD_DEFAULT searches the loaded namespace without re-opening it. */
+        s_setUsage       = (pfn_setUsage)      dlsym(RTLD_DEFAULT, "AAudioStreamBuilder_setUsage");
+        s_setContentType = (pfn_setContentType)dlsym(RTLD_DEFAULT, "AAudioStreamBuilder_setContentType");
+        LOGI("aaudio API 28 features: setUsage=%s setContentType=%s",
+             s_setUsage ? "yes" : "no", s_setContentType ? "yes" : "no");
     }
+    if (s_setUsage)       s_setUsage(builder, AAUDIO_USAGE_GAME);
+    if (s_setContentType) s_setContentType(builder, AAUDIO_CONTENT_TYPE_SONIFICATION);
+
     AAudioStreamBuilder_setFormat(builder, fmt);
     AAudioStreamBuilder_setChannelCount(builder, channelCount);
     AAudioStreamBuilder_setSampleRate(builder, sampleRate);
