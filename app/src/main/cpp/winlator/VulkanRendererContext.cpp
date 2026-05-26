@@ -5,6 +5,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <poll.h>
+#include <errno.h>
 #include <dlfcn.h>
 #include "window_vert.h"
 #include "window_frag.h"
@@ -98,6 +102,12 @@ void VulkanRendererContext::loadDeviceDispatch() {
     LOAD_D2(GetSwapchainImagesKHR);
     LOAD_D2(AcquireNextImageKHR);
     LOAD_D2(QueuePresentKHR);
+    /* VK_GOOGLE_display_timing function pointers. Both are optional —
+     * displayTimingSupported gates whether they're used. The lookups
+     * return nullptr on devices without the extension; we still call
+     * LOAD_D2 unconditionally so the table is consistent. */
+    LOAD_D2(GetPastPresentationTimingGOOGLE);
+    LOAD_D2(GetRefreshCycleDurationGOOGLE);
     LOAD_D2(QueueSubmit);
     LOAD_D2(CreateRenderPass);
     LOAD_D2(DestroyRenderPass);
@@ -147,6 +157,7 @@ void VulkanRendererContext::loadDeviceDispatch() {
     LOAD_D2(CmdSetScissor);
     LOAD_D2(CmdPipelineBarrier);
     LOAD_D2(CmdCopyImage);
+    LOAD_D2(CmdBlitImage);
     LOAD_D2(CmdCopyBufferToImage);
     LOAD_D2(CreateSampler);
     LOAD_D2(DestroySampler);
@@ -225,12 +236,25 @@ void VulkanRendererContext::createLogicalDevice() {
       for (auto& e:av) {
           if (strcmp(e.extensionName,"VK_EXT_filter_cubic")==0
            || strcmp(e.extensionName,"VK_IMG_filter_cubic")==0) cubicSupported=true;
+          /* VK_GOOGLE_display_timing: enables vkGetPastPresentationTimingGOOGLE
+           * which returns the CLOCK_MONOTONIC actualPresentTime for past
+           * presents. Used to measure accurate Native (X11) compositor
+           * latency — the previous T2 hook (QueuePresent-return) fires
+           * before SF has displayed the frame, biasing the reading low. */
+          if (strcmp(e.extensionName, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME)==0)
+              displayTimingSupported = true;
       } }
     std::vector<const char*> extList = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME
     };
     if (cubicSupported) extList.push_back("VK_EXT_filter_cubic");
+    if (displayTimingSupported) extList.push_back(VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
+    RLOG("createLogicalDevice: VK_GOOGLE_display_timing %s (LAT HUD T2: %s)",
+         displayTimingSupported ? "ENABLED" : "not available",
+         displayTimingSupported
+            ? "actual displayed-at time (accurate)"
+            : "QueuePresent-return (under-reports by ~1 vsync)");
     VkDeviceCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     ci.pQueueCreateInfos=&qi; ci.queueCreateInfoCount=1;
     ci.enabledExtensionCount=(uint32_t)extList.size(); ci.ppEnabledExtensionNames=extList.data();
@@ -516,36 +540,43 @@ bool VulkanRendererContext::createWinTexResources(WinTex& wt, int w, int h) {
     return true;
 }
 
-bool VulkanRendererContext::importAHBToWinTex(WinTex& wt, AHardwareBuffer* ahb) {
+bool VulkanRendererContext::importAHBToWinTex(WinTex& wt, AHardwareBuffer* ahb, VkFormat overrideFormat) {
 
-    if (!vk_.GetAndroidHardwareBufferPropertiesANDROID) 
+    if (!vk_.GetAndroidHardwareBufferPropertiesANDROID)
     	return false;
-    	
-    VkAndroidHardwareBufferFormatPropertiesANDROID fmtP{}; 
+
+    VkAndroidHardwareBufferFormatPropertiesANDROID fmtP{};
     fmtP.sType=VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID;
-    VkAndroidHardwareBufferPropertiesANDROID props{}; 
-    props.sType=VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID; 
+    VkAndroidHardwareBufferPropertiesANDROID props{};
+    props.sType=VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID;
     props.pNext=&fmtP;
-    if (vk_.GetAndroidHardwareBufferPropertiesANDROID(device,ahb,&props)!=VK_SUCCESS) 
+    if (vk_.GetAndroidHardwareBufferPropertiesANDROID(device,ahb,&props)!=VK_SUCCESS)
     	return false;
-    	
-    AHardwareBuffer_Desc desc{}; 
+
+    AHardwareBuffer_Desc desc{};
     AHardwareBuffer_describe(ahb,&desc);
-    
-    VkExternalFormatANDROID ef{}; 
-    ef.sType=VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID; 
-    ef.externalFormat=(swapRB)?VK_FORMAT_R8G8B8A8_UNORM:VK_FORMAT_B8G8R8A8_UNORM;
-    
-    VkExternalMemoryImageCreateInfo emi{}; 
-    emi.sType=VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO; 
+
+    /* If caller supplied an explicit format (e.g. direct-render scanout
+     * needs B8G8R8A8 to match DXVK's written byte order), use it; else
+     * fall back to the swapRB-based default. */
+    VkFormat use_format = overrideFormat;
+    if (use_format == VK_FORMAT_UNDEFINED)
+        use_format = (swapRB) ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_B8G8R8A8_UNORM;
+
+    VkExternalFormatANDROID ef{};
+    ef.sType=VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID;
+    ef.externalFormat=use_format;
+
+    VkExternalMemoryImageCreateInfo emi{};
+    emi.sType=VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
     emi.handleTypes=VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID;
-    ef.pNext=const_cast<void*>(emi.pNext); 
+    ef.pNext=const_cast<void*>(emi.pNext);
     emi.pNext=&ef;
-    
-    VkImageCreateInfo ii{}; 
-    ii.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO; 
+
+    VkImageCreateInfo ii{};
+    ii.sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     ii.pNext=&emi; ii.imageType=VK_IMAGE_TYPE_2D;
-    ii.format=(swapRB)?VK_FORMAT_R8G8B8A8_UNORM:VK_FORMAT_B8G8R8A8_UNORM; 
+    ii.format=use_format;
     ii.extent={desc.width,desc.height,1};
     ii.mipLevels=1; 
     ii.arrayLayers=1; 
@@ -962,8 +993,100 @@ ok=true;}catch(...){}
     VkSwapchainKHR scs[]={swapchain};
     VkPresentInfoKHR pi{}; pi.sType=VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     pi.waitSemaphoreCount=1; pi.pWaitSemaphores=sSem; pi.swapchainCount=1; pi.pSwapchains=scs; pi.pImageIndices=&imgIdx;
+
+    /* === NATIVE X11 LATENCY: VK_GOOGLE_display_timing setup ===
+     *
+     * If the extension is supported, attach a unique presentId to this
+     * present and record (presentId, arriveT1) in the ring buffer. After
+     * QueuePresent returns we'll query past timings — the driver tells
+     * us the CLOCK_MONOTONIC nanosecond at which each past presentId was
+     * actually displayed on the panel. That's an apples-to-apples T2 vs
+     * DAC's setOnCommit (which fires at SF apply-tick, i.e. "buffer is
+     * on the display").
+     *
+     * desiredPresentTime=0 means "display ASAP" — no pacing constraint,
+     * just give us back the actual time.
+     *
+     * Without the extension we fall back to the previous QueuePresent-
+     * return timing below — directionally useful but biased low by ~1 vsync. */
+    VkPresentTimeGOOGLE pt{};
+    VkPresentTimesInfoGOOGLE pti{};
+    uint64_t thisArriveT1 = latencyX11ArriveUs.exchange(0, std::memory_order_relaxed);
+    if (displayTimingSupported && thisArriveT1 != 0) {
+        uint64_t thisPresentId = nextPresentId++;
+        pt.presentID = thisPresentId;
+        pt.desiredPresentTime = 0;
+        pti.sType = VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE;
+        pti.pNext = nullptr;
+        pti.swapchainCount = 1;
+        pti.pTimes = &pt;
+        pi.pNext = &pti;
+        presentRing[presentRingHead] = { thisPresentId, thisArriveT1 };
+        presentRingHead = (presentRingHead + 1) % PRESENT_RING_SIZE;
+    }
+
     res=vk_.QueuePresentKHR(graphicsQueue,&pi);
     if (res==VK_ERROR_OUT_OF_DATE_KHR||res==VK_ERROR_SURFACE_LOST_KHR) fbResized.store(true);
+
+    /* === T2 path A: query VK_GOOGLE_display_timing past timings ===
+     *
+     * vkGetPastPresentationTimingGOOGLE is non-blocking — returns whatever
+     * timings the driver has finalized (typically the present from ~2 frames
+     * ago). For each returned (presentId, actualPresentTime), look up the
+     * matching ring entry, compute T2 - T1, feed the EMA. */
+    if (displayTimingSupported && vk_.GetPastPresentationTimingGOOGLE
+        && res >= 0) {
+        uint32_t timingCount = 0;
+        vk_.GetPastPresentationTimingGOOGLE(device, swapchain, &timingCount, nullptr);
+        if (timingCount > 0) {
+            if (timingCount > PRESENT_RING_SIZE) timingCount = PRESENT_RING_SIZE;
+            VkPastPresentationTimingGOOGLE timings[PRESENT_RING_SIZE];
+            vk_.GetPastPresentationTimingGOOGLE(device, swapchain, &timingCount, timings);
+            for (uint32_t i = 0; i < timingCount; i++) {
+                /* actualPresentTime is CLOCK_MONOTONIC nanoseconds.
+                 * Convert to µs to match our EMA resolution. */
+                uint64_t displayedUs = timings[i].actualPresentTime / 1000ULL;
+                uint64_t pid = timings[i].presentID;
+                for (int j = 0; j < PRESENT_RING_SIZE; j++) {
+                    if (presentRing[j].presentId == pid
+                        && presentRing[j].arriveT1Us != 0) {
+                        if (displayedUs > presentRing[j].arriveT1Us) {
+                            uint64_t delta = displayedUs - presentRing[j].arriveT1Us;
+                            if (delta < 500000ULL) {  /* < 500 ms outlier guard */
+                                uint64_t prev = latencyEmaUs.load(std::memory_order_relaxed);
+                                uint64_t next = (prev == 0) ? delta : (prev * 7 + delta) / 8;
+                                latencyEmaUs.store(next, std::memory_order_relaxed);
+                            }
+                        }
+                        /* Mark consumed so a repeated echo doesn't double-count. */
+                        presentRing[j].arriveT1Us = 0;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    /* === T2 path B (fallback): QueuePresent-return ===
+     *
+     * Used on devices without VK_GOOGLE_display_timing. Same code as Phase 2:
+     * captures T2 immediately after QueuePresent returns. Under-reports the
+     * true compositor latency by ~1 vsync (SF queue + apply not included),
+     * but moves with the underlying compositor cost. */
+    else if (!displayTimingSupported && res >= 0 && thisArriveT1 != 0) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ULL
+                        + (uint64_t)ts.tv_nsec / 1000ULL;
+        if (now_us > thisArriveT1) {
+            uint64_t delta = now_us - thisArriveT1;
+            if (delta < 500000ULL) {
+                uint64_t prev = latencyEmaUs.load(std::memory_order_relaxed);
+                uint64_t next = (prev == 0) ? delta : (prev * 7 + delta) / 8;
+                latencyEmaUs.store(next, std::memory_order_relaxed);
+            }
+        }
+    }
+
     currentFrame=(currentFrame+1)%MAX_FRAMES_IN_FLIGHT;
 }
 
@@ -1170,6 +1293,7 @@ typedef void  (*pfn_STSetZOrder)(void*, void*, int32_t);
 typedef void  (*pfn_STSetVisibility)(void*, void*, int8_t);
 typedef void  (*pfn_STSetGeometry)(void*, void*, const ARect*, const ARect*, int32_t);
 typedef void  (*pfn_STSetBackPressure)(void*, void*, bool);
+typedef void  (*pfn_STSetOnComplete)(void*, void*, void (*)(void*, void*));
 
 bool VulkanRendererContext::loadScanoutApi() {
     if (scanoutApiLoaded) return fnSCCreateFromWin != nullptr;
@@ -1191,6 +1315,10 @@ bool VulkanRendererContext::loadScanoutApi() {
     fnSTSetVisibility = dlsym(lib, "ASurfaceTransaction_setVisibility");
     fnSTSetGeometry      = dlsym(lib, "ASurfaceTransaction_setGeometry");
     fnSTSetBackPressure  = dlsym(lib, "ASurfaceTransaction_setEnableBackPressure");
+    fnSTSetOnComplete    = dlsym(lib, "ASurfaceTransaction_setOnComplete");
+    fnSTSetOnCommit      = dlsym(lib, "ASurfaceTransaction_setOnCommit");   /* API 31+; preferred over setOnComplete for vsync pacing */
+    fnSTSetFrameRate     = dlsym(lib, "ASurfaceTransaction_setFrameRate"); /* API 30+; may be NULL on older Android */
+    fnSTSetBufferTransparency = dlsym(lib, "ASurfaceTransaction_setBufferTransparency"); /* API 29+ — mark SC opaque so SurfaceFlinger doesn't alpha-blend against background */
 
     bool coreOk = fnSCCreateFromWin && fnSCRelease &&
                   fnSTCreate && fnSTDelete && fnSTApply &&
@@ -1202,6 +1330,10 @@ bool VulkanRendererContext::loadScanoutApi() {
         return false;
     }
     if (!fnSTSetZOrder) SCANOUT_LOG("loadScanoutApi: setZOrder unavailable (non-critical)");
+    SCANOUT_LOG("loadScanoutApi: setFrameRate %s (needed for >60Hz refresh)",
+        fnSTSetFrameRate ? "available" : "NOT AVAILABLE (Android < 11?)");
+    SCANOUT_LOG("loadScanoutApi: setOnCommit %s (drives DXVK vkWaitForPresentKHR pacing)",
+        fnSTSetOnCommit ? "available" : "NOT AVAILABLE (Android < 12; falling back to setOnComplete)");
     const char* gpuBlitEnv = std::getenv("WINLATOR_SCANOUT_GPU_BLIT");
     scanoutEnvGpuBlit = (!gpuBlitEnv || gpuBlitEnv[0] == '1');
     scanoutAlwaysGpuBlit = scanoutEnvGpuBlit || swapRB;
@@ -1221,6 +1353,18 @@ bool VulkanRendererContext::loadScanoutApi() {
 #define ST_SETVIS(t,sc,v)     ((pfn_STSetVisibility)fnSTSetVisibility)((t),(sc),(v))
 #define ST_SETGEO(t,sc,s,d,r)  ((pfn_STSetGeometry)fnSTSetGeometry)((t),(sc),(s),(d),(r))
 #define ST_SETBP(t,sc,v)       if(fnSTSetBackPressure) ((pfn_STSetBackPressure)fnSTSetBackPressure)((t),(sc),(v))
+/* setBufferTransparency: API 29+. transparency=2 (OPAQUE) tells SurfaceFlinger to
+ * ignore the buffer's alpha channel during composition. DXVK leaves garbage in
+ * the alpha channel of its render targets (PC monitors aren't transparent so it
+ * doesn't bother). Without this flag, SurfaceFlinger treats those garbage alpha
+ * values as semi-transparency hints and alpha-blends our live frame against
+ * whatever stale framebuffer sits underneath the SurfaceControl — producing
+ * "ghosted/doubled motion" during camera movement because the eye sees both
+ * the new frame and a faded copy of an older one. Marking the SC OPAQUE makes
+ * compositing a straight overwrite and eliminates the ghost. */
+#define ST_TRANSPARENCY_OPAQUE 2
+#define ST_SETOPAQUE(t,sc)     do { if (fnSTSetBufferTransparency) \
+    ((void(*)(void*,void*,int8_t))fnSTSetBufferTransparency)((t),(sc),ST_TRANSPARENCY_OPAQUE); } while(0)
 
 void VulkanRendererContext::initScanout() {
     if (scanoutActive.load()) return;
@@ -1243,6 +1387,28 @@ void VulkanRendererContext::initScanout() {
     ST_SETZORDER(t, scanoutCursorSC, 1);
     ST_SETVIS(t, scanoutGameSC,   0);
     ST_SETVIS(t, scanoutCursorSC, 0);
+
+    /* NOTE: previously called ST_SETOPAQUE(t, scanoutGameSC) here based on
+     * the hypothesis that DXVK's garbage alpha was causing SurfaceFlinger
+     * to alpha-blend the live frame against the stale background. On the
+     * Odin 2 Portal that change appears to nudge SurfaceFlinger onto the
+     * hardware-overlay composition path, which on this SoC doesn't honor
+     * the layer's exported acquire-fence — producing tearing and a slot
+     * release stall that pinned FPS at ~15. Leaving the SC in default
+     * TRANSLUCENT mode until we have a verified-working hardware-overlay
+     * acquire-fence path. */
+
+    /* Request the panel's max refresh rate (e.g., 120 Hz on Odin 2 Portal).
+     * Compatibility=0 (DEFAULT) tells SurfaceFlinger to pick the nearest rate
+     * the panel actually supports. Without this, SurfaceFlinger defaults to
+     * 60 Hz which caps our onComplete-paced release chain at 60 fps. */
+    if (fnSTSetFrameRate) {
+        typedef void (*pfn_STSetFrameRate)(void*, void*, float, int8_t);
+        ((pfn_STSetFrameRate)fnSTSetFrameRate)(t, scanoutGameSC,   120.0f, 0);
+        ((pfn_STSetFrameRate)fnSTSetFrameRate)(t, scanoutCursorSC, 120.0f, 0);
+        SCANOUT_LOG("initScanout: requested 120 Hz frame rate on game/cursor SC");
+    }
+
     ST_APPLY(t);
     ST_DELETE(t);
 
@@ -1316,10 +1482,38 @@ void VulkanRendererContext::destroyScanout() {
     scanoutCursorBufW = scanoutCursorBufH = 0;
 }
 
-void VulkanRendererContext::scanoutSetBuffer(AHardwareBuffer* ahb, int x, int y, int w, int h) {
+void VulkanRendererContext::scanoutSetBuffer(AHardwareBuffer* ahb, int acquireFenceFd, int slotIndex, int x, int y, int w, int h, int bgraBytes) {
     if (!scanoutActive.load() || !scanoutGameSC || !ahb) {
-        RLOG("scanoutSetBuffer: SKIPPED active=%d sc=%p ahb=%p",
-            (int)scanoutActive.load(),scanoutGameSC,(void*)ahb);
+        RLOG("scanoutSetBuffer: SKIPPED active=%d sc=%p ahb=%p slot=%d",
+            (int)scanoutActive.load(),scanoutGameSC,(void*)ahb,slotIndex);
+        if (acquireFenceFd >= 0) close(acquireFenceFd);
+        /* Send MSG_RELEASE for this slot so Wine's AHB pool doesn't count
+         * it as in-flight. Without this, even brief scanoutActive=false
+         * windows (lock/unlock, transient onPause/onResume cycles from
+         * Android lifecycle events) leak slots — after 4 consecutive
+         * skipped frames, Wine's vkAcquireNextImageKHR blocks on
+         * pthread_cond_wait forever waiting for releases that will never
+         * come, and the game freezes. The release is marked displayed=0
+         * so the layer's pacing logic doesn't tick its display counter
+         * for a frame that was never actually displayed.
+         *
+         * Note: there's a similar fix in applyScanoutBuffer's SKIPPED
+         * path for the case where the SC state changes between this
+         * function and apply — in practice the early-return here catches
+         * essentially all such events because scanoutGameSC is the first
+         * thing nulled when DirectCompositorComponent.onPause runs. */
+        if (slotIndex >= 0) {
+            int sockFd = scanoutSocketFd.load(std::memory_order_relaxed);
+            if (sockFd >= 0) {
+                struct { uint8_t type; uint32_t slot_index; int32_t release_fd;
+                         uint8_t displayed; uint64_t vsync_time_ns; } rel{};
+                rel.type = 2; // MSG_RELEASE
+                rel.slot_index = (uint32_t)slotIndex;
+                rel.release_fd = -1;
+                rel.displayed = 0;
+                send(sockFd, &rel, sizeof(rel), MSG_NOSIGNAL);
+            }
+        }
         return;
     }
     static int _scanoutBufCnt=0;
@@ -1331,13 +1525,22 @@ void VulkanRendererContext::scanoutSetBuffer(AHardwareBuffer* ahb, int x, int y,
             d.format, d.width, d.height, (unsigned long long)d.usage,
             hasOverlay ? "YES" : "NO");
         scanoutNeedsGpuBlit = !hasOverlay;
+        /* NOTE: We previously tried to skip the local blit when the AHB had
+         * COMPOSER_OVERLAY. That regressed on the Odin 2 Portal: SurfaceFlinger
+         * put the SurfaceControl on a hardware overlay but didn't honor the
+         * layer's exported acquire-fence, producing visible scanline tearing,
+         * and slot release switched from ~1ms (local-copy-then-free) to
+         * ~33ms (OnComplete-driven), starving the layer's slot pool and
+         * collapsing FPS to ~15 via the pacing budget. Kept the local-blit
+         * path active by default until we have a working acquire-fence path
+         * on hardware overlays for this SoC. */
     }
-    AHardwareBuffer_acquire(ahb);
+    // AHardwareBuffer_acquire removed: pool owns the ref, SurfaceFlinger manages its own
     { std::lock_guard<std::mutex> lk(scanoutMutex);
-      if (scanoutPendingDirty.load() && scanoutPending.ahb && scanoutPending.ahb != ahb) {
-          AHardwareBuffer_release(scanoutPending.ahb);
+      if (scanoutPendingDirty.load() && scanoutPending.acquireFenceFd >= 0) {
+          close(scanoutPending.acquireFenceFd);
       }
-      scanoutPending = {ahb, x, y, w, h};
+      scanoutPending = {ahb, acquireFenceFd, slotIndex, x, y, w, h, bgraBytes};
       scanoutPendingDirty.store(true, std::memory_order_release); }
     needsRender.store(true, std::memory_order_release);
     dirtyCV.notify_one();
@@ -1363,6 +1566,8 @@ void VulkanRendererContext::initScanoutFromWindows(ANativeWindow* gameWin, ANati
     ST_SETZORDER(t, scanoutCursorSC, 1);
     ST_SETVIS(t, scanoutGameSC,   0);
     ST_SETVIS(t, scanoutCursorSC, 0);
+    /* Game SC kept in default TRANSLUCENT mode — see initScanout() for why
+     * we don't call ST_SETOPAQUE on this SoC. */
     ST_APPLY(t); ST_DELETE(t);
     gameScVisible = false; lastDstW = 0;
     gameFrameDelivered.store(false);
@@ -1392,7 +1597,8 @@ void VulkanRendererContext::initScanoutFromWindows(ANativeWindow* gameWin, ANati
 
 bool VulkanRendererContext::ensureScanoutLocalAhb(int w, int h, uint32_t ahbFormat) {
     if (scanoutLocalAhb && scanoutLocalImg != VK_NULL_HANDLE &&
-        scanoutLocalW == w && scanoutLocalH == h) {
+        scanoutLocalW == w && scanoutLocalH == h &&
+        scanoutLocalAhbFormat == ahbFormat) {
         return true;
     }
 
@@ -1489,6 +1695,7 @@ bool VulkanRendererContext::ensureScanoutLocalAhb(int w, int h, uint32_t ahbForm
 
     scanoutLocalW = w;
     scanoutLocalH = h;
+    scanoutLocalAhbFormat = ahbFormat;
     return true;
 }
 
@@ -1498,9 +1705,45 @@ void VulkanRendererContext::applyScanoutBuffer() {
     { std::lock_guard<std::mutex> lk(scanoutMutex);
       if (!scanoutPendingDirty.load()) return;
       p = scanoutPending;
+      scanoutPending.acquireFenceFd = -1; // ownership transferred to p
       scanoutPendingDirty.store(false, std::memory_order_relaxed); }
     AHardwareBuffer* ahb=p.ahb; int w=p.w, h=p.h; (void)p.x; (void)p.y;
-    if (!ahb || !scanoutGameSC) return;
+    int acquireFd = p.acquireFenceFd;
+    if (!ahb || !scanoutGameSC) {
+        if (acquireFd >= 0) close(acquireFd);
+        /* Critical: send MSG_RELEASE for this slot even though we couldn't
+         * apply the transaction. Otherwise Wine's AHB pool counts this
+         * slot as "in flight" forever — and after a few such skipped
+         * frames (4 with our default pool size), vkAcquireNextImageKHR
+         * blocks on pthread_cond_wait indefinitely. That's the freeze
+         * we hit when:
+         *   (a) the user locks the device — DirectCompositor.onPause
+         *       detaches scanoutGameSC, leaving us in this SKIPPED branch
+         *       for every frame until onResume reattaches.
+         *   (b) the user leaves a game idle for several minutes — Android
+         *       lifecycle events (battery optimizer, screen timeout) fire
+         *       transient onPause/onResume cycles that flip scanoutGameSC
+         *       to null for brief windows. Even a few-millisecond detach
+         *       can leak enough slots to deadlock the pool.
+         *
+         * The released slot is marked as a non-display release
+         * (displayed=0) so the layer's WaitForPresentKHR pacing logic
+         * doesn't tick the display counter for a frame that was never
+         * actually shown. */
+        if (p.slotIndex >= 0) {
+            int sockFd = scanoutSocketFd.load(std::memory_order_relaxed);
+            if (sockFd >= 0) {
+                struct { uint8_t type; uint32_t slot_index; int32_t release_fd;
+                         uint8_t displayed; uint64_t vsync_time_ns; } rel{};
+                rel.type = 2; // MSG_RELEASE
+                rel.slot_index = (uint32_t)p.slotIndex;
+                rel.release_fd = -1;
+                rel.displayed = 0;
+                send(sockFd, &rel, sizeof(rel), MSG_NOSIGNAL);
+            }
+        }
+        return;
+    }
 
     int32_t cw = containerWidth  > 0 ? containerWidth  : w;
     int32_t ch = containerHeight > 0 ? containerHeight : h;
@@ -1513,17 +1756,68 @@ void VulkanRendererContext::applyScanoutBuffer() {
     }
 
     AHardwareBuffer* presentAhb = ahb;
-    if (scanoutAlwaysGpuBlit || scanoutNeedsGpuBlit) {
+
+    /* === P3: Direct passthrough with CPU-side fence wait ===
+     *
+     * When the source AHB is overlay-capable AND has BGRA byte layout
+     * (matching SurfaceFlinger's read semantics), skip the receiver-side
+     * GPU blit entirely. The cost of that blit was the dominant FPS
+     * bottleneck (~3-4ms per frame on the Odin 2's Adreno). Without it,
+     * the frame goes straight from DXVK → AHB → SurfaceFlinger overlay.
+     *
+     * Why CPU-poll instead of trusting the acquire fence at setBuffer:
+     * Odin 2's HWC empirically doesn't honor the acquire-fence-fd when
+     * scanning out overlays — earlier direct-passthrough experiments
+     * produced visible scanline tearing. By polling the fence FD on the
+     * CPU here (blocks until the kernel signals GPU completion), we
+     * guarantee the buffer is fully written before we tell SF to display
+     * it. SF can still wait on the fence too (it's a no-op since we
+     * already CPU-confirmed it's signaled) — defense in depth.
+     *
+     * Conditions to engage:
+     *   - p.bgraBytes != 0: source AHB has BGRA byte layout (pool default).
+     *   - !scanoutNeedsGpuBlit: source AHB has COMPOSER_OVERLAY (confirmed
+     *     on first frame).
+     * Otherwise fall back to the local-blit path for safety. */
+    const bool canDirectPassthrough = (p.bgraBytes != 0) && !scanoutNeedsGpuBlit;
+    if (canDirectPassthrough) {
+        if (acquireFd >= 0) {
+            /* poll() with POLLIN signals when the SYNC_FD is ready (kernel
+             * fence signaled). Tight timeout — if the fence hangs, we
+             * shouldn't stall display forever. The fd stays valid and
+             * gets passed to ST_SETBUF below (defense in depth). */
+            struct pollfd pfd{};
+            pfd.fd = acquireFd;
+            pfd.events = POLLIN;
+            int rc = poll(&pfd, 1, 30 /* ms */);
+            if (rc < 0) {
+                RLOG("applyScanoutBuffer: poll(acquire_fd) errno=%d", errno);
+            } else if (rc == 0) {
+                RLOG("applyScanoutBuffer: poll(acquire_fd) TIMEOUT after 30ms — proceeding anyway");
+            }
+        }
+        /* presentAhb stays = source ahb. No local blit. SF gets the AHB
+         * directly with COMPOSER_OVERLAY usage, eligible for hardware
+         * overlay scanout. */
+    } else if (scanoutAlwaysGpuBlit || scanoutNeedsGpuBlit) {
         AHardwareBuffer_Desc srcDesc{};
         AHardwareBuffer_describe(ahb, &srcDesc);
         if (ensureScanoutLocalAhb((int)srcDesc.width, (int)srcDesc.height, srcDesc.format)) {
+            /* Import the source AHB as B8G8R8A8 in direct-render mode (DXVK
+             * wrote BGRA bytes into a HAL_RGBA AHB), or default-via-swapRB
+             * otherwise. The subsequent blit uses format-aware reinterpretation
+             * (BlitImage) to swap R↔B when needed. */
+            const VkFormat srcImportFormat = (p.bgraBytes != 0)
+                ? VK_FORMAT_B8G8R8A8_UNORM
+                : VK_FORMAT_UNDEFINED;
+
             VkImage srcImg = VK_NULL_HANDLE;
             auto it = ahbTexCache.find(ahb);
             if (it != ahbTexCache.end()) {
                 srcImg = it->second.img;
             } else {
                 WinTex tmp{};
-                if (importAHBToWinTex(tmp, ahb)) {
+                if (importAHBToWinTex(tmp, ahb, srcImportFormat)) {
                     AHBCached cached{tmp.img, tmp.mem, tmp.view, tmp.ds};
                     AHardwareBuffer_acquire(ahb);
                     ahbTexCache[ahb] = cached;
@@ -1552,14 +1846,34 @@ void VulkanRendererContext::applyScanoutBuffer() {
                     0, VK_ACCESS_TRANSFER_WRITE_BIT,
                     VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
 
-                VkImageCopy region{};
-                region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-                region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-                region.extent = {(uint32_t)w, (uint32_t)h, 1};
-                vk_.CmdCopyImage(scanoutBlitCb,
-                    srcImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                    scanoutLocalImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                    1, &region);
+                if (p.bgraBytes != 0) {
+                    /* Direct-render mode: format-aware blit from B8G8R8A8 src
+                     * to R8G8B8A8 dst handles the R↔B swap during the copy.
+                     * Slightly slower than vkCmdCopyImage on Adreno (uses
+                     * shader path) but uniform across formats. */
+                    VkImageBlit region{};
+                    region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                    region.srcOffsets[0] = {0, 0, 0};
+                    region.srcOffsets[1] = {(int32_t)w, (int32_t)h, 1};
+                    region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                    region.dstOffsets[0] = {0, 0, 0};
+                    region.dstOffsets[1] = {(int32_t)w, (int32_t)h, 1};
+                    vk_.CmdBlitImage(scanoutBlitCb,
+                        srcImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        scanoutLocalImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        1, &region, VK_FILTER_NEAREST);
+                } else {
+                    /* Trojan-blit mode: AHB already has correct RGBA byte order.
+                     * Plain byte copy, fastest path on Adreno. */
+                    VkImageCopy region{};
+                    region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                    region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                    region.extent = {(uint32_t)w, (uint32_t)h, 1};
+                    vk_.CmdCopyImage(scanoutBlitCb,
+                        srcImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        scanoutLocalImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        1, &region);
+                }
                 vk_.EndCommandBuffer(scanoutBlitCb);
 
                 VkSubmitInfo si{};
@@ -1573,18 +1887,200 @@ void VulkanRendererContext::applyScanoutBuffer() {
     }
 
     void* t=ST_CREATE();
-    ST_SETBUF(t,scanoutGameSC,presentAhb,-1);
+    ST_SETBUF(t,scanoutGameSC,presentAhb,acquireFd);
     ST_SETGEO(t,scanoutGameSC,&src,&dst,0);
     ST_SETVIS(t,scanoutGameSC,1);
     ST_SETBP(t,scanoutGameSC,false);
+
+    /*
+     * Adaptive frame-rate hint to SurfaceFlinger.
+     *
+     * On LTPO displays (OnePlus 12R: 1–120 Hz) SurfaceFlinger chooses the
+     * panel refresh rate based on per-layer hints. Without a hint it defaults
+     * to the panel maximum (120 Hz), wasting power when a game runs at 60.
+     * With an incorrect fixed hint (initScanout always requests 120 Hz) it
+     * may also stutter if the game actually delivers 90 fps.
+     *
+     * We read the EMA-smoothed vsync period that the release-reader thread
+     * maintains from MSG_VSYNC deltas, convert it to fps, and update the
+     * hint every 60 frames (~0.5–1 s). The frame-rate compatibility=0
+     * (COMPATIBILITY_DEFAULT) lets SF pick the nearest panel rate it
+     * supports — so 58 fps → 60 Hz, 88 fps → 90 Hz, 118 fps → 120 Hz.
+     *
+     * g_vsync_period_us_measured is defined in ahb_layer.c and updated
+     * by the release-reader thread (no mutex needed here — reading a 64-bit
+     * value written by another thread is safe on ARM64 with relaxed ordering
+     * for this advisory purpose).
+     */
+    extern uint64_t g_vsync_period_us_measured;
+    if (fnSTSetFrameRate) {
+        static int frameRateUpdateCounter = 0;
+        if (++frameRateUpdateCounter >= 60) {
+            frameRateUpdateCounter = 0;
+            uint64_t periodUs = g_vsync_period_us_measured;
+            if (periodUs > 0) {
+                float fps = 1000000.0f / (float)periodUs;
+                /* Clamp to sane range — don't hint below 24 or above 144. */
+                if (fps < 24.0f)  fps = 24.0f;
+                if (fps > 144.0f) fps = 144.0f;
+                typedef void (*pfn_STSetFrameRate)(void*, void*, float, int8_t);
+                ((pfn_STSetFrameRate)fnSTSetFrameRate)(t, scanoutGameSC,   fps, 0);
+                ((pfn_STSetFrameRate)fnSTSetFrameRate)(t, scanoutCursorSC, fps, 0);
+                RLOG("applyScanoutBuffer: adaptive setFrameRate %.1f Hz (period=%llu us)",
+                     fps, (unsigned long long)periodUs);
+            }
+        }
+    }
+
+    // Two callbacks here serve two distinct purposes:
+    //
+    //  1. onCommit (API 31+, preferred): fires ~1 vsync after apply, at the
+    //     moment SurfaceFlinger latches the buffer for the next frame.
+    //     Sends MSG_TICK (type=5). The layer's release-reader thread uses
+    //     this to advance g_display_count, which drives vkWaitForPresentKHR's
+    //     pacing wait — locking DXVK to real panel vsync without the 2-vsync
+    //     latency that plain onComplete-driven pacing imposes.
+    //
+    //  2. onComplete: fires later, when the previous buffer is no longer
+    //     in use by SurfaceFlinger. Sends MSG_RELEASE (slot freeing only,
+    //     displayed=0 so we don't double-tick alongside onCommit). If
+    //     onCommit is unavailable (older Android), this falls back to
+    //     displayed=1 so the existing tick path keeps working.
+    static int scanoutPrevDisplayedSlot = -1;
+    int sockFd = scanoutSocketFd.load(std::memory_order_relaxed);
+
+    // Register onCommit on the CURRENT transaction. It will fire when
+    // *this* slot's buffer reaches the display. The context only needs the
+    // socket fd; we tick once per commit regardless of slot identity.
+    if (fnSTSetOnCommit && sockFd >= 0) {
+        typedef void (*pfn_STSetOnCommit)(void*, void*, void(*)(void*, void*));
+        /* Extended context: carry a back-pointer to the renderer + the slot
+         * being committed so the callback can compute T2 - T1 and update
+         * the latency EMA. Both are read inside the callback. */
+        struct OnCommitCtx { int socketFd; VulkanRendererContext* renderer; int slotIndex; };
+        auto* ctx = new OnCommitCtx{sockFd, this, p.slotIndex};
+        ((pfn_STSetOnCommit)fnSTSetOnCommit)(t, (void*)ctx,
+            [](void* context, void* stats) {
+                auto* c = reinterpret_cast<OnCommitCtx*>(context);
+                /* Capture T2 once — used by both the jitter trace AND the
+                 * compositor-latency EMA update below. */
+                struct timespec ts;
+                clock_gettime(CLOCK_MONOTONIC, &ts);
+                uint64_t now_us = (uint64_t)ts.tv_sec * 1000000ULL
+                                + (uint64_t)ts.tv_nsec / 1000ULL;
+
+                /* JITTER TRACE: SurfaceFlinger's onCommit firing rate.
+                 * Compare against layer-side stage=tick to measure socket
+                 * latency from SF → Android receiver → Wine release-reader. */
+                {
+                    static uint64_t s_commit_prev = 0;
+                    uint64_t prev = s_commit_prev;
+                    s_commit_prev = now_us;
+                    if (prev) {
+                        __android_log_print(ANDROID_LOG_INFO, "Winlator_Scanout",
+                            "JITTER_TRACE: stage=onCommit delta_us=%llu",
+                            (unsigned long long)(now_us - prev));
+                    }
+                }
+
+                /* === COMPOSITOR LATENCY ===
+                 * T1 = recv-thread MSG_PRESENT timestamp stored in
+                 *      renderer->latencyArriveUs[slot]
+                 * T2 = now_us (this callback fires when SF latches the
+                 *      buffer at the next vsync — the "apply tick")
+                 * Update an EMA so the HUD can read a smoothed single number.
+                 * Drop outliers > 500 ms which would skew the EMA on first-
+                 * frame anomalies or pause windows. */
+                if (c->renderer
+                    && c->slotIndex >= 0
+                    && c->slotIndex < VulkanRendererContext::LATENCY_SLOT_MAX) {
+                    uint64_t arrive_us = c->renderer->latencyArriveUs[c->slotIndex]
+                        .load(std::memory_order_relaxed);
+                    if (arrive_us != 0 && now_us > arrive_us) {
+                        uint64_t delta = now_us - arrive_us;
+                        if (delta < 500000ULL) {
+                            uint64_t prev = c->renderer->latencyEmaUs
+                                .load(std::memory_order_relaxed);
+                            /* 1/8 weight on new sample → ~8-frame smoothing */
+                            uint64_t next = (prev == 0)
+                                ? delta
+                                : (prev * 7 + delta) / 8;
+                            c->renderer->latencyEmaUs
+                                .store(next, std::memory_order_relaxed);
+                        }
+                    }
+                }
+
+                /* Send a MSG_TICK packet using the release_msg wire format.
+                 * Layout MUST match struct release_msg in vulkan_ahb.h EXACTLY,
+                 * including the trailing vsync_time_ns field (added with the
+                 * Choreographer phase-anchor work). The Wine-side socket is
+                 * SOCK_STREAM, so any size mismatch shifts subsequent messages
+                 * and corrupts the entire stream → slots stop releasing →
+                 * black screen. Zero-init the new field; only MSG_VSYNC reads it. */
+                struct { uint8_t type; uint32_t slot_index; int32_t release_fd; uint8_t displayed; uint64_t vsync_time_ns; } tick{};
+                tick.type = 5; // MSG_TICK
+                send(c->socketFd, &tick, sizeof(tick), MSG_NOSIGNAL);
+                delete c;
+            });
+    }
+
+    // onComplete: free the previously-displayed slot.
+    if (fnSTSetOnComplete && scanoutPrevDisplayedSlot >= 0 && sockFd >= 0) {
+        struct OnCompleteCtx {
+            int socketFd;
+            int slotIndex;
+            int tickFromComplete;  /* 1 if we should also tick here (no onCommit) */
+        };
+        auto* ctx = new OnCompleteCtx{
+            sockFd, scanoutPrevDisplayedSlot,
+            fnSTSetOnCommit ? 0 : 1
+        };
+        ((pfn_STSetOnComplete)fnSTSetOnComplete)(t, (void*)ctx,
+            [](void* context, void* stats) {
+                auto* c = reinterpret_cast<OnCompleteCtx*>(context);
+                /* Layout MUST match struct release_msg in vulkan_ahb.h EXACTLY
+                 * (including the trailing vsync_time_ns field used by MSG_VSYNC).
+                 * SOCK_STREAM has no record boundaries — any size drift shifts
+                 * every subsequent message. */
+                struct { uint8_t type; uint32_t slot_index; int32_t release_fd; uint8_t displayed; uint64_t vsync_time_ns; } rel{};
+                rel.type = 2; // MSG_RELEASE
+                rel.slot_index = (uint32_t)c->slotIndex;
+                rel.release_fd = -1;
+                /* If onCommit isn't available, displayed=1 keeps the layer's
+                 * old pacing path working (just with the 2-vsync latency).
+                 * If onCommit IS available, MSG_TICK already advanced
+                 * g_display_count, so displayed=0 (slot free only). */
+                rel.displayed = (uint8_t)c->tickFromComplete;
+                send(c->socketFd, &rel, sizeof(rel), MSG_NOSIGNAL);
+                delete c;
+            });
+    }
+    scanoutPrevDisplayedSlot = p.slotIndex;
+
     ST_APPLY(t);
+    /* directFrameCount used to be incremented HERE (per displayed frame)
+     * which gave DAC a panel-rate counter (≤ 60 FPS on a 60 Hz panel)
+     * while Native used a Wine-frame-rate counter — making the two modes
+     * report inherently incomparable FPS even when DXVK was producing at
+     * the same rate. Moved to the recv thread in vulkan_jni.cpp where it
+     * fires once per MSG_PRESENT (= once per Wine frame), making the
+     * DAC reading semantically match Native's hud.onFrame() count. */
     gameFrameDelivered.store(true);
     ST_DELETE(t);
-    AHardwareBuffer_release(ahb);
+    // AHardwareBuffer_release removed: no matching acquire, pool owns the ref
 }
 
 void VulkanRendererContext::scanoutSetDst(int x, int y, int w, int h) {
     scanoutDstX=x; scanoutDstY=y; scanoutDstW=w; scanoutDstH=h;
+}
+
+std::pair<int,int> VulkanRendererContext::pollReleaseFence() {
+    std::lock_guard<std::mutex> lk(releaseMutex);
+    if (releaseQueue.empty()) return {-1, -1};
+    auto front = releaseQueue.front();
+    releaseQueue.erase(releaseQueue.begin());
+    return {front.slotIndex, front.releaseFd};
 }
 
 void VulkanRendererContext::scanoutSetCursorImage(void* pixels, short w, short h, short stride) {
@@ -1679,6 +2175,10 @@ void VulkanRendererContext::dumpRendererInfo() {
     __android_log_print(ANDROID_LOG_DEBUG,WLOG_TAG,
         "Scanout: active=%d gameFrameDelivered=%d scanoutGameSC=%p",
         (int)scanoutActive.load(),(int)gameFrameDelivered.load(),scanoutGameSC);
+    __android_log_print(ANDROID_LOG_DEBUG,WLOG_TAG,
+        "DirectCompositing: directFrameCount=%llu releaseQueueSize=%zu",
+        (unsigned long long)directFrameCount.load(),
+        [this]{ std::lock_guard<std::mutex> lk(releaseMutex); return releaseQueue.size(); }());
     __android_log_print(ANDROID_LOG_DEBUG,WLOG_TAG,
         "Surface: %dx%d container: %dx%d",
         surfaceWidth,surfaceHeight,containerWidth,containerHeight);

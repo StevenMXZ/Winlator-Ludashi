@@ -61,6 +61,10 @@
             <CheckBox android:id="@+id/CBHudGraph" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Graph" android:textColor="#CCCCCC" android:textSize="12sp" android:checked="true"/>
             <CheckBox android:id="@+id/CBHudRenderer" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Renderer" android:textColor="#CCCCCC" android:textSize="12sp" android:checked="true"/>
         </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <CheckBox android:id="@+id/CBHudLatency" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Latency (DAC)" android:textColor="#CCCCCC" android:textSize="12sp" android:checked="false"/>
+            <Space android:layout_width="0dp" android:layout_weight="2" android:layout_height="wrap_content"/>
+        </LinearLayout>
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="HUD Size" android:textColor="#AAAAAA" android:textSize="12sp" android:layout_marginTop="10dp"/>
         <com.winlator.cmod.widget.SeekBar android:id="@+id/SBHudScale" android:layout_width="match_parent" android:layout_height="30dp" app:maxValue="100" app:minValue="0" app:step="1" />
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="HUD Alpha" android:textColor="#AAAAAA" android:textSize="12sp" android:layout_marginTop="5dp"/>

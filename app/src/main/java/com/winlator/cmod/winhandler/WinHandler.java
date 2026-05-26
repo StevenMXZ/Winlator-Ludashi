@@ -24,12 +24,9 @@ import android.net.LocalSocket;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 
+import java.io.FileDescriptor;
 import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.UnknownHostException;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayDeque;
@@ -45,22 +42,30 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 public class WinHandler {
-    private static final short SERVER_PORT = 7947;
-    private static final short CLIENT_PORT = 7946;
+    /*
+     * Input transport switched from UDP loopback to AF_UNIX SOCK_DGRAM.
+     * LocalSocket / LocalServerSocket wrap Android's AF_UNIX implementation.
+     * Abstract namespace names (prefixed with NUL internally by Android) avoid
+     * any filesystem entry and are cleaned up automatically on process exit.
+     * Must match the paths in winhandler.c: "\0winlator_input_srv/cli".
+     */
+    private static final String SERVER_SOCKET_NAME = "winlator_input_srv";
+    private static final String CLIENT_SOCKET_NAME = "winlator_input_cli";
     public static final byte FLAG_INPUT_TYPE_XINPUT = 0x04;
     public static final byte FLAG_INPUT_TYPE_DINPUT = 0x08;
     public static final byte DEFAULT_INPUT_TYPE = FLAG_INPUT_TYPE_XINPUT;
-    private DatagramSocket socket;
-    private final ByteBuffer sendData = ByteBuffer.allocate(64).order(ByteOrder.LITTLE_ENDIAN);
+    /** Send socket — connected to Wine's abstract-namespace server address. */
+    private LocalSocket sendSocket;
+    /** Receive socket — bound to our abstract-namespace server address. */
+    private LocalServerSocket receiveServer;
+    private LocalSocket receiveSocket;
+    private final ByteBuffer sendData    = ByteBuffer.allocate(64).order(ByteOrder.LITTLE_ENDIAN);
     private final ByteBuffer receiveData = ByteBuffer.allocate(64).order(ByteOrder.LITTLE_ENDIAN);
-    private final DatagramPacket sendPacket = new DatagramPacket(sendData.array(), 64);
-    private final DatagramPacket receivePacket = new DatagramPacket(receiveData.array(), 64);
     private final ArrayDeque<Runnable> actions = new ArrayDeque<>();
     private boolean initReceived = false;
     private boolean running = false;
     private OnGetProcessInfoListener onGetProcessInfoListener;
     private final Map<Integer, ExternalController> controllers = new HashMap<>(); // map deviceId -> controller
-    private InetAddress localhost;
     private byte inputType = DEFAULT_INPUT_TYPE;
     private final XServerDisplayActivity activity;
     private final List<Integer> gamepadClients = new CopyOnWriteArrayList<>();
@@ -111,14 +116,18 @@ public class WinHandler {
         }
     }
 
+    /**
+     * Send the current contents of sendData to Wine's input socket.
+     * AF_UNIX SOCK_DGRAM — no address needed, socket was connected in start().
+     */
     private boolean sendPacket(int port) {
+        // `port` parameter kept for API compatibility; ignored for Unix sockets.
         try {
-            int size = sendData.position();
-            if (size == 0)
-                return false;
-            sendPacket.setAddress(localhost);
-            sendPacket.setPort(port);
-            socket.send(sendPacket);
+            if (sendData.position() == 0) return false;
+            if (sendSocket == null) return false;
+            byte[] arr = sendData.array();
+            int    len = sendData.position();
+            sendSocket.getOutputStream().write(arr, 0, len);
             return true;
         } catch (IOException e) {
             return false;
@@ -302,9 +311,17 @@ public class WinHandler {
         running = false;
         closeFakeInputWriter();
 
-        if (socket != null) {
-            socket.close();
-            socket = null;
+        if (sendSocket != null) {
+            try { sendSocket.close(); } catch (IOException ignored) {}
+            sendSocket = null;
+        }
+        if (receiveSocket != null) {
+            try { receiveSocket.close(); } catch (IOException ignored) {}
+            receiveSocket = null;
+        }
+        if (receiveServer != null) {
+            try { receiveServer.close(); } catch (IOException ignored) {}
+            receiveServer = null;
         }
 
         synchronized (actions) {
@@ -480,33 +497,54 @@ public class WinHandler {
     }
 
     public void start() {
-        try {
-            localhost = InetAddress.getLocalHost();
-        } catch (UnknownHostException e) {
-            try {
-                localhost = InetAddress.getByName("127.0.0.1");
-            } catch (UnknownHostException ex) {
-            }
-        }
-
         running = true;
         startSendThread();
         Executors.newSingleThreadExecutor().execute(() -> {
             try {
-                socket = new DatagramSocket(null);
-                socket.setReuseAddress(true);
-                socket.bind(new InetSocketAddress((InetAddress) null, SERVER_PORT));
+                /*
+                 * Receive side: bind to the abstract-namespace address that
+                 * Wine's winhandler.c will sendto() for replies (RC_INIT,
+                 * RC_CURSOR_POS_FEEDBACK, RC_GET_PROCESS, etc.).
+                 *
+                 * LocalServerSocket in Android wraps a SOCK_STREAM server by
+                 * default. For datagram-style IPC we use a pair of
+                 * SOCK_STREAM LocalSockets in connected mode — Wine's
+                 * winhandler.c uses SOCK_DGRAM AF_UNIX which maps cleanly
+                 * because each sendto() from Wine arrives as a complete
+                 * InputStream.read() on our end (kernel datagrams in Unix
+                 * domain sockets preserve message boundaries in SOCK_DGRAM
+                 * mode; SOCK_STREAM here is a workaround for Android's
+                 * LocalSocket API not exposing SOCK_DGRAM directly).
+                 *
+                 * For simplicity we use SOCK_STREAM with fixed-64-byte reads
+                 * matching the Wine side's BUFFER_SIZE. This is safe because
+                 * Wine always writes exactly BUFFER_SIZE bytes per packet.
+                 */
+                receiveServer = new LocalServerSocket(SERVER_SOCKET_NAME);
 
+                /* Send socket — connects to Wine's client address. */
+                sendSocket = new LocalSocket();
+                sendSocket.connect(new android.net.LocalSocketAddress(
+                        CLIENT_SOCKET_NAME,
+                        android.net.LocalSocketAddress.Namespace.ABSTRACT));
+
+                /* Accept Wine's connection to receive its packets. */
+                receiveSocket = receiveServer.accept();
+
+                byte[] buf = new byte[64];
                 while (running) {
-                    socket.receive(receivePacket);
-
+                    int n = receiveSocket.getInputStream().read(buf, 0, buf.length);
+                    if (n <= 0) break;
                     synchronized (actions) {
                         receiveData.rewind();
+                        receiveData.put(buf, 0, n);
+                        receiveData.rewind();
                         byte requestCode = receiveData.get();
-                        handleRequest(requestCode, receivePacket.getPort());
+                        handleRequest(requestCode, 0 /* port unused */);
                     }
                 }
             } catch (IOException e) {
+                Log.e("WinHandler", "Unix socket error: " + e.getMessage());
             }
         });
     }

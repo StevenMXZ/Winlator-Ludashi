@@ -235,6 +235,17 @@
             android:id="@+id/SAudioDriver"
             android:entries="@array/audio_driver_entries" />
 
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/graphics_pipeline" />
+
+        <Spinner
+            style="@style/ComboBox"
+            android:layout_width="match_parent"
+            android:id="@+id/SGraphicsPipeline"
+            android:entries="@array/graphics_pipeline_entries" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

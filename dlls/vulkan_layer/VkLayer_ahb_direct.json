@@ -1,0 +1,14 @@
+{
+    "file_format_version": "1.0.0",
+    "layer": {
+        "name": "VK_LAYER_WINLATOR_ahb_direct",
+        "type": "GLOBAL",
+        "library_path": "libVkLayer_ahb_direct.so",
+        "api_version": "1.3.0",
+        "implementation_version": "1",
+        "description": "Winlator Direct Android Compositing - routes Vulkan frames through AHardwareBuffer to SurfaceFlinger",
+        "enable_environment": {
+            "ENABLE_AHB_LAYER": "1"
+        }
+    }
+}

@@ -97,6 +97,9 @@
     <string name="external_controllers">External Controllers</string>
     <string name="graphics_driver">Graphics Driver</string>
     <string name="audio_driver">Audio Driver</string>
+    <string name="graphics_pipeline">Graphics Pipeline</string>
+    <string name="graphics_pipeline_quality">Quality (Direct-Render)</string>
+    <string name="graphics_pipeline_performance">Performance (Trojan-Blit)</string>
     <string name="loading">Loading…</string>
     <string name="press_any_button_on_your_controller">Press any button on your controller</string>
     <string name="bindings">bindings</string>

@@ -9,6 +9,7 @@ import android.widget.Toast;
 import com.winlator.cmod.R;
 import com.winlator.cmod.widget.WinlatorHUD;
 import com.winlator.cmod.widget.XServerView;
+import com.winlator.cmod.xenvironment.components.DirectCompositorComponent;
 import com.winlator.cmod.xserver.Bitmask;
 import com.winlator.cmod.xserver.Cursor;
 import com.winlator.cmod.xserver.Drawable;
@@ -55,6 +56,9 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     private Cursor lastCursor = null;
     private boolean xRenderingPausedForScanout = false;
 
+    private final java.util.concurrent.atomic.AtomicLong directFrameCount =
+        new java.util.concurrent.atomic.AtomicLong(0);
+
     private volatile ArrayList<RenderableWindow> renderableWindows = new ArrayList<>();
     private static final java.util.concurrent.atomic.AtomicLong ID_GEN =
         new java.util.concurrent.atomic.AtomicLong(1);
@@ -66,6 +70,8 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     private android.view.SurfaceControl scanoutCursorSC;
     private android.view.Surface        scanoutGameSurface;
     private android.view.Surface        scanoutCursorSurface;
+    private volatile AHardwareBufferPool ahbPool = null;
+    private volatile DirectCompositorComponent directCompositorRef = null;
 
     public VulkanRenderer(XServerView xServerView, XServer xServer) {
         this.xServerView = xServerView;
@@ -104,13 +110,20 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     private native void nativeDetachSurface(long handle);
     private native boolean nativeReattachSurface(long handle, android.view.Surface surface);
     private native void nativeDestroyScanout(long handle);
-    private native void nativeScanoutSetBuffer(long handle, long ahbPtr, int x, int y, int w, int h);
+    private native void nativeScanoutSetBuffer(long handle, long ahbPtr, int acquireFenceFd, int x, int y, int w, int h);
+    private native int[] nativePollReleaseFence(long handle);
     private native void nativeScanoutSetCursorImage(long handle, java.nio.ByteBuffer pixels, short w, short h, short stride);
     private native void nativeScanoutSetCursorPos(long handle, short x, short y, short hotX, short hotY);
     private native boolean nativeIsScanoutActive(long handle);
     private native boolean nativeIsGameFrameDelivered(long handle);
+    private native long nativeGetDirectFrameCount(long handle);
+    private native long nativeGetLatencyEmaUs(long handle);
+    private native void nativeSetX11FrameT1(long handle, long tsUs);
     private native void nativeSetScanoutWindow(long handle, android.view.Surface game, android.view.Surface cursor);
     private native void nativeScanoutSetDst(long handle, int x, int y, int w, int h);
+    private native void nativeStartPresentReceiver(long handle, int clientFd, long[] ahbPtrs, int screenWidth, int screenHeight);
+    private native void nativeStartPresentReceiverWithSlots(long handle, int clientFd, long ahb0, long ahb1, long ahb2, long ahb3, int screenWidth, int screenHeight);
+    private native void nativeStopPresentReceiver(long handle);
     private native void nativeSetVerboseLog(long handle, boolean v);
     private native void nativeDumpRendererInfo(long handle);
     private native void nativeSetFilterMode(long handle, int mode);
@@ -148,9 +161,78 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                     if (!ok) {
                         nativeDestroy(nativeHandle);
                         nativeHandle = 0;
+                        // Signal pool reinit if in nativeMode
+                        if (nativeMode) {
+                            DirectCompositorComponent dcc = directCompositorRef;
+                            if (dcc != null) {
+                                xServerView.post(() -> {
+                                    if (!dcc.reinitPool()) {
+                                        android.util.Log.e("VulkanRenderer",
+                                            "onSurfaceCreated: pool reinit failed after context loss");
+                                    }
+                                });
+                            }
+                        }
                     } else {
                         initComplete = true;
                         xServerView.queueEvent(this::updateScene);
+                        // Recreate SC layers after successful reattach.
+                        //
+                        // Gate is "nativeMode OR DirectCompositor active": the
+                        // recv-thread DAC pipeline (used by direct-render mode)
+                        // bypasses VulkanRenderer.submitDirectFrame entirely
+                        // (it calls renderer->scanoutSetBuffer from C++), so
+                        // nativeMode stays false even when DAC frames are
+                        // flowing. Without this second condition, locking and
+                        // unlocking the device permanently freezes the game:
+                        // nativeReattachSurface calls destroyScanout(),
+                        // nulling scanoutGameSC; nothing then recreates it;
+                        // every subsequent scanoutSetBuffer hits the SKIPPED
+                        // path; SurfaceFlinger keeps showing the last frame
+                        // (or black) while DXVK keeps drawing into AHB pool
+                        // slots that never get displayed back.
+                        DirectCompositorComponent dccActive = directCompositorRef;
+                        boolean needScanoutRecreate = nativeMode
+                                || (dccActive != null && dccActive.isActive());
+                        if (needScanoutRecreate) {
+                            xServerView.post(() -> {
+                                releaseScanoutSurfaces();
+                                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                                    try {
+                                        android.view.SurfaceControl xsc = xServerView.getSurfaceControl();
+                                        scanoutGameSC = new android.view.SurfaceControl.Builder()
+                                            .setParent(xsc).setName("winlator_game").setOpaque(true).build();
+                                        scanoutGameSurface = new android.view.Surface(scanoutGameSC);
+                                        scanoutCursorSC = new android.view.SurfaceControl.Builder()
+                                            .setParent(xsc).setName("winlator_cursor").setFormat(1).build();
+                                        scanoutCursorSurface = new android.view.Surface(scanoutCursorSC);
+                                        new android.view.SurfaceControl.Transaction()
+                                            .setLayer(scanoutGameSC,   1)
+                                            .setLayer(scanoutCursorSC, 2)
+                                            .setVisibility(scanoutGameSC,   true)
+                                            .setVisibility(scanoutCursorSC, true)
+                                            .apply();
+                                        applyScanoutFrameRateHint();
+                                        applyScanoutSwapTransform();
+                                        synchronized (lock) {
+                                            if (nativeHandle != 0) {
+                                                nativeSetScanoutWindow(nativeHandle, scanoutGameSurface, scanoutCursorSurface);
+                                                updateTransform();
+                                            }
+                                        }
+                                    } catch (Exception e) {
+                                        android.util.Log.w("VulkanRenderer", "SC recreate failed on reattach: " + e);
+                                        synchronized (lock) {
+                                            if (nativeHandle != 0) nativeInitScanout(nativeHandle);
+                                        }
+                                        DirectCompositorComponent dcc = directCompositorRef;
+                                        if (dcc != null) dcc.onScanoutFallback();
+                                    }
+                                } else {
+                                    synchronized (lock) { if (nativeHandle != 0) nativeInitScanout(nativeHandle); }
+                                }
+                            });
+                        }
                         return;
                     }
                 }
@@ -193,6 +275,8 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                                     synchronized (lock) {
                                         if (nativeHandle != 0) nativeInitScanout(nativeHandle);
                                     }
+                                    DirectCompositorComponent dcc = directCompositorRef;
+                                    if (dcc != null) dcc.onScanoutFallback();
                                 }
                             } else {
                                 synchronized (lock) { if (nativeHandle != 0) nativeInitScanout(nativeHandle); }
@@ -231,9 +315,7 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
         synchronized (lock) {
             if (nativeHandle != 0) {
                 if (nativeMode) {
-                    nativeDestroyScanout(nativeHandle);
-                    nativeDestroy(nativeHandle);
-                    nativeHandle = 0;
+                    nativeDetachSurface(nativeHandle);
                 } else {
                     nativeDetachSurface(nativeHandle);
                 }
@@ -243,8 +325,21 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     }
 
     private void releaseScanoutSurfaces() {
+        // Step 1: Hide both layers atomically
+        if (android.os.Build.VERSION.SDK_INT >= 29 && (scanoutGameSC != null || scanoutCursorSC != null)) {
+            try {
+                android.view.SurfaceControl.Transaction txn = new android.view.SurfaceControl.Transaction();
+                if (scanoutGameSC != null) txn.setVisibility(scanoutGameSC, false);
+                if (scanoutCursorSC != null) txn.setVisibility(scanoutCursorSC, false);
+                txn.apply();
+            } catch (Exception e) {
+                android.util.Log.w("VulkanRenderer", "releaseScanoutSurfaces: hide failed: " + e);
+            }
+        }
+        // Step 2: Release Surface objects
         if (scanoutGameSurface   != null) { scanoutGameSurface.release();   scanoutGameSurface   = null; }
         if (scanoutCursorSurface != null) { scanoutCursorSurface.release(); scanoutCursorSurface = null; }
+        // Step 3: Release SurfaceControl objects
         if (scanoutGameSC        != null) { scanoutGameSC.release();        scanoutGameSC        = null; }
         if (scanoutCursorSC      != null) { scanoutCursorSC.release();      scanoutCursorSC      = null; }
     }
@@ -402,11 +497,13 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     }
 
     public void onUpdateWindowContentDirect(Window window, Drawable pixmap, short xOff, short yOff) {
-        if (hudRef != null && !nativeMode) {
-            hudRef.setIsNative(false);
-            hudRef.onFrame();
-        }
         if (nativeHandle == 0 || pixmap == null) return;
+        /* Native X11 latency T1: stamp arrival time of the Wine-delivered
+         * frame. CAS-from-0 in JNI ignores additional same-frame updates;
+         * renderFrame's T2 clears the stamp after each measurement.
+         * System.nanoTime() on Android is CLOCK_MONOTONIC, matching the
+         * clock used on the native side. */
+        nativeSetX11FrameT1(nativeHandle, System.nanoTime() / 1000L);
         Drawable targetDrawable = window.getContent();
         long targetId = did(targetDrawable);
         int rx = window.getRootX() + xOff;
@@ -419,12 +516,21 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                 if (ahbPtr != 0) {
                     if (nativeMode && pixmap.isDirectScanout() && nativeIsScanoutActive(nativeHandle)) {
                         g.unlock();
-                        nativeScanoutSetBuffer(nativeHandle, ahbPtr,
+                        nativeScanoutSetBuffer(nativeHandle, ahbPtr, -1,
                             rx, ry, pixmap.width, pixmap.height);
+                        drainReleaseFences(nativeHandle);
                         g.lock();
+                        if (hudRef != null) {
+                            hudRef.setIsNative(true);
+                            hudRef.onFrame();
+                        }
                     } else {
                         nativeUpdateWindowContentAHB(nativeHandle, targetId, ahbPtr,
                             pixmap.width, pixmap.height, rx, ry);
+                        if (hudRef != null && !nativeMode) {
+                            hudRef.setIsNative(false);
+                            hudRef.onFrame();
+                        }
                     }
                     return;
                 }
@@ -433,6 +539,10 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                     short s = g.getStride() > 0 ? g.getStride() : pixmap.width;
                     nativeUpdateWindowContent(nativeHandle, targetId, vd,
                         pixmap.width, pixmap.height, s, rx, ry);
+                    if (hudRef != null) {
+                        hudRef.setIsNative(false);
+                        hudRef.onFrame();
+                    }
                     return;
                 }
             }
@@ -441,6 +551,10 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
             short stride = (short)(buf.capacity() / (pixmap.height * 4));
             nativeUpdateWindowContent(nativeHandle, targetId, buf,
                 pixmap.width, pixmap.height, stride, rx, ry);
+            if (hudRef != null) {
+                hudRef.setIsNative(false);
+                hudRef.onFrame();
+            }
         }
     }
 
@@ -450,6 +564,10 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
         final long handle;
         synchronized (lock) { handle = nativeHandle; }
         if (handle == 0) return;
+        /* Native X11 latency T1 — see comment in onUpdateWindowContentDirect.
+         * Stamps arrival of a fresh frame from Wine; cleared by renderFrame's
+         * T2 right after vkQueuePresentKHR returns. */
+        nativeSetX11FrameT1(handle, System.nanoTime() / 1000L);
 
         Drawable drawable = window.getContent();
         if (drawable == null || !window.attributes.isMapped()) return;
@@ -470,11 +588,14 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                     if (nativeMode && drawable.isDirectScanout() && scanoutNow) {
                         boolean wasDelivered = nativeIsGameFrameDelivered(handle);
                         g.unlock();
-                        nativeScanoutSetBuffer(handle, ahbPtr,
+                        nativeScanoutSetBuffer(handle, ahbPtr, -1,
                             rx, ry, drawable.width, drawable.height);
+                        drainReleaseFences(handle);
                         g.lock();
                         boolean delivered = nativeIsGameFrameDelivered(handle);
+                        directFrameCount.incrementAndGet();
                         if (!xRenderingPausedForScanout && !wasDelivered && delivered) {
+                            android.util.Log.i("VulkanRenderer", "VulkanRenderer: first scanout frame delivered");
                             xServer.setRenderingEnabled(false);
                             xRenderingPausedForScanout = true;
                         }
@@ -485,6 +606,10 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                     } else if (!scanoutNow) {
                         nativeUpdateWindowContentAHB(handle, drawableId, ahbPtr,
                             drawable.width, drawable.height, rx, ry);
+                        if (hudRef != null) {
+                            hudRef.setIsNative(false);
+                            hudRef.onFrame();
+                        }
                     }
                     return;
                 }
@@ -493,6 +618,10 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                     short s = g.getStride() > 0 ? g.getStride() : drawable.width;
                     nativeUpdateWindowContent(handle, drawableId, vd,
                         drawable.width, drawable.height, s, rx, ry);
+                    if (hudRef != null) {
+                        hudRef.setIsNative(false);
+                        hudRef.onFrame();
+                    }
                     return;
                 }
             }
@@ -501,6 +630,10 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
             short stride = (short)(buf.capacity() / (drawable.height * 4));
             nativeUpdateWindowContent(handle, drawableId, buf,
                 drawable.width, drawable.height, stride, rx, ry);
+            if (hudRef != null) {
+                hudRef.setIsNative(false);
+                hudRef.onFrame();
+            }
         }
     }
 
@@ -561,7 +694,26 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     public void setCursorVisible(boolean visible) {
         cursorVisible = visible;
         synchronized (lock) {
-            if (nativeHandle != 0) { nativeSetCursorVisible(nativeHandle, visible); if (visible) sendCursorToNative(lastCursor); }
+            if (nativeHandle != 0) {
+                nativeSetCursorVisible(nativeHandle, visible);
+                if (visible) sendCursorToNative(lastCursor);
+            }
+        }
+        // Req 7.4, 7.5: when nativeMode is active, also toggle the cursor SurfaceControl layer
+        // visibility so SurfaceFlinger hides/shows the cursor without going through the GL path.
+        if (nativeMode && android.os.Build.VERSION.SDK_INT >= 29) {
+            xServerView.post(() -> {
+                android.view.SurfaceControl sc = scanoutCursorSC;
+                if (sc == null) return;
+                try {
+                    new android.view.SurfaceControl.Transaction()
+                        .setVisibility(sc, visible)
+                        .apply();
+                } catch (Exception e) {
+                    android.util.Log.w("VulkanRenderer",
+                        "setCursorVisible: SurfaceControl.Transaction failed: " + e);
+                }
+            });
         }
     }
 
@@ -612,10 +764,12 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                             }
                         }
                     } catch (Exception e) {
-                        android.util.Log.w("VulkanRenderer", "Sibling SC failed, using child SC: " + e);
+                        android.util.Log.w("VulkanRenderer", "SurfaceControl creation failed, falling back to XServer path: " + e);
                         synchronized (lock) {
                             if (nativeHandle != 0) nativeInitScanout(nativeHandle);
                         }
+                        DirectCompositorComponent dcc = directCompositorRef;
+                        if (dcc != null) dcc.onScanoutFallback();
                     }
                 } else {
                     synchronized (lock) { if (nativeHandle != 0) nativeInitScanout(nativeHandle); }
@@ -636,7 +790,160 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
         xServerView.post(() -> Toast.makeText(xServerView.getContext(), msg, Toast.LENGTH_SHORT).show());
     }
 
+    /**
+     * Detaches SurfaceControl layers from the display by hiding them, without
+     * destroying the layers or the AHB pool. Called by DirectCompositorComponent.onPause().
+     * Wine naturally blocks in acquire() since no release fences arrive while paused.
+     *
+     * <p>Requirements: 9.1
+     */
+    public void detachScanoutLayers() {
+        if (android.os.Build.VERSION.SDK_INT >= 29 && (scanoutGameSC != null || scanoutCursorSC != null)) {
+            xServerView.post(() -> {
+                try {
+                    android.view.SurfaceControl.Transaction txn = new android.view.SurfaceControl.Transaction();
+                    if (scanoutGameSC != null) txn.setVisibility(scanoutGameSC, false);
+                    if (scanoutCursorSC != null) txn.setVisibility(scanoutCursorSC, false);
+                    txn.apply();
+                } catch (Exception e) {
+                    android.util.Log.w("VulkanRenderer", "detachScanoutLayers: hide failed: " + e);
+                }
+            });
+        }
+    }
+
+    /**
+     * Reattaches SurfaceControl layers by making them visible again and resuming
+     * frame submission. Called by DirectCompositorComponent.onResume().
+     * The destination rectangle is updated to match the current ViewTransformation.
+     *
+     * <p>Requirements: 9.2, 9.6
+     */
+    public void reattachScanoutLayers() {
+        if (android.os.Build.VERSION.SDK_INT >= 29 && (scanoutGameSC != null || scanoutCursorSC != null)) {
+            xServerView.post(() -> {
+                try {
+                    android.view.SurfaceControl.Transaction txn = new android.view.SurfaceControl.Transaction();
+                    if (scanoutGameSC != null) txn.setVisibility(scanoutGameSC, true);
+                    if (scanoutCursorSC != null) txn.setVisibility(scanoutCursorSC, true);
+                    txn.apply();
+                    // Update destination rect to match current screen geometry after resume
+                    synchronized (lock) {
+                        if (nativeHandle != 0) updateTransform();
+                    }
+                } catch (Exception e) {
+                    android.util.Log.w("VulkanRenderer", "reattachScanoutLayers: show failed: " + e);
+                }
+            });
+        }
+    }
+
+    /**
+     * Drains the native release fence queue and forwards each pending release
+     * to the AHardwareBufferPool. Called after each nativeScanoutSetBuffer.
+     */
+    private void drainReleaseFences(long handle) {
+        AHardwareBufferPool pool = ahbPool;
+        if (pool == null) return;
+        int[] pending;
+        while ((pending = nativePollReleaseFence(handle)) != null) {
+            if (pending.length >= 2) {
+                pool.release(pending[0], pending[1]);
+            }
+        }
+    }
+
+    /**
+     * Sets the AHardwareBufferPool to use for release fence forwarding.
+     * Called by DirectCompositorComponent when the pool is initialized.
+     * Pass null to clear the reference when the pool is destroyed.
+     */
+    public void setAHBPool(AHardwareBufferPool pool) {
+        this.ahbPool = pool;
+    }
+
+    /**
+     * Sets the DirectCompositorComponent reference for fallback signaling.
+     * Called during component wiring so VulkanRenderer can notify the compositor
+     * when SurfaceControl creation fails or context is lost.
+     */
+    public void setDirectCompositor(DirectCompositorComponent dcc) {
+        this.directCompositorRef = dcc;
+    }
+
+    /**
+     * Submits an AHardwareBuffer frame directly to SurfaceFlinger via SurfaceControl.
+     * Called by AHBSocketServerComponent when Wine presents a frame.
+     *
+     * @param ahbPtr the AHardwareBuffer pointer to display
+     * @param acquireFenceFd the acquire fence fd (-1 if none)
+     */
+    public void submitDirectFrame(long ahbPtr, int acquireFenceFd) {
+        synchronized (lock) {
+            if (nativeHandle == 0) return;
+            if (!nativeMode) {
+                // Activate nativeMode on first direct frame
+                setNativeMode(true);
+                android.util.Log.i("VulkanRenderer",
+                    "VulkanRenderer: nativeMode enabled by first direct frame");
+            }
+            nativeScanoutSetBuffer(nativeHandle, ahbPtr, acquireFenceFd,
+                0, 0, xServer.screenInfo.width, xServer.screenInfo.height);
+            drainReleaseFences(nativeHandle);
+            directFrameCount.incrementAndGet();
+        }
+    }
+
+    /**
+     * Starts the native present-receiver thread that reads present_msg from the
+     * Wine client socket and calls scanoutSetBuffer directly in C++.
+     * This bypasses XConnectorEpoll for the hot path.
+     *
+     * @param clientFd the socket fd connected to Wine's Vulkan WSI
+     * @param ahb0 AHardwareBuffer pointer for slot 0
+     * @param ahb1 AHardwareBuffer pointer for slot 1
+     * @param ahb2 AHardwareBuffer pointer for slot 2
+     * @param screenWidth game screen width
+     * @param screenHeight game screen height
+     */
+    public void startPresentReceiver(int clientFd, long ahb0, long ahb1, long ahb2, long ahb3,
+                                     int screenWidth, int screenHeight) {
+        synchronized (lock) {
+            if (nativeHandle == 0) return;
+            // Do NOT enable nativeMode here — nativeMode is activated lazily by
+            // submitDirectFrame() when the FIRST actual AHB frame is delivered.
+            // Enabling it here would disable X11 display even when the AHB swapchain
+            // creation fails (e.g., dispatch patching couldn't intercept vkCreateSwapchainKHR),
+            // causing a permanent black screen with no fallback.
+            nativeStartPresentReceiverWithSlots(nativeHandle, clientFd,
+                ahb0, ahb1, ahb2, ahb3, screenWidth, screenHeight);
+        }
+    }
+
+    /**
+     * Stops the native present-receiver thread.
+     */
+    public void stopPresentReceiver() {
+        synchronized (lock) {
+            if (nativeHandle == 0) return;
+            nativeStopPresentReceiver(nativeHandle);
+        }
+    }
+
     public boolean isNativeMode() { return nativeMode; }
+
+    /**
+     * Called by the activity/container setup code before the surface is created.
+     * Activates nativeMode if the driver is Vulkan-based (dxvk or vkd3d).
+     * Req 6.1, 6.2, 6.6, 10.1
+     */
+    public void setGraphicsDriver(String graphicsDriver) {
+        // nativeMode is now controlled exclusively by DirectCompositorComponent.
+        // This method is kept for API compatibility and logging only.
+        android.util.Log.d("VulkanRenderer",
+            "VulkanRenderer: setGraphicsDriver called with driver=" + graphicsDriver
+            + " (nativeMode controlled by DirectCompositorComponent)");
+    }
 
     public void setDriverInfo(String driverPath, String libraryName, String nativeLibDir) {
         this.driverPath = driverPath;
@@ -651,7 +958,16 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     }
 
     public void dumpRendererInfo() {
-        synchronized (lock) { if (nativeHandle != 0) nativeDumpRendererInfo(nativeHandle); }
+        synchronized (lock) {
+            if (nativeHandle != 0) nativeDumpRendererInfo(nativeHandle);
+        }
+        // Req 10.5: log nativeMode, pool buffer count, and directFrameCount
+        AHardwareBufferPool pool = ahbPool;
+        int poolCount = (pool != null) ? pool.getCount() : 0;
+        android.util.Log.i("VulkanRenderer",
+            "VulkanRenderer: nativeMode=" + nativeMode
+            + " poolBufferCount=" + poolCount
+            + " directFrameCount=" + directFrameCount.get());
     }
 
 
@@ -689,7 +1005,28 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
     private WinlatorHUD hudRef = null;
 
     public void setFrameRating(Object fr) {
-        if (fr instanceof WinlatorHUD) hudRef = (WinlatorHUD) fr;
+        if (fr instanceof WinlatorHUD) {
+            hudRef = (WinlatorHUD) fr;
+            /* Wire a supplier so the HUD can read the DAC frame counter directly.
+             * Used when nativeMode is active — the X11 onUpdateWindowContent path
+             * that normally drives hud.onFrame() is disabled by
+             * xServer.setRenderingEnabled(false) after the first DAC frame, so
+             * the HUD's frameAccum stays at 0. */
+            hudRef.setNativeFrameCountSupplier(() -> {
+                final long h;
+                synchronized (lock) { h = nativeHandle; }
+                return h != 0 ? nativeGetDirectFrameCount(h) : 0L;
+            });
+            /* Compositor-latency supplier: feeds the LAT row when the
+             * user enables SHOW_LATENCY via the sidebar checkbox. Returns
+             * 0 when the DAC pipeline isn't running (Native X11 mode), in
+             * which case the HUD renders "—" instead of a value. */
+            hudRef.setLatencySupplier(() -> {
+                final long h;
+                synchronized (lock) { h = nativeHandle; }
+                return h != 0 ? nativeGetLatencyEmaUs(h) : 0L;
+            });
+        }
     }
 
     public boolean isFullscreen() { return fullscreen; }

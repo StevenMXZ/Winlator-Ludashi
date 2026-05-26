@@ -3,6 +3,7 @@ package com.winlator.cmod.xenvironment;
 import android.content.Context;
 
 import com.winlator.cmod.core.FileUtils;
+import com.winlator.cmod.xenvironment.components.DirectCompositorComponent;
 import com.winlator.cmod.xenvironment.components.GuestProgramLauncherComponent;
 
 import java.io.File;
@@ -63,6 +64,8 @@ public class XEnvironment implements Iterable<EnvironmentComponent> {
     }
 
     public void onPause() {
+        DirectCompositorComponent directCompositorComponent = getComponent(DirectCompositorComponent.class);
+        if (directCompositorComponent != null) directCompositorComponent.onPause();
         GuestProgramLauncherComponent guestProgramLauncherComponent = getComponent(GuestProgramLauncherComponent.class);
         if (guestProgramLauncherComponent != null) guestProgramLauncherComponent.suspendProcess();
     }
@@ -70,5 +73,7 @@ public class XEnvironment implements Iterable<EnvironmentComponent> {
     public void onResume() {
         GuestProgramLauncherComponent guestProgramLauncherComponent = getComponent(GuestProgramLauncherComponent.class);
         if (guestProgramLauncherComponent != null) guestProgramLauncherComponent.resumeProcess();
+        DirectCompositorComponent directCompositorComponent = getComponent(DirectCompositorComponent.class);
+        if (directCompositorComponent != null) directCompositorComponent.onResume();
     }
 }

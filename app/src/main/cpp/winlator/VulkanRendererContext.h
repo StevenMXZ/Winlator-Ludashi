@@ -1,6 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include <list>
+#include <utility>
 #include <vulkan/vulkan_android.h>
 struct VkTable {
 
@@ -28,6 +29,8 @@ struct VkTable {
     PFN_vkGetSwapchainImagesKHR GetSwapchainImagesKHR;
     PFN_vkAcquireNextImageKHR AcquireNextImageKHR;
     PFN_vkQueuePresentKHR QueuePresentKHR;
+    PFN_vkGetPastPresentationTimingGOOGLE GetPastPresentationTimingGOOGLE;
+    PFN_vkGetRefreshCycleDurationGOOGLE GetRefreshCycleDurationGOOGLE;
     PFN_vkQueueSubmit QueueSubmit;
     PFN_vkCreateRenderPass CreateRenderPass;
     PFN_vkDestroyRenderPass DestroyRenderPass;
@@ -77,6 +80,7 @@ struct VkTable {
     PFN_vkCmdSetScissor CmdSetScissor;
     PFN_vkCmdPipelineBarrier CmdPipelineBarrier;
     PFN_vkCmdCopyImage CmdCopyImage;
+    PFN_vkCmdBlitImage CmdBlitImage;
     PFN_vkCmdCopyBufferToImage CmdCopyBufferToImage;
     PFN_vkCreateSampler CreateSampler;
     PFN_vkDestroySampler DestroySampler;
@@ -140,12 +144,75 @@ public:
     void applyScanoutBuffer();
     void initScanoutFromWindows(ANativeWindow* gameWin, ANativeWindow* cursorWin);
     void scanoutSetDst(int x, int y, int w, int h);
-    void scanoutSetBuffer(AHardwareBuffer* ahb, int x, int y, int w, int h);
+    /* bgraBytes: 1 = source AHB has BGRA byte order, receiver swaps via
+     * format-aware vkCmdBlitImage in the local compositor blit. 0 = AHB
+     * already has RGBA bytes; plain CmdCopyImage. Set by the layer based
+     * on direct-render vs trojan-blit mode. */
+    void scanoutSetBuffer(AHardwareBuffer* ahb, int acquireFenceFd, int slotIndex, int x, int y, int w, int h, int bgraBytes = 0);
     void scanoutSetCursorImage(void* pixels, short w, short h, short stride);
     void scanoutSetCursorPos(short x, short y, short hotX, short hotY);
+    std::pair<int,int> pollReleaseFence();
     std::atomic<bool> scanoutActive{false};
     std::atomic<bool> gameFrameDelivered{false};
     std::atomic<bool> surfaceDetached{false};
+    std::atomic<int>  scanoutSocketFd{-1};
+    std::atomic<uint64_t> directFrameCount{0};
+
+    /* === Compositor-latency instrumentation (DAC modes only) ===
+     *
+     * T1 = recv thread reads MSG_PRESENT  →  stored in latencyArriveUs[slot]
+     * T2 = SurfaceFlinger setOnCommit callback fires for that slot
+     * latency = T2 - T1, exposed as an EMA via the HUD.
+     *
+     * Lock-free: T1 is written by the recv thread; T2/EMA is updated inside
+     * the onCommit callback (single writer). HUD reads the EMA via a JNI
+     * getter on a Choreographer tick (single reader, value may be a few
+     * frames stale — fine for a 60-sample-per-second display).
+     *
+     * Both clocks come from CLOCK_MONOTONIC which is kernel-wide on Linux,
+     * so the subtraction is meaningful even though the timestamps are
+     * captured on different threads. */
+    static constexpr int LATENCY_SLOT_MAX = 4;  /* matches AHB pool size */
+    std::atomic<uint64_t> latencyArriveUs[LATENCY_SLOT_MAX] = {};
+    std::atomic<uint64_t> latencyEmaUs{0};      /* 0 = no data yet */
+
+    /* Native (X11) mode latency. T1 stamped from Java's onUpdateWindowContent
+     * via the nativeSetX11FrameT1 JNI bridge. T2 used to be captured right
+     * after vkQueuePresentKHR returned, but that fires before SurfaceFlinger
+     * has actually displayed the frame — under-reporting the true compositor
+     * latency by ~1 vsync. The new path uses VK_GOOGLE_display_timing to ask
+     * the driver "what time was this presentId actually displayed?", giving
+     * an apples-to-apples comparison with DAC's setOnCommit timestamp.
+     *
+     * Compare-exchange-from-0 on the Java side: first update of a render
+     * cycle wins, subsequent updates (e.g. for additional windows in the
+     * same frame) are ignored. The QueuePresent path swaps it back to 0 so
+     * the next cycle can stamp fresh.
+     *
+     * Both X11 and DAC paths write to the SHARED latencyEmaUs above, since
+     * only one pipeline is active per session and the HUD reads a single
+     * number regardless of source. */
+    std::atomic<uint64_t> latencyX11ArriveUs{0};
+
+    /* === VK_GOOGLE_display_timing ring buffer ===
+     * For each Native present we attach a monotonic presentId via
+     * VkPresentTimesInfoGOOGLE and remember (presentId, T1) here. Later
+     * vkGetPastPresentationTimingGOOGLE returns the actualPresentTime
+     * (CLOCK_MONOTONIC ns) for past presents; we match presentId →
+     * arriveT1Us, compute the delta, and feed the EMA.
+     *
+     * Owned exclusively by the render thread (single-writer). The query
+     * pulls results into a transient local array each frame — no atomics
+     * needed beyond the EMA itself. */
+    bool displayTimingSupported = false;
+    uint64_t nextPresentId = 1;  /* 0 means "no timing requested" per spec */
+    static constexpr int PRESENT_RING_SIZE = 32;
+    struct PresentEntry {
+        uint64_t presentId;
+        uint64_t arriveT1Us;
+    };
+    PresentEntry presentRing[PRESENT_RING_SIZE] = {};
+    int presentRingHead = 0;
 
     void detachSurface();
     bool reattachSurface(ANativeWindow* newWindow);
@@ -242,6 +309,9 @@ private:
     VkDeviceMemory    scanoutLocalMem     = VK_NULL_HANDLE;
     int               scanoutLocalW       = 0;
     int               scanoutLocalH       = 0;
+    uint32_t          scanoutLocalAhbFormat = 0;  /* HAL pixel format the local AHB was allocated with;
+                                                  * reallocate if the requested format changes (e.g.
+                                                  * switching between trojan-blit RGBA and direct-render BGRA modes). */
     bool              scanoutNeedsGpuBlit = false;
     bool   scanoutApiLoaded   = false;
     bool   scanoutEnvGpuBlit  = false;
@@ -256,6 +326,10 @@ private:
     void*  fnSTSetVisibility  = nullptr;
     void*  fnSTSetGeometry    = nullptr;
     void*  fnSTSetBackPressure = nullptr;
+    void*  fnSTSetOnComplete   = nullptr;
+    void*  fnSTSetOnCommit     = nullptr;  /* ASurfaceTransaction_setOnCommit, API 31+ */
+    void*  fnSTSetFrameRate    = nullptr;  /* ASurfaceTransaction_setFrameRate, API 30+ */
+    void*  fnSTSetBufferTransparency = nullptr;  /* ASurfaceTransaction_setBufferTransparency, API 29+ */
     bool   loadScanoutApi();
 
     int32_t scanoutDstX=0, scanoutDstY=0, scanoutDstW=0, scanoutDstH=0;
@@ -263,11 +337,14 @@ private:
     int32_t lastDstX=0, lastDstY=0, lastDstW=0, lastDstH=0;
     bool    gameScVisible      = false;
 
-    struct ScanoutPending { AHardwareBuffer* ahb=nullptr; int x=0,y=0,w=0,h=0; };
+    struct ScanoutPending { AHardwareBuffer* ahb=nullptr; int acquireFenceFd=-1; int slotIndex=-1; int x=0,y=0,w=0,h=0; int bgraBytes=0; };
     std::mutex        scanoutMutex;
     ScanoutPending    scanoutPending{};
     std::atomic<bool> scanoutPendingDirty{false};
 
+    struct ReleasePending { int slotIndex; int releaseFd; };
+    std::mutex                   releaseMutex;
+    std::vector<ReleasePending>  releaseQueue;
     std::atomic<int>  pointerX{0}, pointerY{0};
     float sceneOffsetX=0.f, sceneOffsetY=0.f, sceneScaleX=1.f, sceneScaleY=1.f;
 
@@ -350,7 +427,11 @@ private:
     void cleanupSwapchain();
 
     bool  createWinTexResources(WinTex& wt, int w, int h);
-    bool  importAHBToWinTex(WinTex& wt, AHardwareBuffer* ahb);
+    /* overrideFormat: when not VK_FORMAT_UNDEFINED, forces the imported
+     * VkImage's format regardless of the swapRB heuristic. Used by the
+     * direct-render scanout path to import the source AHB as B8G8R8A8 so
+     * a subsequent vkCmdBlitImage performs an R↔B channel swap. */
+    bool  importAHBToWinTex(WinTex& wt, AHardwareBuffer* ahb, VkFormat overrideFormat = VK_FORMAT_UNDEFINED);
     bool  ensureScanoutLocalAhb(int w, int h, uint32_t ahbFormat);
     void  cleanupAllAHBCache();
     void  flushDeleteQueue();

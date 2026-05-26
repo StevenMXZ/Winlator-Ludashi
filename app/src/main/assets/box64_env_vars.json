@@ -17,5 +17,7 @@
     {"name" : "BOX64_DYNAREC_DIRTY", "values" : ["0", "1", "2"], "toggleSwitch" : "false", "defaultValue" : "0"},
     {"name" : "BOX64_DYNAREC_NATIVEFLAGS", "values" : ["0", "1"], "toggleSwitch" : "true", "defaultValue" : "1"},
     {"name" : "BOX64_DYNAREC_PAUSE", "values" : ["0", "1", "2", "3"], "toggleSwitch" : "false", "defaultValue" : "0"},
-    {"name" : "BOX64_MMAP32", "values" :  ["0", "1"], "toggleSwitch" : true, "defaultValue" :  "1"}
+    {"name" : "BOX64_MMAP32", "values" :  ["0", "1"], "toggleSwitch" : true, "defaultValue" :  "1"},
+    {"_comment_BOX64_DYNAREC_HUGEPAGE" : "Hints Box64 to madvise(MADV_HUGEPAGE) on its JIT code region. On SM8550 with 48-entry L1 iTLB, JIT code scattered across 4KB pages causes TLB thrashing. THP-promoted JIT pages collapse hundreds of TLB entries into one 2MB entry. Requires CONFIG_TRANSPARENT_HUGEPAGE in the kernel (present on OOS15). 0=off, 1=on. Default on for performance.",
+     "name" : "BOX64_DYNAREC_HUGEPAGE", "values" : ["0", "1"], "toggleSwitch" : true, "defaultValue" : "1"}
 ]

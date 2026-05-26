@@ -90,7 +90,9 @@ import com.winlator.cmod.winhandler.WinHandler;
 import com.winlator.cmod.xconnector.UnixSocketConfig;
 import com.winlator.cmod.xenvironment.ImageFs;
 import com.winlator.cmod.xenvironment.XEnvironment;
+import com.winlator.cmod.xenvironment.components.AHBSocketServerComponent;
 import com.winlator.cmod.xenvironment.components.ALSAServerComponent;
+import com.winlator.cmod.xenvironment.components.DirectCompositorComponent;
 import com.winlator.cmod.xenvironment.components.GuestProgramLauncherComponent;
 import com.winlator.cmod.xenvironment.components.PulseAudioComponent;
 import com.winlator.cmod.xenvironment.components.SysVSharedMemoryComponent;
@@ -176,7 +178,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private GuestProgramLauncherComponent guestProgramLauncherComponent;
     private EnvVars overrideEnvVars;
 
-    private CheckBox cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer, cbRam;
+    private CheckBox cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer, cbRam, cbLatency;
 
     private static final int[] NATIVE_FPS_VALUES = { 0, 30, 45, 60, 90, 120 };
     private Spinner spNativeFPS;
@@ -629,14 +631,41 @@ if (enableLogs) {
                 if (winHandler != null) winHandler.stop();
                 if (wineRequestHandler != null) wineRequestHandler.stop();
                 ProcessHelper.terminateAllWineProcesses();
-                long start = System.currentTimeMillis();
-                while (!ProcessHelper.listRunningWineProcesses().isEmpty()) {
-                    long elapsed = System.currentTimeMillis() - start;
-                    if (elapsed >= 1500) break;
-                }
-                preloaderDialog.closeOnUiThread();
-                int selectedMenuItemId = shortcut != null ? R.id.main_menu_shortcuts : R.id.main_menu_containers;
-                AppUtils.restartApplication(getApplicationContext(), selectedMenuItemId);
+
+                /* === FIX: pre-existing UI-thread freeze on sidebar exit ===
+                 *
+                 * The original code spun in a 100%-CPU busy-loop on the UI
+                 * thread for up to 1.5 s, polling listRunningWineProcesses()
+                 * (which scans /proc) as fast as the scheduler allowed.
+                 * Result: the screen visibly froze every time the user tapped
+                 * the sidebar's exit button — sometimes long enough that
+                 * Android nearly fired an ANR.
+                 *
+                 * Two problems with the original:
+                 *   1. No Thread.sleep between polls → CPU burn at 100%.
+                 *   2. Entire wait happened on the UI thread → screen frozen.
+                 *
+                 * Fix: spin off a worker thread that does the wait with a
+                 * 50 ms sleep between polls (≤ 30 iterations, ~1.5 s max), then
+                 * posts the cleanup back to the UI thread via runOnUiThread.
+                 * The UI thread stays responsive throughout; the preloader
+                 * "Shutting down…" dialog stays visible until the worker
+                 * completes; the restart fires from the UI thread as before. */
+                new Thread(() -> {
+                    long start = System.currentTimeMillis();
+                    while (!ProcessHelper.listRunningWineProcesses().isEmpty()) {
+                        if (System.currentTimeMillis() - start >= 1500) break;
+                        try { Thread.sleep(50); }
+                        catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+                    }
+                    runOnUiThread(() -> {
+                        preloaderDialog.closeOnUiThread();
+                        int selectedMenuItemId = shortcut != null
+                            ? R.id.main_menu_shortcuts
+                            : R.id.main_menu_containers;
+                        AppUtils.restartApplication(getApplicationContext(), selectedMenuItemId);
+                    });
+                }, "WineProcessWaitThread").start();
             }
         }, 1000);
     }
@@ -787,6 +816,13 @@ if (enableLogs) {
 
         environment = new XEnvironment(this, imageFs);
         environment.addComponent(new SysVSharedMemoryComponent(xServer, UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.SYSVSHM_SERVER_PATH)));
+        DirectCompositorComponent directCompositor = new DirectCompositorComponent(
+                xServerView.getRenderer(), 4,
+                xServer.screenInfo.width, xServer.screenInfo.height);
+        environment.addComponent(directCompositor);
+        environment.addComponent(new AHBSocketServerComponent(
+                UnixSocketConfig.createSocket(rootPath, AHBSocketServerComponent.AHB_SOCKET_PATH),
+                directCompositor));
         environment.addComponent(new XServerComponent(xServer, UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.XSERVER_PATH)));
 
         if (audioDriver.equals("alsa")) {
@@ -815,8 +851,22 @@ if (enableLogs) {
         xServerView = new XServerView(this, xServer);
         final VulkanRenderer renderer = xServerView.getRenderer();
         renderer.setCursorVisible(false);
+
         {
-        String rdrDriverId = "";
+            String rdrDriverId = shortcut != null ? shortcut.getRendererDriverId()
+                    : (container != null ? container.getRendererDriverId() : "");
+            if (rdrDriverId == null || rdrDriverId.isEmpty() || rdrDriverId.equalsIgnoreCase("system")) {
+                String graphicsDriverConfigValue = shortcut != null
+                        ? shortcut.getExtra("graphicsDriverConfig", container.getGraphicsDriverConfig())
+                        : (container != null ? container.getGraphicsDriverConfig() : "");
+                HashMap<String, String> wrapperConfig = GraphicsDriverConfigDialog.parseGraphicsDriverConfig(graphicsDriverConfigValue);
+                String wrapperDriverId = wrapperConfig.get("version");
+                if (wrapperDriverId != null && !wrapperDriverId.isEmpty() && !wrapperDriverId.equalsIgnoreCase("system")) {
+                    rdrDriverId = wrapperDriverId;
+                } else {
+                    rdrDriverId = "";
+                }
+            }
             if (rdrDriverId != null && !rdrDriverId.isEmpty() && !rdrDriverId.equalsIgnoreCase("system")) {
                 try {
                     String filesDir = getFilesDir().getAbsolutePath();
@@ -833,8 +883,13 @@ if (enableLogs) {
             int fm = shortcut != null ? shortcut.getRendererFilterMode()
                 : (container != null ? container.getRendererFilterMode() : 0);
             renderer.setFilterMode(fm);
+            /* 0 = "Device Refresh Rate". Default-fallback for a missing
+             * container was 60, which capped DAC at half-rate on 120 Hz
+             * panels (Window.preferredRefreshRate → SF apply rate → AHB
+             * slot-recycle rate). Matches Container.rendererRefreshRateLimit
+             * default of 0. */
             int refreshRateLimit = shortcut != null ? shortcut.getRendererRefreshRateLimit()
-                : (container != null ? container.getRendererRefreshRateLimit() : 60);
+                : (container != null ? container.getRendererRefreshRateLimit() : 0);
             applyRendererRefreshRatePreference(refreshRateLimit);
             renderer.setRefreshRateLimit(refreshRateLimit);
             boolean swapRB = shortcut != null ? shortcut.getRendererSwapRB()
@@ -846,8 +901,7 @@ if (enableLogs) {
 
         if (shortcut != null) renderer.setUnviewableWMClasses("explorer.exe");
 
-        boolean isNative = false;
-        renderer.setNativeMode(isNative);
+        renderer.setGraphicsDriver(graphicsDriver);
 
         xServer.setRenderer(renderer);
         rootView.addView(xServerView);
@@ -1072,6 +1126,7 @@ private void setupLeftSidebar() {
         cbGraph = findViewById(R.id.CBHudGraph);
         cbRenderer = findViewById(R.id.CBHudRenderer);
         cbRam = findViewById(R.id.CBHudRam);
+        cbLatency = findViewById(R.id.CBHudLatency);
 
         VulkanRenderer renderer = xServerView != null ? xServerView.getRenderer() : null;
         boolean isNative = renderer != null && renderer.isNativeMode();
@@ -1090,7 +1145,7 @@ private void setupLeftSidebar() {
 
         if (frameRating != null) {
             swHudMaster.setChecked(frameRating.getVisibility() == View.VISIBLE);
-            frameRating.syncCheckboxes(cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer);
+            frameRating.syncCheckboxes(cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer, cbLatency);
             android.content.SharedPreferences hudPrefs = getSharedPreferences("winlator_hud", MODE_PRIVATE);
             if (sbHudScale != null) {
                 float scale = hudPrefs.getFloat("hud_scale", 1f);
@@ -1124,6 +1179,7 @@ private void setupLeftSidebar() {
         if (cbBattTemp != null) cbBattTemp.setOnClickListener(hudListener);
         if (cbGraph != null) cbGraph.setOnClickListener(hudListener);
         if (cbRenderer != null) cbRenderer.setOnClickListener(hudListener);
+        if (cbLatency != null) cbLatency.setOnClickListener(hudListener);
 
         if (sbHudScale != null) {
             sbHudScale.setOnTouchListener((v, event) -> {
@@ -1191,6 +1247,7 @@ private void setupLeftSidebar() {
             frameRating.toggleElement(5, cbGraph.isChecked());
             frameRating.toggleElement(6, cbRenderer.isChecked());
             if (cbRam != null) frameRating.toggleElement(7, cbRam.isChecked());
+            if (cbLatency != null) frameRating.toggleElement(8, cbLatency.isChecked());
         }
     }
     private boolean restoreCurrentSidebarState() {

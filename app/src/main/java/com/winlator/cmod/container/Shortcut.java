@@ -310,8 +310,11 @@ public class Shortcut {
 
     public int getRendererRefreshRateLimit() {
         String v = getExtra("rendererRefreshRateLimit", null);
+        /* On parse failure return 0 ("Device Refresh Rate"). Was 60 which
+         * silently capped high-refresh panels at half-rate; see
+         * Container.rendererRefreshRateLimit for the full rationale. */
         try { return v != null && !v.isEmpty() ? Integer.parseInt(v) : container.getRendererRefreshRateLimit(); }
-        catch (NumberFormatException e) { return 60; }
+        catch (NumberFormatException e) { return 0; }
     }
     public void setRendererRefreshRateLimit(int v) { putExtra("rendererRefreshRateLimit", String.valueOf(v > 0 ? v : 0)); }
 

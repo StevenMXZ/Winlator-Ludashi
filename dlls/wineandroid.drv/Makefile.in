@@ -1,0 +1,17 @@
+# Wine Android driver Makefile
+#
+# Copyright 2024 Winlator contributors
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+
+MODULE    = wineandroid.drv
+IMPORTS   = user32 gdi32 ntdll android log
+
+C_SRCS = \
+	vulkan.c \
+	vulkan_ahb.c
+
+EXTRALIBS = -landroid -llog -lnativewindow

@@ -1,118 +1,349 @@
+/*
+ * alsa_client.c — AAudio backend for Winlator's ALSA bridge.
+ *
+ * Changes vs upstream Ludashi 3.0:
+ *   - AAUDIO_USAGE_GAME: tells the Android audio HAL this is a game stream,
+ *     enabling the low-latency DSP mixing path on Qualcomm platforms (SM8550).
+ *     Previously the stream had no usage hint and defaulted to MEDIA.
+ *   - AAUDIO_CONTENT_TYPE_SONIFICATION: matches usage semantics expected by
+ *     the HAL for real-time game audio effects.
+ *   - Callback (pull) mode replaces blocking AAudioStream_write():
+ *     Android calls our dataCallback from a dedicated real-time audio thread
+ *     (SCHED_FIFO, elevated priority). The old write() path blocked for up to
+ *     WAIT_COMPLETION_TIMEOUT (100 ms) on any render stall, causing glitches
+ *     during shader compile spikes or GC pauses. In callback mode the RT
+ *     thread always runs at the right time regardless of Wine's thread state.
+ *   - A lock-free ring buffer (power-of-2 size) sits between Wine's write
+ *     calls and the callback.  Wine writes into the ring; the callback drains
+ *     it.  If the callback fires and the ring is empty (underrun) it outputs
+ *     silence — a clean gap instead of a stall-induced glitch.
+ *   - errorCallback reconnects the stream on disconnect (e.g. headphone plug).
+ */
+
 #include <aaudio/AAudio.h>
+#include <android/log.h>
 #include <jni.h>
+#include <stdatomic.h>
+#include <stdlib.h>
+#include <string.h>
 
-#define WAIT_COMPLETION_TIMEOUT 100 * 1000000L
+#define LOG_TAG "WinlatorAudio"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  LOG_TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-enum Format {U8, S16LE, S16BE, FLOATLE, FLOATBE};
+/* Fallback timeout for state-change waits (100 ms). */
+#define WAIT_NS (100 * 1000000L)
+
+/* Ring buffer: holds up to RING_FRAMES frames.
+ * Must be a power of 2 for the mask trick.
+ * 8192 frames @ 48 kHz ≈ 170 ms — enough headroom for a shader-compile spike
+ * without glitching, small enough not to add audible latency under normal load. */
+#define RING_FRAMES 8192
+#define RING_MASK   (RING_FRAMES - 1)
+
+enum Format { U8, S16LE, S16BE, FLOATLE, FLOATBE };
+
+/* Per-stream state kept alive between JNI calls. */
+typedef struct {
+    AAudioStream *stream;
+
+    /* Ring buffer storage — allocated at stream-open time based on frame size. */
+    void        *ring;
+    int          frame_bytes;   /* bytes per frame (channels × sample size)   */
+    int          ring_bytes;    /* RING_FRAMES × frame_bytes                   */
+
+    /* Lock-free read/write cursors (frame indices, wrap naturally). */
+    atomic_int   wr;            /* written by Wine's thread                    */
+    atomic_int   rd;            /* read  by the RT audio callback              */
+} StreamCtx;
+
+/* ── Helpers ────────────────────────────────────────────────────────────── */
 
 static aaudio_format_t toAAudioFormat(int format) {
     switch (format) {
-        case FLOATLE:
-        case FLOATBE:
-            return AAUDIO_FORMAT_PCM_FLOAT;
-        case U8:
-            return AAUDIO_FORMAT_UNSPECIFIED;
-        case S16LE:
-        case S16BE:
-        default:
-            return AAUDIO_FORMAT_PCM_I16;
+        case FLOATLE: case FLOATBE: return AAUDIO_FORMAT_PCM_FLOAT;
+        case U8:                    return AAUDIO_FORMAT_UNSPECIFIED;
+        case S16LE: case S16BE:
+        default:                    return AAUDIO_FORMAT_PCM_I16;
     }
 }
 
-static AAudioStream *aaudioCreate(int32_t format, int8_t channelCount, int32_t sampleRate, int32_t bufferSize) {
-    aaudio_result_t result;
-    AAudioStreamBuilder *builder;
-    AAudioStream *stream;
+static int frameSize(aaudio_format_t fmt, int channels) {
+    int sample = (fmt == AAUDIO_FORMAT_PCM_FLOAT) ? 4 : 2;
+    return sample * channels;
+}
 
-    result = AAudio_createStreamBuilder(&builder);
-    if (result != AAUDIO_OK) return NULL;
+/* ── AAudio callbacks ───────────────────────────────────────────────────── */
 
-    AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
-    AAudioStreamBuilder_setFormat(builder, toAAudioFormat(format));
-    AAudioStreamBuilder_setChannelCount(builder, channelCount);
-    AAudioStreamBuilder_setSampleRate(builder, sampleRate);
+/*
+ * dataCallback — called by the AAudio RT thread every ~few ms.
+ * Drains the ring buffer into `audioData`; pads with silence on underrun.
+ */
+static aaudio_data_callback_result_t dataCallback(
+        AAudioStream *stream, void *userData,
+        void *audioData, int32_t numFrames)
+{
+    StreamCtx *ctx = (StreamCtx *)userData;
+    char      *dst = (char *)audioData;
+    int        fb  = ctx->frame_bytes;
 
-    result = AAudioStreamBuilder_openStream(builder, &stream);
+    int avail = atomic_load_explicit(&ctx->wr, memory_order_acquire)
+              - atomic_load_explicit(&ctx->rd, memory_order_relaxed);
+    if (avail < 0) avail = 0;
+    if (avail > RING_FRAMES) avail = RING_FRAMES; /* sanity */
+
+    int toCopy  = (avail < numFrames) ? avail : numFrames;
+    int toSilence = numFrames - toCopy;
+
+    /* Copy available frames from the ring. */
+    int rd = atomic_load_explicit(&ctx->rd, memory_order_relaxed) & RING_MASK;
+    for (int i = 0; i < toCopy; i++) {
+        memcpy(dst, (char *)ctx->ring + rd * fb, fb);
+        dst += fb;
+        rd = (rd + 1) & RING_MASK;
+    }
+    atomic_fetch_add_explicit(&ctx->rd, toCopy, memory_order_release);
+
+    /* Pad the rest with silence (underrun). */
+    if (toSilence > 0) {
+        memset(dst, 0, toSilence * fb);
+        if (toSilence > numFrames / 2) /* only warn on significant underrun */
+            LOGW("dataCallback: underrun %d/%d frames", toSilence, numFrames);
+    }
+
+    return AAUDIO_CALLBACK_RESULT_CONTINUE;
+}
+
+/*
+ * errorCallback — reconnect the stream on disconnect events
+ * (Bluetooth switch, headphone plug/unplug).
+ */
+static void errorCallback(AAudioStream *stream, void *userData, aaudio_result_t error) {
+    LOGW("errorCallback: error=%d, attempting stream restart", error);
+    /* AAudioStream_requestStart is safe to call from any thread. */
+    if (error == AAUDIO_ERROR_DISCONNECTED) {
+        aaudio_result_t res = AAudioStream_requestStart(stream);
+        LOGI("errorCallback: restart result=%d", res);
+    }
+}
+
+/* ── Stream lifecycle ───────────────────────────────────────────────────── */
+
+static StreamCtx *aaudioCreate(int32_t format, int8_t channelCount,
+                               int32_t sampleRate, int32_t bufferSize) {
+    AAudioStreamBuilder *builder = NULL;
+    AAudioStream        *stream  = NULL;
+
+    aaudio_result_t result = AAudio_createStreamBuilder(&builder);
     if (result != AAUDIO_OK) {
-        AAudioStreamBuilder_delete(builder);
+        LOGE("aaudioCreate: createStreamBuilder failed: %d", result);
         return NULL;
     }
 
+    aaudio_format_t fmt = toAAudioFormat(format);
+
+    /*
+     * AAUDIO_PERFORMANCE_MODE_LOW_LATENCY: request the smallest buffer the
+     * HAL will give us (FAST path on Qualcomm = ~5 ms round-trip).
+     *
+     * AAUDIO_USAGE_GAME: tells the audio HAL and policy engine this is a
+     * real-time game stream. On SM8550/OOS, this routes through the game
+     * mixing path in the ADSP — different from MEDIA in scheduler priority
+     * and DSP latency budget.
+     *
+     * AAUDIO_CONTENT_TYPE_SONIFICATION: correct pairing for game sound
+     * effects; lets the HAL apply the right volume normalization curve.
+     */
+    AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_GAME);
+    AAudioStreamBuilder_setContentType(builder, AAUDIO_CONTENT_TYPE_SONIFICATION);
+    AAudioStreamBuilder_setFormat(builder, fmt);
+    AAudioStreamBuilder_setChannelCount(builder, channelCount);
+    AAudioStreamBuilder_setSampleRate(builder, sampleRate);
+
+    /* Callback mode: no blocking writes; audio delivered by RT thread. */
+    AAudioStreamBuilder_setDataCallback(builder, dataCallback, NULL /* set below */);
+    AAudioStreamBuilder_setErrorCallback(builder, errorCallback, NULL /* set below */);
+
+    result = AAudioStreamBuilder_openStream(builder, &stream);
+    AAudioStreamBuilder_delete(builder);
+
+    if (result != AAUDIO_OK) {
+        LOGE("aaudioCreate: openStream failed: %d", result);
+        return NULL;
+    }
+
+    /* Allocate the StreamCtx that owns both the stream and the ring buffer. */
+    StreamCtx *ctx = (StreamCtx *)calloc(1, sizeof(StreamCtx));
+    if (!ctx) {
+        AAudioStream_close(stream);
+        LOGE("aaudioCreate: calloc StreamCtx failed");
+        return NULL;
+    }
+
+    ctx->stream      = stream;
+    ctx->frame_bytes = frameSize(fmt, channelCount);
+    ctx->ring_bytes  = RING_FRAMES * ctx->frame_bytes;
+    ctx->ring        = calloc(1, ctx->ring_bytes);
+    atomic_init(&ctx->wr, 0);
+    atomic_init(&ctx->rd, 0);
+
+    if (!ctx->ring) {
+        AAudioStream_close(stream);
+        free(ctx);
+        LOGE("aaudioCreate: calloc ring failed");
+        return NULL;
+    }
+
+    /* Patch callback userData now that ctx is stable. */
+    /* AAudio doesn't expose setUserData after open; we use a trampoline
+     * via a thread-local — simpler: just stash ctx in a global per stream.
+     * For Winlator's single-stream use case this is fine. */
+    /* Re-open with userData set via builder is the clean approach: */
+    AAudioStream_close(stream);
+    stream = NULL;
+
+    AAudioStreamBuilder *b2 = NULL;
+    AAudio_createStreamBuilder(&b2);
+    AAudioStreamBuilder_setPerformanceMode(b2, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    AAudioStreamBuilder_setUsage(b2, AAUDIO_USAGE_GAME);
+    AAudioStreamBuilder_setContentType(b2, AAUDIO_CONTENT_TYPE_SONIFICATION);
+    AAudioStreamBuilder_setFormat(b2, fmt);
+    AAudioStreamBuilder_setChannelCount(b2, channelCount);
+    AAudioStreamBuilder_setSampleRate(b2, sampleRate);
+    AAudioStreamBuilder_setDataCallback(b2, dataCallback, ctx);
+    AAudioStreamBuilder_setErrorCallback(b2, errorCallback, ctx);
+    result = AAudioStreamBuilder_openStream(b2, &stream);
+    AAudioStreamBuilder_delete(b2);
+
+    if (result != AAUDIO_OK) {
+        free(ctx->ring);
+        free(ctx);
+        LOGE("aaudioCreate: second openStream failed: %d", result);
+        return NULL;
+    }
+    ctx->stream = stream;
+
+    /* In callback mode the buffer-size hint is advisory; set it anyway. */
     AAudioStream_setBufferSizeInFrames(stream, bufferSize);
 
-    result = AAudioStreamBuilder_delete(builder);
-    if (result != AAUDIO_OK) return NULL;
-
-    return stream;
+    LOGI("aaudioCreate: stream=%p fmt=%d ch=%d rate=%d frameBytes=%d ringBytes=%d",
+         (void*)stream, fmt, channelCount, sampleRate, ctx->frame_bytes, ctx->ring_bytes);
+    return ctx;
 }
 
-static int aaudioWrite(AAudioStream *aaudioStream, void *buffer, int numFrames) {
-    aaudio_result_t framesWritten = AAudioStream_write(aaudioStream, buffer, numFrames, WAIT_COMPLETION_TIMEOUT);
-    return framesWritten;
+/*
+ * aaudioWrite — called by Wine's audio thread.
+ * Copies `numFrames` into the ring buffer; returns frames written.
+ * Drops frames silently if the ring is full (back-pressure from the RT thread).
+ */
+static int aaudioWrite(StreamCtx *ctx, void *buffer, int numFrames) {
+    int fb   = ctx->frame_bytes;
+    int wr   = atomic_load_explicit(&ctx->wr, memory_order_relaxed);
+    int rd   = atomic_load_explicit(&ctx->rd, memory_order_acquire);
+    int free = RING_FRAMES - (wr - rd);
+
+    if (free <= 0) {
+        LOGW("aaudioWrite: ring full, dropping %d frames", numFrames);
+        return 0;
+    }
+
+    int toCopy = (numFrames < free) ? numFrames : free;
+    char *src  = (char *)buffer;
+    int  wridx = wr & RING_MASK;
+
+    for (int i = 0; i < toCopy; i++) {
+        memcpy((char *)ctx->ring + wridx * fb, src, fb);
+        src  += fb;
+        wridx = (wridx + 1) & RING_MASK;
+    }
+    atomic_fetch_add_explicit(&ctx->wr, toCopy, memory_order_release);
+    return toCopy;
 }
 
-static void aaudioStart(AAudioStream *aaudioStream) {
-    AAudioStream_requestStart(aaudioStream);
-    AAudioStream_waitForStateChange(aaudioStream, AAUDIO_STREAM_STATE_STARTING, NULL, WAIT_COMPLETION_TIMEOUT);
+static void aaudioStart(StreamCtx *ctx) {
+    AAudioStream_requestStart(ctx->stream);
+    AAudioStream_waitForStateChange(ctx->stream, AAUDIO_STREAM_STATE_STARTING,
+                                    NULL, WAIT_NS);
 }
 
-static void aaudioStop(AAudioStream *aaudioStream) {
-    AAudioStream_requestStop(aaudioStream);
-    AAudioStream_waitForStateChange(aaudioStream, AAUDIO_STREAM_STATE_STOPPING, NULL, WAIT_COMPLETION_TIMEOUT);
+static void aaudioStop(StreamCtx *ctx) {
+    AAudioStream_requestStop(ctx->stream);
+    AAudioStream_waitForStateChange(ctx->stream, AAUDIO_STREAM_STATE_STOPPING,
+                                    NULL, WAIT_NS);
 }
 
-static void aaudioPause(AAudioStream *aaudioStream) {
-    AAudioStream_requestPause(aaudioStream);
-    AAudioStream_waitForStateChange(aaudioStream, AAUDIO_STREAM_STATE_PAUSING, NULL, WAIT_COMPLETION_TIMEOUT);
+static void aaudioPause(StreamCtx *ctx) {
+    AAudioStream_requestPause(ctx->stream);
+    AAudioStream_waitForStateChange(ctx->stream, AAUDIO_STREAM_STATE_PAUSING,
+                                    NULL, WAIT_NS);
 }
 
-static void aaudioFlush(AAudioStream *aaudioStream) {
-    AAudioStream_requestFlush(aaudioStream);
-    AAudioStream_waitForStateChange(aaudioStream, AAUDIO_STREAM_STATE_FLUSHING, NULL, WAIT_COMPLETION_TIMEOUT);
+static void aaudioFlush(StreamCtx *ctx) {
+    /* Drain the ring buffer so stale audio isn't replayed after resume. */
+    atomic_store_explicit(&ctx->rd, atomic_load_explicit(&ctx->wr,
+                          memory_order_acquire), memory_order_release);
+
+    AAudioStream_requestFlush(ctx->stream);
+    AAudioStream_waitForStateChange(ctx->stream, AAUDIO_STREAM_STATE_FLUSHING,
+                                    NULL, WAIT_NS);
 }
+
+static void aaudioClose(StreamCtx *ctx) {
+    if (!ctx) return;
+    AAudioStream_close(ctx->stream);
+    free(ctx->ring);
+    free(ctx);
+}
+
+/* ── JNI interface ──────────────────────────────────────────────────────── */
 
 JNIEXPORT jlong JNICALL
-Java_com_winlator_cmod_alsaserver_ALSAClient_create(JNIEnv *env, jobject obj, jint format,
-                                               jbyte channelCount, jint sampleRate, jint bufferSize) {
+Java_com_winlator_cmod_alsaserver_ALSAClient_create(JNIEnv *env, jobject obj,
+        jint format, jbyte channelCount, jint sampleRate, jint bufferSize) {
     return (jlong)aaudioCreate(format, channelCount, sampleRate, bufferSize);
 }
 
 JNIEXPORT jint JNICALL
-Java_com_winlator_cmod_alsaserver_ALSAClient_write(JNIEnv *env, jobject obj, jlong streamPtr, jobject buffer,
-                                              jint numFrames) {
-    AAudioStream *aaudioStream = (AAudioStream*)streamPtr;
-    if (aaudioStream) {
-        return aaudioWrite(aaudioStream, (*env)->GetDirectBufferAddress(env, buffer), numFrames);
-    }
-    else return -1;
+Java_com_winlator_cmod_alsaserver_ALSAClient_write(JNIEnv *env, jobject obj,
+        jlong streamPtr, jobject buffer, jint numFrames) {
+    StreamCtx *ctx = (StreamCtx *)(uintptr_t)streamPtr;
+    if (!ctx) return -1;
+    void *data = (*env)->GetDirectBufferAddress(env, buffer);
+    return aaudioWrite(ctx, data, numFrames);
 }
 
 JNIEXPORT void JNICALL
-Java_com_winlator_cmod_alsaserver_ALSAClient_start(JNIEnv *env, jobject obj, jlong streamPtr) {
-    AAudioStream *aaudioStream = (AAudioStream*)streamPtr;
-    if (aaudioStream) aaudioStart(aaudioStream);
+Java_com_winlator_cmod_alsaserver_ALSAClient_start(JNIEnv *env, jobject obj,
+        jlong streamPtr) {
+    StreamCtx *ctx = (StreamCtx *)(uintptr_t)streamPtr;
+    if (ctx) aaudioStart(ctx);
 }
 
 JNIEXPORT void JNICALL
-Java_com_winlator_cmod_alsaserver_ALSAClient_stop(JNIEnv *env, jobject obj, jlong streamPtr) {
-    AAudioStream *aaudioStream = (AAudioStream*)streamPtr;
-    if (aaudioStream) aaudioStop(aaudioStream);
+Java_com_winlator_cmod_alsaserver_ALSAClient_stop(JNIEnv *env, jobject obj,
+        jlong streamPtr) {
+    StreamCtx *ctx = (StreamCtx *)(uintptr_t)streamPtr;
+    if (ctx) aaudioStop(ctx);
 }
 
 JNIEXPORT void JNICALL
-Java_com_winlator_cmod_alsaserver_ALSAClient_pause(JNIEnv *env, jobject obj, jlong streamPtr) {
-    AAudioStream *aaudioStream = (AAudioStream*)streamPtr;
-    if (aaudioStream) aaudioPause(aaudioStream);
+Java_com_winlator_cmod_alsaserver_ALSAClient_pause(JNIEnv *env, jobject obj,
+        jlong streamPtr) {
+    StreamCtx *ctx = (StreamCtx *)(uintptr_t)streamPtr;
+    if (ctx) aaudioPause(ctx);
 }
 
 JNIEXPORT void JNICALL
-Java_com_winlator_cmod_alsaserver_ALSAClient_flush(JNIEnv *env, jobject obj, jlong streamPtr) {
-    AAudioStream *aaudioStream = (AAudioStream*)streamPtr;
-    if (aaudioStream) aaudioFlush(aaudioStream);
+Java_com_winlator_cmod_alsaserver_ALSAClient_flush(JNIEnv *env, jobject obj,
+        jlong streamPtr) {
+    StreamCtx *ctx = (StreamCtx *)(uintptr_t)streamPtr;
+    if (ctx) aaudioFlush(ctx);
 }
 
 JNIEXPORT void JNICALL
-Java_com_winlator_cmod_alsaserver_ALSAClient_close(JNIEnv *env, jobject obj, jlong streamPtr) {
-    AAudioStream *aaudioStream = (AAudioStream*)streamPtr;
-    if (aaudioStream) AAudioStream_close(aaudioStream);
+Java_com_winlator_cmod_alsaserver_ALSAClient_close(JNIEnv *env, jobject obj,
+        jlong streamPtr) {
+    aaudioClose((StreamCtx *)(uintptr_t)streamPtr);
 }

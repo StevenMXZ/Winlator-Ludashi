@@ -595,10 +595,40 @@ public class InputControlsView extends View {
                     break;
                 }
                 case MotionEvent.ACTION_MOVE: {
-                    for (byte i = 0, count = (byte)event.getPointerCount(); i < count; i++) {
+                    /*
+                     * Historical sample processing.
+                     *
+                     * Android batches touch events: on a 120 Hz panel with
+                     * 240 Hz touch sampling the system may deliver 2+ samples
+                     * in a single MotionEvent. Reading only getX(i)/getY(i)
+                     * discards every intermediate position — producing jumpy
+                     * cursor movement even at high display refresh rates.
+                     *
+                     * getHistoricalX/Y(pointerIdx, histIdx) returns each
+                     * batched sample in chronological order, oldest first.
+                     * We process all historical samples before the current one
+                     * so control elements receive a smooth, continuous stream
+                     * of positions matching the physical touch rate.
+                     */
+                    int histCount = event.getHistorySize();
+                    int ptrCount  = event.getPointerCount();
+
+                    for (int h = 0; h < histCount; h++) {
+                        for (int i = 0; i < ptrCount; i++) {
+                            float hx = event.getHistoricalX(i, h);
+                            float hy = event.getHistoricalY(i, h);
+                            handled = false;
+                            for (ControlElement element : profile.getElements()) {
+                                if (element.handleTouchMove(i, hx, hy)) handled = true;
+                            }
+                            if (!handled) touchpadView.onTouchEvent(event);
+                        }
+                    }
+
+                    /* Current (latest) sample. */
+                    for (int i = 0; i < ptrCount; i++) {
                         float x = event.getX(i);
                         float y = event.getY(i);
-
                         handled = false;
                         for (ControlElement element : profile.getElements()) {
                             if (element.handleTouchMove(i, x, y)) handled = true;

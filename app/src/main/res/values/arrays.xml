@@ -30,6 +30,16 @@
         <item>ALSA</item>
         <item>PulseAudio</item>
     </string-array>
+    <!-- Graphics Pipeline entries. Item order MUST match the identifier
+         mapping in ContainerDetailFragment (StringUtils.parseIdentifier
+         lowercases + strips parenthetical suffix to derive the identifier
+         saved in Container.graphicsPipeline). "Quality (Direct-Render)" →
+         "quality"; "Performance (Trojan-Blit)" → "performance". -->
+    <string-array name="graphics_pipeline_entries">
+        <item>Quality (Direct-Render)</item>
+        <item>Performance (Trojan-Blit)</item>
+        <item>Native (X11)</item>
+    </string-array>
     <string-array name="binding_type_entries">
         <item>Keyboard</item>
         <item>Mouse</item>

@@ -161,6 +161,9 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
         Spinner sAudioDriver = view.findViewById(R.id.SAudioDriver);
         sAudioDriver.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
 
+        Spinner sGraphicsPipeline = view.findViewById(R.id.SGraphicsPipeline);
+        sGraphicsPipeline.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
+
         Spinner sEmulator64 = view.findViewById(R.id.SEmulator64);
         sEmulator64.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
 
@@ -377,6 +380,10 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
         Spinner sAudioDriver = view.findViewById(R.id.SAudioDriver);
         AppUtils.setSpinnerSelectionFromIdentifier(sAudioDriver, isEditMode() ? container.getAudioDriver() : Container.DEFAULT_AUDIO_DRIVER);
 
+        Spinner sGraphicsPipeline = view.findViewById(R.id.SGraphicsPipeline);
+        AppUtils.setSpinnerSelectionFromIdentifier(sGraphicsPipeline,
+                isEditMode() ? container.getGraphicsPipeline() : Container.DEFAULT_GRAPHICS_PIPELINE);
+
         Spinner sEmulator = view.findViewById(R.id.SEmulator);
         AppUtils.setSpinnerSelectionFromIdentifier(sEmulator, isEditMode() ? container.getEmulator() : Container.DEFAULT_EMULATOR);
 
@@ -551,6 +558,7 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
                 String dxwrapper = StringUtils.parseIdentifier(sDXWrapper.getSelectedItem());
                 String dxwrapperConfig = vDXWrapperConfig.getTag().toString();
                 String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem());
+                String graphicsPipeline = StringUtils.parseIdentifier(sGraphicsPipeline.getSelectedItem());
                 String emulator = StringUtils.parseIdentifier(sEmulator.getSelectedItem());
                 String wincomponents = getWinComponents(view);
                 String drives = getDrives(view);
@@ -589,6 +597,7 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
                     container.setDXWrapper(dxwrapper);
                     container.setDXWrapperConfig(dxwrapperConfig);
                     container.setAudioDriver(audioDriver);
+                    container.setGraphicsPipeline(graphicsPipeline);
                     container.setEmulator(emulator);
                     container.setWinComponents(wincomponents);
                     container.setDrives(drives);
@@ -621,6 +630,7 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
                     data.put("dxwrapper", dxwrapper);
                     data.put("dxwrapperConfig", dxwrapperConfig);
                     data.put("audioDriver", audioDriver);
+                    data.put("graphicsPipeline", graphicsPipeline);
                     data.put("emulator", emulator);
                     data.put("wincomponents", wincomponents);
                     data.put("drives", drives);

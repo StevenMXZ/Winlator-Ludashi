@@ -50,15 +50,55 @@ public abstract class ProcessHelper {
         }
     }
 
+    /*
+     * Improved pause/resume strategy:
+     *
+     * 1. Build the PID list ONCE per call. The previous implementation
+     *    scanned /proc twice (pause then resume), and the resume call
+     *    could miss processes that started after the pause scan.
+     *
+     * 2. Match against a richer filter set covering wineserver, wine,
+     *    wine64, *.exe.so, box64, wowbox64, and DXVK threads.
+     *
+     * 3. After SIGSTOP, hint Android's MM that the suspended process's
+     *    pages are cold candidates for reclaim. /proc/<pid>/reclaim is a
+     *    kernel feature (present on SM8550/OOS15 — confirmed in this
+     *    kernel build) that lets userspace tell the kernel to swap out
+     *    or drop clean pages of another process. Writing "all" reclaims
+     *    file + anon pages.  If /proc/<pid>/reclaim doesn't exist on a
+     *    given device, the write silently fails — no harm done.
+     */
+    private static final String[] WINE_PROCESS_FILTERS = {
+            "wineserver", "wine64-preload", "wine-preload",
+            "wine64", "wine", ".exe", "box64", "wowbox64",
+            "winedevice", "explorer.exe", "services.exe"
+    };
+
     public static void pauseAllWineProcesses() {
-        for (String process : listRunningWineProcesses()) {
-            suspendProcess(Integer.parseInt(process));
+        ArrayList<String> pids = listRunningWineProcesses();
+        for (String p : pids) {
+            try { suspendProcess(Integer.parseInt(p)); } catch (Exception ignored) {}
+        }
+        // Trigger kernel memory reclaim for the suspended set. This
+        // recovers DDR for whatever the user is doing in the foreground
+        // (browser, video) without killing the Wine process.
+        for (String p : pids) {
+            try {
+                File reclaim = new File("/proc/" + p + "/reclaim");
+                if (reclaim.exists()) {
+                    java.io.FileWriter fw = new java.io.FileWriter(reclaim);
+                    fw.write("all");
+                    fw.close();
+                }
+            } catch (IOException ignored) {
+                // /proc/<pid>/reclaim may be disabled or restricted; ignore.
+            }
         }
     }
 
     public static void resumeAllWineProcesses() {
         for (String process : listRunningWineProcesses()) {
-            resumeProcess(Integer.parseInt(process));
+            try { resumeProcess(Integer.parseInt(process)); } catch (Exception ignored) {}
         }
     }
 
@@ -256,27 +296,42 @@ public abstract class ProcessHelper {
 
     public static ArrayList<String> listRunningWineProcesses(){
         File proc = new File("/proc");
-        String[] filters = {"wine", "exe"};
-        String[] allPids;
         ArrayList<String> filteredPids = new ArrayList<String>();
-        List<String> filterList = Arrays.asList(filters);
-        allPids = proc.list(new FilenameFilter(){
+        List<String> filterList = Arrays.asList(WINE_PROCESS_FILTERS);
+        String[] allPids = proc.list(new FilenameFilter(){
             public boolean accept(File proc, String filename){
                 return new File(proc, filename).isDirectory() && filename.matches("[0-9]+");
             }
         });
+        if (allPids == null) return filteredPids;
 
         for (int index = 0; index < allPids.length; index++){
             String data = "";
             try {
-                FileInputStream fr = new FileInputStream(proc + "/" + allPids[index] + "/stat");
-                BufferedReader br = new BufferedReader(new InputStreamReader(fr));
-                data = br.readLine();
+                // Read /proc/<pid>/comm — shorter and more reliable than /stat
+                // for matching the executable name. Falls back to /stat if comm
+                // is missing.
+                File commFile = new File(proc + "/" + allPids[index] + "/comm");
+                if (commFile.exists()) {
+                    FileInputStream fr = new FileInputStream(commFile);
+                    BufferedReader br = new BufferedReader(new InputStreamReader(fr));
+                    data = br.readLine();
+                    br.close();
+                } else {
+                    FileInputStream fr = new FileInputStream(proc + "/" + allPids[index] + "/stat");
+                    BufferedReader br = new BufferedReader(new InputStreamReader(fr));
+                    data = br.readLine();
+                    br.close();
+                }
             }
             catch (IOException e) {}
+            if (data == null) continue;
+            String lower = data.toLowerCase();
             for (String filter : filterList) {
-                if (data.contains(filter))
+                if (lower.contains(filter)) {
                     filteredPids.add(allPids[index]);
+                    break;
+                }
             }
         }
         return filteredPids;

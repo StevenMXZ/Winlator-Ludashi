@@ -155,6 +155,14 @@ public class ShortcutSettingsDialog extends ContentDialog implements DXVKConfigD
 
         final Spinner sAudioDriver = findViewById(R.id.SAudioDriver);
         AppUtils.setSpinnerSelectionFromIdentifier(sAudioDriver, shortcut.getExtra("audioDriver", shortcut.container.getAudioDriver()));
+        /* Per-shortcut Graphics Pipeline override. Falls back to the
+         * container's setting if the shortcut hasn't set one. The
+         * extra key matches the container's field name "graphicsPipeline"
+         * so XServerDisplayActivity's lookup pattern (extra-or-container)
+         * can reuse the same resolution rule used elsewhere. */
+        final Spinner sGraphicsPipeline = findViewById(R.id.SGraphicsPipeline);
+        AppUtils.setSpinnerSelectionFromIdentifier(sGraphicsPipeline,
+                shortcut.getExtra("graphicsPipeline", shortcut.container.getGraphicsPipeline()));
         final Spinner sEmulator = findViewById(R.id.SEmulator);
         AppUtils.setSpinnerSelectionFromIdentifier(sEmulator, shortcut.getExtra("emulator", shortcut.container.getEmulator()));
         final Spinner sEmulator64 = findViewById(R.id.SEmulator64);
@@ -415,6 +423,7 @@ public class ShortcutSettingsDialog extends ContentDialog implements DXVKConfigD
                 String dxwrapper = StringUtils.parseIdentifier(sDXWrapper.getSelectedItem());
                 String dxwrapperConfig = vDXWrapperConfig.getTag().toString();
                 String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem());
+                String graphicsPipeline = StringUtils.parseIdentifier(sGraphicsPipeline.getSelectedItem());
                 String emulator = StringUtils.parseIdentifier(sEmulator.getSelectedItem());
                 String lc_all = etLC_ALL.getText().toString();
                 String midiSoundFont = sMIDISoundFont.getSelectedItemPosition() == 0 ? "" : sMIDISoundFont.getSelectedItem().toString();
@@ -441,6 +450,15 @@ public class ShortcutSettingsDialog extends ContentDialog implements DXVKConfigD
                 shortcut.putExtra("dxwrapper", dxwrapper);
                 shortcut.putExtra("dxwrapperConfig", dxwrapperConfig);
                 shortcut.putExtra("audioDriver", audioDriver);
+                /* Persist only when different from the container's value so
+                 * un-overridden shortcuts inherit container changes. The
+                 * lookup at launch time uses the same extra-or-container
+                 * pattern that audioDriver/emulator/etc. do. */
+                if (!graphicsPipeline.equals(shortcut.container.getGraphicsPipeline())) {
+                    shortcut.putExtra("graphicsPipeline", graphicsPipeline);
+                } else {
+                    shortcut.putExtra("graphicsPipeline", null);
+                }
                 shortcut.putExtra("emulator", emulator);
                 shortcut.putExtra("midiSoundFont", midiSoundFont);
                 shortcut.putExtra("lc_all", lc_all);
@@ -554,6 +572,11 @@ public class ShortcutSettingsDialog extends ContentDialog implements DXVKConfigD
         Spinner sFEXCoreVersion = view.findViewById(R.id.SFEXCoreVersion);
         Spinner sFEXCorePreset = view.findViewById(R.id.SFEXCorePreset);
         Spinner sStartupSelection = view.findViewById(R.id.SStartupSelection);
+        // Graphics Pipeline spinner — was missing from the popup-background
+        // theming list, so its dropdown kept the default light background
+        // while the text inherited white (dark theme), making items invisible
+        // ("white box that pops up"). Theme it like the others.
+        Spinner sGraphicsPipeline = view.findViewById(R.id.SGraphicsPipeline);
 
         int popupBackground = isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background;
         applySpinnerPopupBackground(sGraphicsDriver, popupBackground);
@@ -568,6 +591,7 @@ public class ShortcutSettingsDialog extends ContentDialog implements DXVKConfigD
         applySpinnerPopupBackground(sFEXCorePreset, popupBackground);
         applySpinnerPopupBackground(sFEXCoreVersion, popupBackground);
         applySpinnerPopupBackground(sStartupSelection, popupBackground);
+        applySpinnerPopupBackground(sGraphicsPipeline, popupBackground);
 
         int comboBackground = isDarkMode ? R.drawable.combo_box_dark : R.drawable.edit_text;
         applySpinnerBackground(sWineVersion, comboBackground);

@@ -129,6 +129,16 @@ android {
             useLegacyPackaging = true
         }
     }
+
+    // Configure JVM unit tests to use JUnit Platform (required by jqwik)
+    testOptions {
+        unitTests {
+            returnDefaultValues = true
+            all {
+                useJUnitPlatform()
+            }
+        }
+    }
 }
 
 dependencies {
@@ -155,6 +165,14 @@ dependencies {
     implementation 'com.kohlschutter.junixsocket:junixsocket-common:2.6.0'
     implementation 'com.kohlschutter.junixsocket:junixsocket-native-common:2.6.0'
     annotationProcessor 'com.github.bumptech.glide:compiler:4.11.0'
+
+    // ── Unit-test dependencies ────────────────────────────────────────────
+    // JUnit 4 runner (required by jqwik on Android Gradle projects)
+    testImplementation 'junit:junit:4.13.2'
+    // jqwik property-based testing engine
+    testImplementation 'net.jqwik:jqwik:1.8.4'
+    // jqwik requires the JUnit Platform launcher on the test classpath
+    testImplementation 'org.junit.platform:junit-platform-launcher:1.10.2'
 }
 
 

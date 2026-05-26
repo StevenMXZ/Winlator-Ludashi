@@ -1,0 +1,16 @@
+{
+  "file_format_version": "1.0.0",
+  "layer": {
+    "name": "VK_LAYER_WINLATOR_ahb_direct",
+    "type": "GLOBAL",
+    "library_path": "libahb_layer.so",
+    "api_version": "1.3.0",
+    "implementation_version": "1",
+    "description": "Winlator AHB Direct Compositing layer",
+    "disable_environment": { "DISABLE_AHB_LAYER": "1" },
+    "functions": {
+      "vkGetInstanceProcAddr": "AHBLayer_GetInstanceProcAddr_Export",
+      "vkGetDeviceProcAddr": "AHBLayer_GetDeviceProcAddr_Export"
+    }
+  }
+}
