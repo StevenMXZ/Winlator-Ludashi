@@ -5,7 +5,6 @@ on:
     branches: [ "Plus" ]
   pull_request:
     branches: [ "Plus" ]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,32 +14,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Clone linkernsbypass
-        run: |
-          mkdir -p app/src/main/cpp/adrenotools/lib
-          git clone https://github.com/Pipetto-crypto/liblinkernsbypass.git app/src/main/cpp/adrenotools/lib/linkernsbypass
+    - name: Clone linkernsbypass
+      run: |
+        mkdir -p app/src/main/cpp/adrenotools/lib
+        git clone https://github.com/Pipetto-crypto/liblinkernsbypass.git app/src/main/cpp/adrenotools/lib/linkernsbypass
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: gradle
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
 
-      - name: Install Shader Compiler
-        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+    - name: Install Shader Compiler
+      run: sudo apt-get update && sudo apt-get install -y glslang-tools
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
 
-      - name: Build with Gradle
-        run: ./gradlew assembleDebug
+    - name: Build with Gradle
+      run: ./gradlew assembleDebug
 
-      - name: Upload APK as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+    - name: Upload APK as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug
+        path: app/build/outputs/apk/debug/app-debug.apk
