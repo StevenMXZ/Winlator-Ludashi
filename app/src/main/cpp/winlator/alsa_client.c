@@ -84,6 +84,7 @@ static aaudio_data_callback_result_t dataCallback(
         AAudioStream *stream, void *userData,
         void *audioData, int32_t numFrames)
 {
+    (void)stream;  /* unused — we already have ctx->stream via userData */
     StreamCtx *ctx = (StreamCtx *)userData;
     char      *dst = (char *)audioData;
     int        fb  = ctx->frame_bytes;
@@ -120,6 +121,7 @@ static aaudio_data_callback_result_t dataCallback(
  * (Bluetooth switch, headphone plug/unplug).
  */
 static void errorCallback(AAudioStream *stream, void *userData, aaudio_result_t error) {
+    (void)userData;  /* unused — restart uses the stream handle directly */
     LOGW("errorCallback: error=%d, attempting stream restart", error);
     /* AAudioStream_requestStart is safe to call from any thread. */
     if (error == AAUDIO_ERROR_DISCONNECTED) {
@@ -143,84 +145,58 @@ static StreamCtx *aaudioCreate(int32_t format, int8_t channelCount,
 
     aaudio_format_t fmt = toAAudioFormat(format);
 
-    /*
-     * AAUDIO_PERFORMANCE_MODE_LOW_LATENCY: request the smallest buffer the
-     * HAL will give us (FAST path on Qualcomm = ~5 ms round-trip).
-     *
-     * AAUDIO_USAGE_GAME: tells the audio HAL and policy engine this is a
-     * real-time game stream. On SM8550/OOS, this routes through the game
-     * mixing path in the ADSP — different from MEDIA in scheduler priority
-     * and DSP latency budget.
-     *
-     * AAUDIO_CONTENT_TYPE_SONIFICATION: correct pairing for game sound
-     * effects; lets the HAL apply the right volume normalization curve.
-     */
-    AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
-    AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_GAME);
-    AAudioStreamBuilder_setContentType(builder, AAUDIO_CONTENT_TYPE_SONIFICATION);
-    AAudioStreamBuilder_setFormat(builder, fmt);
-    AAudioStreamBuilder_setChannelCount(builder, channelCount);
-    AAudioStreamBuilder_setSampleRate(builder, sampleRate);
-
-    /* Callback mode: no blocking writes; audio delivered by RT thread. */
-    AAudioStreamBuilder_setDataCallback(builder, dataCallback, NULL /* set below */);
-    AAudioStreamBuilder_setErrorCallback(builder, errorCallback, NULL /* set below */);
-
-    result = AAudioStreamBuilder_openStream(builder, &stream);
-    AAudioStreamBuilder_delete(builder);
-
-    if (result != AAUDIO_OK) {
-        LOGE("aaudioCreate: openStream failed: %d", result);
-        return NULL;
-    }
-
-    /* Allocate the StreamCtx that owns both the stream and the ring buffer. */
+    /* Allocate StreamCtx FIRST so we can pass it as userData to the builder
+     * — avoids the open-close-reopen dance the previous version used. */
     StreamCtx *ctx = (StreamCtx *)calloc(1, sizeof(StreamCtx));
     if (!ctx) {
-        AAudioStream_close(stream);
+        AAudioStreamBuilder_delete(builder);
         LOGE("aaudioCreate: calloc StreamCtx failed");
         return NULL;
     }
-
-    ctx->stream      = stream;
     ctx->frame_bytes = frameSize(fmt, channelCount);
     ctx->ring_bytes  = RING_FRAMES * ctx->frame_bytes;
     ctx->ring        = calloc(1, ctx->ring_bytes);
     atomic_init(&ctx->wr, 0);
     atomic_init(&ctx->rd, 0);
-
     if (!ctx->ring) {
-        AAudioStream_close(stream);
+        AAudioStreamBuilder_delete(builder);
         free(ctx);
         LOGE("aaudioCreate: calloc ring failed");
         return NULL;
     }
 
-    /* Patch callback userData now that ctx is stable. */
-    /* AAudio doesn't expose setUserData after open; we use a trampoline
-     * via a thread-local — simpler: just stash ctx in a global per stream.
-     * For Winlator's single-stream use case this is fine. */
-    /* Re-open with userData set via builder is the clean approach: */
-    AAudioStream_close(stream);
-    stream = NULL;
+    /*
+     * AAUDIO_PERFORMANCE_MODE_LOW_LATENCY: request the smallest buffer the
+     * HAL will give us (FAST path on Qualcomm = ~5 ms round-trip).
+     *
+     * AAUDIO_USAGE_GAME / CONTENT_TYPE_SONIFICATION (Android 9.0 / API 28+):
+     * On SM8550/OOS this routes through the game mixing path in the ADSP —
+     * different from MEDIA in scheduler priority and DSP latency budget.
+     * The functions are explicitly marked unavailable below API 28, so we
+     * guard them with __builtin_available — at API 26/27 the stream still
+     * works, just without the game-specific routing hint.
+     */
+    AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+    if (__builtin_available(android 28, *)) {
+        AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_GAME);
+        AAudioStreamBuilder_setContentType(builder, AAUDIO_CONTENT_TYPE_SONIFICATION);
+    }
+    AAudioStreamBuilder_setFormat(builder, fmt);
+    AAudioStreamBuilder_setChannelCount(builder, channelCount);
+    AAudioStreamBuilder_setSampleRate(builder, sampleRate);
 
-    AAudioStreamBuilder *b2 = NULL;
-    AAudio_createStreamBuilder(&b2);
-    AAudioStreamBuilder_setPerformanceMode(b2, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
-    AAudioStreamBuilder_setUsage(b2, AAUDIO_USAGE_GAME);
-    AAudioStreamBuilder_setContentType(b2, AAUDIO_CONTENT_TYPE_SONIFICATION);
-    AAudioStreamBuilder_setFormat(b2, fmt);
-    AAudioStreamBuilder_setChannelCount(b2, channelCount);
-    AAudioStreamBuilder_setSampleRate(b2, sampleRate);
-    AAudioStreamBuilder_setDataCallback(b2, dataCallback, ctx);
-    AAudioStreamBuilder_setErrorCallback(b2, errorCallback, ctx);
-    result = AAudioStreamBuilder_openStream(b2, &stream);
-    AAudioStreamBuilder_delete(b2);
+    /* Callback mode: no blocking writes; audio delivered by RT thread.
+     * userData is the StreamCtx we just allocated. */
+    AAudioStreamBuilder_setDataCallback(builder, dataCallback, ctx);
+    AAudioStreamBuilder_setErrorCallback(builder, errorCallback, ctx);
+
+    result = AAudioStreamBuilder_openStream(builder, &stream);
+    AAudioStreamBuilder_delete(builder);
 
     if (result != AAUDIO_OK) {
         free(ctx->ring);
         free(ctx);
-        LOGE("aaudioCreate: second openStream failed: %d", result);
+        LOGE("aaudioCreate: openStream failed: %d", result);
         return NULL;
     }
     ctx->stream = stream;
