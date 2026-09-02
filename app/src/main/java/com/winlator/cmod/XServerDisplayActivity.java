@@ -20,6 +20,8 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Build;
@@ -204,6 +206,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private boolean simulateTouchScreen = false;
 
     private SensorManager sensorManager;
+    private Sensor gyroSensor;
 
     private long startTime;
     private SharedPreferences playtimePrefs;
@@ -221,6 +224,39 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     private GuestProgramLauncherComponent guestProgramLauncherComponent;
     private EnvVars overrideEnvVars;
+
+    private Switch swMouseGyroEnabled;
+
+    private final SensorEventListener gyroListener = new SensorEventListener() {
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            if (event.sensor.getType() != Sensor.TYPE_GYROSCOPE) return;
+            if (winHandler == null) return;
+            winHandler.updateGyroData(event.values[0], event.values[1], event.timestamp);
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+    };
+
+    private boolean isMouseGyroEnabled() {
+        return preferences != null && preferences.getBoolean("mouse_gyro_enabled", false);
+    }
+
+    private void updateGyroSensorRegistration() {
+        if (sensorManager == null || gyroSensor == null) return;
+        sensorManager.unregisterListener(gyroListener);
+        if (isMouseGyroEnabled()) {
+            // 4th arg maxReportLatencyUs=0 disables FIFO batching. Without it,
+            // many devices only flush gyro events when the screen is touched.
+            sensorManager.registerListener(
+                    gyroListener,
+                    gyroSensor,
+                    SensorManager.SENSOR_DELAY_GAME,
+                    0
+            );
+        }
+    }
 
     private void createNotifcationChannel() {
         String name = "Winlator";
@@ -369,6 +405,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         winHandler = new WinHandler(this);
         winHandler.setFakeInputPath(devInputDir.getAbsolutePath());
+
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        if (sensorManager != null) {
+            gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
+        }
+        updateGyroSensorRegistration();
 
         String screenSize = Container.DEFAULT_SCREEN_SIZE;
         containerManager = new ContainerManager(this);
@@ -547,7 +589,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 } else if (frameRatingWindowId == -1 && lastRendererName != null
                         && window.isApplicationWindow()
                         && ((modernHud != null && modernHud.isUserEnabled())
-                         || (classicHud != null && classicHud.getVisibility() == View.VISIBLE))) {
+                        || (classicHud != null && classicHud.getVisibility() == View.VISIBLE))) {
 
                     frameRatingWindowId = window.id;
                     activeRendererWindowId = window.id;
@@ -756,6 +798,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     @Override
     public void onResume() {
         super.onResume();
+        updateGyroSensorRegistration();
 
         if (environment != null) {
             xServerView.onResume();
@@ -770,6 +813,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     @Override
     public void onPause() {
         if (taskManagerSidebar != null) taskManagerSidebar.stop();
+        if (sensorManager != null) sensorManager.unregisterListener(gyroListener);
         super.onPause();
 
         if (!isInPictureInPictureMode()) {
@@ -803,7 +847,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     @Override
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode,
-            Configuration newConfig) {
+                                              Configuration newConfig) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
         if (xServerView == null) return;
         xServerView.setPipMode(isInPictureInPictureMode);
@@ -860,6 +904,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (midiHandler != null)
             midiHandler.stop();
 
+        if (sensorManager != null)
+            sensorManager.unregisterListener(gyroListener);
+
         if (environment != null)
             environment.stopEnvironmentComponents();
         if (winHandler != null)
@@ -895,6 +942,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         if (taskManagerSidebar != null) taskManagerSidebar.stop();
+        if (sensorManager != null) sensorManager.unregisterListener(gyroListener);
         super.onDestroy();
     }
 
@@ -1431,6 +1479,148 @@ public class XServerDisplayActivity extends AppCompatActivity {
             });
         }
 
+        swMouseGyroEnabled = findViewById(R.id.SWMouseGyroEnabled);
+        if (swMouseGyroEnabled != null) {
+            swMouseGyroEnabled.setChecked(isMouseGyroEnabled());
+            swMouseGyroEnabled.setOnCheckedChangeListener((btn, checked) -> {
+                preferences.edit().putBoolean("mouse_gyro_enabled", checked).apply();
+                if (winHandler != null) winHandler.reloadGyroSettings();
+                updateGyroSensorRegistration();
+            });
+        }
+
+        // ======================================
+// GYRO X / Y SENSITIVITY
+// ======================================
+
+        SeekBar sbGyroX = findViewById(R.id.SBGyroX);
+        SeekBar sbGyroY = findViewById(R.id.SBGyroY);
+
+        TextView lblGyroX = findViewById(R.id.LBLGyroX);
+        TextView lblGyroY = findViewById(R.id.LBLGyroY);
+
+
+// ======================================
+// GYRO X
+// ======================================
+
+        if (sbGyroX != null) {
+
+            float savedX = preferences.getFloat(
+                    "gyro_x_sensitivity",
+                    1.0f
+            );
+
+            savedX = Math.max(
+                    0.10f,
+                    Math.min(3.00f, savedX)
+            );
+
+            // Convertimos 0.10 - 3.00
+            // a 0 - 100 para nuestro SeekBar.
+            float sliderX =
+                    ((savedX - 0.10f) / 2.90f) * 100.0f;
+
+            sbGyroX.setValue(sliderX);
+
+            if (lblGyroX != null) {
+                lblGyroX.setText(
+                        String.format(
+                                "Gyro X Sensitivity: %.2f",
+                                savedX
+                        )
+                );
+            }
+
+            sbGyroX.setOnValueChangeListener((sb, value) -> {
+
+                float sensitivity =
+                        0.10f + (value / 100.0f) * 2.90f;
+
+                preferences.edit()
+                        .putFloat(
+                                "gyro_x_sensitivity",
+                                sensitivity
+                        )
+                        .apply();
+
+                if (winHandler != null) {
+                    winHandler.setGyroSensitivityX(
+                            sensitivity
+                    );
+                }
+
+                if (lblGyroX != null) {
+                    lblGyroX.setText(
+                            String.format(
+                                    "Gyro X Sensitivity: %.2f",
+                                    sensitivity
+                            )
+                    );
+                }
+            });
+        }
+
+
+// ======================================
+// GYRO Y
+// ======================================
+
+        if (sbGyroY != null) {
+
+            float savedY = preferences.getFloat(
+                    "gyro_y_sensitivity",
+                    1.0f
+            );
+
+            savedY = Math.max(
+                    0.10f,
+                    Math.min(3.00f, savedY)
+            );
+
+            float sliderY =
+                    ((savedY - 0.10f) / 2.90f) * 100.0f;
+
+            sbGyroY.setValue(sliderY);
+
+            if (lblGyroY != null) {
+                lblGyroY.setText(
+                        String.format(
+                                "Gyro Y Sensitivity: %.2f",
+                                savedY
+                        )
+                );
+            }
+
+            sbGyroY.setOnValueChangeListener((sb, value) -> {
+
+                float sensitivity =
+                        0.10f + (value / 100.0f) * 2.90f;
+
+                preferences.edit()
+                        .putFloat(
+                                "gyro_y_sensitivity",
+                                sensitivity
+                        )
+                        .apply();
+
+                if (winHandler != null) {
+                    winHandler.setGyroSensitivityY(
+                            sensitivity
+                    );
+                }
+
+                if (lblGyroY != null) {
+                    lblGyroY.setText(
+                            String.format(
+                                    "Gyro Y Sensitivity: %.2f",
+                                    sensitivity
+                            )
+                    );
+                }
+            });
+        }
+
         View btItemPipMode = findViewById(R.id.BTItemPipMode);
         if (btItemPipMode != null) {
             btItemPipMode.setOnClickListener(v -> {
@@ -1534,21 +1724,21 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private int activeSidebarPanelId = R.id.LLSubFPS;
 
     private final int[] sidebarPanelIds = {
-        R.id.LLSubInput,
-        R.id.LLSubMouse,
-        R.id.LLSubFPS,
-        R.id.LLSubGraphics,
-        R.id.LLSubScreen,
-        R.id.LLSubTaskManager
+            R.id.LLSubInput,
+            R.id.LLSubMouse,
+            R.id.LLSubFPS,
+            R.id.LLSubGraphics,
+            R.id.LLSubScreen,
+            R.id.LLSubTaskManager
     };
 
     private final int[] sidebarItemIds = {
-        R.id.BTItemInput,
-        R.id.BTItemMouse,
-        R.id.BTItemFPS,
-        R.id.BTItemGraphics,
-        R.id.BTItemScreen,
-        R.id.BTItemTaskManager
+            R.id.BTItemInput,
+            R.id.BTItemMouse,
+            R.id.BTItemFPS,
+            R.id.BTItemGraphics,
+            R.id.BTItemScreen,
+            R.id.BTItemTaskManager
     };
 
     private void hideAllSidebarPanels() {
@@ -1707,25 +1897,25 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         if (spHudStyle != null) {
             spHudStyle.post(() -> spHudStyle.setOnItemSelectedListener(
-                new AdapterView.OnItemSelectedListener() {
-                    @Override
-                    public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
-                        if (swHudMaster == null || !swHudMaster.isChecked()) return;
-                        int newStyle = (pos == 1) ? 2 : 1;
-                        if (classicHud != null) classicHud.disableByUser(false);
-                        if (modernHud  != null) modernHud.disableByUser(false);
-                        enableHudLazily(newStyle);
-                        if (llModernOptions != null)
-                            llModernOptions.setVisibility(newStyle == 2 ? View.VISIBLE : View.GONE);
-                        if (newStyle == 2 && modernHud != null) {
-                            modernHud.syncCheckboxes(cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer);
-                            if (cbRam != null) cbRam.setChecked(true);
-                            bindModernHudCheckboxes(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer);
+                    new AdapterView.OnItemSelectedListener() {
+                        @Override
+                        public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                            if (swHudMaster == null || !swHudMaster.isChecked()) return;
+                            int newStyle = (pos == 1) ? 2 : 1;
+                            if (classicHud != null) classicHud.disableByUser(false);
+                            if (modernHud  != null) modernHud.disableByUser(false);
+                            enableHudLazily(newStyle);
+                            if (llModernOptions != null)
+                                llModernOptions.setVisibility(newStyle == 2 ? View.VISIBLE : View.GONE);
+                            if (newStyle == 2 && modernHud != null) {
+                                modernHud.syncCheckboxes(cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer);
+                                if (cbRam != null) cbRam.setChecked(true);
+                                bindModernHudCheckboxes(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer);
+                            }
+                            saveHudModeToContainer(newStyle);
                         }
-                        saveHudModeToContainer(newStyle);
+                        @Override public void onNothingSelected(AdapterView<?> p) {}
                     }
-                    @Override public void onNothingSelected(AdapterView<?> p) {}
-                }
             ));
         }
     }
@@ -1770,7 +1960,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private void bindModernHudCheckboxes(CheckBox cbFps, CheckBox cbGpu, CheckBox cbCpuRam,
-            CheckBox cbRam, CheckBox cbBattTemp, CheckBox cbRenderer) {
+                                         CheckBox cbRam, CheckBox cbBattTemp, CheckBox cbRenderer) {
         if (modernHud == null) return;
         if (cbFps      != null) cbFps.setOnCheckedChangeListener((b, v) -> modernHud.toggleElement(0, v));
         if (cbGpu      != null) cbGpu.setOnCheckedChangeListener((b, v) -> modernHud.toggleElement(2, v));
@@ -1875,15 +2065,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
             btSaveGraphicsPreset.setOnClickListener(v -> {
                 if (container == null) return;
                 container.putExtra("graphicsFpsPreset",
-                    String.valueOf(spNativeFPS != null ? spNativeFPS.getSelectedItemPosition() : 0));
+                        String.valueOf(spNativeFPS != null ? spNativeFPS.getSelectedItemPosition() : 0));
                 if (vkRenderer != null) {
                     container.putExtra("graphicsFilterMode",
-                        String.valueOf(swEnableFSR != null && swEnableFSR.isChecked()
-                            ? (spUpscalerMode != null ? spUpscalerMode.getSelectedItemPosition() + 2 : 2) : 0));
+                            String.valueOf(swEnableFSR != null && swEnableFSR.isChecked()
+                                    ? (spUpscalerMode != null ? spUpscalerMode.getSelectedItemPosition() + 2 : 2) : 0));
                     container.putExtra("graphicsSharpness",
-                        String.valueOf(sbSharpness != null ? sbSharpness.getValue() : 50f));
+                            String.valueOf(sbSharpness != null ? sbSharpness.getValue() : 50f));
                     container.putExtra("graphicsPostFXMode",
-                        String.valueOf(spPostFXMode != null ? spPostFXMode.getSelectedItemPosition() : 0));
+                            String.valueOf(spPostFXMode != null ? spPostFXMode.getSelectedItemPosition() : 0));
                     container.putExtra("graphicsColorMode", "0");
                 }
                 container.saveData();
@@ -1931,13 +2121,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 spUpscalerMode.setVisibility(fsrOn ? View.VISIBLE : View.GONE);
             if (fsrOn)
                 vkRenderer.setFilterMode(spUpscalerMode != null
-                    ? spUpscalerMode.getSelectedItemPosition() + 2 : 2);
+                        ? spUpscalerMode.getSelectedItemPosition() + 2 : 2);
             swEnableFSR.setOnCheckedChangeListener((btn, checked) -> {
                 if (spUpscalerMode != null)
                     spUpscalerMode.setVisibility(checked ? View.VISIBLE : View.GONE);
                 vkRenderer.setFilterMode(checked
-                    ? (spUpscalerMode != null ? spUpscalerMode.getSelectedItemPosition() + 2 : 2)
-                    : (container != null ? container.getRendererFilterMode() : 0));
+                        ? (spUpscalerMode != null ? spUpscalerMode.getSelectedItemPosition() + 2 : 2)
+                        : (container != null ? container.getRendererFilterMode() : 0));
                 updateSharpnessVis.run();
             });
         }
@@ -1978,7 +2168,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
     }
 
-        private void setupSidebarInputControls() {
+    private void setupSidebarInputControls() {
         if (inputControlsView == null || inputControlsManager == null) return;
 
         Spinner spInputControlsProfile = findViewById(R.id.SPInputControlsProfile);
@@ -2519,7 +2709,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     || event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_SELECT) {
                 boolean handled = inputControlsView.onKeyEvent(event)
                         || (winHandler != null && winHandler.onKeyEvent(event))
-                                && (xServer != null && xServer.keyboard.onKeyEvent(event));
+                        && (xServer != null && xServer.keyboard.onKeyEvent(event));
                 return true;
             }
         }

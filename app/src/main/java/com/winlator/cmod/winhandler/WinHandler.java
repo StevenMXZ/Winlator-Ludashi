@@ -79,6 +79,114 @@ public class WinHandler {
     private final InputManager inputManager;
     private final InputManager.InputDeviceListener inputDeviceListener;
 
+    private float accumulatedGyroX = 0.0f;
+    private float accumulatedGyroY = 0.0f;
+    private float gyroSensitivityX = 1.0f;
+    private float gyroSensitivityY = 1.0f;
+    private boolean invertGyroX = false;
+    private boolean invertGyroY = false;
+    private float gyroDeadzone = 0.05f;
+    private float smoothGyroX = 0.0f;
+    private float smoothGyroY = 0.0f;
+    private long lastGyroTimestampNs = 0L;
+
+    public void setGyroSensitivityX(float sensitivity) {
+        this.gyroSensitivityX = sensitivity;
+    }
+
+    public void setGyroSensitivityY(float sensitivity) {
+        this.gyroSensitivityY = sensitivity;
+    }
+
+    public void setInvertGyroX(boolean invert) {
+        this.invertGyroX = invert;
+    }
+
+    public void setInvertGyroY(boolean invert) {
+        this.invertGyroY = invert;
+    }
+
+    public void setGyroDeadzone(float deadzone) {
+        this.gyroDeadzone = deadzone;
+    }
+
+    public void reloadGyroSettings() {
+        if (preferences == null) return;
+        setGyroSensitivityX(preferences.getFloat("gyro_x_sensitivity", 1.0f));
+        setGyroSensitivityY(preferences.getFloat("gyro_y_sensitivity", 1.0f));
+        setInvertGyroX(preferences.getBoolean("invert_gyro_x", false));
+        setInvertGyroY(preferences.getBoolean("invert_gyro_y", true));
+        setGyroDeadzone(preferences.getFloat("gyro_deadzone", 0.05f));
+        lastGyroTimestampNs = 0L;
+    }
+
+    public void updateGyroData(float rawGyroX, float rawGyroY) {
+        updateGyroData(rawGyroX, rawGyroY, System.nanoTime());
+    }
+
+    public void updateGyroData(float rawGyroX, float rawGyroY, long timestampNs) {
+        if (preferences == null || !preferences.getBoolean("mouse_gyro_enabled", false)) {
+            lastGyroTimestampNs = 0L;
+            return;
+        }
+
+        // Gyroscope reports rad/s, not a pixel delta. Integrate with dt so
+        // speed stays stable even if Android batches/changes the sample rate.
+        float dt;
+        if (lastGyroTimestampNs == 0L || timestampNs <= lastGyroTimestampNs) {
+            dt = 0.016f;
+        } else {
+            dt = (timestampNs - lastGyroTimestampNs) / 1_000_000_000.0f;
+            if (dt < 0.001f) dt = 0.001f;
+            if (dt > 0.05f) dt = 0.05f;
+        }
+        lastGyroTimestampNs = timestampNs;
+
+        float smoothing = 0.55f;
+        smoothGyroX = smoothGyroX * smoothing + rawGyroX * (1.0f - smoothing);
+        smoothGyroY = smoothGyroY * smoothing + rawGyroY * (1.0f - smoothing);
+
+        float gx = smoothGyroX;
+        float gy = smoothGyroY;
+
+        // Mouse needs a tighter deadzone than analog-stick gyro or it stutters.
+        float dead = Math.max(0.008f, gyroDeadzone * 0.35f);
+        if (Math.abs(gx) < dead) gx = 0.0f;
+        if (Math.abs(gy) < dead) gy = 0.0f;
+        if (gx == 0.0f && gy == 0.0f) return;
+
+        if (invertGyroX) gx = -gx;
+        if (invertGyroY) gy = -gy;
+
+        float mouseScale = preferences.getFloat("gyro_mouse_scale", 50.0f);
+        // mouseScale was originally "per sample" at ~50 Hz; convert to per-second.
+        float gain = mouseScale * 50.0f * dt;
+        accumulatedGyroX += gx * gyroSensitivityX * gain;
+        accumulatedGyroY += gy * gyroSensitivityY * gain;
+
+        int dx = (int) accumulatedGyroX;
+        int dy = (int) accumulatedGyroY;
+        if (dx == 0 && dy == 0) return;
+
+        accumulatedGyroX -= dx;
+        accumulatedGyroY -= dy;
+        dispatchMouseDelta(dx, dy);
+    }
+
+    /**
+     * Same path TouchpadView / captured-pointer uses, so gyro and touch
+     * both drive the X pointer and can be used together.
+     */
+    private void dispatchMouseDelta(int dx, int dy) {
+        XServer xServer = activity.getXServer();
+        if (xServer != null && !xServer.isRelativeMouseMovement()) {
+            xServer.injectPointerMoveDelta(dx, dy);
+            return;
+        }
+        mouseEvent(MouseEventFlags.MOVE, dx, dy, 0);
+    }
+
+
     public WinHandler(XServerDisplayActivity activity) {
         this.activity = activity;
         this.inputManager = (InputManager) activity.getSystemService(Context.INPUT_SERVICE);
@@ -96,6 +204,7 @@ public class WinHandler {
         };
         inputManager.registerInputDeviceListener(inputDeviceListener, null);
         preferences = PreferenceManager.getDefaultSharedPreferences(activity.getBaseContext());
+        reloadGyroSettings();
         for (int i = 0; i < MAX_CONTROLLERS; i++) {
             vibrationEnabledSlots[i] = preferences.getBoolean("vibration_slot_" + i, true);
         }
@@ -453,6 +562,7 @@ public class WinHandler {
                 initReceived = true;
 
                 preferences = PreferenceManager.getDefaultSharedPreferences(activity.getBaseContext());
+                reloadGyroSettings();
 
                 if (!xinputDisabledInitialized) {
                     xinputDisabled = preferences.getBoolean("xinput_toggle", false);
