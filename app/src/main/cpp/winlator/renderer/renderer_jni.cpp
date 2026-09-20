@@ -682,8 +682,10 @@ Java_com_winlator_cmod_widget_XServerView_nativeCompositeRedirect(JNIEnv *env, j
             if (zOrderChanged) displayX.queueEvent([sibling] { displayX.changeZOrder(sibling); });
         }     
         else {
-            if (positionChanged) renderer.queueEvent([sibling]{ renderer.updateWindowPosition(sibling); });
-            if (zOrderChanged) renderer.queueEvent([sibling]{ renderer.updateScene(); });
+            if (positionChanged || zOrderChanged)  {
+                renderer.queueEvent([sibling]{ renderer.updateWindowPosition(sibling); });
+                renderer.queueEvent([sibling]{ renderer.updateScene(); });
+            }    
         }
     }
 }
