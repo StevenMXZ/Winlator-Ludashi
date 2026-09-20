@@ -550,7 +550,7 @@ void DisplayX::presentThreadLoop() {
         pfnASurfaceTransactionApply(presentTransaction);
     }
     
-    if (isPerformanceHintAPIAvailable()) {
+    if (isPerformanceHintAPIAvailable() && performanceHintSession) {
         pfnAPerformanceHintCloseSession(performanceHintSession);
     }
 }
