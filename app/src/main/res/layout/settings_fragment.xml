@@ -521,6 +521,15 @@
                     <View style="@style/FieldSeparator" />
 
                     <CheckBox
+                        android:id="@+id/CBEnableWinlatorLogs"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/enable_winlator_logs"
+                        android:layout_marginTop="8dp" />
+
+                    <View style="@style/FieldSeparator" />
+
+                    <CheckBox
                         android:id="@+id/CBEnableBox64Logs"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -652,4 +661,3 @@
         android:layout_margin="18dp"
         app:backgroundTint="@color/ui_surface_alt" />
 </FrameLayout>
-

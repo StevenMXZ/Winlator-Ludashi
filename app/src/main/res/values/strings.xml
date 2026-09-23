@@ -278,6 +278,7 @@
     <string name="enable_experimental_wow64_mode">Enable experimental WoW64 mode</string>
     <string name="logs">Logs</string>
     <string name="enable_wine_debug">Enable Wine debug</string>
+    <string name="enable_winlator_logs">Enable Winlator logs</string>
     <string name="enable_box64_logs">Enable Box64 logs</string>
     <string name="export">Export</string>
     <string name="logs_exported_to">Logs exported to</string>
@@ -682,4 +683,3 @@ E.g. <b>META</b> for <i>META key</i>, \n
 
     <string name="magnifier_not_available">Magnifier is not available in DisplayX mode</string>
 </resources>
-

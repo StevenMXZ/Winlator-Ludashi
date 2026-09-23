@@ -300,6 +300,9 @@ public class SettingsFragment extends Fragment {
         final ArrayList<String> wineDebugChannels = new ArrayList<>(Arrays.asList(preferences.getString("wine_debug_channels", DEFAULT_WINE_DEBUG_CHANNELS).split(",")));
         loadWineDebugChannels(view, wineDebugChannels);
 
+        final CheckBox cbEnableWinlatorLogs = view.findViewById(R.id.CBEnableWinlatorLogs);
+        cbEnableWinlatorLogs.setChecked(preferences.getBoolean("enable_winlator_logs", false));
+
         final CheckBox cbEnableBox64Logs = view.findViewById(R.id.CBEnableBox64Logs);
         cbEnableBox64Logs.setChecked(preferences.getBoolean("enable_box64_logs", false));
 
@@ -359,6 +362,7 @@ public class SettingsFragment extends Fragment {
             editor.putBoolean("use_xr", cbUseXR.isChecked());
             editor.putFloat("cursor_speed", sbCursorSpeed.getProgress() / 100.0f);
             editor.putBoolean("enable_wine_debug", cbEnableWineDebug.isChecked());
+            editor.putBoolean("enable_winlator_logs", cbEnableWinlatorLogs.isChecked());
             editor.putBoolean("enable_box64_logs", cbEnableBox64Logs.isChecked());
             editor.putBoolean("cursor_lock", cbCursorLock.isChecked()); // Save cursor lock state
             editor.putBoolean("xinput_toggle", cbXinputToggle.isChecked()); // Save xinput toggle state
@@ -462,6 +466,7 @@ public class SettingsFragment extends Fragment {
                 preferences.getBoolean("game_saves_all_shortcuts", false),
                 preferences.getBoolean("enable_wine_debug", false),
                 preferences.getString("wine_debug_channels", DEFAULT_WINE_DEBUG_CHANNELS),
+                preferences.getBoolean("enable_winlator_logs", false),
                 preferences.getBoolean("enable_box64_logs", false),
                 preferences.getBoolean("enable_custom_api_key", false),
                 preferences.getString("custom_api_key", ""),
@@ -1129,4 +1134,3 @@ public class SettingsFragment extends Fragment {
         FileUtils.clear(sourceDir);
     }
 }
-

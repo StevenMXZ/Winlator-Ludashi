@@ -190,13 +190,24 @@ public class LogView extends View {
     }
 
     public static File getLogFile(Context context) {
+        return buildLogFile(context, "");
+    }
+
+    public static File getWinlatorLogFile(Context context) {
+        return buildLogFile(context, "_winlator");
+    }
+
+    private static File buildLogFile(Context context, String suffix) {
         SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(context);
         String winlatorPath = sp.getString("winlator_path_uri", null);
         File logsDir;
 
         if (winlatorPath != null) {
             Uri winlatorUri = Uri.parse(winlatorPath);
-            logsDir = new File(FileUtils.getFilePathFromUri(context, winlatorUri), "logs");
+            String resolvedPath = FileUtils.getFilePathFromUri(context, winlatorUri);
+            logsDir = resolvedPath != null
+                    ? new File(resolvedPath, "logs")
+                    : new File(SettingsFragment.DEFAULT_WINLATOR_PATH, "logs");
         }
         else {
             logsDir = new File(SettingsFragment.DEFAULT_WINLATOR_PATH, "logs");
@@ -205,7 +216,9 @@ public class LogView extends View {
         if (!logsDir.exists())
             logsDir.mkdirs();
 
-        String logFile = fileName.replaceAll("\\s", "_").toLowerCase() + "_" + DateFormat.format("yyyy-MM-dd_HH-mm-ss", new Date()) + ".txt";
+        String baseName = fileName != null && !fileName.isEmpty() ? fileName : "winlator";
+        String logFile = baseName.replaceAll("\\s", "_").toLowerCase()
+                + suffix + "_" + DateFormat.format("yyyy-MM-dd_HH-mm-ss", new Date()) + ".txt";
         return new File(logsDir, logFile);
     }
     
@@ -250,4 +263,3 @@ public class LogView extends View {
         return true;
     }
 }
-
