@@ -487,7 +487,7 @@ public class ControlElement {
     private void invalidateSelf() {
         Rect rect = getBoundingBox();
         int pad = Math.max(4, inputControlsView.getSnappingSize() * 2);
-        
+        if (type == Type.STICK) pad = Math.max(pad, rect.width() / 4);
         inputControlsView.invalidateElement(expandedBounds(rect, pad));
     }
 
@@ -901,6 +901,14 @@ public class ControlElement {
         else return false;
     }
 
+    private boolean usesNativeGamepadDPad() {
+        return type == Type.D_PAD &&
+               getBindingAt(0) == Binding.GAMEPAD_DPAD_UP &&
+               getBindingAt(1) == Binding.GAMEPAD_DPAD_RIGHT &&
+               getBindingAt(2) == Binding.GAMEPAD_DPAD_DOWN &&
+               getBindingAt(3) == Binding.GAMEPAD_DPAD_LEFT;
+    }
+
     public boolean handleTouchMove(int pointerId, float x, float y) {
         if (pointerId == currentPointerId && type == Type.BUTTON && mouseMoveMode) {
             inputControlsView.getTouchpadView().mouseMove(x, y, MotionEvent.ACTION_MOVE);
@@ -910,9 +918,8 @@ public class ControlElement {
             float deltaX, deltaY;
             Rect boundingBox = getBoundingBox();
             float radius = boundingBox.width() * 0.5f;
-            TouchpadView touchpadView =  inputControlsView.getTouchpadView();
-
             if (type == Type.TRACKPAD) {
+                TouchpadView touchpadView = inputControlsView.getTouchpadView();
                 if (currentPosition == null) currentPosition = new PointF();
                 float[] deltaPoint = touchpadView.computeDeltaPoint(currentPosition.x, currentPosition.y, x, y);
                 deltaX = deltaPoint[0];
@@ -925,11 +932,11 @@ public class ControlElement {
                 float offsetX = localX - radius;
                 float offsetY = localY - radius;
 
-                float distance = Mathf.lengthSq(radius - localX, radius - localY);
-                if (distance > radius * radius) {
-                    float angle = (float)Math.atan2(offsetY, offsetX);
-                    offsetX = (float)(Math.cos(angle) * radius);
-                    offsetY = (float)(Math.sin(angle) * radius);
+                float distanceSquared = offsetX * offsetX + offsetY * offsetY;
+                if (distanceSquared > radius * radius) {
+                    float scale = radius / (float)Math.sqrt(distanceSquared);
+                    offsetX *= scale;
+                    offsetY *= scale;
                 }
 
                 deltaX = Mathf.clamp(offsetX / radius, -1, 1);
@@ -938,8 +945,13 @@ public class ControlElement {
 
             if (type == Type.STICK) {
                 if (currentPosition == null) currentPosition = new PointF();
-                currentPosition.x = boundingBox.left + deltaX * radius + radius;
-                currentPosition.y = boundingBox.top + deltaY * radius + radius;
+                float visualX = boundingBox.left + deltaX * radius + radius;
+                float visualY = boundingBox.top + deltaY * radius + radius;
+                // Keep the analog values precise, but redraw only when the thumb
+                // has moved by at least half a screen pixel.
+                boolean redraw = Math.abs(currentPosition.x - visualX) >= 0.5f ||
+                                 Math.abs(currentPosition.y - visualY) >= 0.5f;
+                if (redraw) currentPosition.set(visualX, visualY);
                 float adjDeltaX = (Math.abs(deltaX) < Math.abs(deltaY) * STICK_CROSS_ZONE) ? 0 : deltaX;
                 float adjDeltaY = (Math.abs(deltaY) < Math.abs(deltaX) * STICK_CROSS_ZONE) ? 0 : deltaY;
                 
@@ -963,16 +975,24 @@ public class ControlElement {
                         this.states[i] = true;
                     }
                 } else {
-                    final boolean[] states = {adjDeltaY <= -STICK_DEAD_ZONE, adjDeltaX >= STICK_DEAD_ZONE, adjDeltaY >= STICK_DEAD_ZONE, adjDeltaX <= -STICK_DEAD_ZONE};
+                    final boolean up = adjDeltaY <= -STICK_DEAD_ZONE;
+                    final boolean right = adjDeltaX >= STICK_DEAD_ZONE;
+                    final boolean down = adjDeltaY >= STICK_DEAD_ZONE;
+                    final boolean left = adjDeltaX <= -STICK_DEAD_ZONE;
                     for (byte i = 0; i < 4; i++) {
                         float value = i == 1 || i == 3 ? adjDeltaX : adjDeltaY;
                         Binding binding = getBindingAt(i);
-                        boolean state = binding.isMouseMove() ? (states[i] || states[(i+2)%4]) : states[i];
-                        inputControlsView.handleInputEvent(binding, state, value);
+                        boolean direction = i == 0 ? up : i == 1 ? right : i == 2 ? down : left;
+                        boolean opposite = i == 0 ? down : i == 1 ? left : i == 2 ? up : right;
+                        boolean state = binding.isMouseMove() ? (direction || opposite) : direction;
+                        if (binding.isMouseMove() || states[i] != state) {
+                            inputControlsView.handleInputEvent(binding, state, value);
+                        }
                         this.states[i] = state;
                     }
                 }
-                invalidateSelf();
+                if (redraw) invalidateSelf();
+                return true;
             }
             else if (type == Type.TRACKPAD) {
                 
@@ -1032,18 +1052,60 @@ public class ControlElement {
                 }
             }
             else {
-                final boolean[] states = {deltaY <= -DPAD_DEAD_ZONE, deltaX >= DPAD_DEAD_ZONE, deltaY >= DPAD_DEAD_ZONE, deltaX <= -DPAD_DEAD_ZONE};
-
-                for (byte i = 0; i < 4; i++) {
-                    float value = i == 1 || i == 3 ? deltaX : deltaY;
-                    Binding binding = getBindingAt(i);
-                    boolean state = binding.isMouseMove() ? (states[i] || states[(i+2)%4]) : states[i];
-                    inputControlsView.handleInputEvent(binding, state, value);
-                    this.states[i] = state;
+                boolean dpadStateChanged = false;
+                if (usesNativeGamepadDPad()) {
+                    // Retain a direction until the finger moves slightly inside
+                    // the threshold. This avoids rapid release/press oscillation.
+                    final float releaseZone = DPAD_DEAD_ZONE - 0.05f;
+                    final boolean up = deltaY <= -(states[0] ? releaseZone : DPAD_DEAD_ZONE);
+                    final boolean right = deltaX >= (states[1] ? releaseZone : DPAD_DEAD_ZONE);
+                    final boolean down = deltaY >= (states[2] ? releaseZone : DPAD_DEAD_ZONE);
+                    final boolean left = deltaX <= -(states[3] ? releaseZone : DPAD_DEAD_ZONE);
+                    if (states[0] == up && states[1] == right &&
+                        states[2] == down && states[3] == left) return true;
+                    inputControlsView.handleDPadInput(up, right, down, left);
+                    this.states[0] = up;
+                    this.states[1] = right;
+                    this.states[2] = down;
+                    this.states[3] = left;
+                    dpadStateChanged = true;
                 }
+                else {
+                    final boolean up = deltaY <= -DPAD_DEAD_ZONE;
+                    final boolean right = deltaX >= DPAD_DEAD_ZONE;
+                    final boolean down = deltaY >= DPAD_DEAD_ZONE;
+                    final boolean left = deltaX <= -DPAD_DEAD_ZONE;
+                    for (byte i = 0; i < 4; i++) {
+                        float value = i == 1 || i == 3 ? deltaX : deltaY;
+                        Binding binding = getBindingAt(i);
+                        boolean state;
+                        switch (i) {
+                            case 0: state = up; break;
+                            case 1: state = right; break;
+                            case 2: state = down; break;
+                            default: state = left; break;
+                        }
+                        if (binding.isMouseMove()) {
+                            boolean opposite;
+                            switch ((i + 2) % 4) {
+                                case 0: opposite = up; break;
+                                case 1: opposite = right; break;
+                                case 2: opposite = down; break;
+                                default: opposite = left; break;
+                            }
+                            state = state || opposite;
+                        }
+                        inputControlsView.handleInputEvent(binding, state, value);
+                        dpadStateChanged |= this.states[i] != state;
+                        this.states[i] = state;
+                    }
+                }
+                if (dpadStateChanged) invalidateSelf();
+                return true;
             }
 
-            invalidateSelf();
+            // The trackpad draws only its pressed state, updated on touch down/up.
+            // Moving the finger changes the input, but not the trackpad artwork.
             return true;
         }
         else if (pointerId == currentPointerId && type == Type.RANGE_BUTTON) {
@@ -1085,6 +1147,10 @@ public class ControlElement {
                 
                 if ((type == Type.STICK || type == Type.TRACKPAD) && getBindingAt(0).isGamepad()) {
                     inputControlsView.handleStickInput(getBindingAt(0), 0f, 0f);
+                    for (byte i = 0; i < states.length; i++) states[i] = false;
+                }
+                else if (usesNativeGamepadDPad()) {
+                    inputControlsView.handleDPadInput(false, false, false, false);
                     for (byte i = 0; i < states.length; i++) states[i] = false;
                 }
                 else {
