@@ -319,14 +319,35 @@ void VulkanRendererContext::createLogicalDevice() {
 
     PFN_vkEnumerateDeviceExtensionProperties enumDevExts =
         (PFN_vkEnumerateDeviceExtensionProperties)gipa(instance, "vkEnumerateDeviceExtensionProperties");
-    { uint32_t n=0; if(enumDevExts) enumDevExts(physicalDevice,nullptr,&n,nullptr);
-      std::vector<VkExtensionProperties> av(n);
-      if(enumDevExts) enumDevExts(physicalDevice,nullptr,&n,av.data());
-      for (auto& e:av) { (void)e; } }
+    if (!enumDevExts)
+        throw std::runtime_error("vkEnumerateDeviceExtensionProperties unavailable");
+
+    uint32_t extCount = 0;
+    if (enumDevExts(physicalDevice, nullptr, &extCount, nullptr) != VK_SUCCESS)
+        throw std::runtime_error("enumerating Vulkan device extensions");
+    std::vector<VkExtensionProperties> availableExts(extCount);
+    if (enumDevExts(physicalDevice, nullptr, &extCount, availableExts.data()) != VK_SUCCESS)
+        throw std::runtime_error("reading Vulkan device extensions");
+
+    bool hasForeignQueue = false;
+    for (const auto& ext : availableExts) {
+        RLOG("Available Vulkan device extension: %s (specVersion=%u)",
+             ext.extensionName, ext.specVersion);
+        if (strcmp(ext.extensionName, VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME) == 0)
+            hasForeignQueue = true;
+    }
+    if (!hasForeignQueue) {
+        RLOG_E("AHB requires VK_EXT_queue_family_foreign, but the selected Vulkan device does not advertise it");
+        throw std::runtime_error("AHB Vulkan extension dependency unavailable");
+    }
+
     std::vector<const char*> extList = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME
+        VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME,
+        VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME
     };
+    for (const char* ext : extList)
+        RLOG("Enabled Vulkan device extension: %s", ext);
     VkDeviceCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     ci.pQueueCreateInfos=&qi; ci.queueCreateInfoCount=1;
     ci.enabledExtensionCount=(uint32_t)extList.size(); ci.ppEnabledExtensionNames=extList.data();
