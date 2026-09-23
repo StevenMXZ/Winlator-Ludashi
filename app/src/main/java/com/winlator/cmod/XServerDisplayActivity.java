@@ -1221,6 +1221,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (renderer instanceof VulkanXServerView) {
             VulkanXServerView vkRenderer = (VulkanXServerView) renderer;
 
+            EnvVars vulkanStartupVars = new EnvVars();
+            if (container != null) vulkanStartupVars.putAll(container.getEnvVars());
+            if (shortcut != null) vulkanStartupVars.putAll(shortcut.getExtra("envVars"));
+            String validationValue = vulkanStartupVars.get("WINLATOR_VULKAN_VALIDATION");
+            boolean validationEnabled = "1".equals(validationValue)
+                    || "true".equalsIgnoreCase(validationValue)
+                    || "yes".equalsIgnoreCase(validationValue);
+            vkRenderer.setValidationEnabled(validationEnabled, AppUtils.getNativeLibDir(this));
+
             String rendererDriverId = shortcut != null ? shortcut.getRendererDriverId()
                     : (container != null ? container.getRendererDriverId() : "");
             if (rendererDriverId == null || rendererDriverId.isEmpty()) {
@@ -3062,4 +3071,3 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
 }
-

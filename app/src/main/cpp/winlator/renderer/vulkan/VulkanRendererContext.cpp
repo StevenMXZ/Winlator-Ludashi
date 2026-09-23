@@ -15,11 +15,25 @@
 #include "window_stretch_frag.h"
 #include "window_postfx_frag.h"
 
+namespace {
+VKAPI_ATTR VkBool32 VKAPI_CALL logValidationMessage(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT,
+    const VkDebugUtilsMessengerCallbackDataEXT* data,
+    void*) {
+    const int priority = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+        ? ANDROID_LOG_ERROR : ANDROID_LOG_WARN;
+    __android_log_print(priority, "Winlator_VulkanValidation", "%s",
+                        data && data->pMessage ? data->pMessage : "(no message)");
+    return VK_FALSE;
+}
+}
+
 VulkanRendererContext::VulkanRendererContext(ANativeWindow* win, int cW, int cH,
-                                             void* aHandle)
+                                             void* aHandle, bool enableValidation)
     : window(win), surfaceWidth(cW), surfaceHeight(cH),
       containerWidth(cW), containerHeight(cH),
-      adrenotoolsHandle(aHandle)
+      adrenotoolsHandle(aHandle), validationRequested(enableValidation)
 {
     createInstance(); createSurface(); pickPhysicalDevice(); createLogicalDevice();
     createSwapchain(); createRenderPass(); createDSLayout();
@@ -66,6 +80,11 @@ VulkanRendererContext::~VulkanRendererContext() {
     vk_.DestroyRenderPass(device, renderPass, nullptr);
     vk_.DestroyDevice(device, nullptr);
     vk_.DestroySurfaceKHR(instance, surface, nullptr);
+    if (validationMessenger != VK_NULL_HANDLE) {
+        auto destroyMessenger = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+            gipa(instance, "vkDestroyDebugUtilsMessengerEXT"));
+        if (destroyMessenger) destroyMessenger(instance, validationMessenger, nullptr);
+    }
     vk_.DestroyInstance(instance, nullptr);
     if (adrenotoolsHandle) { dlclose(adrenotoolsHandle); adrenotoolsHandle = nullptr; }
 }
@@ -178,15 +197,90 @@ void VulkanRendererContext::createInstance() {
             gipa = (PFN_vkGetInstanceProcAddr)dlsym(loaderLib, "vkGetInstanceProcAddr");
     }
 
+    if (!gipa) throw std::runtime_error("Vulkan loader unavailable");
     vk_.CreateInstance = (PFN_vkCreateInstance)gipa(nullptr, "vkCreateInstance");
+    if (!vk_.CreateInstance) throw std::runtime_error("vkCreateInstance unavailable");
     VkApplicationInfo ai{}; ai.sType=VK_STRUCTURE_TYPE_APPLICATION_INFO;
     ai.pApplicationName="Winlator"; ai.apiVersion=VK_API_VERSION_1_3;
-    const char* ext[]={"VK_KHR_surface","VK_KHR_android_surface"};
+    const char* ext[]={"VK_KHR_surface","VK_KHR_android_surface",
+                       VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
     VkInstanceCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     ci.pApplicationInfo=&ai; ci.enabledExtensionCount=2; ci.ppEnabledExtensionNames=ext;
-    if (vk_.CreateInstance(&ci,nullptr,&instance)!=VK_SUCCESS) throw std::runtime_error("instance");
+
+    const char* validationLayer = "VK_LAYER_KHRONOS_validation";
+    bool enableValidation = false;
+    VkDebugUtilsMessengerCreateInfoEXT debugInfo{};
+    if (validationRequested) {
+        auto enumerateLayers = reinterpret_cast<PFN_vkEnumerateInstanceLayerProperties>(
+            gipa(nullptr, "vkEnumerateInstanceLayerProperties"));
+        uint32_t count = 0;
+        if (enumerateLayers && enumerateLayers(&count, nullptr) == VK_SUCCESS) {
+            std::vector<VkLayerProperties> layers(count);
+            if (enumerateLayers(&count, layers.data()) == VK_SUCCESS) {
+                enableValidation = std::any_of(layers.begin(), layers.end(),
+                    [&](const VkLayerProperties& layer) {
+                        return strcmp(layer.layerName, validationLayer) == 0;
+                    });
+            }
+        }
+        if (enableValidation) {
+            ci.enabledLayerCount = 1;
+            ci.ppEnabledLayerNames = &validationLayer;
+
+            auto enumerateExtensions = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
+                gipa(nullptr, "vkEnumerateInstanceExtensionProperties"));
+            auto hasDebugUtils = [&](const char* layerName) {
+                uint32_t extensionCount = 0;
+                if (!enumerateExtensions ||
+                    enumerateExtensions(layerName, &extensionCount, nullptr) != VK_SUCCESS)
+                    return false;
+                std::vector<VkExtensionProperties> extensions(extensionCount);
+                return enumerateExtensions(layerName, &extensionCount, extensions.data()) == VK_SUCCESS &&
+                    std::any_of(extensions.begin(), extensions.end(), [](const VkExtensionProperties& e) {
+                        return strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0;
+                    });
+            };
+            if (hasDebugUtils(nullptr) || hasDebugUtils(validationLayer)) {
+                ci.enabledExtensionCount = 3;
+                debugInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+                debugInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                    VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+                debugInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                    VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                    VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+                debugInfo.pfnUserCallback = logValidationMessage;
+                ci.pNext = &debugInfo;
+            }
+        } else {
+            RLOG_E("WINLATOR_VULKAN_VALIDATION requested, but VK_LAYER_KHRONOS_validation is unavailable");
+        }
+    }
+
+    VkResult result = vk_.CreateInstance(&ci, nullptr, &instance);
+    if (result != VK_SUCCESS && enableValidation) {
+        RLOG_E("validation instance creation failed (%d), retrying without the layer", result);
+        enableValidation = false;
+        ci.enabledLayerCount = 0;
+        ci.ppEnabledLayerNames = nullptr;
+        ci.enabledExtensionCount = 2;
+        ci.pNext = nullptr;
+        result = vk_.CreateInstance(&ci, nullptr, &instance);
+    }
+    if (result != VK_SUCCESS) throw std::runtime_error("instance");
 
     loadInstanceDispatch();
+    if (enableValidation) {
+        RLOG_E("VK_LAYER_KHRONOS_validation enabled for Vulkan renderer (debug_utils=%d)",
+               ci.pNext ? 1 : 0);
+        if (ci.pNext) {
+            auto createMessenger = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+                gipa(instance, "vkCreateDebugUtilsMessengerEXT"));
+            if (!createMessenger ||
+                createMessenger(instance, &debugInfo, nullptr, &validationMessenger) != VK_SUCCESS) {
+                RLOG_E("VK_EXT_debug_utils messenger unavailable; check Android VALIDATION logs");
+            }
+        }
+    }
 }
 
 void VulkanRendererContext::createSurface() {

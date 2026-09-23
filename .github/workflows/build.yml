@@ -47,6 +47,25 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Bundle Khronos Vulkan validation layer
+        run: |
+          set -euo pipefail
+          VVL_VERSION="1.4.357.0"
+          VVL_SHA256="daaeac9291167a2d5257a8a0f7c0a86e56d0821d0211af661710fe68c8040ffa"
+          VVL_ARCHIVE="$RUNNER_TEMP/android-binaries-$VVL_VERSION.tar.gz"
+          VVL_DIR="$RUNNER_TEMP/vulkan-validation-layers"
+          curl --retry 3 -fL \
+            "https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases/download/vulkan-sdk-$VVL_VERSION/android-binaries-$VVL_VERSION.tar.gz" \
+            -o "$VVL_ARCHIVE"
+          echo "$VVL_SHA256  $VVL_ARCHIVE" | sha256sum -c -
+          mkdir -p "$VVL_DIR"
+          tar -xzf "$VVL_ARCHIVE" -C "$VVL_DIR"
+          LAYER="$(find "$VVL_DIR" -type f -path '*/arm64-v8a/libVkLayer_khronos_validation.so' -print -quit)"
+          test -n "$LAYER"
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          cp "$LAYER" app/src/main/jniLibs/arm64-v8a/libVkLayer_khronos_validation.so
+          test -s app/src/main/jniLibs/arm64-v8a/libVkLayer_khronos_validation.so
+
       - name: Build with Gradle
         run: ./gradlew assembleRelease
 

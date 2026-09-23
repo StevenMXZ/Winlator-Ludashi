@@ -155,7 +155,8 @@ static_assert(offsetof(WindowPushConstantsPostFX, cosR) == 48, "cosR offset must
 class VulkanRendererContext {
 public:
     VulkanRendererContext(ANativeWindow* window, int cWidth, int cHeight,
-                          void* adrenotoolsHandle = nullptr);
+                          void* adrenotoolsHandle = nullptr,
+                          bool validationEnabled = false);
     ~VulkanRendererContext();
 
     void onSurfaceResized(int width, int height);
@@ -273,6 +274,8 @@ public:
     ANativeWindow* window;
     int surfaceWidth, surfaceHeight, containerWidth, containerHeight;
     void* adrenotoolsHandle = nullptr;
+    bool validationRequested = false;
+    VkDebugUtilsMessengerEXT validationMessenger = VK_NULL_HANDLE;
     int filterMode  = 0;
     int stretchMode = 0;
     int postFXMode  = 0;
