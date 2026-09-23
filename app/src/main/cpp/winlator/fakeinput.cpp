@@ -1,3 +1,6 @@
+#include "fakeinput_ring.hpp"
+
+#include <android/log.h>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -31,6 +34,11 @@
 #include <linux/input.h>
 
 #define EXPORT __attribute__((visibility("default"))) extern "C"
+#define FAKEINPUT_GUEST_LOG_TAG "FakeInputGuest"
+#define GUEST_LOGI(...) __android_log_print(ANDROID_LOG_INFO, FAKEINPUT_GUEST_LOG_TAG, __VA_ARGS__)
+#define GUEST_LOGE(...) __android_log_print(ANDROID_LOG_ERROR, FAKEINPUT_GUEST_LOG_TAG, __VA_ARGS__)
+static constexpr const char* FAKEINPUT_DIAG_BUILD = "asharedmemory-diag-v1";
+
 
 std::unordered_map<int, const char *> controller_map;
 static bool initialized = false;
@@ -117,6 +125,10 @@ static void library_init() {
 
 	vibration_enabled = getenv("FAKE_EVDEV_VIBRATION") && atoi(getenv("FAKE_EVDEV_VIBRATION"));
 	Logger::init();
+    GUEST_LOGI("loaded build=%s FAKE_EVDEV_DIR=%s vibration=%d",
+               FAKEINPUT_DIAG_BUILD,
+               hook_dir ? hook_dir : "(null)",
+               vibration_enabled ? 1 : 0);
 }
   
 __attribute__((visibility("hidden"))) 
@@ -175,9 +187,12 @@ EXPORT int open(const char *pathname, int flags, ...) {
 	else
 	    fd = my_open(pathname, flags);
 
-	if (isFromInput) {
-		Logger::log("Adding controller, fd %d event %s\n", fd, get_event(pathname));
-		controller_map[fd] = strdup(get_event(pathname));
+    if (isFromInput && fd >= 0) {
+        const char* event_name = get_event(pathname);
+        const int slot = get_event_number(event_name);
+        syscall(SYS_close, fd);
+        fd = fakeinput_ring_open(slot, flags);
+        if (fd >= 0) controller_map[fd] = strdup(event_name);
     }
 	    
 	return fd;
@@ -219,9 +234,12 @@ EXPORT int openat(int dirfd, const char *pathname, int flags, ...) {
     else
         fd = my_openat(dirfd, pathname, flags);
 
-    if (isFromInput) {
-        Logger::log("Adding controller, fd %d event %s\n", fd, get_event(pathname));
-        controller_map[fd] = strdup(get_event(pathname));
+    if (isFromInput && fd >= 0) {
+        const char* event_name = get_event(pathname);
+        const int slot = get_event_number(event_name);
+        syscall(SYS_close, fd);
+        fd = fakeinput_ring_open(slot, flags);
+        if (fd >= 0) controller_map[fd] = strdup(event_name);
     }
 
     return fd;
@@ -479,6 +497,8 @@ EXPORT int close(int fd) {
 	if (!my_close)
 		*(void **)&my_close = dlsym(RTLD_NEXT, "close");
 
+    fakeinput_ring_unregister_fd(fd);
+
 	auto controller = controller_map.find(fd);
 	if (controller != controller_map.end()) {
 	    Logger::log("Removing controller, fd %d event %s\n", controller->first, controller->second);
@@ -489,7 +509,80 @@ EXPORT int close(int fd) {
 	return my_close(fd);
 }
 
+static void clone_controller_fd(int source, int target) {
+    auto controller = controller_map.find(source);
+    if (controller == controller_map.end()) return;
+    if (fakeinput_ring_clone_fd(source, target))
+        controller_map[target] = strdup(controller->second);
+}
+
+EXPORT int dup(int oldfd) {
+    const int fd = static_cast<int>(syscall(SYS_dup, oldfd));
+    if (fd >= 0) clone_controller_fd(oldfd, fd);
+    return fd;
+}
+
+EXPORT int dup2(int oldfd, int newfd) {
+    if (oldfd == newfd)
+        return fcntl(oldfd, F_GETFD) < 0 ? -1 : oldfd;
+    const int fd = static_cast<int>(syscall(SYS_dup3, oldfd, newfd, 0));
+    if (fd >= 0 && oldfd != newfd) {
+        fakeinput_ring_unregister_fd(newfd);
+        auto previous = controller_map.find(newfd);
+        if (previous != controller_map.end()) {
+            free((void*)previous->second);
+            controller_map.erase(previous);
+        }
+        clone_controller_fd(oldfd, newfd);
+    }
+    return fd;
+}
+
+EXPORT int dup3(int oldfd, int newfd, int flags) {
+    const int fd = static_cast<int>(syscall(SYS_dup3, oldfd, newfd, flags));
+    if (fd >= 0) {
+        fakeinput_ring_unregister_fd(newfd);
+        auto previous = controller_map.find(newfd);
+        if (previous != controller_map.end()) {
+            free((void*)previous->second);
+            controller_map.erase(previous);
+        }
+        clone_controller_fd(oldfd, newfd);
+    }
+    return fd;
+}
+
+EXPORT int fcntl(int fd, int cmd, ...) {
+    bool has_arg = cmd != F_GETFD && cmd != F_GETFL && cmd != F_GETOWN;
+#ifdef F_GETSIG
+    has_arg = has_arg && cmd != F_GETSIG;
+#endif
+#ifdef F_GETLEASE
+    has_arg = has_arg && cmd != F_GETLEASE;
+#endif
+#ifdef F_GETPIPE_SZ
+    has_arg = has_arg && cmd != F_GETPIPE_SZ;
+#endif
+#ifdef F_GET_SEALS
+    has_arg = has_arg && cmd != F_GET_SEALS;
+#endif
+    long arg = 0;
+    if (has_arg) {
+        va_list ap;
+        va_start(ap, cmd);
+        arg = va_arg(ap, long);
+        va_end(ap);
+    }
+    const int result = static_cast<int>(syscall(SYS_fcntl, fd, cmd, arg));
+    if (result >= 0 && (cmd == F_DUPFD || cmd == F_DUPFD_CLOEXEC))
+        clone_controller_fd(fd, result);
+    return result;
+}
+
 EXPORT ssize_t read(int fd, void *buf, size_t count) {
+    if (fakeinput_ring_has_fd(fd))
+        return fakeinput_ring_read(fd, buf, count);
+
     auto controller = controller_map.find(fd);
     
     if (controller != controller_map.end()) {
@@ -563,13 +656,10 @@ EXPORT ssize_t write(int fd, const void *buf, size_t count) {
       const struct input_event *ev = (const struct input_event *)buf;
       uint16_t slot = (uint16_t)get_event_number(controller->second);
       check_ff_event(ev, slot);
-      // EV_FF events are FF control commands sent by Wine to the fake device.
-      // Writing them to the fake evdev file causes Wine to read them back as
-      // input events, corrupting controller state and blocking input. Consume
-      // them here and return success without writing to the file.
-      if (ev->type == EV_FF)
-        return (ssize_t)count;
     }
+    // The public FD is an eventfd. Guest writes are output commands, never
+    // input events; only our producer is allowed to signal its counter.
+    return (ssize_t)count;
   }
   return my_write(fd, buf, count);
 }
@@ -578,22 +668,15 @@ EXPORT ssize_t writev(int fd, const struct iovec *iov, int iovcnt) {
   auto controller = controller_map.find(fd);
   if (controller != controller_map.end()) {
     uint16_t slot = (uint16_t)get_event_number(controller->second);
-    // Separate FF control events from regular input events.
-    // FF events must not be written to the fake evdev file (see write() above).
-    struct iovec filtered[iovcnt];
-    int filtered_count = 0;
+    ssize_t total = 0;
     for (int i = 0; i < iovcnt; i++) {
+      total += (ssize_t)iov[i].iov_len;
       if (iov[i].iov_len == sizeof(struct input_event)) {
         const struct input_event *ev = (const struct input_event *)iov[i].iov_base;
         check_ff_event(ev, slot);
-        if (ev->type == EV_FF)
-          continue;
       }
-      filtered[filtered_count++] = iov[i];
     }
-    if (filtered_count == 0)
-      return (ssize_t)(iovcnt * sizeof(struct input_event));
-    return syscall(SYS_writev, fd, filtered, filtered_count);
+    return total;
   }
   return syscall(SYS_writev, fd, iov, iovcnt);
 }

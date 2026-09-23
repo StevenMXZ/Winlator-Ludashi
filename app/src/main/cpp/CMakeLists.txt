@@ -20,6 +20,7 @@ add_library(winlator SHARED
         winlator/gpu_image.c
         winlator/process_helper.c
         winlator/sysvshared_memory.c
+        winlator/fakeinput_shared_memory.cpp
         winlator/xconnector_epoll.c
         winlator/alsa_client.c
         winlator/vulkan.c
@@ -53,6 +54,7 @@ target_link_libraries(winlator
 # Add Fake Input library for controller emulation (loaded via LD_PRELOAD)
 add_library(fakeinput SHARED
         winlator/fakeinput.cpp
+        winlator/fakeinput_ring_reader.cpp
 )
 
 target_compile_options(fakeinput PRIVATE -Wall -Wextra -fvisibility=hidden)

@@ -57,7 +57,7 @@ public class WinHandler {
     private final DatagramPacket receivePacket = new DatagramPacket(receiveData.array(), 64);
     private final ArrayDeque<Runnable> actions = new ArrayDeque<>();
     private boolean initReceived = false;
-    private boolean running = false;
+    private volatile boolean running = false;
     private OnGetProcessInfoListener onGetProcessInfoListener;
     private final Map<Integer, ExternalController> controllers = new HashMap<>();
     private InetAddress localhost;
@@ -305,7 +305,8 @@ public class WinHandler {
         });
     }
 
-    public void stop() {
+    public synchronized void stop() {
+        if (!running && fakeInputBasePath == null) return;
         running = false;
         closeFakeInputWriter();
 
@@ -319,7 +320,7 @@ public class WinHandler {
         }
     }
 
-    public void startVibrationListener() {
+    public synchronized void startVibrationListener() {
         if (vibrationRunning)
             return;
         vibrationRunning = true;
@@ -540,7 +541,8 @@ public void setVibrationEnabledForSlot(int slot, boolean enabled) {
         }
     }
 
-    public void start() {
+    public synchronized void start() {
+        if (running) return;
         try {
             localhost = InetAddress.getLocalHost();
         } catch (UnknownHostException e) {
@@ -657,9 +659,14 @@ public void setVibrationEnabledForSlot(int slot, boolean enabled) {
         Log.d("WinHandler", "XInput Disabled set to: " + xinputDisabled);
     }
 
-    public void setFakeInputPath(String fakeInputPath) {
+    public synchronized void setFakeInputPath(String fakeInputPath) {
         if (fakeInputPath != null && !fakeInputPath.isEmpty()) {
             this.fakeInputBasePath = fakeInputPath;
+            if (!FakeInputWriter.prepareSharedMemory(fakeInputPath, MAX_CONTROLLERS)) {
+                Log.e("WinHandler", "Failed to initialize ASharedMemory fake-input transport");
+            } else {
+                Log.d("WinHandler", "ASharedMemory fake-input transport ready for " + MAX_CONTROLLERS + " slots");
+            }
             Log.d("WinHandler", "FakeInputWriter base path set: " + fakeInputPath);
             startVibrationListener();
         }
@@ -679,6 +686,9 @@ public void setVibrationEnabledForSlot(int slot, boolean enabled) {
         usedSlots.clear();
         controllers.clear();
         fallbackSlot = -1;
+
+        FakeInputWriter.shutdownSharedMemory();
+        fakeInputBasePath = null;
 
         vibrationRunning = false;
         if (vibrationServer != null) {

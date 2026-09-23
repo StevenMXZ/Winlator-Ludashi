@@ -3,298 +3,143 @@ package com.winlator.cmod.inputcontrols;
 import android.util.Log;
 
 import java.io.File;
-import java.io.RandomAccessFile;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.channels.FileChannel;
 
-public class FakeInputWriter {
+public final class FakeInputWriter {
     private static final String TAG = "FakeInputWriter";
-    private static final int EVENT_SIZE = 24;
-    private static final int MAX_EVENTS_PER_UPDATE = 20; // Buttons + axes + sync
-    private static final int BUFFER_SIZE = EVENT_SIZE * MAX_EVENTS_PER_UPDATE;
 
-    // Event types
-    public static final short EV_SYN = 0x00;
-    public static final short EV_KEY = 0x01;
-    public static final short EV_ABS = 0x03;
-    public static final short EV_MSC = 0x04;
-
-    // Event codes
-    public static final short MSC_SCAN = 0x04;
-    public static final short SYN_REPORT = 0x00;
-
-    // Xbox 360 controller button codes
-    public static final short BTN_A = 0x130;
-    public static final short BTN_B = 0x131;
-    public static final short BTN_X = 0x133;
-    public static final short BTN_Y = 0x134;
-    public static final short BTN_TL = 0x136;
-    public static final short BTN_TR = 0x137;
-    public static final short BTN_SELECT = 0x13A;
-    public static final short BTN_START = 0x13B;
-    public static final short BTN_THUMBL = 0x13D;
-    public static final short BTN_THUMBR = 0x13E;
-
-    // Absolute axis codes
-    public static final short ABS_X = 0x00;
-    public static final short ABS_Y = 0x01;
-    public static final short ABS_RX = 0x03;
-    public static final short ABS_RY = 0x04;
-    public static final short ABS_HAT0X = 0x10;
-    public static final short ABS_HAT0Y = 0x11;
-    public static final short ABS_GAS = 0x09;
-    public static final short ABS_BRAKE = 0x0A;
-
-    // Button mapping
-    private static final short[] BUTTON_MAP = {
-            BTN_A, BTN_B, BTN_X, BTN_Y, BTN_TL, BTN_TR,
-            BTN_SELECT, BTN_START, BTN_THUMBL, BTN_THUMBR
-    };
+    static {
+        System.loadLibrary("winlator");
+    }
 
     private final File eventFile;
-    private RandomAccessFile raf;
-    private FileChannel channel;
-    private final ByteBuffer buffer;
-    private boolean isOpen = false;
+    private final int slot;
+    private volatile boolean isOpen = false;
     private volatile boolean destroyed = false;
-
-    private final boolean[] prevButtonStates = new boolean[12];
-    private int prevThumbLX, prevThumbLY, prevThumbRX, prevThumbRY;
-    private int prevTriggerL, prevTriggerR;
-    private int prevHatX, prevHatY;
-    private boolean hasChanges = false;
 
     public FakeInputWriter(String fakeInputPath, int slot) {
         this.eventFile = new File(fakeInputPath, "event" + slot);
-        this.buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
-        this.buffer.order(ByteOrder.LITTLE_ENDIAN);
+        this.slot = slot;
+    }
+
+    public static synchronized boolean prepareSharedMemory(String fakeInputPath, int slotCount) {
+        boolean prepared = nativePrepareSharedMemory(fakeInputPath, slotCount);
+        if (!prepared) {
+            Log.e(TAG, "Failed to prepare ASharedMemory fake-input transport");
+        }
+        return prepared;
+    }
+
+    public static synchronized void shutdownSharedMemory() {
+        nativeShutdownSharedMemory();
     }
 
     public synchronized boolean open() {
-        if (destroyed)
-            return false;
-        if (isOpen)
-            return true;
+        if (destroyed) return false;
+        if (isOpen) return true;
 
         try {
-            eventFile.getParentFile().mkdirs();
-            if (!eventFile.exists()) {
-                eventFile.createNewFile();
+            File parent = eventFile.getParentFile();
+            if (parent != null) parent.mkdirs();
+
+            // Keep the same stable discovery node behavior as the Vulkan UI branch.
+            // Wine may open eventN before the touchscreen/physical controller starts
+            // publishing; the ASharedMemory ring is only the data path behind that fd.
+            if (!eventFile.exists() && !eventFile.createNewFile()) {
+                Log.e(TAG, "Failed to create fake input discovery node: " + eventFile);
+                return false;
             }
 
-            raf = new RandomAccessFile(eventFile, "rw");
-            raf.seek(raf.length());
-            channel = raf.getChannel();
+            if (!nativeActivate(slot)) {
+                Log.e(TAG, "Failed to activate ASharedMemory fake input slot " + slot);
+                return false;
+            }
+
             isOpen = true;
-            Log.i(TAG, "Opened fake input: " + eventFile.getAbsolutePath());
+            Log.i(TAG, "Opened ASharedMemory fake input slot " + slot + ": " + eventFile);
             return true;
         } catch (IOException e) {
-            Log.e(TAG, "Failed to open: " + e.getMessage());
+            Log.e(TAG, "Failed to open fake input slot " + slot + ": " + e.getMessage());
             return false;
         }
     }
 
     public synchronized void close() {
-        if (channel != null) {
-            try {
-                channel.close();
-            } catch (IOException e) {
-            }
-            channel = null;
-        }
-        if (raf != null) {
-            try {
-                raf.close();
-            } catch (IOException e) {
-            }
-            raf = null;
-        }
         isOpen = false;
     }
 
-    /**
-     * Reset all input state to neutral (all buttons released, axes zeroed).
-     * This keeps the file open so games that cache the file descriptor can still
-     * reconnect.
-     */
     public synchronized void reset() {
-        if (!isOpen && !open())
-            return;
-
-        buffer.clear();
-        hasChanges = false;
-
-        // Release all buttons
-        for (int i = 0; i < BUTTON_MAP.length; i++) {
-            if (prevButtonStates[i]) {
-                prevButtonStates[i] = false;
-                writeEvent(EV_MSC, MSC_SCAN, BUTTON_MAP[i]);
-                writeEvent(EV_KEY, BUTTON_MAP[i], 0);
-            }
-        }
-
-        // Zero all axes
-        if (prevThumbLX != 0) {
-            prevThumbLX = 0;
-            writeEvent(EV_ABS, ABS_X, 0);
-        }
-        if (prevThumbLY != 0) {
-            prevThumbLY = 0;
-            writeEvent(EV_ABS, ABS_Y, 0);
-        }
-        if (prevThumbRX != 0) {
-            prevThumbRX = 0;
-            writeEvent(EV_ABS, ABS_RX, 0);
-        }
-        if (prevThumbRY != 0) {
-            prevThumbRY = 0;
-            writeEvent(EV_ABS, ABS_RY, 0);
-        }
-        if (prevTriggerL != 0) {
-            prevTriggerL = 0;
-            writeEvent(EV_ABS, ABS_BRAKE, 0);
-        }
-        if (prevTriggerR != 0) {
-            prevTriggerR = 0;
-            writeEvent(EV_ABS, ABS_GAS, 0);
-        }
-        if (prevHatX != 0) {
-            prevHatX = 0;
-            writeEvent(EV_ABS, ABS_HAT0X, 0);
-        }
-        if (prevHatY != 0) {
-            prevHatY = 0;
-            writeEvent(EV_ABS, ABS_HAT0Y, 0);
-        }
-
-        if (hasChanges) {
-            writeEvent(EV_SYN, SYN_REPORT, 0);
-            buffer.flip();
-            try {
-                channel.write(buffer);
-            } catch (IOException e) {
-                Log.e(TAG, "Reset write error: " + e.getMessage());
-            }
-        }
-        Log.i(TAG, "Reset fake input to neutral state: " + eventFile.getAbsolutePath());
+        if (!isOpen && !open()) return;
+        nativeReset(slot);
     }
 
+    public synchronized void requestFullResend() {
+        if (!isOpen && !open()) return;
+        nativeRequestFullResend(slot);
+    }
 
+    public synchronized void softRelease() {
+        if (destroyed) return;
+        if (isOpen) nativeReset(slot);
+        isOpen = false;
+    }
 
-    /**
-     * Full destroy - reset, close, and delete the file.
-     */
     public synchronized void destroy() {
+        if (destroyed) return;
+
+        if (isOpen) nativeReset(slot);
+        nativeDeactivate(slot);
+        isOpen = false;
         destroyed = true;
-        reset();
-        close();
-        if (eventFile != null && eventFile.exists()) {
+
+        if (eventFile.exists()) {
             boolean deleted = eventFile.delete();
-            Log.i(TAG, "Deleted fake input: " + eventFile.getAbsolutePath() + " (" + deleted + ")");
+            Log.i(TAG, "Deleted fake input discovery node " + eventFile + " (" + deleted + ")");
         }
-    }
-
-    private void writeEvent(short type, short code, int value) {
-        long timeMs = System.currentTimeMillis();
-        buffer.putLong(timeMs / 1000);
-        buffer.putLong((timeMs % 1000) * 1000);
-        buffer.putShort(type);
-        buffer.putShort(code);
-        buffer.putInt(value);
-        hasChanges = true;
-    }
-
-    private void writeButton(int idx, boolean pressed) {
-        if (idx < 0 || idx >= BUTTON_MAP.length)
-            return;
-        if (prevButtonStates[idx] == pressed)
-            return;
-        prevButtonStates[idx] = pressed;
-        writeEvent(EV_MSC, MSC_SCAN, BUTTON_MAP[idx]);
-        writeEvent(EV_KEY, BUTTON_MAP[idx], pressed ? 1 : 0);
-    }
-
-    private void writeAxis(short code, int value, int[] prevRef, int index) {
-        if (prevRef[index] == value)
-            return;
-        prevRef[index] = value;
-        writeEvent(EV_ABS, code, value);
     }
 
     public void writeGamepadState(GamepadState state) {
-        if (!isOpen && !open())
-            return;
+        if (state == null) return;
+        if (!isOpen && !open()) return;
 
-        buffer.clear();
-        hasChanges = false;
+        int dpadMask = 0;
+        if (state.dpad[0]) dpadMask |= 1;
+        if (state.dpad[1]) dpadMask |= 2;
+        if (state.dpad[2]) dpadMask |= 4;
+        if (state.dpad[3]) dpadMask |= 8;
 
-        // Buttons
-        for (int i = 0; i < 10; i++) {
-            writeButton(i, state.isPressed((byte) i));
-        }
-
-        // Sticks
-        int lx = (int) (state.thumbLX * 32767);
-        int ly = (int) (state.thumbLY * 32767);
-        int rx = (int) (state.thumbRX * 32767);
-        int ry = (int) (state.thumbRY * 32767);
-
-        if (lx != prevThumbLX) {
-            prevThumbLX = lx;
-            writeEvent(EV_ABS, ABS_X, lx);
-        }
-        if (ly != prevThumbLY) {
-            prevThumbLY = ly;
-            writeEvent(EV_ABS, ABS_Y, ly);
-        }
-        if (rx != prevThumbRX) {
-            prevThumbRX = rx;
-            writeEvent(EV_ABS, ABS_RX, rx);
-        }
-        if (ry != prevThumbRY) {
-            prevThumbRY = ry;
-            writeEvent(EV_ABS, ABS_RY, ry);
-        }
-
-        // L2 and R2 (Triggers)
-        int tl = (int) (state.triggerL * 255);
-        int tr = (int) (state.triggerR * 255);
-        if (tl != prevTriggerL) {
-            prevTriggerL = tl;
-            writeEvent(EV_ABS, ABS_BRAKE, tl);
-        }
-        if (tr != prevTriggerR) {
-            prevTriggerR = tr;
-            writeEvent(EV_ABS, ABS_GAS, tr);
-        }
-
-        // D-pad
-        int hatX = state.dpad[3] ? -1 : (state.dpad[1] ? 1 : 0);
-        int hatY = state.dpad[0] ? -1 : (state.dpad[2] ? 1 : 0);
-        if (hatX != prevHatX) {
-            prevHatX = hatX;
-            writeEvent(EV_ABS, ABS_HAT0X, hatX);
-        }
-        if (hatY != prevHatY) {
-            prevHatY = hatY;
-            writeEvent(EV_ABS, ABS_HAT0Y, hatY);
-        }
-
-        // Detect Change else no need to write
-        if (hasChanges) {
-            writeEvent(EV_SYN, SYN_REPORT, 0);
-            buffer.flip();
-            try {
-                channel.write(buffer);
-            } catch (IOException e) {
-                Log.e(TAG, "Write error: " + e.getMessage());
-            }
-        }
+        nativePublishGamepadState(
+                slot,
+                state.buttons & 0xffff,
+                state.thumbLX,
+                state.thumbLY,
+                state.thumbRX,
+                state.thumbRY,
+                state.triggerL,
+                state.triggerR,
+                dpadMask
+        );
     }
 
     public boolean isOpen() {
         return isOpen;
     }
+
+    private static native boolean nativePrepareSharedMemory(String fakeInputPath, int slotCount);
+    private static native boolean nativeActivate(int slot);
+    private static native void nativeDeactivate(int slot);
+    private static native void nativeReset(int slot);
+    private static native void nativeRequestFullResend(int slot);
+    private static native void nativePublishGamepadState(
+            int slot,
+            int buttons,
+            float thumbLX,
+            float thumbLY,
+            float thumbRX,
+            float thumbRY,
+            float triggerL,
+            float triggerR,
+            int dpadMask
+    );
+    private static native void nativeShutdownSharedMemory();
 }
