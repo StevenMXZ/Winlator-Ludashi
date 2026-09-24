@@ -226,6 +226,11 @@ private:
         bool                 needsTransition = false;
         AHardwareBuffer*     ahb            = nullptr;
     };
+    struct RetiredTex {
+        WinTex wt;
+        uint64_t serial = 0;
+        AHardwareBuffer* ahb = nullptr;
+    };
 
     struct RenderEntry { int64_t id; int x, y; };
     struct DrawEntry {
@@ -294,7 +299,12 @@ public:
     std::unordered_map<AHardwareBuffer*, WinTex>              ahbImportCache;
     std::unordered_map<int64_t, std::vector<AHardwareBuffer*>> windowAhbs;
 
-    std::vector<WinTex>    deleteQueue;
+    std::vector<RetiredTex> deleteQueue;
+    std::atomic<bool> retirePending{false};
+    uint64_t submittedSerial = 0;
+    uint64_t completedSerial = 0;
+    uint64_t pendingFrameSerial = 0;
+    uint64_t slotSerial[MAX_FRAMES_IN_FLIGHT] = {};
     std::vector<RenderEntry> renderList;
 
     std::vector<DrawEntry>             frameDraws;
@@ -426,6 +436,7 @@ public:
     bool  importAHBToWinTex(WinTex& wt, AHardwareBuffer* ahb);
     void  cleanupAllAHBCache();
     void  flushDeleteQueue();
+    void  destroyTexNow(RetiredTex& retired);
     void  destroyWinTex(WinTex& wt);
     void  ensureCursorTex(short w, short h);
     void  cleanupCursorTex();

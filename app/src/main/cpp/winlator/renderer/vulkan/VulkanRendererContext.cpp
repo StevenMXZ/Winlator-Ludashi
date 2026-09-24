@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <utility>
 #include <inttypes.h>
 #include <dlfcn.h>
 #include "window_vert.h"
@@ -52,13 +53,7 @@ VulkanRendererContext::~VulkanRendererContext() {
     for (auto& [id, wt] : texMap) destroyWinTex(wt);
     texMap.clear();
 
-    for (auto& wt : deleteQueue) {
-        if (wt.ds   != VK_NULL_HANDLE) vk_.FreeDescriptorSets(device, winTexPool, 1, &wt.ds);
-        if (wt.view != VK_NULL_HANDLE) vk_.DestroyImageView(device, wt.view, nullptr);
-        if (wt.img  != VK_NULL_HANDLE) vk_.DestroyImage(device, wt.img, nullptr);
-        if (wt.mem  != VK_NULL_HANDLE) vk_.FreeMemory(device, wt.mem, nullptr);
-        if (wt.stg  != VK_NULL_HANDLE) { vk_.DestroyBuffer(device, wt.stg, nullptr); vk_.FreeMemory(device, wt.stgMem, nullptr); }
-    }
+    for (auto& retired : deleteQueue) destroyTexNow(retired);
     deleteQueue.clear();
     cleanupSwapchain(); cleanupCursorTex();
 
@@ -906,7 +901,8 @@ void VulkanRendererContext::destroyWinTex(WinTex& wt) {
     if (wt.img!=VK_NULL_HANDLE || wt.stg!=VK_NULL_HANDLE) {
         WinTex deferred = wt;
         deferred.isAHB = false;
-        deleteQueue.push_back(deferred);
+        deleteQueue.push_back({deferred, pendingFrameSerial ? pendingFrameSerial : submittedSerial, nullptr});
+        retirePending.store(true, std::memory_order_release);
     }
     wt={};
 }
@@ -1147,14 +1143,19 @@ void VulkanRendererContext::flushDeleteQueue() {
     std::lock_guard<std::mutex> lk(renderMutex);
     if (deleteQueue.empty()) return;
     vk_.DeviceWaitIdle(device);
-    for (auto& wt:deleteQueue) {
-        if (wt.ds  !=VK_NULL_HANDLE) vk_.FreeDescriptorSets(device,winTexPool,1,&wt.ds);
-        if (wt.view!=VK_NULL_HANDLE) vk_.DestroyImageView(device,wt.view,nullptr);
-        if (wt.img !=VK_NULL_HANDLE) vk_.DestroyImage(device,wt.img,nullptr);
-        if (wt.mem !=VK_NULL_HANDLE) vk_.FreeMemory(device,wt.mem,nullptr);
-        if (wt.stg !=VK_NULL_HANDLE){vk_.DestroyBuffer(device,wt.stg,nullptr);vk_.FreeMemory(device,wt.stgMem,nullptr);}
-    }
+    for (auto& retired:deleteQueue) destroyTexNow(retired);
     deleteQueue.clear();
+    retirePending.store(false, std::memory_order_release);
+}
+
+void VulkanRendererContext::destroyTexNow(RetiredTex& retired) {
+    WinTex& wt=retired.wt;
+    if (wt.ds  !=VK_NULL_HANDLE) vk_.FreeDescriptorSets(device,winTexPool,1,&wt.ds);
+    if (wt.view!=VK_NULL_HANDLE) vk_.DestroyImageView(device,wt.view,nullptr);
+    if (wt.img !=VK_NULL_HANDLE) vk_.DestroyImage(device,wt.img,nullptr);
+    if (wt.mem !=VK_NULL_HANDLE) vk_.FreeMemory(device,wt.mem,nullptr);
+    if (wt.stg !=VK_NULL_HANDLE){vk_.DestroyBuffer(device,wt.stg,nullptr);vk_.FreeMemory(device,wt.stgMem,nullptr);}
+    if (retired.ahb) AHardwareBuffer_release(retired.ahb);
 }
 
 void VulkanRendererContext::renderFrame() {
@@ -1177,9 +1178,24 @@ void VulkanRendererContext::renderFrame() {
 
     if (currentFrame >= cmdBufs.size() || cmdBufs[currentFrame] == VK_NULL_HANDLE) return;
     bool currentFenceWaited = false;
-    if (!vk_.GetFenceStatus || vk_.GetFenceStatus(device, inFlightFences[currentFrame]) == VK_NOT_READY) {
-        vk_.WaitForFences(device,1,&inFlightFences[currentFrame],VK_TRUE,UINT64_MAX);
+    VkResult fenceState=vk_.GetFenceStatus ? vk_.GetFenceStatus(device,inFlightFences[currentFrame]) : VK_NOT_READY;
+    if (fenceState==VK_NOT_READY) {
+        if (vk_.WaitForFences(device,1,&inFlightFences[currentFrame],VK_TRUE,UINT64_MAX)!=VK_SUCCESS)
+            throw std::runtime_error("frame fence wait");
         currentFenceWaited = true;
+    } else if (fenceState!=VK_SUCCESS) throw std::runtime_error("frame fence status");
+    completedSerial=std::max(completedSerial,slotSerial[currentFrame]);
+    if (retirePending.load(std::memory_order_acquire)) {
+        std::lock_guard<std::mutex> lk(renderMutex);
+        if (!deleteQueue.empty()) {
+            size_t keep=0;
+            for (auto& retired:deleteQueue) {
+                if (retired.serial<=completedSerial) destroyTexNow(retired);
+                else deleteQueue[keep++]=std::move(retired);
+            }
+            deleteQueue.resize(keep);
+        }
+        retirePending.store(!deleteQueue.empty(),std::memory_order_release);
     }
 
     uint32_t imgIdx;
@@ -1214,16 +1230,9 @@ void VulkanRendererContext::renderFrame() {
     {
         std::lock_guard<std::mutex> lk(renderMutex);
 
-        if (!deleteQueue.empty()) {
-            for (auto& wt:deleteQueue) {
-                if (wt.ds  !=VK_NULL_HANDLE) vk_.FreeDescriptorSets(device,winTexPool,1,&wt.ds);
-                if (wt.view!=VK_NULL_HANDLE) vk_.DestroyImageView(device,wt.view,nullptr);
-                if (wt.img !=VK_NULL_HANDLE) vk_.DestroyImage(device,wt.img,nullptr);
-                if (wt.mem !=VK_NULL_HANDLE) vk_.FreeMemory(device,wt.mem,nullptr);
-                if (wt.stg !=VK_NULL_HANDLE){vk_.DestroyBuffer(device,wt.stg,nullptr);vk_.FreeMemory(device,wt.stgMem,nullptr);}
-            }
-            deleteQueue.clear();
-        }
+        // Pin the draw list before releasing renderMutex: removeWindow may run
+        // while commands are recorded but before their submit reaches the GPU.
+        pendingFrameSerial=++submittedSerial;
 
         ox=sceneOffsetX; oy=sceneOffsetY; sx=sceneScaleX; sy=sceneScaleY;
         cw=(float)containerWidth; ch=(float)containerHeight;
@@ -1289,13 +1298,16 @@ void VulkanRendererContext::renderFrame() {
 
     vk_.ResetFences(device,1,&inFlightFences[currentFrame]);
     if (vk_.QueueSubmit(graphicsQueue,1,&si,inFlightFences[currentFrame])!=VK_SUCCESS) {
+        { std::lock_guard<std::mutex> lk(renderMutex); pendingFrameSerial=0; }
         vk_.DestroyFence(device,inFlightFences[currentFrame],nullptr);
         VkFenceCreateInfo fi{}; fi.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO; fi.flags=VK_FENCE_CREATE_SIGNALED_BIT;
         vk_.CreateFence(device,&fi,nullptr,&inFlightFences[currentFrame]);
         return;
     }
-    if (!pendingAHB.empty() || !pendingTex.empty()) {
+    {
         std::lock_guard<std::mutex> lk(renderMutex);
+        slotSerial[currentFrame]=pendingFrameSerial;
+        pendingFrameSerial=0;
         for (const auto& p:pendingAHB) {
             auto it=ahbImportCache.find(p.ahb);
             if (it!=ahbImportCache.end() && it->second.img==p.image)
@@ -1403,6 +1415,7 @@ void VulkanRendererContext::updateWindowContent(int64_t id, void* px, short w, s
     {
         std::lock_guard<std::mutex> lk(renderMutex);
         WinTex& wt=texMap[id];
+        if (wt.isAHB) wt={}; // The cached AHB owns the borrowed image.
         if (wt.img==VK_NULL_HANDLE || wt.w!=w || wt.h!=h) {
             if (wt.img!=VK_NULL_HANDLE) destroyWinTex(wt);
             if (!createWinTexResources(wt,w,h)) { texMap.erase(id); return; }
@@ -1443,6 +1456,7 @@ void VulkanRendererContext::updateWindowContentAHB(int64_t id, AHardwareBuffer* 
     }
     WinTex& src = cit->second;
     WinTex& wt  = texMap[id];
+    if (!wt.isAHB && wt.img!=VK_NULL_HANDLE) destroyWinTex(wt);
     wt.img  = src.img; wt.mem  = src.mem; wt.view = src.view; wt.ds   = src.ds;
     wt.isAHB = true; wt.ahb  = ahb; wt.w = src.w; wt.h = src.h;
     wt.needsTransition = false; // The first-use layout belongs to the cached VkImage.
@@ -1470,8 +1484,8 @@ void VulkanRendererContext::removeWindow(int64_t id) {
             auto cit = ahbImportCache.find(ahb);
             if (cit != ahbImportCache.end()) {
                 WinTex deferred = cit->second; deferred.isAHB = false;
-                deleteQueue.push_back(deferred);
-                AHardwareBuffer_release(ahb);
+                deleteQueue.push_back({deferred, pendingFrameSerial ? pendingFrameSerial : submittedSerial, ahb});
+                retirePending.store(true, std::memory_order_release);
                 ahbImportCache.erase(cit);
             }
         }
