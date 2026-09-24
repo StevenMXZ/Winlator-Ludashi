@@ -928,6 +928,7 @@ void VulkanRendererContext::ensureCursorTex(short w, short h) {
     VkWriteDescriptorSet wr{}; wr.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET; wr.dstSet=cursorDS; wr.dstBinding=0; wr.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; wr.descriptorCount=1; wr.pImageInfo=&dii;
     vk_.UpdateDescriptorSets(device,1,&wr,0,nullptr);
     cursorTexW=w; cursorTexH=h;
+    if (validationRequested) RLOG("cursor image: img=%p (%dx%d)", (void*)cursorImg, w, h);
 }
 
 void VulkanRendererContext::cleanupCursorTex() {
@@ -1002,7 +1003,8 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
     bool hasCursorCopy = hasCursorUpload && cursorImg!=VK_NULL_HANDLE && cursorUpload!=VK_NULL_HANDLE;
     if (hasCursorCopy) {
         VkImageMemoryBarrier b{}; b.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        b.oldLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; b.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        // Every cursor upload overwrites the complete image, including its first use.
+        b.oldLayout=VK_IMAGE_LAYOUT_UNDEFINED; b.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         b.srcQueueFamilyIndex=b.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
         b.image=cursorImg; b.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
         b.srcAccessMask=VK_ACCESS_SHADER_READ_BIT; b.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -1204,6 +1206,10 @@ void VulkanRendererContext::renderFrame() {
     short ptrX,ptrY,curHotX,curHotY,curW,curH; bool curVis;
     VkBuffer curUpload=VK_NULL_HANDLE; bool hasCurUpload=false;
     VkRect2D effectiveScissor{{0,0},swapchainExt};
+    struct PendingAHBTransition { AHardwareBuffer* ahb; VkImage image; };
+    struct PendingTexTransition { int64_t id; VkImage image; };
+    std::vector<PendingAHBTransition> pendingAHB;
+    std::vector<PendingTexTransition> pendingTex;
 
     {
         std::lock_guard<std::mutex> lk(renderMutex);
@@ -1237,7 +1243,21 @@ void VulkanRendererContext::renderFrame() {
             if (wt.ds==VK_NULL_HANDLE) continue;
             DrawEntry de{wt.img,wt.ds,VK_NULL_HANDLE,re.x,re.y,wt.w,wt.h};
             de.isAHB=wt.isAHB;
-            if (wt.needsTransition) { de.needsTransition=true; wt.needsTransition=false; }
+            if (wt.isAHB) {
+                auto cit=ahbImportCache.find(wt.ahb);
+                if (cit!=ahbImportCache.end() && cit->second.img==wt.img &&
+                    cit->second.needsTransition &&
+                    std::none_of(pendingAHB.begin(),pendingAHB.end(),
+                        [&](const PendingAHBTransition& p){return p.image==wt.img;})) {
+                    de.needsTransition=true;
+                    pendingAHB.push_back({wt.ahb,wt.img});
+                }
+            } else if (wt.needsTransition &&
+                std::none_of(pendingTex.begin(),pendingTex.end(),
+                    [&](const PendingTexTransition& p){return p.image==wt.img;})) {
+                de.needsTransition=true;
+                pendingTex.push_back({re.id,wt.img});
+            }
             if (wt.dirty && !wt.isAHB && wt.stg!=VK_NULL_HANDLE) { de.upload=wt.stg; wt.dirty=false; }
             else if (wt.isAHB) { wt.dirty=false; }
             frameDraws.push_back(de);
@@ -1273,6 +1293,19 @@ void VulkanRendererContext::renderFrame() {
         VkFenceCreateInfo fi{}; fi.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO; fi.flags=VK_FENCE_CREATE_SIGNALED_BIT;
         vk_.CreateFence(device,&fi,nullptr,&inFlightFences[currentFrame]);
         return;
+    }
+    if (!pendingAHB.empty() || !pendingTex.empty()) {
+        std::lock_guard<std::mutex> lk(renderMutex);
+        for (const auto& p:pendingAHB) {
+            auto it=ahbImportCache.find(p.ahb);
+            if (it!=ahbImportCache.end() && it->second.img==p.image)
+                it->second.needsTransition=false;
+        }
+        for (const auto& p:pendingTex) {
+            auto it=texMap.find(p.id);
+            if (it!=texMap.end() && it->second.img==p.image)
+                it->second.needsTransition=false;
+        }
     }
     VkSwapchainKHR scs[]={swapchain};
     VkPresentInfoKHR pi{}; pi.sType=VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1328,8 +1361,6 @@ bool VulkanRendererContext::reattachSurface(ANativeWindow* newWindow) {
 
         surfaceWidth  = ANativeWindow_getWidth(window);
         surfaceHeight = ANativeWindow_getHeight(window);
-        for (auto& [id, wt] : texMap) wt.needsTransition = true;
-        for (auto& [ahb, wt] : ahbImportCache) wt.needsTransition = true;
         surfaceDetached.store(false, std::memory_order_release);
     }
     needsRender.store(true, std::memory_order_release);
@@ -1407,14 +1438,14 @@ void VulkanRendererContext::updateWindowContentAHB(int64_t id, AHardwareBuffer* 
         ahbImportCache[ahb] = tmp;
         windowAhbs[id].push_back(ahb);
         cit = ahbImportCache.find(ahb);
-        RLOG("updateWindowContentAHB: imported new AHB %p for id=%" PRId64 " (%dx%d)",
-            (void*)ahb, id, tmp.w, tmp.h);
+        RLOG("updateWindowContentAHB: imported new AHB %p img=%p for id=%" PRId64 " (%dx%d)",
+            (void*)ahb, (void*)tmp.img, id, tmp.w, tmp.h);
     }
     WinTex& src = cit->second;
     WinTex& wt  = texMap[id];
     wt.img  = src.img; wt.mem  = src.mem; wt.view = src.view; wt.ds   = src.ds;
     wt.isAHB = true; wt.ahb  = ahb; wt.w = src.w; wt.h = src.h;
-    if (src.needsTransition) { wt.needsTransition = true; src.needsTransition = false; }
+    wt.needsTransition = false; // The first-use layout belongs to the cached VkImage.
     needsRender.store(true); dirtyCV.notify_one();
 }
 
