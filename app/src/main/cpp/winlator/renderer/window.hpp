@@ -28,12 +28,25 @@ struct Window {
     jobject attributes;
     jobject windowObj;
     std::unordered_map<int, std::unique_ptr<struct Drawable>> directContents;
-    Drawable *currentDirectContent;
+    Drawable *externalContent;
     ASurfaceControl *control;
     bool backPressureEnabled;
+    Window *surface;
         
-    bool hasDirectContents() {
-        return currentDirectContent != nullptr;
+    bool hasExternalContents() {
+        return externalContent != nullptr;
+    }
+
+    bool isSurface() {
+        return hasExternalContents() && width > 1 && height > 1;
+    }
+
+    bool hasSurface() {
+        return surface != nullptr;
+    }
+
+    bool isHidden() {
+        return hasSurface() && width == surface->width && height == surface->height;
     }
     
     int getRootX() {

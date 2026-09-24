@@ -66,6 +66,8 @@ void WindowManager::deleteWindow(Window *window) {
     if (parent) {
         parent->children.erase(std::remove(parent->children.begin(), 
             parent->children.end(), window), parent->children.end());
+        if (window->isSurface() && parent->surface == window)
+            parent->surface = nullptr;
     }
     
     {

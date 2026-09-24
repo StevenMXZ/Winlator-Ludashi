@@ -70,7 +70,8 @@ Java_com_winlator_cmod_widget_XServerView_nativeInit(JNIEnv *env, jobject thiz, 
     rootWindow->control = nullptr;
     rootWindow->enabled = true;
     rootWindow->inputOutput = true;
-    rootWindow->currentDirectContent = nullptr;
+    rootWindow->externalContent = nullptr;
+    rootWindow->surface = nullptr;
     
     jobject attributes = env->GetObjectField(rootWindowObj, cache.windowAttributes);
     rootWindow->attributes = env->NewGlobalRef(attributes);
@@ -228,7 +229,8 @@ Java_com_winlator_cmod_widget_XServerView_nativeCreateWindow(JNIEnv *env, jobjec
     window->parent = nullptr;
     window->compositeRedirected = false;
     window->control = nullptr;
-    window->currentDirectContent = nullptr;
+    window->externalContent = nullptr;
+    window->surface = nullptr;
     window->enabled = true;
     
     jobject attributes = env->GetObjectField(windowObj, cache.windowAttributes);
@@ -612,7 +614,8 @@ Java_com_winlator_cmod_widget_XServerView_nativeAddDirectContent(JNIEnv *env, jo
     drawable->isDisplayX = false;
     drawable->drawableObj = env->NewGlobalRef(drawableObj);
     
-    window->currentDirectContent = nullptr;
+    if (window->parent) window->parent->surface = window;
+    window->externalContent = nullptr;
     window->directContents[drawable->id] = std::move(drawable);
 }
 
@@ -624,7 +627,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeUpdateDirectContent(JNIEnv *env,
     auto directContent = window->directContents[drawableId].get();
     if (!directContent) return;
     
-    window->currentDirectContent = directContent;
+    window->externalContent = directContent;
     
     if (xserver.isDisplayX())
         displayX.requestWindowUpdate(window);
