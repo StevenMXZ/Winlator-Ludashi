@@ -72,7 +72,6 @@ VulkanRendererContext::~VulkanRendererContext() {
     vk_.DestroyPipelineLayout(device, pipeLayout, nullptr);
     vk_.DestroyDescriptorSetLayout(device, dsLayout, nullptr);
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vk_.DestroySemaphore(device, renderDoneSems[i], nullptr);
         vk_.DestroySemaphore(device, imgAvailSems[i], nullptr);
         vk_.DestroyFence(device, inFlightFences[i], nullptr);
     }
@@ -438,11 +437,12 @@ void VulkanRendererContext::createSwapchain() {
     ci.compositeAlpha=compositeAlpha; ci.presentMode=presentMode; ci.clipped=VK_TRUE;
     ci.oldSwapchain=oldSwapchain;
     if (vk_.CreateSwapchainKHR(device,&ci,nullptr,&swapchain)!=VK_SUCCESS) throw std::runtime_error("swapchain");
-    RLOG("swapchain created: %dx%d format=%d presentMode=%d compositeAlpha=%d imgCount=%u",
-        swapchainExt.width,swapchainExt.height,(int)swapchainFmt,(int)presentMode,(int)compositeAlpha,imgCount);
     if (oldSwapchain!=VK_NULL_HANDLE) vk_.DestroySwapchainKHR(device,oldSwapchain,nullptr);
     vk_.GetSwapchainImagesKHR(device,swapchain,&imgCount,nullptr);
     swapchainImages.resize(imgCount); vk_.GetSwapchainImagesKHR(device,swapchain,&imgCount,swapchainImages.data());
+    swapchainImages.resize(imgCount);
+    RLOG("swapchain created: %dx%d format=%d presentMode=%d compositeAlpha=%d imgCount=%u",
+        swapchainExt.width,swapchainExt.height,(int)swapchainFmt,(int)presentMode,(int)compositeAlpha,imgCount);
     swapchainViews.resize(imgCount);
     for (size_t i=0;i<imgCount;i++) {
         VkImageViewCreateInfo vi{}; vi.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -456,6 +456,10 @@ void VulkanRendererContext::createSwapchain() {
         vi.components = mapping;
         if (vk_.CreateImageView(device,&vi,nullptr,&swapchainViews[i])!=VK_SUCCESS) throw std::runtime_error("imgview");
     }
+    renderDoneSems.resize(imgCount, VK_NULL_HANDLE);
+    VkSemaphoreCreateInfo si{}; si.sType=VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    for (auto& sem : renderDoneSems)
+        if (vk_.CreateSemaphore(device,&si,nullptr,&sem)!=VK_SUCCESS) throw std::runtime_error("present semaphore");
 }
 
 void VulkanRendererContext::createRenderPass() {
@@ -699,12 +703,11 @@ void VulkanRendererContext::createCmdBufs() {
 }
 
 void VulkanRendererContext::createSyncObjects() {
-    imgAvailSems.resize(MAX_FRAMES_IN_FLIGHT); renderDoneSems.resize(MAX_FRAMES_IN_FLIGHT); inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+    imgAvailSems.resize(MAX_FRAMES_IN_FLIGHT); inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
     VkSemaphoreCreateInfo si{}; si.sType=VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     VkFenceCreateInfo fi{}; fi.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO; fi.flags=VK_FENCE_CREATE_SIGNALED_BIT;
     for (uint32_t i=0;i<MAX_FRAMES_IN_FLIGHT;i++) {
         if (vk_.CreateSemaphore(device,&si,nullptr,&imgAvailSems[i])!=VK_SUCCESS||
-            vk_.CreateSemaphore(device,&si,nullptr,&renderDoneSems[i])!=VK_SUCCESS||
             vk_.CreateFence(device,&fi,nullptr,&inFlightFences[i])!=VK_SUCCESS) throw std::runtime_error("sync");
     }
 }
@@ -712,6 +715,8 @@ void VulkanRendererContext::createSyncObjects() {
 void VulkanRendererContext::cleanupSwapchain() {
     for (auto fb:swapchainFBs) vk_.DestroyFramebuffer(device,fb,nullptr); swapchainFBs.clear();
     for (auto iv:swapchainViews) vk_.DestroyImageView(device,iv,nullptr); swapchainViews.clear();
+    for (auto sem:renderDoneSems) if (sem!=VK_NULL_HANDLE) vk_.DestroySemaphore(device,sem,nullptr);
+    renderDoneSems.clear();
     if (!cmdBufs.empty()){vk_.FreeCommandBuffers(device,cmdPool,(uint32_t)cmdBufs.size(),cmdBufs.data());cmdBufs.clear();}
     if (swapchain!=VK_NULL_HANDLE) {
         vk_.DestroySwapchainKHR(device,swapchain,nullptr);
@@ -1255,7 +1260,7 @@ void VulkanRendererContext::renderFrame() {
         ox,oy,sx,sy,cw,ch,ptrX,ptrY,curHotX,curHotY,curW,curH,curVis,
         effectiveScissor);
 
-    VkSemaphore wSem[]={imgAvailSems[currentFrame]}, sSem[]={renderDoneSems[currentFrame]};
+    VkSemaphore wSem[]={imgAvailSems[currentFrame]}, sSem[]={renderDoneSems[imgIdx]};
     VkPipelineStageFlags wStage[]={VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     VkSubmitInfo si{}; si.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO;
     si.waitSemaphoreCount=1; si.pWaitSemaphores=wSem; si.pWaitDstStageMask=wStage;
