@@ -374,6 +374,7 @@ public:
     std::thread       renderThread;
     std::atomic<bool> isRunning{false};
     std::atomic<bool> fbResized{false};
+    std::atomic<bool> swapchainRetryPending{false};
     std::mutex        renderMutex;
     std::mutex        dirtyMutex;
     std::condition_variable dirtyCV;

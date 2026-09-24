@@ -7,6 +7,7 @@
 #include <cmath>
 #include <algorithm>
 #include <utility>
+#include <chrono>
 #include <inttypes.h>
 #include <dlfcn.h>
 #include "window_vert.h"
@@ -431,7 +432,9 @@ void VulkanRendererContext::createSwapchain() {
     ci.imageSharingMode=VK_SHARING_MODE_EXCLUSIVE; ci.preTransform=pre;
     ci.compositeAlpha=compositeAlpha; ci.presentMode=presentMode; ci.clipped=VK_TRUE;
     ci.oldSwapchain=oldSwapchain;
-    if (vk_.CreateSwapchainKHR(device,&ci,nullptr,&swapchain)!=VK_SUCCESS) throw std::runtime_error("swapchain");
+    VkSwapchainKHR newSwapchain=VK_NULL_HANDLE;
+    if (vk_.CreateSwapchainKHR(device,&ci,nullptr,&newSwapchain)!=VK_SUCCESS) throw std::runtime_error("swapchain");
+    swapchain=newSwapchain;
     if (oldSwapchain!=VK_NULL_HANDLE) vk_.DestroySwapchainKHR(device,oldSwapchain,nullptr);
     vk_.GetSwapchainImagesKHR(device,swapchain,&imgCount,nullptr);
     swapchainImages.resize(imgCount); vk_.GetSwapchainImagesKHR(device,swapchain,&imgCount,swapchainImages.data());
@@ -1131,11 +1134,26 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
 void VulkanRendererContext::renderLoop() {
     while (isRunning) {
         { std::unique_lock<std::mutex> lk(dirtyMutex);
-          dirtyCV.wait(lk,[this]{
-              return !isRunning||(!surfaceDetached.load()&&(needsRender.load()||fbResized.load()))||cursorMoved.load(); }); }
+           dirtyCV.wait(lk,[this]{
+               return !isRunning||(!surfaceDetached.load()&&
+                   (needsRender.load()||fbResized.load()||cursorMoved.load())); }); }
         if (!isRunning) break;
-        if (swapchain == VK_NULL_HANDLE || cmdBufs.empty()) continue;
-        try { renderFrame(); } catch(...) {}
+        try { renderFrame(); }
+        catch (const std::exception& e) {
+            if (!swapchainRetryPending.exchange(true)) RLOG_E("renderFrame failed: %s",e.what());
+            { std::lock_guard<std::mutex> lk(renderMutex); pendingFrameSerial=0; }
+            fbResized.store(true);
+        }
+        catch (...) {
+            if (!swapchainRetryPending.exchange(true)) RLOG_E("renderFrame failed: unknown exception");
+            { std::lock_guard<std::mutex> lk(renderMutex); pendingFrameSerial=0; }
+            fbResized.store(true);
+        }
+        if (swapchainRetryPending.load()) {
+            std::unique_lock<std::mutex> lk(dirtyMutex);
+            dirtyCV.wait_for(lk,std::chrono::milliseconds(50),[this]{
+                return !isRunning||surfaceDetached.load(); });
+        }
     }
 }
 
@@ -1165,18 +1183,45 @@ void VulkanRendererContext::renderFrame() {
     cursorMoved.store(false,std::memory_order_relaxed);
 
     if (surfaceDetached.load(std::memory_order_acquire)) return;
-    if (surfaceWidth==0||surfaceHeight==0) return;
+    if (surfaceWidth==0||surfaceHeight==0) { swapchainRetryPending.store(true); return; }
 
     if (fbResized.load()) {
         for (auto& f:inFlightFences) vk_.WaitForFences(device,1,&f,VK_TRUE,UINT64_MAX);
+        vk_.DeviceWaitIdle(device);
         cleanupSwapchain();
+        // A successful acquire followed by a failed submit leaves its semaphore
+        // signaled. Retire acquire semaphores only while recreating the swapchain.
+        VkSemaphoreCreateInfo semInfo{}; semInfo.sType=VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        for (auto& sem:imgAvailSems) {
+            if (sem!=VK_NULL_HANDLE) vk_.DestroySemaphore(device,sem,nullptr);
+            sem=VK_NULL_HANDLE;
+            if (vk_.CreateSemaphore(device,&semInfo,nullptr,&sem)!=VK_SUCCESS)
+                throw std::runtime_error("recreate acquire semaphore");
+        }
         bool ok=false;
-        try{createSwapchain();createFramebuffers();createCmdBufs();imgInFlight.assign(swapchainImages.size(),VK_NULL_HANDLE);ok=true;}catch(...){}
-        if (ok) fbResized.store(false);
+        try{createSwapchain();createFramebuffers();createCmdBufs();imgInFlight.assign(swapchainImages.size(),VK_NULL_HANDLE);ok=true;}
+        catch(const std::exception& e){
+            if (!swapchainRetryPending.exchange(true)) RLOG_E("swapchain recreate failed: %s",e.what());
+        }
+        if (ok) {
+            fbResized.store(false);
+            swapchainRetryPending.store(false);
+            needsRender.store(true);
+            dirtyCV.notify_one();
+        }
         return;
     }
 
-    if (currentFrame >= cmdBufs.size() || cmdBufs[currentFrame] == VK_NULL_HANDLE) return;
+    if (swapchain==VK_NULL_HANDLE || cmdBufs.empty()) {
+        fbResized.store(true);
+        swapchainRetryPending.store(true);
+        return;
+    }
+    if (currentFrame >= cmdBufs.size() || cmdBufs[currentFrame] == VK_NULL_HANDLE) {
+        fbResized.store(true);
+        swapchainRetryPending.store(true);
+        return;
+    }
     bool currentFenceWaited = false;
     VkResult fenceState=vk_.GetFenceStatus ? vk_.GetFenceStatus(device,inFlightFences[currentFrame]) : VK_NOT_READY;
     if (fenceState==VK_NOT_READY) {
@@ -1302,6 +1347,8 @@ void VulkanRendererContext::renderFrame() {
         vk_.DestroyFence(device,inFlightFences[currentFrame],nullptr);
         VkFenceCreateInfo fi{}; fi.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO; fi.flags=VK_FENCE_CREATE_SIGNALED_BIT;
         vk_.CreateFence(device,&fi,nullptr,&inFlightFences[currentFrame]);
+        fbResized.store(true);
+        swapchainRetryPending.store(true);
         return;
     }
     {
@@ -1373,6 +1420,7 @@ bool VulkanRendererContext::reattachSurface(ANativeWindow* newWindow) {
 
         surfaceWidth  = ANativeWindow_getWidth(window);
         surfaceHeight = ANativeWindow_getHeight(window);
+        swapchainRetryPending.store(false);
         surfaceDetached.store(false, std::memory_order_release);
     }
     needsRender.store(true, std::memory_order_release);
