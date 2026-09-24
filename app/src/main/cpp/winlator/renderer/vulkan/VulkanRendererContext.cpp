@@ -934,15 +934,25 @@ void VulkanRendererContext::cleanupCursorTex() {
     if (cursorView!=VK_NULL_HANDLE){vk_.DestroyImageView(device,cursorView,nullptr);cursorView=VK_NULL_HANDLE;}
     if (cursorImg!=VK_NULL_HANDLE){vk_.DestroyImage(device,cursorImg,nullptr);cursorImg=VK_NULL_HANDLE;}
     if (cursorMem!=VK_NULL_HANDLE){vk_.FreeMemory(device,cursorMem,nullptr);cursorMem=VK_NULL_HANDLE;}
-    if (cursorStg!=VK_NULL_HANDLE){vk_.DestroyBuffer(device,cursorStg,nullptr);vk_.FreeMemory(device,cursorStgM,nullptr);cursorStg=VK_NULL_HANDLE;cursorStgP=nullptr;cursorStgC=0;}
+    for (uint32_t slot=0; slot<MAX_FRAMES_IN_FLIGHT; ++slot) {
+        if (cursorStg[slot]!=VK_NULL_HANDLE) {
+            vk_.DestroyBuffer(device,cursorStg[slot],nullptr);
+            vk_.FreeMemory(device,cursorStgM[slot],nullptr);
+            cursorStg[slot]=VK_NULL_HANDLE; cursorStgM[slot]=VK_NULL_HANDLE;
+            cursorStgP[slot]=nullptr; cursorStgC[slot]=0;
+        }
+    }
     cursorTexW=0; cursorTexH=0;
 }
 
-void VulkanRendererContext::ensureCursorStaging(VkDeviceSize sz) {
-    if (cursorStgC>=sz) return;
-    if (cursorStg!=VK_NULL_HANDLE){vk_.DestroyBuffer(device,cursorStg,nullptr);vk_.FreeMemory(device,cursorStgM,nullptr);}
-    createBuffer(sz,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,cursorStg,cursorStgM);
-    vk_.MapMemory(device,cursorStgM,0,sz,0,&cursorStgP); cursorStgC=sz;
+void VulkanRendererContext::ensureCursorStaging(VkDeviceSize sz, uint32_t slot) {
+    if (cursorStgC[slot]>=sz) return;
+    if (cursorStg[slot]!=VK_NULL_HANDLE) {
+        vk_.DestroyBuffer(device,cursorStg[slot],nullptr);
+        vk_.FreeMemory(device,cursorStgM[slot],nullptr);
+    }
+    createBuffer(sz,VK_BUFFER_USAGE_TRANSFER_SRC_BIT,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,cursorStg[slot],cursorStgM[slot]);
+    vk_.MapMemory(device,cursorStgM[slot],0,sz,0,&cursorStgP[slot]); cursorStgC[slot]=sz;
 }
 
 void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
@@ -1282,7 +1292,7 @@ void VulkanRendererContext::renderFrame() {
         ox=sceneOffsetX; oy=sceneOffsetY; sx=sceneScaleX; sy=sceneScaleY;
         cw=(float)containerWidth; ch=(float)containerHeight;
         ptrX=(short)pointerX.load(); ptrY=(short)pointerY.load();
-        curHotX=cursorHotX; curHotY=cursorHotY; curW=cursorTexW; curH=cursorTexH;
+        curHotX=cursorHotX; curHotY=cursorHotY;
         curVis=cursorVisible.load();
 
         if (hasCustomScissor) effectiveScissor = rotateRectLogicalToIdentity(customScissor);
@@ -1317,16 +1327,24 @@ void VulkanRendererContext::renderFrame() {
             frameDraws.push_back(de);
         }
 
-        if (isCursorImageDirty.load() && cursorImg!=VK_NULL_HANDLE && !cursorPixels.empty()) {
+        if (isCursorImageDirty.load() && !cursorPixels.empty()) {
+            if (cursorImg==VK_NULL_HANDLE || cursorTexW!=cursorPendingW || cursorTexH!=cursorPendingH) {
+                // The shared cursor descriptor and old image view can still be
+                // referenced by either frame slot. Resizes are rare; wait only
+                // here, never on pointer motion or same-size cursor updates.
+                if (cursorImg!=VK_NULL_HANDLE)
+                    for (auto& fence:inFlightFences)
+                        if (vk_.WaitForFences(device,1,&fence,VK_TRUE,UINT64_MAX)!=VK_SUCCESS)
+                            throw std::runtime_error("cursor resize fence wait");
+                ensureCursorTex(cursorPendingW,cursorPendingH);
+            }
             VkDeviceSize csz=(VkDeviceSize)cursorTexW*cursorTexH*4;
-            ensureCursorStaging(csz);
-            isCursorImageDirty.store(false); hasCurUpload=true; curUpload=cursorStg;
-            cursorUploadSize = csz;
+            ensureCursorStaging(csz,currentFrame);
+            memcpy(cursorStgP[currentFrame],cursorPixels.data(),(size_t)csz);
+            isCursorImageDirty.store(false); hasCurUpload=true; curUpload=cursorStg[currentFrame];
         }
+        curW=cursorTexW; curH=cursorTexH;
     }
-
-    if (hasCurUpload && cursorStgP && !cursorPixels.empty())
-        memcpy(cursorStgP, cursorPixels.data(), cursorUploadSize);
 
     recordCmdBuf(cmdBufs[currentFrame],imgIdx,frameDraws,
         frameAhbTransitions,framePreUpload,framePostUpload,
@@ -1343,7 +1361,10 @@ void VulkanRendererContext::renderFrame() {
 
     vk_.ResetFences(device,1,&inFlightFences[currentFrame]);
     if (vk_.QueueSubmit(graphicsQueue,1,&si,inFlightFences[currentFrame])!=VK_SUCCESS) {
-        { std::lock_guard<std::mutex> lk(renderMutex); pendingFrameSerial=0; }
+        { std::lock_guard<std::mutex> lk(renderMutex);
+          pendingFrameSerial=0;
+          if (hasCurUpload) isCursorImageDirty.store(true);
+        }
         vk_.DestroyFence(device,inFlightFences[currentFrame],nullptr);
         VkFenceCreateInfo fi{}; fi.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO; fi.flags=VK_FENCE_CREATE_SIGNALED_BIT;
         vk_.CreateFence(device,&fi,nullptr,&inFlightFences[currentFrame]);
@@ -1446,13 +1467,13 @@ void VulkanRendererContext::setCursorVisible(bool v) {
 void VulkanRendererContext::updateCursorImage(void* px, short w, short h, short stride, short hotX, short hotY) {
     if (!px||w<=0||h<=0) return;
     std::lock_guard<std::mutex> lk(renderMutex);
-    ensureCursorTex(w,h);
     cursorPixels.resize((size_t)w*h);
     const size_t srcStrideBytes=(size_t)std::max((int)stride,(int)w)*4;
     const size_t rowBytes=(size_t)w*4;
     const uint8_t* src=static_cast<const uint8_t*>(px);
     uint8_t* dst=reinterpret_cast<uint8_t*>(cursorPixels.data());
     for (int y=0;y<h;y++) memcpy(dst+(size_t)y*rowBytes,src+(size_t)y*srcStrideBytes,rowBytes);
+    cursorPendingW=w; cursorPendingH=h;
     cursorHotX=hotX; cursorHotY=hotY;
     isCursorImageDirty.store(true); needsRender.store(true); dirtyCV.notify_one();
 }

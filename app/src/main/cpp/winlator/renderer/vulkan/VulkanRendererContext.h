@@ -317,6 +317,7 @@ public:
 
     std::atomic<bool> cursorVisible{false};
     short  cursorHotX=0, cursorHotY=0, cursorTexW=0, cursorTexH=0;
+    short  cursorPendingW=0, cursorPendingH=0;
     std::vector<uint32_t>  cursorPixels;
     std::atomic<bool> isCursorImageDirty{false};
     std::atomic<bool> cursorMoved{false};
@@ -325,11 +326,10 @@ public:
     VkDeviceMemory  cursorMem   = VK_NULL_HANDLE;
     VkImageView     cursorView  = VK_NULL_HANDLE;
     VkDescriptorSet  cursorDS   = VK_NULL_HANDLE;
-    VkBuffer         cursorStg  = VK_NULL_HANDLE;
-    VkDeviceMemory   cursorStgM = VK_NULL_HANDLE;
-    void*            cursorStgP = nullptr;
-    VkDeviceSize     cursorStgC = 0;
-    VkDeviceSize     cursorUploadSize = 0;
+    VkBuffer         cursorStg[MAX_FRAMES_IN_FLIGHT] = {};
+    VkDeviceMemory   cursorStgM[MAX_FRAMES_IN_FLIGHT] = {};
+    void*            cursorStgP[MAX_FRAMES_IN_FLIGHT] = {};
+    VkDeviceSize     cursorStgC[MAX_FRAMES_IN_FLIGHT] = {};
 
     VkInstance       instance;
     VkSurfaceKHR     surface;
@@ -441,7 +441,7 @@ public:
     void  destroyWinTex(WinTex& wt);
     void  ensureCursorTex(short w, short h);
     void  cleanupCursorTex();
-    void  ensureCursorStaging(VkDeviceSize sz);
+    void  ensureCursorStaging(VkDeviceSize sz, uint32_t slot);
 
     void recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
         const std::vector<DrawEntry>& draws,
