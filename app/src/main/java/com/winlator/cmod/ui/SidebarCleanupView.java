@@ -30,7 +30,7 @@ import com.winlator.cmod.widget.WinlatorHUD;
 
 import java.io.File;
 
-public class SidebarCleanupView extends View {
+public class SidebarCleanupView extends View implements SharedPreferences.OnSharedPreferenceChangeListener {
     private static final String TAG_HUD_OPTIONS = "winz-hud-options-v2";
 
     private int bindAttempts;
@@ -60,6 +60,15 @@ public class SidebarCleanupView extends View {
         postDelayed(this::polishUi, 650);
         postDelayed(this::bindGraphicsAutosave, 650);
         postDelayed(this::bindHudExtras, 650);
+        getContext().getSharedPreferences(WinlatorHUD.PREFS, Context.MODE_PRIVATE)
+                .registerOnSharedPreferenceChangeListener(this);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        getContext().getSharedPreferences(WinlatorHUD.PREFS, Context.MODE_PRIVATE)
+                .unregisterOnSharedPreferenceChangeListener(this);
     }
 
     private void polishUi() {
@@ -159,6 +168,7 @@ public class SidebarCleanupView extends View {
             SharedPreferences hudPrefs = getContext().getSharedPreferences(
                     WinlatorHUD.PREFS, Context.MODE_PRIVATE);
             Switch dualCell = new Switch(getContext());
+            dualCell.setTag("dual_cell");
             dualCell.setText("Dual-cell correction");
             dualCell.setTextColor(resolveColor(R.attr.ingameSidebarOnSurface, 0xFFFFFFFF));
             dualCell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
@@ -195,6 +205,7 @@ public class SidebarCleanupView extends View {
         checkBox.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         checkBox.setGravity(Gravity.CENTER_VERTICAL);
         checkBox.setPaddingRelative(0, 0, dp(4), 0);
+        checkBox.setTag(bit);
         checkBox.setChecked(WinlatorHUD.isOptionEnabled(getContext(), bit));
         checkBox.setOnCheckedChangeListener((buttonView, isChecked) ->
                 WinlatorHUD.setOptionPreference(getContext(), bit, isChecked));
@@ -471,5 +482,41 @@ public class SidebarCleanupView extends View {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    @Override
+    public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        if (WinlatorHUD.KEY_SHOW.equals(key) || WinlatorHUD.KEY_DUAL_CELL.equals(key)) {
+            post(this::syncHudCheckboxes);
+        }
+    }
+
+    public void syncHudCheckboxes() {
+        View root = getRootView();
+        LinearLayout modernOptions = root.findViewById(R.id.LLModernHudOptions);
+        if (modernOptions != null) {
+            updateHudSettingsRecursive(modernOptions);
+        }
+    }
+
+    private void updateHudSettingsRecursive(ViewGroup parent) {
+        SharedPreferences hudPrefs = getContext().getSharedPreferences(WinlatorHUD.PREFS, Context.MODE_PRIVATE);
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (child instanceof CheckBox && child.getTag() instanceof Integer) {
+                int bit = (Integer) child.getTag();
+                boolean shouldBeChecked = WinlatorHUD.isOptionEnabled(getContext(), bit);
+                if (((CheckBox) child).isChecked() != shouldBeChecked) {
+                    ((CheckBox) child).setChecked(shouldBeChecked);
+                }
+            } else if (child instanceof Switch && "dual_cell".equals(child.getTag())) {
+                boolean enabled = hudPrefs.getBoolean(WinlatorHUD.KEY_DUAL_CELL, false);
+                if (((Switch) child).isChecked() != enabled) {
+                    ((Switch) child).setChecked(enabled);
+                }
+            } else if (child instanceof ViewGroup) {
+                updateHudSettingsRecursive((ViewGroup) child);
+            }
+        }
     }
 }

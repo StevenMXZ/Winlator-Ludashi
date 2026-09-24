@@ -202,20 +202,24 @@ public class SeekBar extends AppCompatImageView {
 
         switch (event.getAction()) {
             case android.view.MotionEvent.ACTION_DOWN:
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
                 setPressed(true);
-                setNormalizedValue(event.getX());
+                updateValueFromTouch(event.getX(), false); // real-time, no save
                 break;
+
             case android.view.MotionEvent.ACTION_MOVE:
-                setNormalizedValue(event.getX());
+                updateValueFromTouch(event.getX(), false); // real-time, no save
                 break;
+
             case android.view.MotionEvent.ACTION_UP:
                 setPressed(false);
-                if (onValueChangeListener != null) {
-                    onValueChangeListener.onValueChangeListener(this, getValue());
-                }
+                updateValueFromTouch(event.getX(), true); // Final value, trigger save
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
                 break;
+
             case android.view.MotionEvent.ACTION_CANCEL:
                 setPressed(false);
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
                 break;
         }
         invalidate();
@@ -230,7 +234,7 @@ public class SeekBar extends AppCompatImageView {
     }
 
     public interface OnValueChangeListener {
-        void onValueChangeListener(SeekBar seekBar, float value);
+        void onValueChangeListener(SeekBar seekBar, float value, boolean isFinal);
     }
 
     public int getThumbHoleColor() {
@@ -238,5 +242,15 @@ public class SeekBar extends AppCompatImageView {
         int g = Mathf.clamp(Color.green(colorSecondary) - 30, 0, 255);
         int b = Mathf.clamp(Color.blue(colorSecondary) - 30, 0, 255);
         return Color.rgb(r, g, b);
+    }
+
+    private void updateValueFromTouch(float x, boolean isFinal) {
+        float oldValue = getValue();
+        setNormalizedValue(x);
+        float newValue = getValue();
+
+        if ((oldValue != newValue || isFinal) && onValueChangeListener != null) {
+            onValueChangeListener.onValueChangeListener(this, newValue, isFinal);
+        }
     }
 }
