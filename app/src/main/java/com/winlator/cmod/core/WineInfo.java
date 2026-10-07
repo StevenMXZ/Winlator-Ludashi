@@ -126,7 +126,9 @@ public class WineInfo implements Parcelable {
         ContentProfile wineProfile = contentsManager.getProfileByEntryName(identifier);
 
         if (wineProfile != null && (wineProfile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE || wineProfile.type == ContentProfile.ContentType.CONTENT_TYPE_PROTON)) {
-            identifier = identifier.substring(0, identifier.length() - 2).toLowerCase();
+            int cut = identifier.lastIndexOf('-');
+            if (cut > 0) identifier = identifier.substring(0, cut);
+            identifier = identifier.toLowerCase();
         }
 
         Matcher matcher = pattern.matcher(identifier);
