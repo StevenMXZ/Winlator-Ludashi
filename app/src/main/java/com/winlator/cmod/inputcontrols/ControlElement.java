@@ -876,7 +876,6 @@ public class ControlElement {
                 if (mouseMoveMode) {
                     inputControlsView.getTouchpadView().mouseMove(x, y, MotionEvent.ACTION_DOWN);
                     invalidateSelf();
-                    return true;
                 }
                 if (isKeepButtonPressedAfterMinTime()) touchTime = System.currentTimeMillis();
                 if (!toggleSwitch || !selected) {
@@ -1123,7 +1122,7 @@ public class ControlElement {
                     inputControlsView.getTouchpadView().mouseMove(0, 0, MotionEvent.ACTION_UP);
                     invalidateSelf();
                 }
-                else if (isKeepButtonPressedAfterMinTime() && touchTime != null) {
+                if (isKeepButtonPressedAfterMinTime() && touchTime != null) {
                     selected = (System.currentTimeMillis() - (long)touchTime) > BUTTON_MIN_TIME_TO_KEEP_PRESSED;
                     if (!selected) {
                         setButtonBindingsActive(false);
@@ -1131,7 +1130,7 @@ public class ControlElement {
                     touchTime = null;
                     invalidateSelf();
                 }
-                else if (!toggleSwitch || selected) {
+                if (!toggleSwitch || selected) {
                     setButtonBindingsActive(false);
                 }
 
@@ -1141,10 +1140,6 @@ public class ControlElement {
                 }
             }
             else if (type == Type.RANGE_BUTTON || type == Type.D_PAD || type == Type.STICK || type == Type.TRACKPAD) {
-                
-                
-                
-                
                 if ((type == Type.STICK || type == Type.TRACKPAD) && getBindingAt(0).isGamepad()) {
                     inputControlsView.handleStickInput(getBindingAt(0), 0f, 0f);
                     for (byte i = 0; i < states.length; i++) states[i] = false;
