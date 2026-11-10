@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - feature/4.2-ui-cleanup-artwork
+      - feature/4.2-shortcut-presets
 
 permissions:
   contents: write

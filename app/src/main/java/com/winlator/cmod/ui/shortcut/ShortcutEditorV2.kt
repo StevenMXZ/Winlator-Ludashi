@@ -8,6 +8,8 @@ import com.winlator.cmod.ui.uiStr
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.outlined.Gamepad
 import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
@@ -83,6 +86,7 @@ import com.winlator.cmod.box64.Box64PresetManager
 import com.winlator.cmod.container.Container
 import com.winlator.cmod.container.ContainerManager
 import com.winlator.cmod.container.Shortcut
+import com.winlator.cmod.container.ShortcutPresetManager
 import com.winlator.cmod.core.DefaultVersion
 import com.winlator.cmod.core.FileUtils
 import com.winlator.cmod.core.GPUInformation
@@ -441,6 +445,20 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
         ShortcutEditorStateV2(shortcut)
     }
     val scope = rememberCoroutineScope()
+    var presetsMenu by remember { mutableStateOf(false) }
+    var importDialog by remember { mutableStateOf<Map<String, String>?>(null) }
+    var copyDialog by remember { mutableStateOf(false) }
+    var presetGroups by remember { mutableStateOf(ShortcutPresetManager.allGroups().toList()) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        if (uri != null) runCatching { ShortcutPresetManager.writeSettings(context, uri, shortcut) }
+            .onSuccess { Toast.makeText(context, uiStr(R.string.ui_preset_settings_exported), Toast.LENGTH_SHORT).show() }
+            .onFailure { Toast.makeText(context, uiStr(R.string.ui_preset_export_failed, it.message ?: ""), Toast.LENGTH_LONG).show() }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) runCatching { ShortcutPresetManager.read(context, uri) }
+            .onSuccess { importDialog = it; presetGroups = ShortcutPresetManager.allGroups().toList() }
+            .onFailure { Toast.makeText(context, uiStr(R.string.ui_preset_import_failed, it.message ?: ""), Toast.LENGTH_LONG).show() }
+    }
     LaunchedEffect(shortcut.file.path) {
         state.syncOpenGlEnvironment()
     }
@@ -554,7 +572,17 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
         topBar = {
             TopAppBar(
                 title = { Text(state.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = { IconButton(onClick = ::closeEditor) { Icon(Icons.Outlined.ArrowBack, null) } }
+                navigationIcon = { IconButton(onClick = ::closeEditor) { Icon(Icons.Outlined.ArrowBack, null) } },
+                actions = {
+                    Box {
+                        IconButton(onClick = { presetsMenu = true }) { Icon(Icons.Outlined.MoreVert, uiStr(R.string.ui_preset_presets)) }
+                        DropdownMenu(expanded = presetsMenu, onDismissRequest = { presetsMenu = false }) {
+                            DropdownMenuItem(text = { Text(uiStr(R.string.ui_preset_copy_from_game)) }, onClick = { presetsMenu = false; copyDialog = true })
+                            DropdownMenuItem(text = { Text(uiStr(R.string.ui_preset_import_settings)) }, onClick = { presetsMenu = false; importLauncher.launch("*/*") })
+                            DropdownMenuItem(text = { Text(uiStr(R.string.ui_preset_export_settings)) }, onClick = { presetsMenu = false; exportLauncher.launch(shortcut.name + "-settings.desktop") })
+                        }
+                    }
+                }
             )
         }
     ) { padding ->
@@ -629,6 +657,65 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
                 }
             }
         }
+    }
+    if (copyDialog) {
+        val otherGames = remember { manager.loadShortcuts().filter { it.file.absolutePath != shortcut.file.absolutePath } }
+        AlertDialog(
+            onDismissRequest = { copyDialog = false },
+            title = { Text(uiStr(R.string.ui_preset_copy_settings_from_game)) },
+            text = {
+                LazyColumn {
+                    items(otherGames) { source ->
+                        TextButton(onClick = {
+                            importDialog = ShortcutPresetManager.effectiveSettings(source)
+                            presetGroups = ShortcutPresetManager.allGroups().toList()
+                            copyDialog = false
+                        }) { Text(source.name) }
+                    }
+                    if (otherGames.isEmpty()) item { Text(uiStr(R.string.ui_preset_no_other_games)) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { copyDialog = false }) { Text(uiStr(R.string.ui_preset_cancel)) } }
+        )
+    }
+    importDialog?.let { values ->
+        AlertDialog(
+            onDismissRequest = { importDialog = null },
+            title = { Text(uiStr(R.string.ui_preset_apply_game_settings)) },
+            text = {
+                Column {
+                    Text(uiStr(R.string.ui_preset_choose_groups))
+                    val groupLabels = listOf(
+                        uiStr(R.string.ui_preset_group_graphics_renderer),
+                        uiStr(R.string.ui_preset_group_dxvk_vkd3d),
+                        uiStr(R.string.ui_preset_group_box64_fexcore),
+                        uiStr(R.string.ui_preset_group_environment),
+                        uiStr(R.string.ui_preset_group_display),
+                        uiStr(R.string.ui_preset_group_controls)
+                    )
+                    groupLabels.forEachIndexed { index, label ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = presetGroups[index], onCheckedChange = { enabled ->
+                                presetGroups = presetGroups.toMutableList().also { it[index] = enabled }
+                            })
+                            Text(label)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    runCatching { ShortcutPresetManager.apply(shortcut, values, presetGroups.toBooleanArray()) }
+                        .onSuccess {
+                            Toast.makeText(context, uiStr(R.string.ui_preset_settings_applied), Toast.LENGTH_SHORT).show()
+                            importDialog = null
+                            closeEditor()
+                        }
+                        .onFailure { Toast.makeText(context, uiStr(R.string.ui_preset_apply_failed, it.message ?: ""), Toast.LENGTH_LONG).show() }
+                }) { Text(uiStr(R.string.ui_apply)) }
+            },
+            dismissButton = { TextButton(onClick = { importDialog = null }) { Text(uiStr(R.string.ui_preset_cancel)) } }
+        )
     }
 }
 

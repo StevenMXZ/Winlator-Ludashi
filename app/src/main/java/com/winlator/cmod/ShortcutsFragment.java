@@ -89,6 +89,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class ShortcutsFragment extends Fragment {
     private static final String TAG = "ShortcutsFragment";
+    private static final int MENU_IMPORT_SHORTCUT = 10;
     private static final int MENU_VIEW_MODE = 1;
     private static final int MENU_SEARCH = 2;
     private static final int MENU_FILE_MANAGER = 3;
@@ -144,6 +145,7 @@ public class ShortcutsFragment extends Fragment {
     private final Set<String> artworkRequests = Collections.synchronizedSet(new HashSet<>());
 
     private Shortcut shortcutForIconUpdate;
+    private ActivityResultLauncher<String> shortcutImportLauncher;
     private ActivityResultLauncher<String> iconPickerLauncher;
     private ActivityResultLauncher<String> contentPickerLauncher;
     private com.winlator.cmod.core.Callback<Uri> pendingContentPickerCallback;
@@ -155,6 +157,9 @@ public class ShortcutsFragment extends Fragment {
         super.onCreate(savedInstanceState);
         setHasOptionsMenu(true);
 
+        shortcutImportLauncher = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
+            if (uri != null) chooseImportContainer(uri);
+        });
         iconPickerLauncher = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
             if (uri != null && shortcutForIconUpdate != null) {
                 updateShortcutIcon(uri, shortcutForIconUpdate);
@@ -283,7 +288,8 @@ public class ShortcutsFragment extends Fragment {
         moreItem.setIcon(R.drawable.ui_ic_more);
         moreItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
 
-        moreMenu.add(MENU_GROUP_LOCK, MENU_LOCK_ORIENTATION, 0, com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_lock_screen_orientation))
+        moreMenu.add(0, MENU_IMPORT_SHORTCUT, 0, com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_import_shortcut));
+        moreMenu.add(MENU_GROUP_LOCK, MENU_LOCK_ORIENTATION, 1, com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_lock_screen_orientation))
                 .setCheckable(true)
                 .setChecked(activity.isOrientationLocked());
         moreMenu.add(MENU_GROUP_ORIENTATION_MODE, MENU_VERTICAL_MODE, 1, com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_vertical_mode))
@@ -298,6 +304,10 @@ public class ShortcutsFragment extends Fragment {
 
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == MENU_IMPORT_SHORTCUT) {
+            shortcutImportLauncher.launch("*/*");
+            return true;
+        }
         if (item.getItemId() == MENU_VIEW_MODE) {
             setGridView(!isGridView);
             return true;
@@ -784,6 +794,64 @@ public class ShortcutsFragment extends Fragment {
         }
         else if (LibraryComposeHost.ACTION_EXPORT.equals(action)) {
             exportShortcut(shortcut);
+        }
+    }
+
+    private void chooseImportContainer(Uri uri) {
+        List<Container> containers = new ContainerManager(requireContext()).getContainers();
+        if (containers.isEmpty()) {
+            Toast.makeText(requireContext(), com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_create_container_first), Toast.LENGTH_LONG).show();
+            return;
+        }
+        String[] names = new String[containers.size()];
+        for (int i = 0; i < containers.size(); i++) names[i] = containers.get(i).getName();
+        new AlertDialog.Builder(requireContext())
+                .setTitle(com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_choose_container))
+                .setItems(names, (dialog, which) -> importDesktopShortcut(uri, containers.get(which)))
+                .setNegativeButton(com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_cancel), null)
+                .show();
+    }
+
+    private void importDesktopShortcut(Uri uri, Container container) {
+        try {
+            byte[] bytes;
+            try (InputStream stream = requireContext().getContentResolver().openInputStream(uri);
+                 java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream()) {
+                if (stream == null) throw new IOException(com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_unable_to_open_file));
+                byte[] buffer = new byte[4096];
+                int n;
+                while ((n = stream.read(buffer)) != -1) {
+                    if (output.size() + n > 256 * 1024) throw new IOException(com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_shortcut_too_large));
+                    output.write(buffer, 0, n);
+                }
+                bytes = output.toByteArray();
+            }
+            String text = new String(bytes, StandardCharsets.UTF_8);
+            if (!text.contains("[Desktop Entry]") || !text.matches("(?s).*?\\bExec=.*"))
+                throw new IOException(com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_invalid_desktop));
+            // The exported container_id is only metadata, never a destination override.
+            text = text.replaceAll("(?m)^container_id:.*(?:\\r?\\n|$)", "");
+            File desktopDir = container.getDesktopDir();
+            if (!desktopDir.isDirectory() && !desktopDir.mkdirs())
+                throw new IOException(com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_cannot_access_desktop));
+            String name = com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_imported_shortcut_name);
+            for (String line : text.split("\\r?\\n")) {
+                if (line.startsWith("Name=")) { name = line.substring(5); break; }
+            }
+            name = name.replaceAll("[^a-zA-Z0-9._ -]", "_").trim();
+            if (name.isEmpty()) name = com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_imported_shortcut_name);
+            if (name.length() > 80) name = name.substring(0, 80);
+            File target = new File(desktopDir, name + ".desktop");
+            for (int i = 2; target.exists(); i++) {
+                target = new File(desktopDir, name + " (" + i + ").desktop");
+            }
+            try (FileOutputStream stream = new FileOutputStream(target)) {
+                stream.write(text.getBytes(StandardCharsets.UTF_8));
+            }
+            Toast.makeText(requireContext(), com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_shortcut_imported), Toast.LENGTH_SHORT).show();
+            loadShortcutsList();
+        } catch (Exception e) {
+            Toast.makeText(requireContext(), com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_import_failed, e.getMessage() != null ? e.getMessage() : ""), Toast.LENGTH_LONG).show();
         }
     }
 
