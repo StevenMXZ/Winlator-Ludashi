@@ -343,6 +343,10 @@ public class ShortcutsFragment extends Fragment {
         requireActivity().invalidateOptionsMenu();
     }
 
+    private static void dispatchArtworkResult(Runnable callback) {
+        if (callback != null) new Handler(Looper.getMainLooper()).post(callback);
+    }
+
     private void fetchCoverFromSteamGrid(Shortcut shortcut, File destFile,
                                           Runnable onSuccess, Runnable onFail) {
         fetchArtworkFromSteamGrid(shortcut, destFile, "600x900", onSuccess, onFail);
@@ -363,9 +367,14 @@ public class ShortcutsFragment extends Fragment {
 
     private void fetchArtworkFromSteamGrid(Shortcut shortcut, File destFile, String dimensions,
                                             Runnable onSuccess, Runnable onFail) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
+        Context context = getContext();
+        if (context == null) {
+            dispatchArtworkResult(onFail);
+            return;
+        }
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context.getApplicationContext());
         if (!prefs.getBoolean("auto_download_game_artwork", true)) {
-            if (onFail != null) onFail.run();
+            dispatchArtworkResult(onFail);
             return;
         }
         if (prefs.getBoolean("enable_custom_api_key", false)) {
@@ -373,7 +382,7 @@ public class ShortcutsFragment extends Fragment {
             if (custom != null && !custom.isEmpty()) STEAMGRID_API_KEY = custom;
         }
         if (STEAMGRID_API_KEY.isEmpty()) {
-            if (onFail != null) onFail.run();
+            dispatchArtworkResult(onFail);
             return;
         }
 
@@ -394,15 +403,15 @@ public class ShortcutsFragment extends Fragment {
                                 && !response.body().data.isEmpty()) {
                             fetchSteamGridArtwork(response.body().data.get(0).id, destFile,
                                     dimensions, onSuccess, onFail);
-                        } else if (onFail != null) {
-                            onFail.run();
+                        } else {
+                            dispatchArtworkResult(onFail);
                         }
                     }
 
                     @Override
                     public void onFailure(Call<SteamGridSearchResponse> call, Throwable error) {
                         Log.e(TAG, "SteamGridDB search failed: " + error.getMessage());
-                        if (onFail != null) onFail.run();
+                        dispatchArtworkResult(onFail);
                     }
                 });
     }
@@ -432,15 +441,15 @@ public class ShortcutsFragment extends Fragment {
                                 && !response.body().data.isEmpty()) {
                             downloadAndSaveCover(response.body().data.get(0).url,
                                     destFile, onSuccess, onFail);
-                        } else if (onFail != null) {
-                            onFail.run();
+                        } else {
+                            dispatchArtworkResult(onFail);
                         }
                     }
 
                     @Override
                     public void onFailure(Call<SteamGridGridsResponse> call, Throwable error) {
                         Log.e(TAG, "SteamGridDB artwork failed: " + error.getMessage());
-                        if (onFail != null) onFail.run();
+                        dispatchArtworkResult(onFail);
                     }
                 });
     }
@@ -452,7 +461,7 @@ public class ShortcutsFragment extends Fragment {
                 HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
                 conn.connect();
                 Bitmap bmp = BitmapFactory.decodeStream(conn.getInputStream());
-                if (bmp == null) { if (onFail != null) onFail.run(); return; }
+                if (bmp == null) { dispatchArtworkResult(onFail); return; }
 
                 if (destFile.getParentFile() != null) destFile.getParentFile().mkdirs();
                 // Keep the previous artwork visible until the new download is complete.
@@ -471,10 +480,10 @@ public class ShortcutsFragment extends Fragment {
                     if (pending.exists()) pending.delete();
                 }
                 Log.d(TAG, "SteamGridDB cover salvo: " + destFile.getAbsolutePath());
-                if (onSuccess != null) onSuccess.run();
+                dispatchArtworkResult(onSuccess);
             } catch (Exception e) {
                 Log.e(TAG, "Falha ao baixar cover do SteamGridDB: " + e.getMessage());
-                if (onFail != null) onFail.run();
+                dispatchArtworkResult(onFail);
             }
         });
     }
@@ -576,17 +585,13 @@ public class ShortcutsFragment extends Fragment {
         if (!cover.exists() && artworkRequests.add(coverKey)) {
             fetchCoverFromSteamGrid(shortcut, cover, () -> {
                 artworkRequests.remove(coverKey);
-                if (getActivity() != null) {
-                    getActivity().runOnUiThread(() -> refreshArtworkAndLauncherShortcuts(shortcut));
-                }
+                new Handler(Looper.getMainLooper()).post(() -> refreshArtworkAndLauncherShortcuts(shortcut));
             }, () -> {
                 artworkRequests.remove(coverKey);
                 File exeFile = resolveExeFile(shortcut);
                 if (exeFile != null && !autoIcon.exists()) {
                     ExeIconExtractor.extractAsync(exeFile, autoIcon, false, () -> {
-                        if (getActivity() != null) {
-                            getActivity().runOnUiThread(() -> refreshArtworkAndLauncherShortcuts(shortcut));
-                        }
+                        new Handler(Looper.getMainLooper()).post(() -> refreshArtworkAndLauncherShortcuts(shortcut));
                     });
                 }
             });
@@ -946,6 +951,7 @@ public class ShortcutsFragment extends Fragment {
     }
 
     private void refreshArtworkAndLauncherShortcuts(Shortcut shortcut) {
+        if (!isAdded()) return;
         publishLibraryItems();
         syncDynamicAppShortcuts();
 
