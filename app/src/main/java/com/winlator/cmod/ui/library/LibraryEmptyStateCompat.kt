@@ -10,7 +10,8 @@ internal fun LibraryRootWithoutEmptyDescription(
     query: String,
     selectedShortcutPath: MutableState<String?>,
     callbacks: LibraryCallbacks,
-    showAddGames: MutableState<Boolean>
+    showAddGames: MutableState<Boolean>,
+    steamFilterAvailable: Boolean
 ) {
-    LibraryRoot(items, grid, query, selectedShortcutPath, callbacks, showAddGames)
+    LibraryRoot(items, grid, query, selectedShortcutPath, callbacks, showAddGames, steamFilterAvailable)
 }

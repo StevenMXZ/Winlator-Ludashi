@@ -101,10 +101,15 @@ internal fun LibraryRoot(
     query: String,
     selectedShortcutPath: MutableState<String?>,
     cb: LibraryCallbacks,
-    showAddGames: MutableState<Boolean>
+    showAddGames: MutableState<Boolean>,
+    steamFilterAvailable: Boolean
 ) {
     var filterName by rememberSaveable { mutableStateOf(LibraryFilter.All.name) }
-    val filter = LibraryFilter.valueOf(filterName)
+    val selectedFilter = LibraryFilter.valueOf(filterName)
+    val filter = if (!steamFilterAvailable && selectedFilter == LibraryFilter.Steam) LibraryFilter.All else selectedFilter
+    LaunchedEffect(steamFilterAvailable) {
+        if (!steamFilterAvailable && filterName == LibraryFilter.Steam.name) filterName = LibraryFilter.All.name
+    }
     val visible = remember(items, filter, query) {
         val source = filterLibraryItems(items, filter)
         if (query.isBlank()) source else source.filter { it.name.contains(query, true) }
@@ -160,7 +165,7 @@ internal fun LibraryRoot(
                 )
                 Spacer(Modifier.height(7.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    LibraryFilter.values().filter { it != LibraryFilter.Steam || com.winlator.cmod.steam.SteamSettings.enabled(LocalContext.current) }.forEach { option ->
+                    LibraryFilter.values().filter { it != LibraryFilter.Steam || steamFilterAvailable }.forEach { option ->
                         LibraryFilterChip(option.name, option == filter) { filterName = option.name }
                     }
                 }
@@ -185,7 +190,7 @@ internal fun LibraryRoot(
             Spacer(Modifier.height(7.dp))
         }
         Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LibraryFilter.values().filter { it != LibraryFilter.Steam || com.winlator.cmod.steam.SteamSettings.enabled(LocalContext.current) }.forEach { option ->
+            LibraryFilter.values().filter { it != LibraryFilter.Steam || steamFilterAvailable }.forEach { option ->
                 LibraryFilterChip(option.name, option == filter) { filterName = option.name }
             }
         }

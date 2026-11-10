@@ -151,6 +151,7 @@ object LibraryComposeHost {
                     CompositionLocalProvider(LocalArtworkMotion provides rememberArtworkMotionEnabled()) {
                         val steam = observeSteam()
                         val enabled = SteamSettings.enabled(context)
+                        val steamFilterAvailable = steamLibraryFilterAvailable(enabled, steam.signedIn, steam.savedAccount)
                         LaunchedEffect(enabled) {
                             val saved = withContext(Dispatchers.IO) { enabled && SteamCredentials.load(context) != null }
                             if (saved) context.startForegroundService(Intent(context, SteamService::class.java))
@@ -168,7 +169,7 @@ object LibraryComposeHost {
                             val configuration = androidx.compose.ui.platform.LocalConfiguration.current
                             if (configuration.screenWidthDp <= configuration.screenHeightDp) SteamDownloadPanel(steam)
                             Box(Modifier.weight(1f)) {
-                                LibraryRootWithoutEmptyDescription(merged, grid.value, query.value, selectedShortcutPath, combined, showAddGames)
+                                LibraryRootWithoutEmptyDescription(merged, grid.value, query.value, selectedShortcutPath, combined, showAddGames, steamFilterAvailable)
                             }
                         }
                     }
@@ -180,6 +181,9 @@ object LibraryComposeHost {
 }
 
 internal enum class LibraryFilter { All, Favorites, Recent, Steam }
+
+internal fun steamLibraryFilterAvailable(enabled: Boolean, signedIn: Boolean, savedAccount: Boolean): Boolean =
+    enabled && (signedIn || savedAccount)
 
 internal fun filterLibraryItems(items: List<LibraryItem>, filter: LibraryFilter): List<LibraryItem> {
     val local = items.filter { SteamLibrary.appId(it.shortcutPath) == null || it.containerName == "Steam · Installed" }

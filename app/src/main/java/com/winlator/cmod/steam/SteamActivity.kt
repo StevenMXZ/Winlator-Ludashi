@@ -56,8 +56,8 @@ class SteamActivity : ImmersiveSteamActivity() {
             if (state.signedIn || state.savedAccount) {
                 SteamManagerScreen(state, intent.getIntExtra("steam_tab", 0), { finish() }, ::signOut, ::showDetail)
             } else {
-                Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)).imePadding()) {
-                    Row(Modifier.fillMaxWidth().padding(if (androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.fillMaxSize().imePadding()) {
+                    Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)).padding(if (androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { finish() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, uiStr(R.string.steam_ui_back)) }
                         Icon(androidx.compose.ui.res.painterResource(com.winlator.cmod.R.drawable.ic_steam), null, Modifier.size(30.dp))
                         Text("Steam", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge)
@@ -137,17 +137,14 @@ class SteamActivity : ImmersiveSteamActivity() {
                     Text(steamStatusText(state.status), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (!state.gameActive && !state.ready && !state.busy) TextButton(onClick = { SteamSession.reconnect() }) { Text(uiStr(R.string.steam_ui_reconnect)) }
                     if (!qr && (state.busy || state.guard.isNotEmpty())) TextButton(onClick = { SteamSession.cancelLogin() }) { Text(uiStr(R.string.steam_ui_cancel_login)) }
-                    if (!qr) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(Icons.Outlined.Info, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(uiStr(R.string.steam_ui_password_help), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
         }
         StoreTheme {
             Box(Modifier.fillMaxSize().storeBackground(), contentAlignment = Alignment.TopCenter) {
                 if (landscape) {
                     Row(
                         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                            .padding(horizontal = 24.dp, vertical = 8.dp),
+                            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(24.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -166,7 +163,7 @@ class SteamActivity : ImmersiveSteamActivity() {
                             } else introduction()
                         }
                         Column(
-                            Modifier.weight(1.15f).widthIn(max = 440.dp),
+                            Modifier.weight(1.15f),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) { form() }
