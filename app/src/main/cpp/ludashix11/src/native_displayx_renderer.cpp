@@ -4,7 +4,6 @@
 #include <android/performance_hint.h>
 #include <sys/syscall.h>
 #include <dlfcn.h>
-#include <unordered_set>
 
 namespace xorg {
 namespace {
@@ -82,9 +81,11 @@ class DisplayXNativeRenderer final : public NativeRenderer {
     struct Layer {
         ASurfaceControl *control{};
         sp<HardwareBuffer> image;
-        u64 drawable{}, revision{};
+        u64 drawable{}, revision{}, seen{};
         std::weak_ptr<NativeExternalFrame> presentation;
-        bool attached{};
+        bool attached{}, stateValid{}, visible{}, opaque{}, backPressure{};
+        ARect source{}, destination{};
+        int order{};
     };
     struct Submission {
         bool completed{};
@@ -101,6 +102,10 @@ class DisplayXNativeRenderer final : public NativeRenderer {
     };
     std::unique_ptr<SurfaceAPI> apiOwner;
     SurfaceAPI *api{};
+    ASurfaceTransaction *reusableTransaction{};
+    u64 sceneSerial{};
+    u64 cursorImage{}, cursorRevision{};
+    bool cursorHasPixels{};
     NativeRendererConfig config;
     int width, height;
     ANativeWindow *window{};
@@ -109,6 +114,7 @@ class DisplayXNativeRenderer final : public NativeRenderer {
     std::unordered_map<u64, Layer> layers;
     sp<Queue> queue = std::make_shared<Queue>();
     bool fullscreen{}, cursorVisible{true};
+    bool overlayBuffers[2]{true, true}, rgbxBuffers{true};
     float zoom{1}, refresh{60};
     NativeMagnifierPan pan;
     NativeBackendGeometry geometry;
@@ -131,7 +137,7 @@ class DisplayXNativeRenderer final : public NativeRenderer {
         }
         return count;
     }
-    sp<HardwareBuffer> Image(const sp<NativeDrawable> &drawable, const sp<const std::vector<u8>> &pixels) {
+    sp<HardwareBuffer> Image(const sp<NativeDrawable> &drawable, const sp<const std::vector<u8>> &pixels, bool opaque) {
         if (auto *buffer = drawable->HardwareBuffer())
             return std::make_shared<HardwareBuffer>(buffer);
         if (!pixels)
@@ -140,11 +146,23 @@ class DisplayXNativeRenderer final : public NativeRenderer {
         description.width = drawable->GetWidth();
         description.height = drawable->GetHeight();
         description.layers = 1;
-        description.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
+        description.format = opaque && rgbxBuffers ? AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM
+                                    : AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
         description.usage = AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN | AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
         AHardwareBuffer *buffer{};
-        if (AHardwareBuffer_allocate(&description, &buffer))
-            throw std::runtime_error("Cannot allocate X++ DisplayX backing buffer");
+        // Give gralloc the intended scanout usage. Some low-end allocators reject
+        // CPU-writable overlay buffers or RGBX; retain the sampled RGBA fallback.
+        if (overlayBuffers[opaque]) description.usage |= AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY;
+        if (AHardwareBuffer_allocate(&description, &buffer)) {
+            overlayBuffers[opaque] = false;
+            description.usage &= ~AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY;
+            if (AHardwareBuffer_allocate(&description, &buffer)) {
+                if (opaque) rgbxBuffers = false;
+                description.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
+                if (AHardwareBuffer_allocate(&description, &buffer))
+                    throw std::runtime_error("Cannot allocate X++ DisplayX backing buffer");
+            }
+        }
         auto result = std::make_shared<HardwareBuffer>(buffer);
         AHardwareBuffer_release(buffer);
         AHardwareBuffer_describe(buffer, &description);
@@ -165,18 +183,13 @@ class DisplayXNativeRenderer final : public NativeRenderer {
     }
     void SetLayer(ASurfaceTransaction *transaction, u64 key, const sp<NativeDrawable> &drawable,
                   const sp<const std::vector<u8>> &pixels, u64 revision, int x, int y, int w, int h,
-                  int order, bool cursor, const sp<NativeExternalFrame> &external = {}) {
+                  int order, bool opaque, bool cursor, const sp<NativeExternalFrame> &external = {}) {
         auto &layer = layers[key];
+        layer.seen = sceneSerial;
         if (!layer.control) {
             layer.control = api->child(root, cursor ? "X++ cursor" : "X++ window");
             if (!layer.control)
                 throw std::runtime_error("Cannot create X++ DisplayX layer");
-        }
-        const bool changed = layer.drawable != drawable->ID() || layer.revision != revision;
-        if (changed) {
-            layer.image = Image(drawable, pixels);
-            layer.drawable = drawable->ID();
-            layer.revision = revision;
         }
         const float left = geometry.ox + x * geometry.sx, top = geometry.oy + y * geometry.sy;
         const float right = left + w * geometry.sx, bottom = top + h * geometry.sy;
@@ -185,11 +198,28 @@ class DisplayXNativeRenderer final : public NativeRenderer {
                           std::min(geometry.right, int(std::ceil(right))),
                           std::min(geometry.bottom, int(std::ceil(bottom)))};
         const bool visible = destination.left < destination.right && destination.top < destination.bottom;
-        api->visibility(transaction, layer.control,
-                        visible ? ASURFACE_TRANSACTION_VISIBILITY_SHOW
-                                : ASURFACE_TRANSACTION_VISIBILITY_HIDE);
-        if (!visible)
+        if (!layer.stateValid || layer.visible != visible)
+            api->visibility(transaction, layer.control,
+                            visible ? ASURFACE_TRANSACTION_VISIBILITY_SHOW
+                                    : ASURFACE_TRANSACTION_VISIBILITY_HIDE);
+        layer.visible = visible;
+        if (!visible) {
+            // Release a previously visible buffer instead of retaining a hidden
+            // scanout candidate. Do not allocate/copy offscreen pixel snapshots.
+            if (layer.attached) api->buffer(transaction, layer.control, nullptr, -1);
+            layer.attached = false;
             return;
+        }
+        const bool changed = layer.drawable != drawable->ID() || layer.revision != revision ||
+                             layer.opaque != opaque;
+        if (changed) {
+            // Imported AHBs are already retained by the selected NativeFrame and
+            // by SurfaceControl after apply. Avoid a shared wrapper allocation
+            // and acquire/release pair on every swapchain image change.
+            layer.image = drawable->HardwareBuffer() ? nullptr : Image(drawable, pixels, opaque);
+            layer.drawable = drawable->ID();
+            layer.revision = revision;
+        }
         ARect source{
             std::clamp(int(std::floor((destination.left - left) * drawable->GetWidth() / (right - left))), 0,
                        int(drawable->GetWidth())),
@@ -201,17 +231,32 @@ class DisplayXNativeRenderer final : public NativeRenderer {
                        int(drawable->GetHeight()))};
         if (changed || !layer.attached || (external && layer.presentation.lock() != external)) {
             int fence = external && external->fence >= 0 ? dup(external->fence) : -1;
-            api->buffer(transaction, layer.control, layer.image->value, fence);
+            api->buffer(transaction, layer.control, drawable->HardwareBuffer()
+                            ? drawable->HardwareBuffer() : layer.image->value, fence);
             layer.presentation = external;
             layer.attached = true;
         }
-        api->geometry(transaction, layer.control, source, destination, 0);
-        api->order(transaction, layer.control, order);
-        api->transparency(transaction, layer.control,
-                          cursor ? ASURFACE_TRANSACTION_TRANSPARENCY_TRANSLUCENT
-                                 : ASURFACE_TRANSACTION_TRANSPARENCY_OPAQUE);
-        if (api->backPressure)
-            api->backPressure(transaction, layer.control, config.presentMode == 2);
+        auto sameRect = [](const ARect &a, const ARect &b) {
+            return a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom;
+        };
+        if (!layer.stateValid || !sameRect(layer.source, source) ||
+            !sameRect(layer.destination, destination))
+            api->geometry(transaction, layer.control, source, destination, 0);
+        if (!layer.stateValid || layer.order != order)
+            api->order(transaction, layer.control, order);
+        if (!layer.stateValid || layer.opaque != opaque)
+            api->transparency(transaction, layer.control,
+                              opaque ? ASURFACE_TRANSACTION_TRANSPARENCY_OPAQUE
+                                     : ASURFACE_TRANSACTION_TRANSPARENCY_TRANSLUCENT);
+        const bool backPressure = !cursor && config.presentMode == 2;
+        if (api->backPressure && (!layer.stateValid || layer.backPressure != backPressure))
+            api->backPressure(transaction, layer.control, backPressure);
+        layer.source = source;
+        layer.destination = destination;
+        layer.order = order;
+        layer.opaque = opaque;
+        layer.backPressure = backPressure;
+        layer.stateValid = true;
     }
 
   public:
@@ -224,6 +269,7 @@ class DisplayXNativeRenderer final : public NativeRenderer {
             Surface(nullptr);
         } catch (...) {
         }
+        if (reusableTransaction) api->destroy(reusableTransaction);
     }
     void PrepareSurfaceChange() override {
         if (!root)
@@ -232,6 +278,7 @@ class DisplayXNativeRenderer final : public NativeRenderer {
         for (auto &[key, layer] : layers) {
             api->buffer(transaction, layer.control, nullptr, -1);
             layer.attached = false;
+            layer.stateValid = false;
             api->visibility(transaction, layer.control, ASURFACE_TRANSACTION_VISIBILITY_HIDE);
         }
         api->visibility(transaction, root, ASURFACE_TRANSACTION_VISIBILITY_HIDE);
@@ -267,14 +314,10 @@ class DisplayXNativeRenderer final : public NativeRenderer {
                 apiOwner = std::make_unique<SurfaceAPI>();
                 api = apiOwner.get();
             }
-            ANativeWindow_setBuffersGeometry(window, 0, 0, AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
-            ANativeWindow_Buffer backing{};
-            if (ANativeWindow_lock(window, &backing, nullptr) == 0) {
-                for (int row = 0; row < backing.height; ++row)
-                    std::fill_n(static_cast<u32 *>(backing.bits) + size_t(row) * backing.stride,
-                                backing.width, 0xff000000u);
-                ANativeWindow_unlockAndPost(window);
-            }
+            // The Java DisplayX path uses this SurfaceView only as a parent
+            // for SurfaceControl layers. Do not post a black ANativeWindow
+            // buffer here: it adds a full-size BufferQueue layer beneath the
+            // game and can consume a hardware plane or require GPU composition.
             if (config.performanceMode && api->hintManager && api->createHint && api->hintWork &&
                 api->closeHint) {
                 const int32_t tid = syscall(SYS_gettid);
@@ -313,36 +356,58 @@ class DisplayXNativeRenderer final : public NativeRenderer {
             }
         } failed{frame, published};
         geometry.Update(outerW, outerH, width, height, fullscreen, zoom, frame.cursorX, frame.cursorY, pan);
-        auto *transaction = api->transaction();
+        auto *transaction = std::exchange(reusableTransaction, nullptr);
+        if (!transaction) transaction = api->transaction();
         struct Guard {
             SurfaceAPI *api;
             ASurfaceTransaction *value;
+            std::unordered_map<u64, Layer>& layers;
             ~Guard() {
+                if (!value) return;
+                // A failed upload discards uncommitted layer properties too.
+                // Replay them on the next frame rather than trusting the cache.
+                for (auto &[key, layer] : layers) {
+                    layer.stateValid = false;
+                    layer.attached = false;
+                }
                 api->destroy(value);
             }
-        } guard{api, transaction};
+        } guard{api, transaction, layers};
         auto submission = std::make_shared<Submission>();
-        std::unordered_set<u64> visible;
+        if (++sceneSerial == 0) {
+            for (auto &[key, layer] : layers) layer.seen = 0;
+            ++sceneSerial;
+        }
         int order{};
         for (const auto &entry : frame.entries) {
             const u64 key = entry.window ? entry.window : entry.drawable->ID();
-            visible.insert(key);
             SetLayer(transaction, key, entry.drawable, entry.pixels, entry.revision, entry.x, entry.y,
                      entry.windowWidth ? entry.windowWidth : entry.drawable->GetWidth(),
-                     entry.windowHeight ? entry.windowHeight : entry.drawable->GetHeight(), ++order, false,
+                     entry.windowHeight ? entry.windowHeight : entry.drawable->GetHeight(), ++order, entry.opaque, false,
                      entry.external);
             if (entry.external)
                 submission->external.push_back(entry.external);
         }
         constexpr u64 cursorKey = UINT64_MAX;
-        if (cursorVisible && frame.cursor && frame.cursorPixels) {
-            visible.insert(cursorKey);
+        if (frame.cursor && frame.cursorPixels &&
+            (cursorImage != frame.cursor->ID() || cursorRevision != frame.cursor->Revision())) {
+            cursorImage = frame.cursor->ID();
+            cursorRevision = frame.cursor->Revision();
+            cursorHasPixels = false;
+            for (u32 y = 0; y < frame.cursor->GetHeight() && !cursorHasPixels; ++y)
+                for (u32 x = 0; x < frame.cursor->GetWidth(); ++x)
+                    if ((*frame.cursorPixels)[size_t(y) * frame.cursor->GetStride() + x * 4 + 3]) {
+                        cursorHasPixels = true;
+                        break;
+                    }
+        }
+        if (cursorVisible && frame.cursor && frame.cursorPixels && cursorHasPixels) {
             SetLayer(transaction, cursorKey, frame.cursor, frame.cursorPixels, frame.cursor->Revision(),
                      frame.cursorX, frame.cursorY, frame.cursor->GetWidth(), frame.cursor->GetHeight(),
-                     INT32_MAX, true);
+                     INT32_MAX, false, true);
         }
         for (auto i = layers.begin(); i != layers.end();) {
-            if (visible.contains(i->first)) {
+            if (i->second.seen == sceneSerial) {
                 ++i;
                 continue;
             }
@@ -374,6 +439,8 @@ class DisplayXNativeRenderer final : public NativeRenderer {
         }
         callback.release();
         api->apply(transaction);
+        reusableTransaction = transaction;
+        guard.value = nullptr;
         published = true;
         if (hint)
             api->hintWork(hint, std::max<int64_t>(1, std::chrono::duration_cast<std::chrono::nanoseconds>(

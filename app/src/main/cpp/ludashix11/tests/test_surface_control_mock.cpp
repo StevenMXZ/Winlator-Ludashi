@@ -21,7 +21,9 @@ struct ASurfaceTransaction {
 static std::vector<ASurfaceControl *> controls;
 static std::vector<std::pair<void *, ASurfaceTransaction_OnComplete>> completions;
 static std::mutex mutex;
-static int created{}, released{}, fences{};
+static int created{}, released{}, fences{}, properties{}, transactions{};
+extern "C" int TestTransactions() { return transactions; }
+extern "C" int TestProperties() { return properties; }
 static int64_t presentationTime{};
 extern "C" ASurfaceControl *ASurfaceControl_create(ASurfaceControl *, const char *) {
     auto *result = new ASurfaceControl;
@@ -40,6 +42,7 @@ extern "C" void ASurfaceControl_release(ASurfaceControl *control) {
     ++released;
 }
 extern "C" ASurfaceTransaction *ASurfaceTransaction_create() {
+    ++transactions;
     return new ASurfaceTransaction;
 }
 extern "C" void ASurfaceTransaction_delete(ASurfaceTransaction *transaction) {
@@ -63,6 +66,11 @@ extern "C" void ASurfaceTransaction_apply(ASurfaceTransaction *transaction) {
     }
     if (transaction->clear)
         TestFinish();
+    // Android apply consumes the transaction's operations and callbacks.
+    transaction->apply.clear();
+    transaction->value = nullptr;
+    transaction->complete = nullptr;
+    transaction->clear = false;
 }
 extern "C" void ASurfaceTransaction_setBuffer(ASurfaceTransaction *transaction, ASurfaceControl *control,
                                               AHardwareBuffer *buffer, int fence) {
@@ -86,6 +94,7 @@ extern "C" void ASurfaceTransaction_setBuffer(ASurfaceTransaction *transaction, 
 }
 extern "C" void ASurfaceTransaction_setGeometry(ASurfaceTransaction *transaction, ASurfaceControl *control,
                                                 const ARect &source, const ARect &destination, int32_t) {
+    ++properties;
     transaction->apply.push_back([=] {
         control->source = source;
         control->destination = destination;
@@ -93,10 +102,12 @@ extern "C" void ASurfaceTransaction_setGeometry(ASurfaceTransaction *transaction
 }
 extern "C" void ASurfaceTransaction_setZOrder(ASurfaceTransaction *transaction, ASurfaceControl *control,
                                               int32_t order) {
+    ++properties;
     transaction->apply.push_back([=] { control->order = order; });
 }
 extern "C" void ASurfaceTransaction_setVisibility(ASurfaceTransaction *transaction, ASurfaceControl *control,
                                                   ASurfaceTransactionVisibility visibility) {
+    ++properties;
     transaction->apply.push_back(
         [=] { control->visible = visibility == ASURFACE_TRANSACTION_VISIBILITY_SHOW; });
     if (control->root && visibility == ASURFACE_TRANSACTION_VISIBILITY_HIDE)
@@ -105,6 +116,7 @@ extern "C" void ASurfaceTransaction_setVisibility(ASurfaceTransaction *transacti
 extern "C" void ASurfaceTransaction_setBufferTransparency(ASurfaceTransaction *transaction,
                                                           ASurfaceControl *control,
                                                           ASurfaceTransactionTransparency value) {
+    ++properties;
     transaction->apply.push_back([=] { control->transparency = value; });
 }
 extern "C" void ASurfaceTransaction_setOnComplete(ASurfaceTransaction *transaction, void *value,
@@ -115,6 +127,7 @@ extern "C" void ASurfaceTransaction_setOnComplete(ASurfaceTransaction *transacti
 extern "C" void ASurfaceTransaction_reparent(ASurfaceTransaction *, ASurfaceControl *, ASurfaceControl *) {}
 extern "C" void ASurfaceTransaction_setEnableBackPressure(ASurfaceTransaction *transaction,
                                                           ASurfaceControl *control, bool enabled) {
+    ++properties;
     transaction->apply.push_back([=] { control->backPressure = enabled; });
 }
 extern "C" void ASurfaceTransaction_setDesiredPresentTime(ASurfaceTransaction *, int64_t time) {
@@ -186,4 +199,9 @@ extern "C" int TestHintClosed() {
 }
 extern "C" int TestHintReports() {
     return hintReports;
+}
+
+extern "C" void TestBufferDesc(int index, AHardwareBuffer_Desc *description) {
+    assert(controls.at(index)->buffer);
+    AHardwareBuffer_describe(controls.at(index)->buffer, description);
 }

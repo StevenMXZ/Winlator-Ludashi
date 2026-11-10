@@ -81,7 +81,6 @@ class DisplayX {
         
         APerformanceHintManager *performanceHintManager = nullptr;
         APerformanceHintSession *performanceHintSession = nullptr;
-        std::mutex performanceHintLock;
         
         DisplayXLock eventLock;
         DisplayXLock presentLock;
@@ -109,7 +108,6 @@ class DisplayX {
         
         bool fullscreen = false;
         int eventsPending = 0;
-        int64_t previousReportedWorkTime = 0;
         AVsyncId vsyncId = -1;
         
         void eventThreadLoop();
@@ -117,7 +115,6 @@ class DisplayX {
         void presentThreadLoop();
         static void onFrameCallback64(int64_t frameTimeNanos, void *data);
         static void onVsyncCallback(const AChoreographerFrameCallbackData* callbackData, void* data);
-        static void onCommitCallback(void *context, ASurfaceTransactionStats *stats);
         static void onCompleteCallback(void *context, ASurfaceTransactionStats *stats);
         int64_t getCurrentTimeNanos();
         bool isPerformanceHintAPIAvailable();

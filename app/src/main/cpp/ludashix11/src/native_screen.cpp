@@ -1,4 +1,5 @@
 #include "native_screen.h"
+#include "native_displayx_visibility.h"
 #include "base/log.h"
 #include "core/window.h"
 #include "core/window_manager.h"
@@ -277,10 +278,14 @@ void NativeScreen::PostInvalidate() {
     Collect(server.GetWindowManager().GetRootWindow(), frame, true);
     // An opaque fullscreen game makes desktop/background draws unnecessary.
     const auto& info = server.GetScreenInfo();
+    const bool displayX = server.RendererConfig().backend == NativeRendererConfig::Backend::DisplayX;
+    if (displayX) CullCoveredDisplayXLayers(frame.entries);
     for (size_t i = frame.entries.size(); i > 0; --i) {
         const auto& e = frame.entries[i - 1];
-        if (e.opaque && e.x <= 0 && e.y <= 0 && e.x + e.drawable->GetWidth() >= info.width &&
-            e.y + e.drawable->GetHeight() >= info.height) {
+        const int width = displayX && e.windowWidth > 0 ? e.windowWidth : e.drawable->GetWidth();
+        const int height = displayX && e.windowHeight > 0 ? e.windowHeight : e.drawable->GetHeight();
+        if (e.opaque && e.x <= 0 && e.y <= 0 && e.x + width >= info.width &&
+            e.y + height >= info.height) {
             frame.entries.erase(frame.entries.begin(), frame.entries.begin() + i - 1);
             break;
         }
@@ -742,6 +747,12 @@ void NativeScreen::Worker() {
         }
         if (frame.diagnostics) frame.diagnosticSelected = Clock::now();
     };
+    // DisplayX does not block acquiring a Vulkan/EGL swapchain. Its selected
+    // snapshot can go straight to SurfaceControl without a second scene copy
+    // and another state-lock round trip inside Draw.
+    const NativeFrameLatch noLatch;
+    const NativeFrameLatch& drawLatch = server.RendererConfig().backend ==
+            NativeRendererConfig::Backend::DisplayX ? noLatch : latch;
     for (;;) {
         {
             std::unique_lock lock(state);
@@ -814,7 +825,7 @@ void NativeScreen::Worker() {
             frame.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
             // IDLE is a Java-compatible producer acknowledgement, not an
             // eligibility flag. Already-acknowledged scenes remain drawable.
-            if (hasSurface) submitted = renderer->Draw(frame, latch);
+            if (hasSurface) submitted = renderer->Draw(frame, drawLatch);
         } catch (const std::exception& e) {
             std::lock_guard lock(state);
             error = e.what();

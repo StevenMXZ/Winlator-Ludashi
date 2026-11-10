@@ -31,7 +31,6 @@ using PFNASURFACETRANSACTIONSETBUFFERALPHA = void (*)(ASurfaceTransaction*, ASur
 using PFNASURFACETRANSACTIONSTATSGETPRESENTFENCEFD = int (*)(ASurfaceTransactionStats*);
 using PFNASURFACETRANSACTIONREPARENT = void (*)(ASurfaceTransaction*, ASurfaceControl*, ASurfaceControl*);
 using PFNASURFACETRANSACTIONSETONCOMPLETE = void (*)(ASurfaceTransaction*, void*, ASurfaceTransaction_OnComplete);
-using PFNASURFACETRANSACTIONSETONCOMMIT = void (*)(ASurfaceTransaction*, void*, ASurfaceTransaction_OnCommit);
 using PFNASURFACETRANSACTIONSETENABLEBACKPRESSURE = void (*)(ASurfaceTransaction*, ASurfaceControl*, bool);
 using PFNASURFACETRANSACTIONSETFRAMETIMELINE = void (*)(ASurfaceTransaction*, AVsyncId);
 using PFNASURFACETRANSACTIONCREATE = ASurfaceTransaction* (*)();
@@ -65,7 +64,6 @@ static PFNASURFACETRANSACTIONSETBUFFERALPHA pfnASurfaceTransactionSetBufferAlpha
 static PFNASURFACETRANSACTIONSETBUFFERTRANSPARENCY pfnASurfaceTransactionSetBufferTransparency = nullptr;
 static PFNASURFACETRANSACTIONREPARENT pfnASurfaceTransactionReparent = nullptr;
 static PFNASURFACETRANSACTIONSETONCOMPLETE pfnASurfaceTransactionSetOnComplete = nullptr;
-static PFNASURFACETRANSACTIONSETONCOMMIT pfnASurfaceTransactionSetOnCommit = nullptr;
 static PFNASURFACETRANSACTIONSETENABLEBACKPRESSURE pfnASurfaceTransactionSetEnableBackPressure = nullptr;
 static PFNASURFACETRANSACTIONSTATSGETPRESENTFENCEFD pfnASurfaceTransactionStatsGetPresentFenceFd = nullptr;
 static PFNASURFACETRANSACTIONSETFRAMETIMELINE pfnASurfaceTransactionSetFrameTimeline = nullptr;
@@ -445,24 +443,6 @@ int64_t DisplayX::getCurrentTimeNanos() {
     return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + ts.tv_nsec;
 }
 
-void DisplayX::onCommitCallback(void *context, ASurfaceTransactionStats *stats) {
-    auto *self = reinterpret_cast<DisplayX *>(context);
-    std::lock_guard lock(self->performanceHintLock);
-    if (!self->isPerformanceHintAPIAvailable() || !self->performanceHintSession || !self->performanceHintManager || !self->perfMode)
-        return;
-    
-    if (self->previousReportedWorkTime == 0) {
-        auto currentTime = self->getCurrentTimeNanos();
-        self->previousReportedWorkTime = currentTime;
-        return;
-    }     
-   
-    auto currentTime = self->getCurrentTimeNanos();
-    auto elapsed = currentTime - self->previousReportedWorkTime;
-    pfnAPerformanceHintReportActualWorkDuration(self->performanceHintSession, elapsed);
-    self->previousReportedWorkTime = currentTime;
-}
-
 void DisplayX::onCompleteCallback(void *context, ASurfaceTransactionStats *stats) {
     std::unique_ptr<OnCompleteContext> completeContext(static_cast<OnCompleteContext *>(context));
     
@@ -489,18 +469,7 @@ void DisplayX::onCompleteCallback(void *context, ASurfaceTransactionStats *stats
 void DisplayX::presentThreadLoop() {
     ASurfaceTransaction *presentTransaction = pfnASurfaceTransactionCreate();
     
-    if (isPerformanceHintAPIAvailable() && perfMode) {
-        std::lock_guard lock(performanceHintLock);
-        performanceHintManager = pfnAPerformanceHintGetManager();
-        float targetFloat = xServer->refreshRate * 100.0f;
-        int64_t targetWorkDuration = static_cast<int64_t>(1000000000.0f / targetFloat);
-    
-        int tid = gettid();
-        std::vector<int32_t> tids{tid};
-        performanceHintSession = pfnAPerformanceHintCreateSession(performanceHintManager,
-            tids.data(), tids.size(), targetWorkDuration);
-    }     
-    
+    int64_t hintTarget = 0;
     while(true) {
         auto lock = presentLock.lock();
         
@@ -514,6 +483,27 @@ void DisplayX::presentThreadLoop() {
             break;
         }
         
+        const int64_t workStart = getCurrentTimeNanos();
+        {
+            if (perfMode && isPerformanceHintAPIAvailable()) {
+                const double hz = std::isfinite(xServer->refreshRate)
+                    ? std::clamp(double(xServer->refreshRate), 24.0, 1000.0) : 60.0;
+                const int64_t target = static_cast<int64_t>(1000000000.0 / hz);
+                if (!performanceHintSession) {
+                    performanceHintManager = pfnAPerformanceHintGetManager();
+                    const int32_t tid = gettid();
+                    if (performanceHintManager)
+                        performanceHintSession = pfnAPerformanceHintCreateSession(
+                            performanceHintManager, &tid, 1, target);
+                } else if (hintTarget != target) {
+                    pfnAPerformanceHintUpdateTargetWorkDuration(performanceHintSession, target);
+                }
+                hintTarget = target;
+            } else if (performanceHintSession) {
+                pfnAPerformanceHintCloseSession(performanceHintSession);
+                performanceHintSession = nullptr;
+            }
+        }
         auto requests = presentRR ? presentRequests.buildWindowTree() : presentRequests.getLast();
         
         if (vsyncId > -1) pfnASurfaceTransactionSetFrameTimeline(presentTransaction, vsyncId);
@@ -548,7 +538,6 @@ void DisplayX::presentThreadLoop() {
                     pfnASurfaceTransactionSetBuffer(presentTransaction, window->control, drawable->ahb, presentRequest->sync_fence);
                 }
                 
-                pfnASurfaceTransactionSetBufferTransparency(presentTransaction, window->control, ASURFACE_TRANSACTION_TRANSPARENCY_OPAQUE);
                 if (presentRequest->clientFd >= 0 && pfnASurfaceTransactionSetEnableBackPressure) {
                     const bool fifo = presentRequest->presentMode == VK_PRESENT_MODE_FIFO_KHR;
                     if (window->backPressureEnabled != fifo) {
@@ -561,15 +550,18 @@ void DisplayX::presentThreadLoop() {
                 completeContext->requests.push_back(std::move(presentRequest));
         }
         
-        if (perfMode && pfnASurfaceTransactionSetOnCommit) pfnASurfaceTransactionSetOnCommit(presentTransaction, this, DisplayX::onCommitCallback);
         if (!completeContext->requests.empty()) pfnASurfaceTransactionSetOnComplete(presentTransaction, completeContext.release(), DisplayX::onCompleteCallback);
         pfnASurfaceTransactionApply(presentTransaction);
+        const int64_t workDuration = getCurrentTimeNanos() - workStart;
         // Keep controls and drawables alive until SurfaceControl retains the transaction.
         lock.unlock();
+        if (performanceHintSession)
+            pfnAPerformanceHintReportActualWorkDuration(performanceHintSession,
+                std::max<int64_t>(1, workDuration));
     }
     
+    pfnASurfaceTransactionDelete(presentTransaction);
     {
-        std::lock_guard lock(performanceHintLock);
         if (isPerformanceHintAPIAvailable() && performanceHintSession)
             pfnAPerformanceHintCloseSession(performanceHintSession);
         performanceHintSession = nullptr;
@@ -586,7 +578,6 @@ void DisplayX::start() {
     pfnASurfaceTransactionSetVisibility = reinterpret_cast<PFNASURFACETRANSACTIONSETVISIBILITY>(dlsym(handle,"ASurfaceTransaction_setVisibility"));
     pfnASurfaceTransactionReparent = reinterpret_cast<PFNASURFACETRANSACTIONREPARENT>(dlsym(handle,"ASurfaceTransaction_reparent"));
     pfnASurfaceTransactionSetOnComplete = reinterpret_cast<PFNASURFACETRANSACTIONSETONCOMPLETE>(dlsym(handle,"ASurfaceTransaction_setOnComplete"));
-    pfnASurfaceTransactionSetOnCommit = reinterpret_cast<PFNASURFACETRANSACTIONSETONCOMMIT>(dlsym(handle,"ASurfaceTransaction_setOnCommit"));
     pfnASurfaceTransactionSetEnableBackPressure = reinterpret_cast<PFNASURFACETRANSACTIONSETENABLEBACKPRESSURE>(dlsym(handle,"ASurfaceTransaction_setEnableBackPressure"));
     pfnASurfaceTransactionSetBufferAlpha = reinterpret_cast<PFNASURFACETRANSACTIONSETBUFFERALPHA>(dlsym(handle, "ASurfaceTransaction_setBufferAlpha"));
     pfnASurfaceTransactionSetBufferTransparency = reinterpret_cast<PFNASURFACETRANSACTIONSETBUFFERTRANSPARENCY>(dlsym(handle, "ASurfaceTransaction_setBufferTransparency"));
@@ -713,6 +704,8 @@ void DisplayX::createWindowControl(Window *window) {
     if (pfnASurfaceControlAcquire)    
         pfnASurfaceControlAcquire(window->control);
     
+    pfnASurfaceTransactionSetBufferTransparency(windowTransaction, window->control,
+        ASURFACE_TRANSACTION_TRANSPARENCY_OPAQUE);
     pfnASurfaceTransactionSetZOrder(windowTransaction, window->control, window->z_order);
     pfnASurfaceTransactionSetVisibility(windowTransaction, window->control, ASURFACE_TRANSACTION_VISIBILITY_HIDE);
     
@@ -848,6 +841,8 @@ void DisplayX::createRootCursorControl() {
         pfnASurfaceControlAcquire(cursorManager->control);
     
     cursorTransaction = pfnASurfaceTransactionCreate();
+    pfnASurfaceTransactionSetBufferTransparency(cursorTransaction, cursorManager->control,
+        ASURFACE_TRANSACTION_TRANSPARENCY_TRANSLUCENT);
 }
 
 void DisplayX::showCursor() {
@@ -902,6 +897,8 @@ void DisplayX::createRootWindowControl() {
         pfnASurfaceControlAcquire(rootWindow->control);
  
     windowTransaction = pfnASurfaceTransactionCreate();
+    pfnASurfaceTransactionSetBufferTransparency(windowTransaction, rootWindow->control,
+        ASURFACE_TRANSACTION_TRANSPARENCY_OPAQUE);
 }
 
 void DisplayX::destroyRootWindowControl() {

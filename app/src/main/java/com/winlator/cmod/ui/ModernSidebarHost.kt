@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -370,7 +371,7 @@ private fun RuntimeStatusCard(rows: Array<out Array<out String>>) {
                     Text(row[0], Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                     Text(row[1], Modifier.weight(1.6f), style = MaterialTheme.typography.bodySmall,
                         color = when (row[2]) {
-                            "active" -> MaterialTheme.colorScheme.primary
+                            "active" -> Color(0xFF81C995)
                             "warning" -> MaterialTheme.colorScheme.tertiary
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         })

@@ -1872,12 +1872,18 @@ public class XServerDisplayActivity extends AppCompatActivity {
         runtimeStatusProbeThread.start();
     }
 
-    public String[][] getSidebarRuntimeStatusRows() {
+    public String getActiveRendererName() {
         boolean displayX = xServer != null && xServer.isDisplayX();
         String renderer = xServerView instanceof com.winlator.cmod.widget.NativeX11View
-                ? "X++ / " + ((com.winlator.cmod.widget.NativeX11View) xServerView).getBackendName()
+                ? ((com.winlator.cmod.widget.NativeX11View) xServerView).getBackendName()
                 : xServerView instanceof VulkanXServerView ? "Vulkan" : displayX ? "DisplayX" : "EGL";
         boolean trueDisplayX = shortcut != null ? shortcut.getTrueDisplayX() : container != null && container.getTrueDisplayX();
+        return "DisplayX".equals(renderer) && trueDisplayX ? "DisplayX+" : renderer;
+    }
+
+    public String[][] getSidebarRuntimeStatusRows() {
+        boolean displayX = xServer != null && xServer.isDisplayX();
+        String renderer = getActiveRendererName();
         Switch upscaler = findViewById(R.id.SWEnableFSR);
         Spinner mode = findViewById(R.id.SPUpscalerMode);
         boolean upscalerAvailable = supportsVulkanRendererEffects() || xServerView instanceof XServerView && !displayX;
@@ -1889,8 +1895,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         boolean detected = runtimeFexMode != com.winlator.cmod.core.RuntimeBackendProbe.FexMode.NA;
         boolean unixlibs = runtimeFexMode == com.winlator.cmod.core.RuntimeBackendProbe.FexMode.UNIXLIB;
         return new String[][] {
-                {getString(R.string.ui_renderer), xServerView == null ? getString(R.string.sidebar_starting) : getString(R.string.sidebar_1_s_active, renderer), xServerView == null ? "off" : "active"},
-                {"DisplayX", !displayX ? getString(R.string.ui_off) : trueDisplayX ? getString(R.string.sidebar_1_s_active, "True DisplayX") : getString(R.string.sidebar_1_s_active, "DRI3"), displayX ? "active" : "off"},
+                {getString(R.string.ui_renderer), xServerView == null ? getString(R.string.sidebar_starting) : renderer, xServerView == null ? "off" : "active"},
                 {getString(R.string.sidebar_upscaler), !upscalerAvailable ? getString(R.string.sidebar_unavailable) : upscalerActive && mode != null ? getString(R.string.sidebar_1_s_active, mode.getSelectedItem()) : getString(R.string.ui_off), upscalerActive ? "active" : "off"},
                 {"FEXCore", !arm64ec ? getString(R.string.sidebar_not_applicable) : !fex ? getString(R.string.sidebar_off_1_s, emulator)
                         : (version == null ? "" : version + " ") + (detected ? getString(R.string.sidebar_active) : getString(R.string.sidebar_not_detected)), fex ? detected ? "active" : "warning" : "off"},
@@ -2975,7 +2980,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     public String getHudGraphicsFallback() {
         if (xServerView instanceof com.winlator.cmod.widget.NativeX11View)
-            return ((com.winlator.cmod.widget.NativeX11View) xServerView).getBackendName();
+            return getActiveRendererName();
         return "freedreno".equalsIgnoreCase(graphicsDriver) ? "freedreno" : "Vulkan";
     }
 

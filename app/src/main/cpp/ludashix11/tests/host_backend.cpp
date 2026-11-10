@@ -138,7 +138,9 @@ static volatile sig_atomic_t quit;
 int main(int argc, char** argv) {
     if (argc != 2 && argc != 3) return 2;
     signal(SIGTERM, [](int) { quit = 1; }); signal(SIGINT, [](int) { quit = 1; });
-    xorg::XServer server(nullptr, xorg::ScreenInfo(1280, 720, 4));
+    xorg::NativeRendererConfig config;
+    if (std::getenv("LUDASHI_HOST_DISPLAYX")) config.backend = xorg::NativeRendererConfig::Backend::DisplayX;
+    xorg::XServer server(nullptr, xorg::ScreenInfo(1280, 720, 4), false, config);
     std::unique_ptr<xorg::NativeDisplayXBridge> displayX;
     if (std::getenv("LUDASHI_HOST_DISPLAYX")) displayX = std::make_unique<xorg::NativeDisplayXBridge>(server);
     if (std::string(argv[1]) == "--pending-cow") {
