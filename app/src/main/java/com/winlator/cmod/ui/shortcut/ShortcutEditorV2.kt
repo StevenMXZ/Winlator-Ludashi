@@ -558,6 +558,9 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
             Toast.makeText(context, uiStr(R.string.ui_shortcut_copied_to_1_s, target.name), Toast.LENGTH_SHORT).show()
             if (fragment is ShortcutsFragment) fragment.loadShortcutsList()
             close()
+            if (shortcut.getExtra("steamAppId").toIntOrNull() != null) {
+                ShortcutSettingsComposeDialog.show(fragment, Shortcut(target, java.io.File(target.desktopDir, shortcut.file.name)))
+            }
         }
     }
 

@@ -166,7 +166,12 @@ class LudashiSteamSession : AutoCloseable {
         return nativeGetUserStatsSchema(h, appId)
     }
 
-    // Blocking full user-stats request for achievement write-back.
+    // Read-only expanded achievement schema, live bitfields and unlock timestamps.
+    fun getUserStatsJson(appId: Int): String? {
+        val h = nativeHandle.get(); if (h == 0L) return null
+        return nativeGetUserStatsJson(h, appId)
+    }
+
     fun getUserStatsFull(appId: Int): String? {
         val h = nativeHandle.get(); if (h == 0L) return null
         return nativeGetUserStatsFull(h, appId)
@@ -729,6 +734,7 @@ class LudashiSteamSession : AutoCloseable {
         @JvmStatic private external fun nativeGetAppOwnershipTicket(handle: Long, appId: Int): ByteArray?
         @JvmStatic private external fun nativeRequestEncryptedAppTicket(handle: Long, appId: Int): ByteArray?
         @JvmStatic private external fun nativeGetUserStatsSchema(handle: Long, appId: Int): ByteArray?
+        @JvmStatic private external fun nativeGetUserStatsJson(handle: Long, appId: Int): String?
         @JvmStatic private external fun nativeGetUserStatsFull(handle: Long, appId: Int): String?
         @JvmStatic private external fun nativeGetItemDefArchive(
             handle: Long,

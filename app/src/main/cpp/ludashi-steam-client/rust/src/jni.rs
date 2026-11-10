@@ -4140,7 +4140,7 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
         return ptr::null_mut();
     };
     let Some(response) =
-        request_user_stats_response(&runtime, app_id.max(0) as u32, Duration::from_secs(30))
+        request_user_stats_response(&runtime, app_id.max(0) as u32, Duration::from_secs(8))
     else {
         return ptr::null_mut();
     };
@@ -5030,7 +5030,7 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
         return ptr::null_mut();
     };
     let Some(body) =
-        request_authed_service_body(&runtime, Duration::from_secs(30), |core, job_id| {
+        request_authed_service_body(&runtime, Duration::from_secs(8), |core, job_id| {
             core.build_owned_games_call(steam_id as u64, job_id)
         })
     else {

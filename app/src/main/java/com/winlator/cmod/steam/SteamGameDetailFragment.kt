@@ -36,9 +36,9 @@ class SteamGameDetailFragment : Fragment() {
                 if (shortcut != null) { ShortcutSettingsComposeDialog.show(this@SteamGameDetailFragment, shortcut); return }
                 val containers = ContainerManager(context).containers
                 if (containers.isEmpty()) { notice("Create a container first"); return }
-                android.app.AlertDialog.Builder(context).setTitle("Game container").setItems(containers.map { it.name }.toTypedArray()) { _, index ->
-                    ShortcutSettingsComposeDialog.show(this@SteamGameDetailFragment, SteamGames.draft(context, appId, containers[index]))
-                }.show()
+                val preferred = context.getSharedPreferences("steam-settings", 0).getInt("steam-container-$appId", -1)
+                val container = containers.firstOrNull { it.id == preferred } ?: containers.first()
+                ShortcutSettingsComposeDialog.show(this@SteamGameDetailFragment, SteamGames.draft(context, appId, container))
             }
             override fun onArguments() {
                 val shortcut = SteamGames.shortcut(context, appId) ?: return notice("Choose a container in Configure first")

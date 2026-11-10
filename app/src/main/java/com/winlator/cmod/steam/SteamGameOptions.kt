@@ -16,7 +16,7 @@ import kotlinx.coroutines.withContext
     val id = shortcut.getExtra("steamAppId").toIntOrNull() ?: return
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var mode by remember { mutableStateOf(SteamSettings.mode(context, id)) }
+    var mode by remember { mutableStateOf(if (SteamSettings.mode(context, id) == "RealSteam") "RealSteam" else "Goldberg") }
     var exe by remember { mutableStateOf(shortcut.getExtra("steamExecutable")) }
     var modeExpanded by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
@@ -34,7 +34,7 @@ import kotlinx.coroutines.withContext
     }
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val modes = listOf("RealSteam" to "SteamLudashi / Real Steam", "Goldberg" to "Goldberg (offline)", "Raw" to "Executable only")
+            val modes = listOf("RealSteam" to "Steam Client", "Goldberg" to "Offline")
             Box {
                 OutlinedButton(enabled = !busy && !SteamSession.gameActive, onClick = { modeExpanded = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Steam launch", Modifier.weight(1f))

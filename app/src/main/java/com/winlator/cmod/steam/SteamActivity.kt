@@ -47,99 +47,18 @@ class SteamActivity : AppCompatActivity() {
     }
     @Composable private fun SteamScreen() {
         val state = observeSteam()
-        var tab by rememberSaveable { mutableStateOf(intent.getIntExtra("steam_tab", 0).coerceIn(0, 1)) }
-        var query by rememberSaveable { mutableStateOf("") }
-        var selected by rememberSaveable { mutableStateOf(intent.getIntExtra("steam_app_id", 0)) }
-        val apps = SteamLibrary.items(this, state.library)
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.statusBarsPadding().navigationBarsPadding().imePadding()) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { finish() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back to library") }
-                    Column(Modifier.weight(1f)) {
-                        Text("Steam", style = MaterialTheme.typography.titleLarge)
-                        Text(if (state.signedIn || state.savedAccount) "${apps.size} games in your library" else "Connect your account", style = MaterialTheme.typography.bodySmall)
+            if (state.signedIn || state.savedAccount) {
+                SteamManagerScreen(state, intent.getIntExtra("steam_tab", 0), { finish() }, ::signOut, ::showDetail)
+            } else {
+                Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { finish() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
+                        Icon(androidx.compose.ui.res.painterResource(com.winlator.cmod.R.drawable.ic_steam), null, Modifier.size(30.dp))
+                        Text("Steam", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge)
                     }
-                    if (state.signedIn || state.savedAccount) TextButton(onClick = { signOut() }) { Text("Sign out") }
+                    LoginForm(state)
                 }
-                if (!state.signedIn && !state.savedAccount) LoginForm(state)
-                else {
-                    if (!state.signedIn && state.savedAccount) {
-                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(state.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                            if (state.gameActive) Text("Exit the game to restore the app session", style = MaterialTheme.typography.labelSmall)
-                            else if (state.restoring) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                            else TextButton(onClick = { SteamSession.reconnect() }) { Text("Reconnect") }
-                        }
-                    }
-                    TabRow(selectedTabIndex = tab) {
-                        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Library") })
-                        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Downloads") })
-                    }
-                    if (!state.downloading && state.signedIn) Text(state.status, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
-                    if (tab == 1) {
-                        SteamDownloadPanel(state)
-                        if (!state.downloading) Column(Modifier.padding(24.dp)) {
-                            Icon(Icons.Outlined.DownloadDone, null)
-                            Text(if (state.id > 0) state.name else "No active downloads", style = MaterialTheme.typography.titleMedium)
-                            Text(state.status, style = MaterialTheme.typography.bodyMedium)
-                            if (state.id > 0) Button(onClick = {
-                                if (isInstalled(state.id)) showDetail(state.id) else SteamSession.install(state.id)
-                            }) { Text(if (isInstalled(state.id)) "View game" else "Resume download") }
-                        }
-                    } else {
-                        SteamDownloadPanel(state)
-                        OutlinedTextField(query, { query = it }, label = { Text("Search your Steam games") },
-                            leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth().padding(16.dp))
-                        if (state.signedIn && state.libraryLoading) {
-                            LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-                            if (apps.isEmpty()) Text(state.status, Modifier.padding(24.dp))
-                        } else if (state.libraryError.isNotEmpty()) {
-                            Column(Modifier.padding(24.dp)) {
-                                Text(state.libraryError)
-                                Button(onClick = { SteamSession.retryLibrary() }) { Text("Try again") }
-                            }
-                        } else if (apps.isEmpty()) {
-                            Column(Modifier.padding(24.dp)) {
-                                Text("No Steam games found in this account.")
-                                TextButton(onClick = { SteamSession.retryLibrary() }) { Text("Refresh library") }
-                            }
-                        }
-                        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(apps.filter { it.name.contains(query, true) }.sortedBy { it.name }, key = { it.id }) { app ->
-                                val id = SteamLibrary.appId(app.shortcutPath)!!
-                                Card(onClick = { if (isInstalled(id)) showDetail(id) else selected = id }, shape = RoundedCornerShape(16.dp)) {
-                                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                        AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
-                                            update = { Glide.with(it).load("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900_2x.jpg").into(it) },
-                                            modifier = Modifier.size(52.dp, 78.dp))
-                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                            Text(app.name, maxLines = 2, style = MaterialTheme.typography.titleSmall)
-                                            Text(if (isInstalled(id)) "Installed" else "Ready to download", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                        Icon(if (isInstalled(id)) Icons.Outlined.ChevronRight else Icons.Outlined.Download, null)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if ((state.signedIn || state.savedAccount) && selected > 0) {
-                val id = selected
-                val app = apps.find { SteamLibrary.appId(it.shortcutPath) == id }
-                AlertDialog(onDismissRequest = { selected = 0 }, title = { Text(app?.name ?: "Steam $id") },
-                    text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Download this game from your Steam account.")
-                        if (state.downloading && state.id == id) SteamDownloadPanel(state)
-                        Text(state.status, style = MaterialTheme.typography.bodySmall)
-                    } },
-                    confirmButton = {
-                        Button(enabled = !state.gameActive && !state.downloading && (state.signedIn || isInstalled(id)), onClick = {
-                            if (isInstalled(id)) showDetail(id) else { SteamSession.install(id); tab = 1 }
-                            selected = 0
-                        }) { Text(if (isInstalled(id)) "View game" else "Download") }
-                    }, dismissButton = { TextButton(onClick = { selected = 0 }) { Text("Close") } })
             }
         }
     }

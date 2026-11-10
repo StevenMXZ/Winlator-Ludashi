@@ -65,6 +65,7 @@ object GameDetailComposeHost {
     }
 }
 
+private val LocalSteamInfoId = compositionLocalOf<Int?> { null }
 private val LocalSteamDetail = compositionLocalOf { false }
 private val LocalSteamReady = compositionLocalOf { true }
 
@@ -114,7 +115,7 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
     var favorite by remember(initialFavorite) { mutableStateOf(initialFavorite) }
     val toggle = { favorite = !favorite; callbacks.onFavorite(favorite) }
     val configured = steamId == null || shortcut?.getExtra("steamConfigured") == "1"
-    androidx.compose.runtime.CompositionLocalProvider(LocalSteamDetail provides (steamId != null), LocalSteamReady provides configured) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalSteamInfoId provides steamId, LocalSteamDetail provides (steamId != null), LocalSteamReady provides configured) {
     if (landscape) LandscapeDetail(title, subtitle, artwork, favorite, stats, callbacks, toggle)
     else PortraitDetail(title, subtitle, artwork, favorite, stats, callbacks, toggle)
     }
@@ -168,6 +169,7 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
                         LandscapeAction(Icons.Outlined.Home, stringResource(R.string.ui_home), Modifier.weight(1f), callbacks::onHome)
                         LandscapeAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) "Uninstall Steam game" else stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
                     }
+                    LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
                 }
             }
             if (stats.hasAny) StatsGrid(stats, Modifier.align(Alignment.BottomStart).padding(18.dp).width(statsWidth).heightIn(max = (maxHeight - 128.dp).coerceAtLeast(80.dp)).verticalScroll(rememberScrollState()), onArtwork = true)
@@ -191,6 +193,7 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
             if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth())
             PlayButton(callbacks::onPlay)
             DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)
+            LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
             DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
             DetailAction(Icons.Outlined.Backup, stringResource(R.string.ui_saves), callbacks::onSaves)
             DetailAction(Icons.Outlined.Home, stringResource(R.string.ui_add_to_home), callbacks::onHome)

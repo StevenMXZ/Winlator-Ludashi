@@ -101,6 +101,8 @@ object SteamSession {
     private val librarySync = SteamLibrarySync()
     private val polling = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile private var licensesReceived = false
+    @Volatile var libraryProgress = 0
+        private set
     @Volatile var libraryLoading = true
         private set
     @Volatile var libraryError = ""
@@ -140,7 +142,7 @@ object SteamSession {
                                 return ids.mapNotNull { id -> tokens.optString(id.toString()).toULongOrNull()?.toLong()?.let { id to it } }.toMap()
                             }
                         }, licensesReceived, SystemClock.elapsedRealtime())
-                        libraryLoading = librarySync.loading; libraryError = librarySync.error
+                        libraryProgress = librarySync.progress; libraryLoading = librarySync.loading; libraryError = librarySync.error
                         if (!downloading) status = librarySync.message
                         val snapshot = active.getLibrarySnapshotJson()
                         if (snapshot != library && (SteamLibrary.items(app ?: return@work, snapshot).isNotEmpty() || (!libraryLoading && libraryError.isEmpty()))) {
@@ -180,7 +182,7 @@ object SteamSession {
         ++authAttempt; guard.cancel(); signingIn = false; connected = false; signedIn = false
         previous?.let { it.cancelDownload(); it.cancelLogin(); it.disconnect(); it.close() }
         if (downloading) status = "Pausing download after session loss…"
-        librarySync.reset(); licensesReceived = false; libraryLoading = true; libraryError = ""
+        librarySync.reset(); licensesReceived = false; libraryLoading = true; libraryProgress = 0; libraryError = ""
         restoreStage = "Finding a Steam server"
         if (saved != null && library == "{}") library = runCatching { File(context.filesDir, "steam-library-cache.json").readText() }.getOrDefault("{}")
         ca = CaBundleExtractor.ensureBundle(context)
@@ -279,7 +281,7 @@ object SteamSession {
     }
     fun retryLibrary() = work {
         check(!gameActive && app?.let { SteamSettings.enabled(it) } == true) { "Steam is disabled or paused for a running game" }
-        librarySync.reset(); libraryLoading = true; libraryError = ""
+        librarySync.reset(); libraryLoading = true; libraryProgress = 0; libraryError = ""
         status = "Reloading Steam library…"
     }
     fun reconnect() = work {
@@ -378,7 +380,7 @@ object SteamSession {
         work {
             session?.let { it.cancelDownload(); it.cancelLogin(); it.logOffAndDisconnect(); it.close() }
             session = null
-            librarySync.reset(); licensesReceived = false; libraryLoading = true; libraryError = ""
+            librarySync.reset(); licensesReceived = false; libraryLoading = true; libraryProgress = 0; libraryError = ""
             library = "{}"; qrUrl = ""; downloading = false; status = "Disconnected"
         }
     }
