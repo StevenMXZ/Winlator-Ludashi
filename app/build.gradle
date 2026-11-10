@@ -48,9 +48,9 @@ tasks.register("downloadProton") {
     File protonARM64EC = new File(assetDir, "proton-9.0-arm64ec.tar.zst")
     File staleProtonARM64EC = new File(assetDir, "proton-10.0-5-arm64ec.tar.zst")
     // The release .wcp is a Zstandard tar archive; keep the bundled asset name used by ImageFsInstaller.
-    String protonURL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/pnew/proton-wine-9.0-arm64ec.wcp"
-    String protonSHA256 = "49087c7a0ce6131fcf740e7fcb48c79eb98401d82470bb1e1ecf8047a4eb205e"
-    long protonSize = 117659936L
+    String protonURL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/pnew2/proton-wine-9.0-arm64ec.wcp"
+    String protonSHA256 = "0bf76071c02730defae8ac56ee768ddae38ba93aee16b7d10dcdc72ebe961ccb"
+    long protonSize = 117648823L
 
     def fileSHA256 = { File file ->
         MessageDigest digest = MessageDigest.getInstance("SHA-256")
@@ -259,5 +259,15 @@ dependencies {
 configurations.configureEach {
     if (name.endsWith('UnitTestRuntimeClasspath')) {
         exclude group: 'org.conscrypt', module: 'conscrypt-android'
+    }
+}
+
+// Robolectric fetches its Android SDK image at test runtime outside Gradle's Maven resolver.
+// Use the Maven Central canonical host instead of the default repo1.maven.org endpoint.
+tasks.withType(Test).configureEach {
+    systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
     }
 }

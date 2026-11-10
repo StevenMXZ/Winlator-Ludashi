@@ -52,6 +52,7 @@ val knownEnvironmentVariables = listOf(
     EnvVariableSpec("MESA_SHADER_CACHE_MAX_SIZE", EnvValueKind.TEXT),
     EnvVariableSpec("mesa_glthread", EnvValueKind.CHECKBOX, listOf("false", "true")),
     EnvVariableSpec("WINEESYNC", EnvValueKind.CHECKBOX, listOf("0", "1")),
+    EnvVariableSpec("WINE_OFFSCREEN_CHECK_MS", EnvValueKind.NUMBER, listOf("100")),
     EnvVariableSpec("TU_DEBUG", EnvValueKind.MULTI, listOf("forcecb", "nocb", "deck_emu", "startup", "nir", "nobin", "sysmem", "gmem", "forcebin", "layout", "noubwc", "nomultipos", "nolrz", "nolrzfc", "perf", "perfc", "flushall", "syncdraw", "push_consts_per_stage", "rast_order", "unaligned_store", "log_skip_gmem_ops", "dynamic", "bos", "3d_load", "fdm", "noconform", "rd")),
     EnvVariableSpec("DXVK_HUD", EnvValueKind.MULTI, listOf("scale=0.5", "scale=0.7", "opacity=0.5", "opacity=0.7", "devinfo", "fps", "frametimes", "submissions", "drawcalls", "pipelines", "descriptors", "memory", "gpuload", "version", "api", "cs", "compiler", "samplers")),
     EnvVariableSpec("DXVK_DISABLE_TIMELINE_SEMAPHORES", EnvValueKind.CHECKBOX, listOf("0", "1")),
@@ -259,7 +260,7 @@ private fun AddEnvironmentVariableDialog(
                     val spec = knownEnvironmentVariables.firstOrNull { it.name == finalName }
                     val initial = when (spec?.kind) {
                         EnvValueKind.CHECKBOX -> spec.options.firstOrNull().orEmpty()
-                        EnvValueKind.SELECT -> spec.options.firstOrNull().orEmpty()
+                        EnvValueKind.SELECT, EnvValueKind.NUMBER -> spec.options.firstOrNull().orEmpty()
                         else -> ""
                     }
                     onAdd(finalName, initial)

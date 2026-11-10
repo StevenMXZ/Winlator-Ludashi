@@ -1237,6 +1237,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
             overrideEnvVars.clear();
         }
 
+        // Enable the tested offscreen check cache for Proton; keep per-game/container overrides.
+        if (wineInfo != null && "proton".equals(wineInfo.type)
+                && !envVars.has("WINE_OFFSCREEN_CHECK_MS")) {
+            envVars.put("WINE_OFFSCREEN_CHECK_MS", "100");
+        }
+
         environment = new XEnvironment(this, imageFs);
         environment.addComponent(
                 new SysVSharedMemoryComponent(
