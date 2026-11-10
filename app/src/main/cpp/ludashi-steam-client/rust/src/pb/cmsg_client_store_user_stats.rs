@@ -57,6 +57,10 @@ impl Default for CMsgClientStoreUserStatsResponse {
 }
 
 impl CMsgClientStoreUserStatsResponse {
+    pub fn confirmed_result(&self) -> i32 {
+        if self.stats_failed_to_set.is_empty() { self.eresult } else { 0 }
+    }
+
     pub fn deserialize(body: &[u8]) -> Option<Self> {
         let mut reader = Reader::new(body);
         let mut msg = Self::default();
@@ -124,6 +128,7 @@ mod tests {
         let parsed = CMsgClientStoreUserStatsResponse::deserialize(&body).unwrap();
         assert_eq!(parsed.game_id, 440);
         assert_eq!(parsed.eresult, 1);
+        assert_eq!(parsed.confirmed_result(), 0, "Partial rejection must keep pending unlocks");
         assert_eq!(parsed.crc_stats, 0xdead);
         assert_eq!(parsed.stats_failed_to_set, vec![Stat { stat_id: 7, stat_value: 99 }]);
         // An empty body keeps the SteamKit default (Fail).

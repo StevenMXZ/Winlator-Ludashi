@@ -112,6 +112,7 @@ object SteamSession {
             if (closing || gameActive || app?.let { !SteamSettings.enabled(it) } == true) return
             if (polling.compareAndSet(false, true)) work {
                 try {
+                    if (gameActive) return@work
                     var s = session
                     if (s != null && savedAccount && !recoveryBlocked) {
                         val now = SystemClock.elapsedRealtime()
@@ -125,6 +126,7 @@ object SteamSession {
                         }
                     }
                     if (s != null && signedIn) {
+                        SteamAchievements.syncPending(app ?: return@work)
                         val active = s
                         librarySync.step(object : SteamLibrarySync.Gateway {
                             override fun snapshot() = active.getLibrarySnapshotJson()
@@ -190,7 +192,7 @@ object SteamSession {
         val s = LudashiSteamSession()
         session = s
         if (saved != null) recovery.began(SystemClock.elapsedRealtime())
-        s.setAutoPersonaOnline(false)
+        s.setAutoPersonaOnline(SteamSocial.enabled(context))
         s.setCaBundlePath(ca)
         val connectionGate = SteamConnectionGate()
         s.setStateObserver(object : LudashiSteamStateObserver {
@@ -199,6 +201,7 @@ object SteamSession {
                 if (session !== s || closing || recoveryBlocked || gameActive) return
                 connected = state >= 2; signedIn = state == 3
                 if (signedIn) {
+                    SteamSocial.appEvent(context)
                     signingIn = false; restoring = false; authError = ""; restoreDeadline = 0L
                     context.getSharedPreferences("steam-settings", 0).edit().putString("last-cm-url", activeCmUrl).apply()
                 }
@@ -209,6 +212,7 @@ object SteamSession {
             }
             override fun onClientMessage(emsg: Int, eresult: Int, body: ByteArray) {
                 if (session !== s || closing) return
+                if (emsg in listOf(766, 767, 146, 147, 152)) SteamSocial.appEvent(context)
                 if (emsg == 766) work { if (session === s && !gameActive) SteamUserData.capturePersona(context, s.getSelfPersona()) }
                 if (emsg == 780) licensesReceived = true
                 if (emsg == 751 || emsg == 757 || emsg == 5500) {
@@ -243,6 +247,7 @@ object SteamSession {
     fun login(username: String, password: String) {
         if (gameActive || app?.let { !SteamSettings.enabled(it) } == true) return
         if (signingIn || username.isBlank() || password.isEmpty()) return
+        SteamSocial.reset()
         signingIn = true; authError = ""; recoveryBlocked = false
         work {
             try {
@@ -316,7 +321,7 @@ object SteamSession {
         val info = info(id)
         val name = SteamCatalog.installName(info)
         val depots = SteamCatalog.depots(info)
-        val dir = File(context.filesDir, "steam-library/common/$name").apply { mkdirs() }
+        val dir = SteamStorage.download(context, id, name)
         SteamGoldberg.restore(dir)
         SteamGoldberg.invalidate(dir)
         downloading = true
@@ -334,7 +339,7 @@ object SteamSession {
                         work {
                             if (success) {
                                 dir.walkTopDown().filter { it.isFile && it.name.endsWith(".ludashi-original") }.forEach { it.delete() }
-                                File(context.filesDir, "steam-library/$id.json").writeText(info.toString())
+                                File(context.filesDir, "steam-library/$id.json").writeText(SteamStorage.record(info, dir).toString())
                                 main.post { SteamGames.changed() }
                             }
                             downloading = false

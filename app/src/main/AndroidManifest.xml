@@ -43,6 +43,7 @@
         android:supportsRtl="true"
         tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
 
+        <activity android:name=".steam.SteamFriendsActivity" android:exported="false" android:theme="@style/AppThemeFullscreen" android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity android:name=".steam.StoreSettingsActivity" android:theme="@style/AppThemeFullscreen" android:windowSoftInputMode="adjustResize" android:exported="false" />
         <activity android:name=".steam.SteamActivity" android:theme="@style/AppThemeFullscreen" android:windowSoftInputMode="adjustResize" android:exported="false" />
         <service android:name=".steam.SteamService" android:foregroundServiceType="dataSync" android:exported="false" />

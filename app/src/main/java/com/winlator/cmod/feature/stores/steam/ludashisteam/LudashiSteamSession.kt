@@ -214,6 +214,12 @@ class LudashiSteamSession : AutoCloseable {
         nativeStoreUserStats(h, appId, steamId, crcStats, statIds, statValues)
     }
 
+    fun storeUserStatsBlocking(appId: Int, steamId: Long, crcStats: Int, ids: IntArray, values: IntArray): Int {
+        val h = nativeHandle.get(); if (h == 0L) return 0
+        return nativeStoreUserStatsBlocking(h, appId, steamId, crcStats, ids, values, 8000)
+    }
+    private external fun nativeStoreUserStatsBlocking(handle: Long, appId: Int, steamId: Long, crcStats: Int, statIds: IntArray, statValues: IntArray, timeoutMs: Int): Int
+
     // Blocking Steam Cloud changelist fetch.
     fun getCloudFileList(appId: Int): String? {
         val h = nativeHandle.get(); if (h == 0L) return null

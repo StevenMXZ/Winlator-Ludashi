@@ -2321,7 +2321,7 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
     }
     let contains_bbcode = message.contains("[img]");
     let Some(body) =
-        request_authed_service_body(&runtime, Duration::from_secs(15), |core, job_id| {
+        request_authed_service_body(&runtime, Duration::from_secs(8), |core, job_id| {
             core.build_send_friend_message(steam_id as u64, &message, contains_bbcode, job_id)
         })
     else {
@@ -2357,7 +2357,7 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
     let self_accountid = (handle.core.steam_id() & 0xFFFF_FFFF) as u32;
     let count = count.clamp(1, 200) as u32;
     let Some(body) =
-        request_authed_service_body(&runtime, Duration::from_secs(15), |core, job_id| {
+        request_authed_service_body(&runtime, Duration::from_secs(8), |core, job_id| {
             core.build_get_recent_messages(steam_id as u64, count, job_id)
         })
     else {
@@ -4234,7 +4234,7 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
                     ),
                 );
             }
-            response.eresult as jint
+            response.confirmed_result() as jint
         }
         None => header_eresult.max(0) as jint,
     }

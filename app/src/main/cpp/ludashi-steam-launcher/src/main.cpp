@@ -1,6 +1,7 @@
-
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "agent_channel.h"
+#include "agent_friends.h"
 #include "clean_shutdown.h"
 
 #include <stdio.h>
@@ -898,7 +899,7 @@ static bool wait_blocked_answer(int timeoutMs, Steam_BGetCallback_fn bGetCallbac
     for (int waited = 0; waited < timeoutMs; waited += stepMs) {
         if (bGetCallback && freeLastCallback) {
             char cb[64];
-            while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+            while (bGetCallback(pipe, cb)) { af::on_callback(cb); freeLastCallback(pipe); }
         }
         FILE* f = fopen(kBlockedAnswerPath, "rb");
         if (f) {
@@ -940,7 +941,7 @@ static bool clear_running_game(void* engine, void* user, void* appMgr, uint32_t 
     for (int waited = 0; waited < 15000; waited += 200) {
         if (bGetCallback && freeLastCallback) {
             char cb[64];
-            while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+            while (bGetCallback(pipe, cb)) { af::on_callback(cb); freeLastCallback(pipe); }
         }
         int count = 0;
         query_running_game(user, NULL, &count);
@@ -969,7 +970,7 @@ static bool clear_other_session(void* user, Steam_BGetCallback_fn bGetCallback,
     for (int waited = 0; waited < 15000; waited += 200) {
         if (bGetCallback && freeLastCallback) {
             char cb[64];
-            while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+            while (bGetCallback(pipe, cb)) { af::on_callback(cb); freeLastCallback(pipe); }
         }
         uint32_t blocking = 0;
         if (!query_other_session(user, &blocking)) {
@@ -1094,7 +1095,7 @@ static void sync_app_ownership(void* engine, int hUser, int pipe, uint32_t appId
     while (!owned && waited < waitMs) {
         if (bGetCallback && freeLastCallback) {
             char cb[64];
-            while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+            while (bGetCallback(pipe, cb)) { af::on_callback(cb); freeLastCallback(pipe); }
         }
         Sleep(200);
         waited += 200;
@@ -1158,7 +1159,7 @@ static void sync_app_ownership(void* engine, int hUser, int pipe, uint32_t appId
     while (after == 0 && ticketWaited < ticketWaitMs) {
         if (bGetCallback && freeLastCallback) {
             char cb[64];
-            while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+            while (bGetCallback(pipe, cb)) { af::on_callback(cb); freeLastCallback(pipe); }
         }
         Sleep(200);
         ticketWaited += 200;
@@ -1459,7 +1460,7 @@ static bool wait_for_game_process(const char* exeName, int maxSeconds, const cha
         }
         if (bGetCallback && freeLastCallback) {
             char cb[64];
-            while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+            while (bGetCallback(pipe, cb)) { af::on_callback(cb); freeLastCallback(pipe); }
         }
         if (blockUser) {
             int running = 0;
@@ -2588,7 +2589,25 @@ static void scan_and_install_redists(const char* gameRootDir,
              installed, skipped, satisfied, failedMarked, timedOut, installers.size());
 }
 
+static void ludashi_social_callback(void* buffer, unsigned int appId) {
+    char* cb = (char*)buffer;
+                    af::on_callback(cb);
+                    int cbid = 0; memcpy(&cbid, cb + 4, 4);
+                    if (cbid == 1103) {
+                        void* param = nullptr; memcpy(&param, cb + 8, sizeof(param));
+                        if (param && !IsBadReadPtr(param, 148)) {
+                            uint64_t gid = 0; memcpy(&gid, param, 8);
+                            char name[128]; memcpy(name, (char*)param + 9, 127); name[127] = 0;
+                            unsigned int aid = (unsigned int)(gid & 0xffffffu);
+                            unsigned int current = 0, maximum = 0; memcpy(&current, (char*)param + 140, 4); memcpy(&maximum, (char*)param + 144, 4);
+                            if (aid == appId && name[0] && (maximum == 0 || current >= maximum)) ac::emit_achievement(name);
+                        }
+                    }
+
+}
+
 int main(int argc, char** argv) {
+    ac::init_from_env(log_line);
     setbuf(stderr, NULL);
     setbuf(stdout, NULL);
     open_log();
@@ -3241,7 +3260,7 @@ int main(int argc, char** argv) {
                     if (st & 4) break;
                     if (bGetCallback && freeLastCallback) {
                         char cb[64];
-                        while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+                        while (bGetCallback(pipe, cb)) { af::on_callback(cb); freeLastCallback(pipe); }
                     }
                     Sleep(100);
                 }
@@ -3470,7 +3489,7 @@ int main(int argc, char** argv) {
                             if (completed) break;
                             if (bGetCallback && freeLastCallback) {
                                 char cb[64];
-                                while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+                                while (bGetCallback(pipe, cb)) { af::on_callback(cb); freeLastCallback(pipe); }
                             }
                             Sleep(100);
                             waited += 100;
@@ -3562,7 +3581,7 @@ int main(int argc, char** argv) {
                 for (int w = 0; w < 30; ++w) {  // ~3s of callback pumping
                     if (bGetCallback && freeLastCallback) {
                         char cb[64];
-                        while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+                        while (bGetCallback(pipe, cb)) { af::on_callback(cb); freeLastCallback(pipe); }
                     }
                     Sleep(100);
                 }
@@ -3683,12 +3702,14 @@ int main(int argc, char** argv) {
         log_line("[ludashi-launcher] watching \"%s\" for exit (%s)", exeName, path);
 
         ludashi_launcher_ready_for_shutdown();
+        bool friendsStarted = false;
+        int socialTicks = 0;
         log_active_process_registry("post-launch");
         for (int i = 0; i < 20; ++i) {
             if (ludashi_launcher_shutdown_started()) { ludashi_launcher_wait_clean_shutdown(90000); return 0; }
             if (bGetCallback && freeLastCallback) {
                 char cb[64];
-                while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+                while (bGetCallback(pipe, cb)) { ludashi_social_callback(cb, appId); freeLastCallback(pipe); }
             }
             Sleep(500);
         }
@@ -3698,9 +3719,14 @@ int main(int argc, char** argv) {
         while (absent < 2) {
             Sleep(1000);
             if (ludashi_launcher_shutdown_started()) { ludashi_launcher_wait_clean_shutdown(90000); return 0; }
+            if (!friendsStarted && ++socialTicks >= 5) { friendsStarted = true; af::init(createInterface, hUser, pipe, log_line, "Ludashi game"); }
+            af::tick();
             if (bGetCallback && freeLastCallback) {
                 char cb[64];
-                while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
+                while (bGetCallback(pipe, cb)) {
+                    ludashi_social_callback(cb, appId);
+                    freeLastCallback(pipe);
+                }
             }
             absent = (ludashi_launcher_count_game_processes() != 0) ? 0 : absent + 1;
         }

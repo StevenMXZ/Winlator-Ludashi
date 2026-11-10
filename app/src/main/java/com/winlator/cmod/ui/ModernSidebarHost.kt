@@ -54,6 +54,7 @@ class ModernSidebarController internal constructor(internal val activity: XServe
     internal var selected by mutableIntStateOf(R.id.LLSubFPS)
     internal var revision by mutableIntStateOf(0)
     internal var paused by mutableStateOf(false)
+    internal var opened by mutableStateOf(false)
     internal val panelRoots = listOf(R.id.LLSubGraphics, R.id.LLSubScreen, R.id.LLSubInput, R.id.LLSubFPS, R.id.LLSubTaskManager)
         .associateWith { activity.findViewById<View>(it) }
     // Coalesce control updates into one UI snapshot after the legacy widgets
@@ -81,7 +82,8 @@ class ModernSidebarController internal constructor(internal val activity: XServe
     }
     fun onRuntimeStatusChanged() { revision++ }
     fun onLocaleChanged() { revision++ }
-    fun onOpened(isPaused: Boolean) { paused = isPaused; select(selected); activity.requestSidebarRuntimeStatus() }
+    fun onClosed() { opened = false }
+    fun onOpened(isPaused: Boolean) { opened = true; paused = isPaused; select(selected); activity.requestSidebarRuntimeStatus() }
     internal fun pause() { activity.findViewById<View>(R.id.BTItemPause)?.performClick(); paused = !paused }
     internal fun exit() { activity.findViewById<View>(R.id.BTItemExit)?.performClick() }
 }
@@ -126,6 +128,9 @@ private fun Sidebar(state: ModernSidebarController) {
                         Icon(painterResource(section.icon), stringResource(section.label), Modifier.size(23.dp))
                     }
                 }
+                if (com.winlator.cmod.steam.SteamSocial.enabled(state.activity)) RailButton(state.selected == -310, { state.selected = -310 }, cellSize) {
+                    Icon(Icons.Outlined.People, stringResource(R.string.steam_friends))
+                }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp), color = dividerColor())
                 RailButton(false, state::pause, cellSize) {
                     Icon(if (state.paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, stringResource(if (state.paused) R.string.ui_resume else R.string.ui_pause))
@@ -143,13 +148,13 @@ private fun Sidebar(state: ModernSidebarController) {
                 val source = state.panelRoots[panel]
                 Column(
                     Modifier.fillMaxSize()
-                        .then(if (panel == R.id.LLSubTaskManager) Modifier
+                        .then(if (panel == R.id.LLSubTaskManager || panel == -310) Modifier
                               else Modifier.verticalScroll(rememberScrollState()))
                         .padding(if (panel == R.id.LLSubFPS) 10.dp else 14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     val revision = state.revision
-                    if (panel == R.id.LLSubTaskManager && source != null) {
+                    if (panel == -310) { if (state.opened) com.winlator.cmod.steam.SteamFriendsScreen() } else if (panel == R.id.LLSubTaskManager && source != null) {
                         TaskManagerPanel(source, true)
                     } else {
                         Text(stringResource(section.label),

@@ -30,7 +30,7 @@ OUT_FILE="../../assets/ludashisteam/bionic/steam.exe"
     -I. \
     -o "$OUT_FILE" \
     src/main.cpp clean_shutdown.cpp \
-    -ladvapi32 -lkernel32 -luser32
+    -ladvapi32 -lkernel32 -luser32 -lws2_32
 
 "$STRIP" "$OUT_FILE"
 
@@ -48,7 +48,7 @@ if command -v "$CXX32" >/dev/null 2>&1; then
         -I. \
         -o "$OUT_FILE32" \
         src/main.cpp clean_shutdown.cpp \
-        -ladvapi32 -lkernel32 -luser32
+        -ladvapi32 -lkernel32 -luser32 -lws2_32
     "$STRIP32" "$OUT_FILE32"
     echo "Built: $OUT_FILE32  ($(stat -c '%s' "$OUT_FILE32") bytes)"
     file "$OUT_FILE32"

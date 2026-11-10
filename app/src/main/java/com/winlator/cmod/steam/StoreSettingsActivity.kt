@@ -7,6 +7,8 @@ import com.winlator.cmod.R
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -34,6 +36,17 @@ class StoreSettingsActivity : ImmersiveSteamActivity() {
             var status by remember { mutableStateOf("") }
             var tier by remember { mutableIntStateOf(SteamDownloadSettings.tier(this)) }
             val scope = rememberCoroutineScope()
+            var folder by remember { mutableStateOf(SteamStorage.root(this).path) }
+            val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+                if (uri != null) scope.launch {
+                    val result = withContext(Dispatchers.IO) { runCatching {
+                        val path = com.winlator.cmod.core.FileUtils.getFilePathFromUri(this@StoreSettingsActivity, uri)
+                        check(!path.isNullOrBlank()) { uiStr(R.string.steam_folder_unavailable) }
+                        SteamStorage.setRoot(this@StoreSettingsActivity, java.io.File(path))
+                    } }
+                    error = result.exceptionOrNull()?.message.orEmpty(); folder = SteamStorage.root(this@StoreSettingsActivity).path
+                }
+            }
             Scaffold(modifier = Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)), contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { TopAppBar(windowInsets = WindowInsets(0, 0, 0, 0), title = { Text(uiStr(R.string.steam_ui_stores)) }, navigationIcon = {
                 IconButton(onClick = { finish() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, uiStr(R.string.steam_ui_back)) }
             }) }) { padding ->
@@ -57,6 +70,25 @@ class StoreSettingsActivity : ImmersiveSteamActivity() {
                             TextButton(onClick = { startActivity(Intent(this@StoreSettingsActivity, SteamActivity::class.java).putExtra("steam_tab", 1)) }) {
                                 ListItem(headlineContent = { Text(uiStr(R.string.steam_ui_manage_downloads)) }, leadingContent = { Icon(Icons.Outlined.Download, null) }, trailingContent = { Icon(Icons.Outlined.ChevronRight, null) })
                             }
+                        }
+                        OutlinedCard {
+                            ListItem(headlineContent = { Text(uiStr(R.string.steam_download_folder)) }, supportingContent = { Text(folder) }, leadingContent = { Icon(Icons.Outlined.Folder, null) })
+                            Row {
+                                TextButton(enabled = !SteamSession.downloading && !SteamSession.gameActive, onClick = { picker.launch(null) }) { Text(uiStr(R.string.steam_choose_folder)) }
+                                TextButton(enabled = !SteamSession.downloading && !SteamSession.gameActive, onClick = { SteamStorage.setRoot(this@StoreSettingsActivity, null); folder = SteamStorage.root(this@StoreSettingsActivity).path }) { Text(uiStr(R.string.steam_default_folder)) }
+                            }
+                            Text(uiStr(R.string.steam_folder_help), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
+                        }
+                        OutlinedCard {
+                            listOf("social" to R.string.steam_friends, "achievement-notifications" to R.string.steam_achievement_notifications, "achievement-sync" to R.string.steam_achievement_sync).forEach { (key, label) ->
+                                var checked by remember(key) { mutableStateOf(getSharedPreferences("steam-settings", 0).getBoolean(key, key != "achievement-sync")) }
+                                ListItem(headlineContent = { Text(uiStr(label)) }, trailingContent = { Switch(checked, { value ->
+                                    checked = value; getSharedPreferences("steam-settings", 0).edit().putBoolean(key, value).apply()
+                                    if (key == "social") SteamSession.work { SteamSession.session?.setAutoPersonaOnline(value); SteamSession.session?.setPersonaState(if (value) 1 else 0); if (value) SteamSocial.appEvent(this@StoreSettingsActivity) }
+                                    if (key == "achievement-sync" && value) SteamAchievements.syncPending(this@StoreSettingsActivity)
+                                }, enabled = !SteamSession.gameActive) })
+                            }
+                            Text(uiStr(R.string.steam_achievement_sync_help), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
                         }
                         Text(uiStr(R.string.steam_ui_download_speed), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         OutlinedCard {

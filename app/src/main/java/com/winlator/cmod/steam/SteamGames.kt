@@ -23,7 +23,7 @@ object SteamGames {
     private val shortcutLocations = mutableMapOf<String, Pair<Int, File>>()
     @Synchronized fun changed() { shortcutCache.clear(); revision.intValue++ }
     fun info(context: Context, id: Int) = JSONObject(File(context.filesDir, "steam-library/$id.json").readText())
-    fun directory(context: Context, id: Int): File = File(context.filesDir, "steam-library/common/${SteamCatalog.installName(info(context, id))}").canonicalFile
+    fun directory(context: Context, id: Int): File = SteamStorage.directory(context, info(context, id))
     @Synchronized fun shortcut(context: Context, id: Int): Shortcut? {
         revision.intValue
         val key = "${context.filesDir.path}:$id"
@@ -73,10 +73,11 @@ object SteamGames {
                 otherId != null && otherId != id && file.extension == "json" && runCatching { directory(context, otherId) == dir }.getOrDefault(false)
             }
             check(!shared) { "Another installed Steam game shares this directory; uninstall the shared installation manually" }
-            val root = File(context.filesDir, "steam-library/common").canonicalFile.toPath()
+            val root = SteamStorage.installationRoot(context, info(context, id)).toPath()
             check(dir.toPath().startsWith(root) && dir.toPath() != root) { "Invalid Steam installation directory" }
             if (dir.exists()) Files.walk(dir.toPath()).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { Files.delete(it) } }
             check(File(context.filesDir, "steam-library/$id.json").delete()) { "Could not remove Steam installation record" }
+            context.getSharedPreferences("steam-settings", 0).edit().remove("pending-root-$id").apply()
             shortcuts.forEach { check(it.file.delete()) { "Could not remove game shortcut" } }
         } finally { locked.forEach { com.winlator.cmod.core.ContainerSessionGate.edited(it) } }
     }

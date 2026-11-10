@@ -382,6 +382,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
             @Override
             public void onDrawerClosed(View drawerView) {
+                if (modernSidebar != null) modernSidebar.onClosed();
                 hideAllSidebarPanels();
             }
         });
@@ -1017,6 +1018,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
             ownsPrefixLease = false;
         }
         if (shortcut != null && !shortcut.getExtra("steamAppId").isEmpty()) {
+            com.winlator.cmod.steam.SteamSocial.closeGuest();
+            com.winlator.cmod.steam.SteamAchievements.stop();
             com.winlator.cmod.steam.SteamSession.endGame(getApplicationContext());
         }
         super.onDestroy();

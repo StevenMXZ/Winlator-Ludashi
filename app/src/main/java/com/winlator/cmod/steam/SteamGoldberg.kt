@@ -41,6 +41,7 @@ object SteamGoldberg {
                 .filter { it.name.lowercase() in setOf("steam_api.dll", "steam_api64.dll") }.distinctBy { it.path }.toList()
         }
     }
+    fun settingsDirectories(game: File) = apiDlls(game).map { File(it.parentFile, "steam_settings") }.distinct()
     fun restore(game: File) {
         apiDlls(game).forEach { target ->
             File(target.parentFile, target.name + ".ludashi-original").takeIf { it.isFile }?.copyTo(target, true)

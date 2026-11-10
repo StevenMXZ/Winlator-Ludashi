@@ -63,7 +63,9 @@ import java.io.File
             }) { Icon(Icons.Outlined.Refresh, uiStr(R.string.steam_ui_refresh)) }
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, uiStr(R.string.steam_ui_options)) }
-                DropdownMenu(menu, { menu = false }) { DropdownMenuItem(text = { Text(uiStr(R.string.steam_ui_sign_out)) }, onClick = { menu = false; signOut() }) }
+                DropdownMenu(menu, { menu = false }) {
+                    DropdownMenuItem(text = { Text(uiStr(R.string.steam_friends)) }, onClick = { menu = false; context.startActivity(android.content.Intent(context, SteamFriendsActivity::class.java)) })
+                    DropdownMenuItem(text = { Text(uiStr(R.string.steam_ui_sign_out)) }, onClick = { menu = false; signOut() }) }
             }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

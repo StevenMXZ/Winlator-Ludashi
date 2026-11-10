@@ -700,4 +700,19 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="steam_cloud_backup">Local backup</string>
     <string name="steam_cloud_uploaded">Cloud upload confirmed: %1$s</string>
     <string name="steam_cloud_downloaded">Cloud download confirmed: %1$s</string>
+    <string name="steam_download_folder">Steam download folder</string>
+    <string name="steam_choose_folder">Choose folder</string>
+    <string name="steam_default_folder">Use default</string>
+    <string name="steam_folder_help">Applies to new downloads. Existing games and paused downloads keep their original folder. A LudashiSteam subfolder is created.</string>
+    <string name="steam_folder_unavailable">Choose a writable local folder. Cloud/document providers are not executable filesystem paths.</string>
+    <string name="steam_friends">Steam friends / chat</string>
+    <string name="steam_social_disabled">Enable friends/chat in Store settings.</string>
+    <string name="steam_friends_empty">Connect to Steam to load friends. In-game chat requires Steam Client mode. Offline does not start a second connection.</string>
+    <string name="steam_friend_ingame">In game</string>
+    <string name="steam_chat_you">You</string>
+    <string name="steam_chat_message">Message</string>
+    <string name="steam_chat_send">Send</string>
+    <string name="steam_achievement_notifications">In-game achievement notifications</string>
+    <string name="steam_achievement_sync">Sync offline achievements to Steam</string>
+    <string name="steam_achievement_sync_help">Offline unlocks stay local unless sync is enabled. Pending unlocks upload after returning online; failed or refused updates stay queued. Online games use the real Steam API.</string>
 </resources>

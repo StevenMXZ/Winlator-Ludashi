@@ -22,7 +22,7 @@ object SteamLaunch {
         check(SteamSettings.enabled(context)) { "Steam is disabled" }
         require(id > 0)
         val installName = SteamCatalog.installName(info)
-        val game = File(context.filesDir, "steam-library/common/$installName").canonicalFile
+        val game = SteamStorage.directory(context, info)
         require(File(game, exe).canonicalFile.toPath().startsWith(game.toPath()))
         require(File(game, exe).isFile)
         val mode = SteamSettings.mode(context, id)
@@ -109,17 +109,19 @@ object SteamLaunch {
         val id = shortcut?.getExtra("steamAppId")?.toIntOrNull() ?: return
         check(shortcut?.getExtra("steamConfigured") == "1") { "Configure the Steam launch method and executable before playing" }
         SteamSession.beginGame(context)
+        SteamAchievements.begin(context, shortcut!!)
         val game = SteamGames.directory(context, id)
         // Also covers pinned/home shortcuts and a different container sharing this install.
         SteamGoldberg.restore(game)
         if (shortcut!!.getExtra("steamLaunchMode") == "Goldberg") SteamGoldberg.prepare(context, game, id)
-        if (shortcut.getExtra("steamLaunchMode", "RealSteam") != "RealSteam") return
+        if (shortcut.getExtra("steamLaunchMode", "RealSteam") != "RealSteam") { SteamSocial.status.value = com.winlator.cmod.ui.uiStr(com.winlator.cmod.R.string.steam_friends_empty); return }
         val saved = SteamCredentials.load(context) ?: error("Sign in to Steam before launching this game")
         env.put("LUDASHI_STEAM_TOKEN", saved.getString("token"))
         env.put("LUDASHI_STEAM_USERNAME", saved.getString("account"))
         env.put("LUDASHI_STEAM_STEAMID", saved.getLong("id"))
         env.put("LUDASHI_STEAM_APPID", id)
         val info = JSONObject(File(context.filesDir, "steam-library/$id.json").readText())
+        if (SteamSocial.enabled(context) || SteamAchievements.enabled(context)) SteamSocial.beginGuest(context, env, id)
         SteamCloud.begin(context, shortcut)
         env.put("LUDASHI_STEAM_AGENT_CLOUD", "1")
         env.put("LUDASHI_STEAM_LANGUAGE", "english")

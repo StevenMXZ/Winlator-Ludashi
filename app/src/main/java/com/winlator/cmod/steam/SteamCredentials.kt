@@ -37,5 +37,5 @@ object SteamCredentials {
         }
         JSONObject(String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8))
     }.getOrNull()
-    fun clear(context: Context) { File(context.noBackupFilesDir, "steam-login").delete() }
+    fun clear(context: Context) { SteamSocial.reset(); File(context.noBackupFilesDir, "steam-login").delete() }
 }

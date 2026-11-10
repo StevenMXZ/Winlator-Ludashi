@@ -608,4 +608,19 @@
     <string name="steam_cloud_backup">Backup local</string>
     <string name="steam_cloud_uploaded">Envio à nuvem confirmado: %1$s</string>
     <string name="steam_cloud_downloaded">Download da nuvem confirmado: %1$s</string>
+    <string name="steam_download_folder">Pasta de download da Steam</string>
+    <string name="steam_choose_folder">Escolher pasta</string>
+    <string name="steam_default_folder">Usar padrão</string>
+    <string name="steam_folder_help">Vale para novos downloads. Jogos existentes e downloads pausados mantêm a pasta original. Uma subpasta LudashiSteam é criada.</string>
+    <string name="steam_folder_unavailable">Escolha uma pasta local gravável. Provedores de nuvem/documentos não oferecem caminhos executáveis.</string>
+    <string name="steam_friends">Amigos / chat Steam</string>
+    <string name="steam_social_disabled">Ative amigos/chat nas configurações da loja.</string>
+    <string name="steam_friends_empty">Conecte à Steam para carregar os amigos. O chat no jogo exige Steam Client. Offline não inicia uma segunda conexão.</string>
+    <string name="steam_friend_ingame">Jogando</string>
+    <string name="steam_chat_you">Você</string>
+    <string name="steam_chat_message">Mensagem</string>
+    <string name="steam_chat_send">Enviar</string>
+    <string name="steam_achievement_notifications">Notificações de conquistas no jogo</string>
+    <string name="steam_achievement_sync">Enviar conquistas offline para a Steam</string>
+    <string name="steam_achievement_sync_help">As conquistas offline ficam locais até ativar o envio. A fila é enviada ao voltar online; falhas ou recusas mantêm os itens pendentes. Jogos online usam a API real da Steam.</string>
 </resources>
