@@ -236,11 +236,14 @@ object SteamSession {
         }
     }
     fun retryLibrary() = work {
+        check(!gameActive && app?.let { SteamSettings.enabled(it) } == true) { "Steam is disabled or paused for a running game" }
         librarySync.reset(); libraryLoading = true; libraryError = ""
         status = "Reloading Steam library…"
     }
     fun reconnect() = work {
+        check(!gameActive) { "Exit the running game before reconnecting the app's Steam session" }
         val context = app ?: return@work
+        check(SteamSettings.enabled(context)) { "Steam is disabled" }
         recovery.reset(); recoveryBlocked = false
         replaceSession(context)
     }

@@ -8,7 +8,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import androidx.lifecycle.repeatOnLifecycle
 
-data class SteamUiSnapshot(val signedIn: Boolean, val savedAccount: Boolean, val restoring: Boolean, val authError: String, val ready: Boolean, val busy: Boolean, val status: String, val guard: String,
+data class SteamUiSnapshot(val signedIn: Boolean, val gameActive: Boolean, val savedAccount: Boolean, val restoring: Boolean, val authError: String, val ready: Boolean, val busy: Boolean, val status: String, val guard: String,
     val library: String, val libraryLoading: Boolean, val libraryError: String, val downloading: Boolean, val id: Int, val name: String, val done: Long, val total: Long, val tick: Int)
 
 @Composable fun observeSteam(): SteamUiSnapshot {
@@ -21,7 +21,7 @@ data class SteamUiSnapshot(val signedIn: Boolean, val savedAccount: Boolean, val
             while (true) { delay(1000); tick++ }
         }
     }
-    return SteamUiSnapshot(SteamSession.signedIn, SteamSession.savedAccount, SteamSession.restoring, SteamSession.authError, SteamSession.connected, SteamSession.signingIn, SteamSession.status,
+    return SteamUiSnapshot(SteamSession.signedIn, SteamSession.gameActive, SteamSession.savedAccount, SteamSession.restoring, SteamSession.authError, SteamSession.connected, SteamSession.signingIn, SteamSession.status,
         SteamSession.guard.label, SteamSession.library, SteamSession.libraryLoading, SteamSession.libraryError, SteamSession.downloading,
         SteamSession.downloadId, SteamSession.downloadName, SteamSession.downloadDone, SteamSession.downloadTotal, tick)
 }

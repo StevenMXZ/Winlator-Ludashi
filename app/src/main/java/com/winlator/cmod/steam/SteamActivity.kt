@@ -62,7 +62,8 @@ class SteamActivity : AppCompatActivity() {
                     if (!state.signedIn && state.savedAccount) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(state.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                            if (state.restoring) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                            if (state.gameActive) Text("Exit the game to restore the app session", style = MaterialTheme.typography.labelSmall)
+                            else if (state.restoring) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                             else TextButton(onClick = { SteamSession.reconnect() }) { Text("Reconnect") }
                         }
                     }
@@ -140,7 +141,7 @@ class SteamActivity : AppCompatActivity() {
                         Text(state.status, style = MaterialTheme.typography.bodySmall)
                     } },
                     confirmButton = {
-                        Button(enabled = !state.downloading && (state.signedIn || isInstalled(id)), onClick = {
+                        Button(enabled = !state.gameActive && !state.downloading && (state.signedIn || isInstalled(id)), onClick = {
                             if (isInstalled(id)) chooseContainer(id) else { SteamSession.install(id); tab = 1 }
                             selected = 0
                         }) { Text(if (isInstalled(id)) "Play" else "Download") }
@@ -178,7 +179,7 @@ class SteamActivity : AppCompatActivity() {
                 }
                 if (state.authError.isNotEmpty()) Text(state.authError, color = MaterialTheme.colorScheme.error)
                 Text(state.status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (!state.ready && !state.busy) TextButton(onClick = { SteamSession.reconnect() }) { Text("Reconnect to Steam") }
+                if (!state.gameActive && !state.ready && !state.busy) TextButton(onClick = { SteamSession.reconnect() }) { Text("Reconnect to Steam") }
                 if (state.busy || state.guard.isNotEmpty()) TextButton(onClick = { SteamSession.cancelLogin() }) { Text("Cancel sign-in") }
                 Text("Your password is not saved. Steam Guard may ask for an email code or approval in the Steam mobile app.", style = MaterialTheme.typography.bodySmall)
             }
