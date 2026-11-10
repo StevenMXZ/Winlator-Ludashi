@@ -272,10 +272,10 @@ public static void changeServicesStatus(Container container, String startupSelec
      */
     public static void setJoystickRegistryKeys(Container container, boolean dinputEnabled, boolean exclusiveXInput) {
         File userRegFile = new File(container.getRootDir(), ".wine/user.reg");
-        final String joysticksKey = "Software\\Wine\\DirectInput\\Joysticks";
+        final String joysticksKey = JoystickRegistry.KEY;
         
         // The value to set: "disabled" hides from DInput, "override" makes visible
-        final String value = dinputEnabled ? "override" : "disabled";
+        final String value = JoystickRegistry.value(dinputEnabled, exclusiveXInput);
         
         try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
             // Configure all 4 possible gamepad slots

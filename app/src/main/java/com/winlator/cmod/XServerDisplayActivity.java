@@ -983,6 +983,41 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
     }
 
+    private boolean exclusiveInputBusy;
+
+    public boolean isExclusiveInputEnabled() {
+        return shortcut != null ? shortcut.getExtra("exclusiveXInput", container.isExclusiveXInput() ? "1" : "0").equals("1")
+                : container.isExclusiveXInput();
+    }
+
+    public boolean isExclusiveInputBusy() { return exclusiveInputBusy; }
+    public boolean canChangeExclusiveInput() { return winHandler != null && winHandler.isSessionReady() && !exclusiveInputBusy; }
+
+    public void changeExclusiveInput(boolean enabled, Runnable refreshed) {
+        if (!canChangeExclusiveInput() || enabled == isExclusiveInputEnabled()) return;
+        boolean previous = isExclusiveInputEnabled();
+        boolean dinput = (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_DINPUT) != 0;
+        File driveC = new File(container.getRootDir(), ".wine/drive_c");
+        exclusiveInputBusy = true;
+        refreshed.run();
+        winHandler.holdGamepadsNeutral();
+        com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC, dinput, enabled, ok -> {
+            if (isFinishing() || isDestroyed()) return;
+            Runnable finish = () -> winHandler.reconnectGamepads(() -> {
+                if (ok) {
+                    if (shortcut != null) { shortcut.putExtra("exclusiveXInput", enabled ? "1" : "0"); shortcut.saveData(); }
+                    else { container.setExclusiveXInput(enabled); container.saveData(); }
+                }
+                exclusiveInputBusy = false;
+                refreshed.run();
+                android.widget.Toast.makeText(this, ok ? "Exclusive Input applied. Some games may need a restart."
+                        : "Could not apply Exclusive Input. Previous setting restored.", android.widget.Toast.LENGTH_LONG).show();
+            });
+            if (ok) finish.run();
+            else com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC, dinput, previous, ignored -> finish.run());
+        });
+    }
+
     private void showVibrationDialog() {
         if (winHandler == null)
             return;
@@ -1197,6 +1232,18 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         }
 
+        java.util.concurrent.CountDownLatch gamepadsPrepared = new java.util.concurrent.CountDownLatch(1);
+        runOnUiThread(() -> {
+            try { winHandler.prepareGamepadsForWine(); }
+            finally { gamepadsPrepared.countDown(); }
+        });
+        try {
+            if (!gamepadsPrepared.await(3, java.util.concurrent.TimeUnit.SECONDS))
+                throw new IllegalStateException("Controller preparation timed out");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Controller preparation interrupted", e);
+        }
         environment.startEnvironmentComponents();
 
         winHandler.start();
@@ -2622,6 +2669,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         inputControlsView.setProfile(profile);
+        profile.prepareGamepad();
         inputControlsView.setVisibility(View.VISIBLE);
         inputControlsView.requestFocus();
 

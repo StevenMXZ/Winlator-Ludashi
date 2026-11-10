@@ -141,12 +141,29 @@ private fun Sidebar(state: ModernSidebarController) {
                             Text(stringResource(section.label), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                             if (panel == R.id.LLSubGraphics) RuntimeStatusCard(state.activity.sidebarRuntimeStatusRows)
                             if (panel == R.id.LLSubScreen) FullscreenModeSelector(state)
+                            if (panel == R.id.LLSubInput) ExclusiveInputRow(state)
                             if (source is ViewGroup) LegacyFields(source, revision, selected, state::refresh, stringResource(section.label))
                         }
                     }
                     if (!selected) Box(Modifier.fillMaxSize().zIndex(0f).pointerInput(Unit) { })
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ExclusiveInputRow(state: ModernSidebarController) {
+    val activity = state.activity
+    @Suppress("UNUSED_VARIABLE") val revision = state.revision
+    Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Exclusive Input", style = MaterialTheme.typography.bodyMedium)
+                if (activity.isExclusiveInputBusy) Text("Applying…", style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(activity.isExclusiveInputEnabled, { activity.changeExclusiveInput(it, state::refresh) },
+                enabled = activity.canChangeExclusiveInput())
         }
     }
 }

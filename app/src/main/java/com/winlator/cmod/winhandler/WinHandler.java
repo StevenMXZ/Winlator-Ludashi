@@ -72,6 +72,8 @@ public class WinHandler {
     private Map<Integer, Integer> deviceToSlot = new HashMap<>();
     private Set<Integer> usedSlots = new HashSet<>();
     private String fakeInputBasePath;
+    private boolean gamepadsReady;
+    private boolean reconnectingGamepads;
     private LocalServerSocket vibrationServer;
     private volatile boolean vibrationRunning = false;
     private boolean[] vibrationEnabledSlots = new boolean[MAX_CONTROLLERS];
@@ -573,6 +575,7 @@ public void setVibrationEnabledForSlot(int slot, boolean enabled) {
     }
 
     public void sendGamepadState() {
+        if (!gamepadsReady || reconnectingGamepads) return;
         final ControlsProfile profile = activity.getInputControlsView().getProfile();
         if (profile == null) {
             releaseSlot(OSC_DEVICE_ID);
@@ -595,6 +598,7 @@ public void setVibrationEnabledForSlot(int slot, boolean enabled) {
     }
 
     public void sendGamepadState(ExternalController controller) {
+        if (!gamepadsReady || reconnectingGamepads) return;
         if (controller == null)
             return;
 
@@ -614,6 +618,47 @@ public void setVibrationEnabledForSlot(int slot, boolean enabled) {
         if (slot >= 0 && writers[slot] != null) {
             writers[slot].writeGamepadState(controller.state);
         }
+    }
+
+    /** UI thread: create the connected pads before Wine enumerates /dev/input. */
+    public void prepareGamepadsForWine() {
+        for (int id : android.view.InputDevice.getDeviceIds()) {
+            android.view.InputDevice device = android.view.InputDevice.getDevice(id);
+            if (device != null && ExternalController.isGameController(device)) {
+                ExternalController controller = getController(id);
+                if (controller != null) assignSlot(id);
+            }
+        }
+        ControlsProfile profile = activity.getInputControlsView().getProfile();
+        if (profile != null) profile.prepareGamepad();
+        gamepadsReady = true;
+        sendGamepadState();
+        for (ExternalController controller : new ArrayList<>(controllers.values())) sendGamepadState(controller);
+    }
+
+    /** UI thread, only during a settings change; ordinary input needs no timer. */
+    public void holdGamepadsNeutral() {
+        reconnectingGamepads = true;
+        for (FakeInputWriter writer : writers) if (writer != null) writer.reset();
+    }
+
+    public void reconnectGamepads(Runnable finished) {
+        reconnectingGamepads = true;
+        for (int i = 0; i < MAX_CONTROLLERS; i++) {
+            if (writers[i] != null) writers[i].destroy();
+            writers[i] = null;
+        }
+        new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (activity.isFinishing() || activity.isDestroyed()) { finished.run(); return; }
+            for (int slot : new HashSet<>(deviceToSlot.values())) {
+                writers[slot] = new FakeInputWriter(fakeInputBasePath, slot);
+                writers[slot].open();
+            }
+            reconnectingGamepads = false;
+            sendGamepadState();
+            for (ExternalController controller : new ArrayList<>(controllers.values())) sendGamepadState(controller);
+            finished.run();
+        }, 400);
     }
 
     private int assignSlot(int deviceId) {
@@ -735,6 +780,8 @@ public void setVibrationEnabledForSlot(int slot, boolean enabled) {
     public byte getInputType() {
         return inputType;
     }
+
+    public boolean isSessionReady() { return running && initReceived; }
 
     public void setInputType(byte inputType) {
         this.inputType = inputType;
