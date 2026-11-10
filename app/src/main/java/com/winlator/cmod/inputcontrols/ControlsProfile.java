@@ -238,6 +238,17 @@ public class ControlsProfile implements Comparable<ControlsProfile> {
                 element.setX((int)(elementJSONObject.getDouble("x") * inputControlsView.getMaxWidth()));
                 element.setY((int)(elementJSONObject.getDouble("y") * inputControlsView.getMaxHeight()));
                 element.setScale((float)elementJSONObject.getDouble("scale"));
+                if ((element.getType() == ControlElement.Type.STICK ||
+                        element.getType() == ControlElement.Type.DYNAMIC_STICK) && elementJSONObject.has("deadZone"))
+                    element.setDeadZone((float)elementJSONObject.getDouble("deadZone"));
+                if (element.getType() == ControlElement.Type.DYNAMIC_STICK) {
+                    if (elementJSONObject.has("areaWidthRatio"))
+                        element.setAreaWidthRatio((float)elementJSONObject.getDouble("areaWidthRatio"));
+                    if (elementJSONObject.has("areaHeightRatio"))
+                        element.setAreaHeightRatio((float)elementJSONObject.getDouble("areaHeightRatio"));
+                    if (elementJSONObject.has("stickRadiusRatio"))
+                        element.setStickRadiusRatio((float)elementJSONObject.getDouble("stickRadiusRatio"));
+                }
                 element.setText(elementJSONObject.getString("text"));
                 element.setIconId(elementJSONObject.getInt("iconId"));
                 if (elementJSONObject.has("range")) element.setRange(ControlElement.Range.valueOf(elementJSONObject.getString("range")));

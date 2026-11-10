@@ -37,7 +37,7 @@ public class ControlElement {
     public static final byte TRACKPAD_ACCELERATION_THRESHOLD = 4;
     public static final short BUTTON_MIN_TIME_TO_KEEP_PRESSED = 300;
     public enum Type {
-        BUTTON, D_PAD, RANGE_BUTTON, STICK, TRACKPAD;
+        BUTTON, D_PAD, RANGE_BUTTON, STICK, TRACKPAD, DYNAMIC_STICK;
 
         public static String[] names() {
             Type[] types = values();
@@ -76,6 +76,12 @@ public class ControlElement {
     private Shape shape = Shape.CIRCLE;
     private Binding[] bindings = {Binding.NONE, Binding.NONE, Binding.NONE, Binding.NONE};
     private float scale = 1.0f;
+    private float deadZone = STICK_DEAD_ZONE;
+    private float areaWidthRatio = 0.38f;
+    private float areaHeightRatio = 0.64f;
+    private float stickRadiusRatio = 0.14f;
+    private float dynamicThumbX;
+    private float dynamicThumbY;
     private short x;
     private short y;
     private boolean selected = false;
@@ -109,7 +115,8 @@ public class ControlElement {
         setBinding(Binding.NONE);
         scroller = null;
 
-        if (type == Type.STICK) {
+        if (type == Type.STICK || type == Type.DYNAMIC_STICK) {
+            if (bindings.length < 4) setBindingCount(4);
             bindings[0] = Binding.KEY_W;
             bindings[1] = Binding.KEY_D;
             bindings[2] = Binding.KEY_S;
@@ -250,6 +257,44 @@ public class ControlElement {
         boundingBoxNeedsUpdate = true;
     }
 
+    public float getDeadZone() {
+        return deadZone;
+    }
+
+    public void setDeadZone(float deadZone) {
+        if (Float.isNaN(deadZone) || Float.isInfinite(deadZone)) return;
+        this.deadZone = Math.max(0f, Math.min(0.5f, deadZone));
+    }
+
+    public float getAreaWidthRatio() { return areaWidthRatio; }
+    public void setAreaWidthRatio(float value) {
+        if (Float.isNaN(value) || Float.isInfinite(value)) return;
+        areaWidthRatio = Math.max(0.15f, Math.min(1f, value));
+        boundingBoxNeedsUpdate = true;
+    }
+
+    public float getAreaHeightRatio() { return areaHeightRatio; }
+    public void setAreaHeightRatio(float value) {
+        if (Float.isNaN(value) || Float.isInfinite(value)) return;
+        areaHeightRatio = Math.max(0.15f, Math.min(1f, value));
+        boundingBoxNeedsUpdate = true;
+    }
+
+    public float getStickRadiusRatio() { return stickRadiusRatio; }
+    public void setStickRadiusRatio(float value) {
+        if (Float.isNaN(value) || Float.isInfinite(value)) return;
+        stickRadiusRatio = Math.max(0.05f, Math.min(0.3f, value));
+    }
+
+    public boolean isDynamicStickActive() {
+        return type == Type.DYNAMIC_STICK && currentPointerId != -1;
+    }
+
+    public int getDynamicStickRadiusPixels() {
+        return Math.max(1, (int)(Math.min(inputControlsView.getMaxWidth(),
+                inputControlsView.getMaxHeight()) * stickRadiusRatio * scale));
+    }
+
     public float getOpacity() {
         return opacity;
     }
@@ -346,6 +391,11 @@ public class ControlElement {
                 halfHeight = snappingSize * 8;
                 break;
             }
+            case DYNAMIC_STICK: {
+                halfWidth = (int)(inputControlsView.getMaxWidth() * areaWidthRatio * 0.5f);
+                halfHeight = (int)(inputControlsView.getMaxHeight() * areaHeightRatio * 0.5f);
+                break;
+            }
             case TRACKPAD:
             case STICK: {
                 halfWidth = snappingSize * 6;
@@ -365,8 +415,10 @@ public class ControlElement {
             }
         }
 
-        halfWidth *= scale;
-        halfHeight *= scale;
+        if (type != Type.DYNAMIC_STICK) {
+            halfWidth *= scale;
+            halfHeight *= scale;
+        }
         boundingBox.set(x - halfWidth, y - halfHeight, x + halfWidth, y + halfHeight);
         boundingBoxNeedsUpdate = false;
         return boundingBox;
@@ -463,6 +515,16 @@ public class ControlElement {
         return (color & 0x00ffffff) | ((scaledAlpha & 0xff) << 24);
     }
 
+    // Keep only the live stick feedback legible with a translucent overlay.
+    // The existing draw calls and dirty regions remain unchanged.
+    private int withStickFeedbackAlpha(int color, int alpha) {
+        float effectiveOpacity = getEffectiveOpacity();
+        if (opacity > 0f && inputControlsView.getOverlayOpacity() > 0f)
+            effectiveOpacity = Math.max(effectiveOpacity, 0.7f);
+        int scaledAlpha = Math.min(255, (int)(alpha * effectiveOpacity));
+        return (color & 0x00ffffff) | (scaledAlpha << 24);
+    }
+
     private static final int WINLATOR_BLUE = 0xff2184ff;
     private static final int DARK_SURFACE = 0xff06111d;
     private static final int EDGE_SOFT = 0xff7fa8d8;
@@ -488,7 +550,16 @@ public class ControlElement {
         Rect rect = getBoundingBox();
         int pad = Math.max(4, inputControlsView.getSnappingSize() * 2);
         if (type == Type.STICK) pad = Math.max(pad, rect.width() / 4);
+        if (type == Type.DYNAMIC_STICK) pad = Math.max(pad, getDynamicStickRadiusPixels() * 2);
         inputControlsView.invalidateElement(expandedBounds(rect, pad));
+    }
+
+    private void invalidateDynamicThumb(float oldX, float oldY, float newX, float newY) {
+        int pad = (int)(getDynamicStickRadiusPixels() * 0.5f) + 4;
+        inputControlsView.invalidate((int)Math.floor(Math.min(oldX, newX)) - pad,
+                (int)Math.floor(Math.min(oldY, newY)) - pad,
+                (int)Math.ceil(Math.max(oldX, newX)) + pad,
+                (int)Math.ceil(Math.max(oldY, newY)) + pad);
     }
 
     private void setupPaint(Paint paint, Paint.Style style, int color, float strokeWidth) {
@@ -729,6 +800,37 @@ public class ControlElement {
                 break;
             }
 
+            case DYNAMIC_STICK: {
+                if (inputControlsView.isEditMode()) {
+                    float corner = snappingSize * 1.5f;
+                    setupPaint(paint, Paint.Style.FILL, withAlpha(getThemeColor(), selected ? 48 : 24), 0);
+                    canvas.drawRoundRect(boundingBox.left, boundingBox.top,
+                            boundingBox.right, boundingBox.bottom, corner, corner, paint);
+                    setupPaint(paint, Paint.Style.STROKE, withAlpha(getThemeColor(), selected ? 210 : 100),
+                            Math.max(1f, snappingSize * 0.15f));
+                    canvas.drawRoundRect(boundingBox.left, boundingBox.top,
+                            boundingBox.right, boundingBox.bottom, corner, corner, paint);
+                    drawCenteredText(canvas, "Dynamic Stick", boundingBox.centerX(),
+                            boundingBox.centerY(), boundingBox.width() * 0.8f,
+                            snappingSize * 1.8f, withAlpha(getThemeColor(), 210));
+                }
+                if (currentPointerId == -1 || currentPosition == null) break;
+                float radius = getDynamicStickRadiusPixels();
+                float cx = currentPosition.x;
+                float cy = currentPosition.y;
+                setupPaint(paint, Paint.Style.FILL, withAlpha(DARK_SURFACE, 118), 0);
+                canvas.drawCircle(cx, cy, radius, paint);
+                setupPaint(paint, Paint.Style.STROKE, withStickFeedbackAlpha(getThemeColor(), 225),
+                        Math.max(1f, snappingSize * 0.22f * scale));
+                canvas.drawCircle(cx, cy, radius, paint);
+                setupPaint(paint, Paint.Style.FILL, withStickFeedbackAlpha(getThemeColor(), 180), 0);
+                canvas.drawCircle(dynamicThumbX, dynamicThumbY, radius * 0.42f, paint);
+                setupPaint(paint, Paint.Style.STROKE, withStickFeedbackAlpha(0xffffffff, 245),
+                        Math.max(1f, snappingSize * 0.12f * scale));
+                canvas.drawCircle(dynamicThumbX, dynamicThumbY, radius * 0.42f, paint);
+                break;
+            }
+
             case STICK: {
                 float cx = boundingBox.centerX();
                 float cy = boundingBox.centerY();
@@ -747,16 +849,21 @@ public class ControlElement {
                 canvas.drawCircle(cx, cy, outer * 0.98f, paint);
 
                 
-                setupPaint(paint, Paint.Style.STROKE, withAlpha(getThemeColor(), active ? 235 : 205), Math.max(1f, snappingSize * 0.22f * scale));
+                setupPaint(paint, Paint.Style.STROKE, currentPointerId != -1
+                        ? withStickFeedbackAlpha(getThemeColor(), 235) : withAlpha(getThemeColor(), active ? 235 : 205),
+                        Math.max(1f, snappingSize * 0.22f * scale));
                 canvas.drawCircle(cx, cy, innerRing, paint);
 
                 float thumbstickX = getCurrentPosition().x;
                 float thumbstickY = getCurrentPosition().y;
 
-                setupPaint(paint, Paint.Style.FILL, withAlpha(DARK_SURFACE, 190), 0);
+                setupPaint(paint, Paint.Style.FILL, currentPointerId != -1
+                        ? withStickFeedbackAlpha(getThemeColor(), 180) : withAlpha(DARK_SURFACE, 190), 0);
                 canvas.drawCircle(thumbstickX, thumbstickY, thumbRadius, paint);
 
-                setupPaint(paint, Paint.Style.STROKE, withAlpha(EDGE_SOFT, 45), Math.max(1f, snappingSize * 0.12f * scale));
+                setupPaint(paint, Paint.Style.STROKE, currentPointerId != -1
+                        ? withStickFeedbackAlpha(0xffffffff, 245) : withAlpha(EDGE_SOFT, 45),
+                        Math.max(1f, snappingSize * 0.12f * scale));
                 canvas.drawCircle(thumbstickX, thumbstickY, thumbRadius * 0.96f, paint);
                 break;
             }
@@ -830,6 +937,13 @@ public class ControlElement {
 
             elementJSONObject.put("bindings", bindingsJSONArray);
             elementJSONObject.put("scale", Float.valueOf(scale));
+            if ((type == Type.STICK || type == Type.DYNAMIC_STICK) && deadZone != STICK_DEAD_ZONE)
+                elementJSONObject.put("deadZone", deadZone);
+            if (type == Type.DYNAMIC_STICK) {
+                elementJSONObject.put("areaWidthRatio", areaWidthRatio);
+                elementJSONObject.put("areaHeightRatio", areaHeightRatio);
+                elementJSONObject.put("stickRadiusRatio", stickRadiusRatio);
+            }
             elementJSONObject.put("x", (float)x / inputControlsView.getMaxWidth());
             elementJSONObject.put("y", (float)y / inputControlsView.getMaxHeight());
             elementJSONObject.put("toggleSwitch", toggleSwitch);
@@ -874,6 +988,7 @@ public class ControlElement {
             invalidateSelf();
             if (type == Type.BUTTON) {
                 if (mouseMoveMode) {
+                    setButtonBindingsActive(true);
                     inputControlsView.getTouchpadView().mouseMove(x, y, MotionEvent.ACTION_DOWN);
                     invalidateSelf();
                     return true;
@@ -891,9 +1006,14 @@ public class ControlElement {
                 return true;
             }
             else {
-                if (type == Type.TRACKPAD) {
+                if (type == Type.TRACKPAD || type == Type.DYNAMIC_STICK) {
                     if (currentPosition == null) currentPosition = new PointF();
                     currentPosition.set(x, y);
+                }
+                if (type == Type.DYNAMIC_STICK) {
+                    dynamicThumbX = x;
+                    dynamicThumbY = y;
+                    invalidateSelf();
                 }
                 return handleTouchMove(pointerId, x, y);
             }
@@ -914,7 +1034,7 @@ public class ControlElement {
             inputControlsView.getTouchpadView().mouseMove(x, y, MotionEvent.ACTION_MOVE);
             return true;
         }
-        else if (pointerId == currentPointerId && (type == Type.D_PAD || type == Type.STICK || type == Type.TRACKPAD)) {
+        else if (pointerId == currentPointerId && (type == Type.D_PAD || type == Type.STICK || type == Type.TRACKPAD || type == Type.DYNAMIC_STICK)) {
             float deltaX, deltaY;
             Rect boundingBox = getBoundingBox();
             float radius = boundingBox.width() * 0.5f;
@@ -927,10 +1047,18 @@ public class ControlElement {
                 currentPosition.set(x, y);
             }
             else {
-                float localX = x - boundingBox.left;
-                float localY = y - boundingBox.top;
-                float offsetX = localX - radius;
-                float offsetY = localY - radius;
+                float offsetX;
+                float offsetY;
+                if (type == Type.DYNAMIC_STICK) {
+                    radius = getDynamicStickRadiusPixels();
+                    offsetX = x - currentPosition.x;
+                    offsetY = y - currentPosition.y;
+                } else {
+                    float localX = x - boundingBox.left;
+                    float localY = y - boundingBox.top;
+                    offsetX = localX - radius;
+                    offsetY = localY - radius;
+                }
 
                 float distanceSquared = offsetX * offsetX + offsetY * offsetY;
                 if (distanceSquared > radius * radius) {
@@ -943,15 +1071,28 @@ public class ControlElement {
                 deltaY = Mathf.clamp(offsetY / radius, -1, 1);
             }
 
-            if (type == Type.STICK) {
+            if (type == Type.STICK || type == Type.DYNAMIC_STICK) {
                 if (currentPosition == null) currentPosition = new PointF();
-                float visualX = boundingBox.left + deltaX * radius + radius;
-                float visualY = boundingBox.top + deltaY * radius + radius;
+                float visualX = type == Type.DYNAMIC_STICK ? currentPosition.x + deltaX * radius
+                        : boundingBox.left + deltaX * radius + radius;
+                float visualY = type == Type.DYNAMIC_STICK ? currentPosition.y + deltaY * radius
+                        : boundingBox.top + deltaY * radius + radius;
                 // Keep the analog values precise, but redraw only when the thumb
                 // has moved by at least half a screen pixel.
-                boolean redraw = Math.abs(currentPosition.x - visualX) >= 0.5f ||
-                                 Math.abs(currentPosition.y - visualY) >= 0.5f;
-                if (redraw) currentPosition.set(visualX, visualY);
+                boolean redraw;
+                if (type == Type.DYNAMIC_STICK) {
+                    redraw = Math.abs(dynamicThumbX - visualX) >= 0.5f ||
+                             Math.abs(dynamicThumbY - visualY) >= 0.5f;
+                    if (redraw) {
+                        invalidateDynamicThumb(dynamicThumbX, dynamicThumbY, visualX, visualY);
+                        dynamicThumbX = visualX;
+                        dynamicThumbY = visualY;
+                    }
+                } else {
+                    redraw = Math.abs(currentPosition.x - visualX) >= 0.5f ||
+                             Math.abs(currentPosition.y - visualY) >= 0.5f;
+                    if (redraw) currentPosition.set(visualX, visualY);
+                }
                 float adjDeltaX = (Math.abs(deltaX) < Math.abs(deltaY) * STICK_CROSS_ZONE) ? 0 : deltaX;
                 float adjDeltaY = (Math.abs(deltaY) < Math.abs(deltaX) * STICK_CROSS_ZONE) ? 0 : deltaY;
                 
@@ -961,10 +1102,14 @@ public class ControlElement {
                     float finalX = 0;
                     float finalY = 0;
 
-                    if (magnitude > STICK_DEAD_ZONE) {
+                    if (magnitude > deadZone) {
                         float normalizedX = deltaX / magnitude;
                         float normalizedY = deltaY / magnitude;
-                        float scaledMagnitude = Math.max(0, magnitude - 0.01f) * STICK_SENSITIVITY;
+                        // Keep the legacy response at the default fixed-stick dead zone.
+                        // Custom dead zones and the floating stick ramp smoothly from zero.
+                        float responseStart = type == Type.STICK && deadZone == STICK_DEAD_ZONE
+                                ? 0.01f : deadZone;
+                        float scaledMagnitude = Math.max(0f, magnitude - responseStart) * STICK_SENSITIVITY;
                         scaledMagnitude = Math.min(scaledMagnitude, 1.0f);
                         finalX = normalizedX * scaledMagnitude;
                         finalY = normalizedY * scaledMagnitude;
@@ -975,10 +1120,10 @@ public class ControlElement {
                         this.states[i] = true;
                     }
                 } else {
-                    final boolean up = adjDeltaY <= -STICK_DEAD_ZONE;
-                    final boolean right = adjDeltaX >= STICK_DEAD_ZONE;
-                    final boolean down = adjDeltaY >= STICK_DEAD_ZONE;
-                    final boolean left = adjDeltaX <= -STICK_DEAD_ZONE;
+                    final boolean up = adjDeltaY <= -deadZone;
+                    final boolean right = adjDeltaX >= deadZone;
+                    final boolean down = adjDeltaY >= deadZone;
+                    final boolean left = adjDeltaX <= -deadZone;
                     for (byte i = 0; i < 4; i++) {
                         float value = i == 1 || i == 3 ? adjDeltaX : adjDeltaY;
                         Binding binding = getBindingAt(i);
@@ -991,7 +1136,7 @@ public class ControlElement {
                         this.states[i] = state;
                     }
                 }
-                if (redraw) invalidateSelf();
+                if (redraw && type == Type.STICK) invalidateSelf();
                 return true;
             }
             else if (type == Type.TRACKPAD) {
@@ -1121,6 +1266,7 @@ public class ControlElement {
             if (type == Type.BUTTON) {
                 if (mouseMoveMode) {
                     inputControlsView.getTouchpadView().mouseMove(0, 0, MotionEvent.ACTION_UP);
+                    setButtonBindingsActive(false);
                     invalidateSelf();
                 }
                 else if (isKeepButtonPressedAfterMinTime() && touchTime != null) {
@@ -1140,12 +1286,12 @@ public class ControlElement {
                     invalidateSelf();
                 }
             }
-            else if (type == Type.RANGE_BUTTON || type == Type.D_PAD || type == Type.STICK || type == Type.TRACKPAD) {
+            else if (type == Type.RANGE_BUTTON || type == Type.D_PAD || type == Type.STICK || type == Type.TRACKPAD || type == Type.DYNAMIC_STICK) {
                 
                 
                 
                 
-                if ((type == Type.STICK || type == Type.TRACKPAD) && getBindingAt(0).isGamepad()) {
+                if ((type == Type.STICK || type == Type.DYNAMIC_STICK || type == Type.TRACKPAD) && getBindingAt(0).isGamepad()) {
                     inputControlsView.handleStickInput(getBindingAt(0), 0f, 0f);
                     for (byte i = 0; i < states.length; i++) states[i] = false;
                 }
@@ -1163,11 +1309,15 @@ public class ControlElement {
                 if (type == Type.RANGE_BUTTON) {
                     scroller.handleTouchUp();
                 }
-                else if (type == Type.STICK) {
+                else if (type == Type.STICK || type == Type.DYNAMIC_STICK) {
                     invalidateSelf();
                 }
 
                 if (currentPosition != null) currentPosition = null;
+                if (type == Type.DYNAMIC_STICK) {
+                    dynamicThumbX = 0;
+                    dynamicThumbY = 0;
+                }
             }
             currentPointerId = -1;
             invalidateSelf();
