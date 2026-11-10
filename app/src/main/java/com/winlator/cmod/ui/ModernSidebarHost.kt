@@ -411,7 +411,7 @@ private fun HudCheckboxGrid(group: ViewGroup, revision: Int, refresh: () -> Unit
                     else listOf(row)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         fields.filterIsInstance<android.widget.CheckBox>().forEach { field ->
-                            HudMetricCell(field, Modifier.weight(1f), refresh)
+                            HudMetricCell(field, field.isChecked, Modifier.weight(1f), refresh)
                         }
                     }
                 }
@@ -421,13 +421,13 @@ private fun HudCheckboxGrid(group: ViewGroup, revision: Int, refresh: () -> Unit
 }
 
 @Composable
-private fun HudMetricCell(field: android.widget.CheckBox, modifier: Modifier, refresh: () -> Unit) {
+private fun HudMetricCell(field: android.widget.CheckBox, checked: Boolean, modifier: Modifier, refresh: () -> Unit) {
     Row(modifier.heightIn(min = 44.dp)
-        .toggleable(field.isChecked, enabled = field.isEnabled, role = Role.Checkbox,
+        .toggleable(checked, enabled = field.isEnabled, role = Role.Checkbox,
             onValueChange = { field.isChecked = it; refresh() }),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        Checkbox(field.isChecked, null, Modifier.size(20.dp), enabled = field.isEnabled,
+        Checkbox(checked, null, Modifier.size(20.dp), enabled = field.isEnabled,
             colors = CheckboxDefaults.colors(
                 checkedColor = MaterialTheme.colorScheme.onSurface,
                 checkmarkColor = MaterialTheme.colorScheme.surface,

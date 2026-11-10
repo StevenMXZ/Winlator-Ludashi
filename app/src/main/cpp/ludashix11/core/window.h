@@ -1,6 +1,7 @@
 #pragma once
 
 #include <list>
+#include <atomic>
 #include <X11/X.h>
 #include <X11/Xproto.h>
 #include "base/2d.h"
@@ -36,6 +37,8 @@ struct WindowAttributes {
 
 class Window final : public XResource {
 public:
+    inline static std::atomic<u64> nextGeneration{1};
+    const u64 generation{nextGeneration.fetch_add(1, std::memory_order_relaxed)};
     Window(WindowManager& window_manager,
            u32 id,
            Window* parent,

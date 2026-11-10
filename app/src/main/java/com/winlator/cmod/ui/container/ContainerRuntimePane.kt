@@ -62,7 +62,7 @@ internal fun ContainerRuntimePane(
         mutableStateOf(if (container.getExtra("displayServer", "java") == "native")
             "X++" else "Java X11")
     }
-    var renderer by remember { mutableStateOf(if (container.isRendererNative()) "EGL" else "Vulkan") }
+    var renderer by remember { mutableStateOf(if (container.getUseDisplayX()) "DisplayX" else if (container.isRendererNative()) "EGL" else "Vulkan") }
     var screen by remember { mutableStateOf(normalizeResolution(container.getScreenSize())) }
     var screenChoice by remember {
         mutableStateOf(screenEntries.firstOrNull { normalizeResolution(it).equals(screen, true) } ?: "Custom")
@@ -82,6 +82,12 @@ internal fun ContainerRuntimePane(
     var gpuName by remember { mutableStateOf(readConfig(graphicsConfig, "gpuName", ';').ifBlank { "Device" }) }
     var blacklistedExtensions by remember { mutableStateOf(readConfig(graphicsConfig, "blacklistedExtensions", ';')) }
 
+    var surfaceFormat by remember { mutableStateOf(container.getSurfaceFormat()) }
+    var displayXBypass by remember { mutableStateOf(container.getTrueDisplayX()) }
+    var displayXPerformance by remember { mutableStateOf(container.getDisplayXPerformanceMode()) }
+    var displayXRefresh by remember { mutableStateOf(container.getDisplayXPresentAtRefreshRate()) }
+    var displayXMode by remember { mutableStateOf(container.getDisplayXPresentMode()) }
+    var displayXPrecise by remember { mutableStateOf(container.getDisplayXPrecisePresentation()) }
     var presentMode by remember { mutableStateOf(container.getRendererPresentMode()) }
     var rendererDriverId by remember { mutableStateOf(container.getRendererDriverId()) }
     var filterMode by remember { mutableStateOf(container.getRendererFilterMode()) }
@@ -171,28 +177,50 @@ internal fun ContainerRuntimePane(
                     container.putExtra("displayServer", if (it == "X++") "native" else "java")
                     container.saveData()
                 }
-                if (displayServer == "Java X11") {
                 SettingsDivider()
-                SettingChoice(uiStr(R.string.ui_renderer), renderer, listOf("Vulkan", "EGL")) {
-                    renderer = it; container.setRendererNative(it == "EGL"); container.saveData()
+                SettingChoice(uiStr(R.string.ui_renderer), renderer, listOf("Vulkan", "EGL", "DisplayX")) {
+                    renderer = it
+                    container.setRendererNative(it == "EGL")
+                    container.setUseDisplayX(it == "DisplayX")
+                    if (it == "EGL" && filterMode > 1) { filterMode = 0; container.setRendererFilterMode(0) }
+                    container.saveData()
                 }
                 SettingsDivider()
-                SettingChoice(uiStr(R.string.ui_present_mode), presentMode, listOf("mailbox", "fifo")) {
-                    presentMode = it; container.setRendererPresentMode(it); container.saveData()
+                SettingChoice(uiStr(R.string.ui_surface_format), if (surfaceFormat == "bgra8") "BGRA" else "RGBA", listOf("RGBA", "BGRA")) {
+                    surfaceFormat = if (it == "BGRA") "bgra8" else "rgba8"
+                    container.setSurfaceFormat(surfaceFormat); container.saveData()
                 }
-                catalog?.let { c ->
+                if (renderer == "DisplayX") {
                     SettingsDivider()
-                    SettingMappedChoice(uiStr(R.string.ui_renderer_driver), rendererDriverId, c.rendererDrivers) {
-                        rendererDriverId = it; container.setRendererDriverId(it); container.saveData()
+                    SettingToggle(uiStr(R.string.ui_bypass_x11), displayXBypass) { displayXBypass = it; container.setTrueDisplayX(it); container.saveData() }
+                    SettingsDivider()
+                    SettingToggle(uiStr(R.string.ui_performance_mode), displayXPerformance) { displayXPerformance = it; container.setDisplayXPerformanceMode(it); container.saveData() }
+                    SettingsDivider()
+                    SettingToggle(uiStr(R.string.ui_present_at_refresh_rate), displayXRefresh) { displayXRefresh = it; container.setDisplayXPresentAtRefreshRate(it); container.saveData() }
+                    SettingsDivider()
+                    SettingChoice(uiStr(R.string.ui_present_mode), displayXMode, listOf("mailbox", "fifo")) { displayXMode = it; container.setDisplayXPresentMode(it); container.saveData() }
+                    SettingsDivider()
+                    SettingToggle(uiStr(R.string.ui_precise_presentation), displayXPrecise) { displayXPrecise = it; container.setDisplayXPrecisePresentation(it); container.saveData() }
+                } else {
+                    if (renderer == "Vulkan") {
+                        SettingsDivider()
+                        SettingChoice(uiStr(R.string.ui_present_mode), presentMode, listOf("mailbox", "fifo")) {
+                            presentMode = it; container.setRendererPresentMode(it); container.saveData()
+                        }
+                        catalog?.let { c ->
+                            SettingsDivider()
+                            SettingMappedChoice(uiStr(R.string.ui_renderer_driver), rendererDriverId, c.rendererDrivers) {
+                                rendererDriverId = it; container.setRendererDriverId(it); container.saveData()
+                            }
+                        }
                     }
-                }
-                SettingsDivider()
-                val filters = if (renderer == "EGL") listOf("Bilinear", "Nearest neighbor") else listOf("Bilinear", "Nearest neighbor", "Snapdragon Super Resolution", "AMD FidelityFX Super Resolution")
-                SettingChoice(uiStr(R.string.ui_texture_filter), filters.getOrElse(filterMode) { filters.first() }, filters) {
-                    filterMode = filters.indexOf(it).coerceAtLeast(0); container.setRendererFilterMode(filterMode); container.saveData()
-                }
-                SettingsDivider()
-                SettingToggle(uiStr(R.string.ui_swap_red_blue_channels), swapRB) { swapRB = it; container.setRendererSwapRB(it); container.saveData() }
+                    SettingsDivider()
+                    val filters = if (renderer == "EGL") listOf("Bilinear", "Nearest neighbor") else listOf("Bilinear", "Nearest neighbor", "Snapdragon Super Resolution", "AMD FidelityFX Super Resolution", "Lanczos 2 (16-tap)", "Color Boost")
+                    SettingChoice(uiStr(R.string.ui_texture_filter), filters.getOrElse(filterMode) { filters.first() }, filters) {
+                        filterMode = filters.indexOf(it).coerceAtLeast(0); container.setRendererFilterMode(filterMode); container.saveData()
+                    }
+                    SettingsDivider()
+                    SettingToggle(uiStr(R.string.ui_swap_red_blue_channels), swapRB) { swapRB = it; container.setRendererSwapRB(it); container.saveData() }
                 }
             }
             SettingsCard {

@@ -287,7 +287,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     )
     var envVars by mutableStateOf(shortcut.getExtra("envVars", container.getEnvVars()))
     var winlatorHudMode by mutableIntStateOf(
-        shortcut.getExtra("hudMode", container.getExtra("hudMode", if (container.isShowFPS) "1" else "0")).toIntOrNull() ?: 0
+        shortcut.getExtra("hudMode", container.getExtra("hudMode", if (container.isShowFPS) "2" else "0")).toIntOrNull() ?: 0
     )
     var dxvkHud by mutableStateOf(!envValue(envVars, "DXVK_HUD").isNullOrBlank())
     var renderingMode by mutableStateOf(
@@ -1045,7 +1045,7 @@ private fun ShortcutCategoryV2(
                     s.extra("displayServer", if (it == "X++") "native" else "java")
                 }
                 SettingsDivider()
-                SettingChoice(uiStr(R.string.ui_renderer_java_x11), s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
+                SettingChoice(uiStr(R.string.ui_renderer), s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
                     s.renderer = it
                     s.surfaceFormat = if (it == "DisplayX") "rgba8" else "bgra8"
                     if (it == "EGL" && s.filterMode > 1) s.filterMode = 0
@@ -1060,7 +1060,7 @@ private fun ShortcutCategoryV2(
                     s.surfaceFormat = if (it == "BGRA") "bgra8" else "rgba8"
                     s.saveRenderer()
                 }
-                if (s.displayServer == "Java X11" && s.renderer == "DisplayX") {
+                if (s.renderer == "DisplayX") {
                     SettingsDivider()
                     SettingToggle(uiStr(R.string.ui_bypass_x11), s.trueDisplayX) {
                         s.trueDisplayX = it
@@ -1087,7 +1087,7 @@ private fun ShortcutCategoryV2(
                         s.saveRenderer()
                     }
                 } else {
-                    if (s.displayServer == "Java X11" && s.renderer != "EGL") {
+                    if (s.renderer != "EGL") {
                         SettingsDivider()
                         SettingChoice(uiStr(R.string.ui_present_mode), s.presentMode, listOf("mailbox", "fifo")) {
                             s.presentMode = it
@@ -1102,7 +1102,7 @@ private fun ShortcutCategoryV2(
                         }
                     }
                     SettingsDivider()
-                    val filters = if (s.displayServer == "Java X11" && s.renderer == "EGL") listOf("Bilinear", "Nearest neighbor")
+                    val filters = if (s.renderer == "EGL") listOf("Bilinear", "Nearest neighbor")
                     else listOf("Bilinear", "Nearest neighbor", "Snapdragon Super Resolution", "AMD FidelityFX Super Resolution", "Lanczos 2 (16-tap)", "Color Boost")
                     SettingChoice(uiStr(R.string.ui_texture_filter), filters.getOrElse(s.filterMode) { filters.first() }, filters) {
                         s.filterMode = filters.indexOf(it).coerceAtLeast(0)
@@ -1110,7 +1110,7 @@ private fun ShortcutCategoryV2(
                     }
                 }
             }
-            if (s.displayServer != "Java X11" || s.renderer == "Vulkan") {
+            if (s.renderer == "Vulkan") {
                 FrameGenerationSettings(
                     enabled = s.frameGenEnabled,
                     multiplier = s.frameGenMultiplier,

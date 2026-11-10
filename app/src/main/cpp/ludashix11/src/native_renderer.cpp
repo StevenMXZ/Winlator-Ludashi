@@ -1,25 +1,52 @@
 #include "native_screen.h"
 #include "VulkanRendererContext.h"
 #include "native_magnifier.h"
+#ifdef __ANDROID__
+#include "VulkanDriver.h"
+#endif
 
 
 
 namespace xorg {
+#ifdef __ANDROID__
+std::unique_ptr<NativeRenderer> CreateNativeEGLRenderer(u16, u16, const NativeRendererConfig&);
+std::unique_ptr<NativeRenderer> CreateNativeDisplayXRenderer(u16, u16, const NativeRendererConfig&);
+#endif
 class LudashiRenderer final : public NativeRenderer {
 public:
-    LudashiRenderer(u16 w, u16 h, bool validate) : width(w), height(h), validation(validate) {}
+    LudashiRenderer(u16 w, u16 h, bool validate, const NativeRendererConfig& config)
+        : width(w), height(h), validation(validate), rendererConfig(config) {}
     ~LudashiRenderer() override { if (context) context->detachSurface(); context.reset(); }
     void Surface(ANativeWindow* window) override {
         if (!window) { if (context) context->detachSurface(); return; }
         if (!context) {
+            void* driver = nullptr;
+#ifdef __ANDROID__
+            if (!rendererConfig.driverPath.empty()) {
+                driver = openAdrenotoolsDriver(rendererConfig.driverPath.c_str(),
+                        rendererConfig.libraryName.c_str(), rendererConfig.nativeLibDir.c_str());
+                if (!driver) {
+                    ANativeWindow_release(window);
+                    throw std::runtime_error("Cannot load the selected X++ Vulkan driver");
+                }
+            }
+#endif
             try {
-                context = std::make_unique<VulkanRendererContext>(window, width, height, nullptr, validation);
+                context = std::make_unique<VulkanRendererContext>(window, width, height, driver, validation);
                 // This session has its own scene worker. Prevent a second renderer thread
                 // from sampling a producer buffer before native Present has retained it.
                 context->isRunning.store(false); context->dirtyCV.notify_all();
                 if (context->renderThread.joinable()) context->renderThread.join();
                 context->setVerboseLog(false);
-            } catch (...) { ANativeWindow_release(window); throw; }
+            } catch (...) {
+                ANativeWindow_release(window);
+#ifdef __ANDROID__
+                if (driver && !context) dlclose(driver);
+#endif
+                throw;
+            }
+            context->setPresentMode(static_cast<VkPresentModeKHR>(rendererConfig.presentMode));
+            context->setSwapRB(rendererConfig.swapRB);
         } else {
             if (!context->surfaceDetached.load()) context->detachSurface();
             bool attached = context->reattachSurface(window);
@@ -256,6 +283,7 @@ private:
     std::deque<Submission> pending;
     int width, height;
     const bool validation;
+    const NativeRendererConfig rendererConfig;
     bool fullscreen{}, cursor{true};
     float refresh{60}, zoom{1.f};
     int lastCursorX{}, lastCursorY{};
@@ -270,8 +298,12 @@ private:
     std::vector<int64_t> ids;
     std::vector<int> xs, ys;
 };
-std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 w, u16 h, bool validation) {
-    return std::make_unique<LudashiRenderer>(w, h, validation);
+std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 w, u16 h, bool validation, const NativeRendererConfig& config) {
+#ifdef __ANDROID__
+    if (config.backend == NativeRendererConfig::Backend::EGL) return CreateNativeEGLRenderer(w, h, config);
+    if (config.backend == NativeRendererConfig::Backend::DisplayX) return CreateNativeDisplayXRenderer(w, h, config);
+#endif
+    return std::make_unique<LudashiRenderer>(w, h, validation, config);
 }
 }
 

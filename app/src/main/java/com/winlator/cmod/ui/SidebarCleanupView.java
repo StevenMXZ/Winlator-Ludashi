@@ -7,10 +7,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AdapterView;
 import android.widget.CheckBox;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -24,21 +22,14 @@ import androidx.preference.PreferenceManager;
 import com.winlator.cmod.R;
 import com.winlator.cmod.XServerDisplayActivity;
 import com.winlator.cmod.container.Container;
-import com.winlator.cmod.container.Shortcut;
-import com.winlator.cmod.widget.SeekBar;
 import com.winlator.cmod.widget.WinlatorHUD;
-
-import java.io.File;
 
 public class SidebarCleanupView extends View implements SharedPreferences.OnSharedPreferenceChangeListener {
     private static final String TAG_HUD_OPTIONS = "winz-hud-options-v2";
 
-    private int bindAttempts;
     private int hudBindAttempts;
-    private boolean graphicsBound;
     private boolean hudExtrasBound;
-    private boolean shortcutFileResolved;
-    private File shortcutFile;
+    private boolean syncingHudOptions;
 
     public SidebarCleanupView(Context context) {
         super(context);
@@ -58,7 +49,6 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
         post(this::polishUi);
         postDelayed(this::polishUi, 80);
         postDelayed(this::polishUi, 650);
-        postDelayed(this::bindGraphicsAutosave, 650);
         postDelayed(this::bindHudExtras, 650);
         getContext().getSharedPreferences(WinlatorHUD.PREFS, Context.MODE_PRIVATE)
                 .registerOnSharedPreferenceChangeListener(this);
@@ -133,15 +123,6 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
             return;
         }
 
-        String storedMode = container.getExtra("hudMode");
-        if (storedMode == null || storedMode.isEmpty()) {
-            container.putExtra("hudMode", "2");
-            container.saveData();
-            if (style.getCount() > 1 && style.getSelectedItemPosition() != 1) {
-                style.setSelection(1);
-            }
-        }
-
         if (modernOptions.findViewWithTag(TAG_HUD_OPTIONS) == null) {
             hideLegacyHudRows(root);
 
@@ -165,9 +146,6 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
                     "Battery Temp", WinlatorHUD.SHOW_BATTERY_TEMP,
                     "Charge State", WinlatorHUD.SHOW_CHARGE_STATE);
 
-            metrics.addView(createHudMetricCheckBox("Frametimes", WinlatorHUD.SHOW_FRAME_GRAPH),
-                    new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
-
             SharedPreferences hudPrefs = getContext().getSharedPreferences(
                     WinlatorHUD.PREFS, Context.MODE_PRIVATE);
             Switch dualCell = new Switch(getContext());
@@ -177,8 +155,10 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
             dualCell.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
             dualCell.setGravity(Gravity.CENTER_VERTICAL);
             dualCell.setChecked(hudPrefs.getBoolean(WinlatorHUD.KEY_DUAL_CELL, false));
-            dualCell.setOnCheckedChangeListener((buttonView, isChecked) ->
-                    hudPrefs.edit().putBoolean(WinlatorHUD.KEY_DUAL_CELL, isChecked).apply());
+            dualCell.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                if (!syncingHudOptions)
+                    hudPrefs.edit().putBoolean(WinlatorHUD.KEY_DUAL_CELL, isChecked).apply();
+            });
             metrics.addView(dualCell, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
 
@@ -187,6 +167,7 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
         }
 
         hudExtrasBound = true;
+        activity.refreshSidebarControls();
     }
 
     private void addHudOptionRow(LinearLayout parent, String leftLabel, int leftBit,
@@ -210,8 +191,14 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
         checkBox.setPaddingRelative(0, 0, dp(4), 0);
         checkBox.setTag(bit);
         checkBox.setChecked(WinlatorHUD.isOptionEnabled(getContext(), bit));
-        checkBox.setOnCheckedChangeListener((buttonView, isChecked) ->
-                WinlatorHUD.setOptionPreference(getContext(), bit, isChecked));
+        int primary = resolveColor(R.attr.ingameSidebarPrimary, 0xFFFFFFFF);
+        int secondary = resolveColor(R.attr.ingameSidebarOnSurfaceVariant, 0xFFAAAAAA);
+        checkBox.setButtonTintList(new android.content.res.ColorStateList(
+                new int[][] { { android.R.attr.state_checked }, {} },
+                new int[] { primary, secondary }));
+        checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (!syncingHudOptions) WinlatorHUD.setOptionPreference(getContext(), bit, isChecked);
+        });
         return checkBox;
     }
 
@@ -226,8 +213,6 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
         hideParentRow(root.findViewById(R.id.CBHudRam));
         hideParentRow(root.findViewById(R.id.CBHudBattTemp));
         hideParentRow(root.findViewById(R.id.CBHudRenderer));
-        View graph = root.findViewById(R.id.CBHudGraph);
-        if (graph != null) graph.setVisibility(GONE);
     }
 
     private void hideParentRow(View child) {
@@ -289,158 +274,6 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
         rail.setTranslationZ(dp(2));
     }
 
-    private void bindGraphicsAutosave() {
-        if (graphicsBound) return;
-
-        XServerDisplayActivity activity = findActivity();
-        Container container = activity != null ? activity.getContainer() : null;
-        if (activity == null || container == null) {
-            retryBind();
-            return;
-        }
-
-        View root = getRootView();
-        Switch fsr = root.findViewById(R.id.SWEnableFSR);
-        Spinner upscaler = root.findViewById(R.id.SPUpscalerMode);
-        Spinner postFx = root.findViewById(R.id.SPPostFXMode);
-        SeekBar sharpness = root.findViewById(R.id.SBSharpness);
-
-        if (fsr == null || upscaler == null || postFx == null || sharpness == null
-                || upscaler.getAdapter() == null || postFx.getAdapter() == null
-                || upscaler.getOnItemSelectedListener() == null
-                || postFx.getOnItemSelectedListener() == null) {
-            retryBind();
-            return;
-        }
-
-        resolveShortcutFile(activity);
-        restoreShortcutGraphics(container, fsr, upscaler, postFx, sharpness);
-
-        wrapSpinnerAutosave(upscaler);
-        wrapSpinnerAutosave(postFx);
-
-        fsr.setOnTouchListener((v, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
-                postDelayed(this::saveGraphicsState, 40);
-            }
-            return false;
-        });
-        sharpness.setOnTouchListener((v, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_UP
-                    || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-                postDelayed(this::saveGraphicsState, 40);
-            }
-            return false;
-        });
-
-        graphicsBound = true;
-    }
-
-    private void retryBind() {
-        if (bindAttempts++ < 80) postDelayed(this::bindGraphicsAutosave, 100);
-    }
-
-    private void wrapSpinnerAutosave(Spinner spinner) {
-        AdapterView.OnItemSelectedListener original = spinner.getOnItemSelectedListener();
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (original != null) original.onItemSelected(parent, view, position, id);
-                postDelayed(SidebarCleanupView.this::saveGraphicsState, 25);
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-                if (original != null) original.onNothingSelected(parent);
-            }
-        });
-    }
-
-    private void restoreShortcutGraphics(Container container, Switch fsr, Spinner upscaler,
-                                         Spinner postFx, SeekBar sharpness) {
-        Shortcut store = openShortcutStore(container);
-        if (store == null) return;
-
-        String filterValue = store.getExtra("graphicsFilterMode", "");
-        if (!filterValue.isEmpty()) {
-            int filter = parseInt(filterValue, 0);
-            if (filter > 0 && upscaler.getCount() > 0) {
-                int position = Math.max(0, Math.min(upscaler.getCount() - 1, filter - 2));
-                upscaler.setSelection(position, false);
-                fsr.setChecked(true);
-            } else {
-                fsr.setChecked(false);
-            }
-        }
-
-        String postValue = store.getExtra("graphicsPostFXMode", "");
-        if (!postValue.isEmpty() && postFx.getCount() > 0) {
-            int position = parseInt(postValue, 0);
-            position = Math.max(0, Math.min(postFx.getCount() - 1, position));
-            postFx.setSelection(position, false);
-        }
-
-        String sharpValue = store.getExtra("graphicsSharpness", "");
-        if (!sharpValue.isEmpty()) {
-            try {
-                float value = Float.parseFloat(sharpValue);
-                sharpness.setValue(Math.max(0f, Math.min(100f, value)));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-    }
-
-    private void saveGraphicsState() {
-        if (!graphicsBound) return;
-
-        XServerDisplayActivity activity = findActivity();
-        Container container = activity != null ? activity.getContainer() : null;
-        if (activity == null || container == null) return;
-
-        View root = getRootView();
-        Switch fsr = root.findViewById(R.id.SWEnableFSR);
-        Spinner upscaler = root.findViewById(R.id.SPUpscalerMode);
-        Spinner postFx = root.findViewById(R.id.SPPostFXMode);
-        SeekBar sharpness = root.findViewById(R.id.SBSharpness);
-        if (fsr == null || upscaler == null || postFx == null || sharpness == null) return;
-
-        int upscalerPosition = Math.max(0, upscaler.getSelectedItemPosition());
-        String filter = fsr.isChecked() ? String.valueOf(upscalerPosition + 2) : "0";
-        String post = String.valueOf(Math.max(0, postFx.getSelectedItemPosition()));
-        String sharp = String.valueOf(Math.round(sharpness.getValue()));
-
-        Shortcut store = openShortcutStore(container);
-        if (store != null) {
-            store.putExtra("graphicsFilterMode", filter);
-            store.putExtra("graphicsSharpness", sharp);
-            store.putExtra("graphicsPostFXMode", post);
-            store.putExtra("graphicsColorMode", "0");
-            store.saveData();
-        } else {
-            container.putExtra("graphicsFilterMode", filter);
-            container.putExtra("graphicsSharpness", sharp);
-            container.putExtra("graphicsPostFXMode", post);
-            container.putExtra("graphicsColorMode", "0");
-            container.saveData();
-        }
-    }
-
-    private void resolveShortcutFile(XServerDisplayActivity activity) {
-        if (shortcutFileResolved) return;
-        shortcutFileResolved = true;
-        String path = activity.getIntent().getStringExtra("shortcut_path");
-        if (path == null || path.isEmpty()) return;
-        File candidate = new File(path);
-        if (candidate.isFile()) shortcutFile = candidate;
-    }
-
-    private Shortcut openShortcutStore(Container container) {
-        XServerDisplayActivity activity = findActivity();
-        if (activity != null) resolveShortcutFile(activity);
-        if (shortcutFile == null || !shortcutFile.isFile()) return null;
-        return new Shortcut(container, shortcutFile);
-    }
-
     private XServerDisplayActivity findActivity() {
         Context current = getContext();
         while (current instanceof ContextWrapper) {
@@ -448,14 +281,6 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
             current = ((ContextWrapper) current).getBaseContext();
         }
         return current instanceof XServerDisplayActivity ? (XServerDisplayActivity) current : null;
-    }
-
-    private int parseInt(String value, int fallback) {
-        try {
-            return Integer.parseInt(value.trim());
-        } catch (Exception ignored) {
-            return fallback;
-        }
     }
 
     private int resolveColor(int attr, int fallback) {
@@ -498,7 +323,14 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
         View root = getRootView();
         LinearLayout modernOptions = root.findViewById(R.id.LLModernHudOptions);
         if (modernOptions != null) {
-            updateHudSettingsRecursive(modernOptions);
+            syncingHudOptions = true;
+            try {
+                updateHudSettingsRecursive(modernOptions);
+            } finally {
+                syncingHudOptions = false;
+            }
+            XServerDisplayActivity activity = findActivity();
+            if (activity != null) activity.refreshSidebarControls();
         }
     }
 

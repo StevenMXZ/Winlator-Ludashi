@@ -1,7 +1,6 @@
 package com.winlator.cmod.ui;
 
 import android.content.Context;
-import android.content.ContextWrapper;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -20,8 +19,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.winlator.cmod.R;
-import com.winlator.cmod.XServerDisplayActivity;
-import com.winlator.cmod.container.Container;
 
 public class RenderingSidebarPolisherView extends View {
     private static final String[] VULKAN_UPSCALERS = {
@@ -148,30 +145,6 @@ public class RenderingSidebarPolisherView extends View {
             spinner.setAdapter(adapter);
         }
 
-        int savedMode = getSavedGraphicsFilterMode();
-        if (savedMode >= 2 && savedMode <= 5) {
-            spinner.setSelection(savedMode - 2, false);
-        }
-    }
-
-    private int getSavedGraphicsFilterMode() {
-        Context context = getContext();
-        while (context != null) {
-            if (context instanceof XServerDisplayActivity) {
-                Container container = ((XServerDisplayActivity) context).getContainer();
-                if (container == null) return -1;
-                try {
-                    return Integer.parseInt(container.getExtra("graphicsFilterMode", ""));
-                } catch (NumberFormatException ignored) {
-                    return -1;
-                }
-            }
-            if (!(context instanceof ContextWrapper)) break;
-            Context base = ((ContextWrapper) context).getBaseContext();
-            if (base == context) break;
-            context = base;
-        }
-        return -1;
     }
 
     private void restoreCard(View view, int paddingDp) {

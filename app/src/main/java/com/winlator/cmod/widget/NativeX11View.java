@@ -23,6 +23,7 @@ import com.winlator.cmod.lsfg.LosslessScaling;
 public final class NativeX11View extends XServerRendererView implements SurfaceHolder.Callback,
         Pointer.OnPointerMotionListener, Keyboard.OnKeyboardListener, VulkanRendererControls {
     private long handle;
+    private final int backend;
     private boolean fullscreen, cursorVisible, destroyed;
     private int fpsLimit;
     private volatile float zoom = 1f;
@@ -146,11 +147,17 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         this(context, inputProxy, false);
     }
     public NativeX11View(Context context, XServer inputProxy, boolean validationEnabled) {
+        this(context, inputProxy, validationEnabled, "", "", "", 2, false, 0, 6);
+    }
+    public NativeX11View(Context context, XServer inputProxy, boolean validationEnabled,
+                         String driverPath, String libraryName, String nativeLibDir, int presentMode, boolean swapRB, int backend, int displayXFlags) {
         super(context, inputProxy);
+        this.backend = backend == 1 || backend == 2 ? backend : 0;
         highRefreshRate = PreferenceManager.getDefaultSharedPreferences(context)
                 .getBoolean("high_refresh_rate_mode", false);
         displayManager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
-        handle = nativeCreate(inputProxy.screenInfo.width, inputProxy.screenInfo.height, validationEnabled);
+        handle = nativeCreate(inputProxy.screenInfo.width, inputProxy.screenInfo.height, validationEnabled,
+                driverPath, libraryName, nativeLibDir, presentMode, swapRB, this.backend, displayXFlags);
         setRawInputEnabled(!inputProxy.isRelativeMouseMovement());
         inputProxy.setXServerView(this);
         inputProxy.cursorLocker.setEnabled(false);
@@ -160,6 +167,8 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         getHolder().addCallback(this);
         updateOptions();
     }
+    public boolean isVulkanBackend() { return backend == 0; }
+    public String getBackendName() { return backend == 2 ? "DisplayX" : backend == 1 ? "EGL" : "Vulkan"; }
     public synchronized void setReadyCallback(Runnable callback) { readyCallback = callback; if (ready) callback.run(); }
     public synchronized void setDiagnosticsEnabled(boolean enabled) {
         setDiagnosticsEnabled(enabled, true);
@@ -355,10 +364,10 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         }
     }
     @Override public synchronized void setFilterMode(int mode) {
-        filterMode = Math.max(0, Math.min(5, mode)); applyVisualOptions();
+        filterMode = backend == 2 ? 0 : backend == 1 ? (mode == 1 ? 1 : 0) : Math.max(0, Math.min(5, mode)); applyVisualOptions();
     }
     @Override public synchronized void setPostFXMode(int mode) {
-        postFXMode = Math.max(0, Math.min(20, mode)); applyVisualOptions();
+        postFXMode = isVulkanBackend() ? Math.max(0, Math.min(20, mode)) : 0; applyVisualOptions();
     }
     @Override public synchronized void setStretchMode(int mode) {
         stretchMode = mode == 1 ? 1 : 0; applyVisualOptions();
@@ -369,12 +378,12 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     @Override public synchronized void setFrameGenerationConfig(boolean enabled, String cachePath,
             int multiplier, int targetRate, int flowScalePercent, float refreshRate) {
         frameGenCache = cachePath;
-        frameGenRequested = enabled && cachePath != null && !cachePath.isEmpty();
+        frameGenRequested = isVulkanBackend() && enabled && cachePath != null && !cachePath.isEmpty();
         frameGenRefresh = refreshRate >= 1f ? refreshRate : 60f;
         setFrameGenerationSettings(multiplier, targetRate, flowScalePercent);
     }
     @Override public synchronized boolean setFrameGenerationEnabled(boolean enabled) {
-        if (destroyed || handle == 0) return false;
+        if (destroyed || handle == 0 || enabled && !isVulkanBackend()) return false;
         if (enabled && (frameGenCache == null || !new File(frameGenCache).isFile())) {
             File cache = LosslessScaling.resolveCacheFile(getContext(), true);
             if (cache == null) return false;
@@ -409,7 +418,8 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     private static native long[] nativeVisualState(long handle);
     private static native void nativeHudEnabled(long handle, boolean enabled);
     private static native String[] nativeHudSnapshot(long handle);
-    private static native long nativeCreate(int width, int height, boolean validationEnabled);
+    private static native long nativeCreate(int width, int height, boolean validationEnabled,
+            String driverPath, String libraryName, String nativeLibDir, int presentMode, boolean swapRB, int backend, int displayXFlags);
     private static native void nativeStart(long handle, String socket, String shm);
     private static native void nativeDestroy(long handle);
     private static native void nativeSurface(long handle, Surface surface);

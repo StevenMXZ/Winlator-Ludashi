@@ -147,7 +147,7 @@ private class ContainerEditorStateV2(
     var softwareDecoding by mutableStateOf(editing?.getSoftwareDecoding() ?: false)
     var audio by mutableStateOf(editing?.audioDriver ?: Container.DEFAULT_AUDIO_DRIVER)
     var hudMode by mutableIntStateOf(
-        editing?.getExtra("hudMode", if (editing.isShowFPS) "1" else "0")?.toIntOrNull() ?: 0
+        editing?.getExtra("hudMode", if (editing.isShowFPS) "2" else "0")?.toIntOrNull() ?: 0
     )
     var locale by mutableStateOf(
         editing?.getLC_ALL().orEmpty().ifBlank {
@@ -843,9 +843,8 @@ private fun ContainerCategoryV2(
                 SettingsDivider()
                 SettingChoice(uiStr(R.string.ui_display_server), s.displayServer,
                     listOf("Java X11", "X++")) { s.displayServer = it }
-                if (s.displayServer == "Java X11") {
-                    SettingsDivider()
-                    SettingChoice(uiStr(R.string.ui_renderer), s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
+                SettingsDivider()
+                SettingChoice(uiStr(R.string.ui_renderer), s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
                     s.renderer = it
                     s.surfaceFormat = if (it == "DisplayX") "rgba8" else "bgra8"
                     if (it == "EGL" && s.filterMode > 1) s.filterMode = 0
@@ -904,18 +903,8 @@ private fun ContainerCategoryV2(
                         s.filterMode = filters.indexOf(it).coerceAtLeast(0)
                     }
                 }
-                } else {
-                    SettingsDivider()
-                    val filters = listOf(
-                        "Bilinear", "Nearest neighbor", "Snapdragon Super Resolution",
-                        "AMD FidelityFX Super Resolution", "Lanczos 2 (16-tap)", "Color Boost"
-                    )
-                    SettingChoice(uiStr(R.string.ui_texture_filter), filters.getOrElse(s.filterMode) { filters.first() }, filters) {
-                        s.filterMode = filters.indexOf(it).coerceAtLeast(0)
-                    }
-                }
             }
-            if (s.displayServer != "Java X11" || s.renderer == "Vulkan") {
+            if (s.renderer == "Vulkan") {
                 FrameGenerationSettings(
                     enabled = s.frameGenEnabled,
                     multiplier = s.frameGenMultiplier,

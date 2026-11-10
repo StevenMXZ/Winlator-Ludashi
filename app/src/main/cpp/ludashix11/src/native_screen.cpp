@@ -36,7 +36,7 @@ void NativeScreen::SetOptions(bool fs, bool visible, int limit, float rate) {
     {
         std::lock_guard lock(state);
         fullscreen = fs; cursorVisible = visible; fps = bounded;
-        refresh = std::clamp(rate, 24.f, 240.f);
+        refresh = std::isfinite(rate) ? std::clamp(rate, 24.f, 1000.f) : 60.f;
         producerLimit.store(bounded, std::memory_order_relaxed);
         optionsDirty = true; dirty = true; cv.notify_one();
     }
@@ -160,6 +160,36 @@ bool NativeScreen::IsWindowFiltered(Window* w) const {
         return value.find(name) != std::string_view::npos;
     });
 }
+void NativeScreen::UpdateExternal(u32 id, u64 generation, sp<NativeExternalFrame> frame) {
+    // Called under XServer::Lock, just like PresentPixmap.
+    auto* resource = server.GetResource(id);
+    if (!resource || resource->GetType() != XResourceType::Window ||
+            resource->As<Window>()->generation != generation) return;
+    externalFrames.insert_or_assign(id, External{generation, frame});
+    HudFrame(id);
+    {
+        std::lock_guard lock(state);
+        if (sceneCurrent) {
+            auto entry = std::ranges::find_if(latest.entries, [&](const auto& value) { return value.window == id; });
+            if (entry != latest.entries.end() && entry->drawable->GetWidth() == frame->drawable->GetWidth() &&
+                    entry->drawable->GetHeight() == frame->drawable->GetHeight()) {
+                entry->drawable = frame->drawable; entry->pixels.reset(); entry->revision = frame->drawable->Revision();
+                entry->ticket.reset(); entry->external = frame; latest.tickets.erase(id);
+                if (!std::exchange(dirty, true)) cv.notify_one();
+                return;
+            }
+        }
+    }
+    PostInvalidate();
+    // Keep an unsubmitted image while its window is hidden. FIFO can resume on
+    // MapWindow without losing the last frame; mailbox replacements release it.
+}
+void NativeScreen::RemoveExternal(u32 id, u64 generation, const sp<NativeExternalFrame>& frame) {
+    auto found = externalFrames.find(id);
+    if (found != externalFrames.end() && found->second.generation == generation && found->second.frame == frame) {
+        externalFrames.erase(found); PostInvalidate();
+    }
+}
 void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
     bool viewable = ancestorsMapped && w->IsMapped();
     if (!viewable) return;
@@ -167,11 +197,21 @@ void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
         w->GetWidth() > 1 && w->GetHeight() > 1 && !IsWindowFiltered(w)) {
         auto i = direct.find(w->id);
         auto d = i == direct.end() ? std::static_pointer_cast<NativeDrawable>(w->SharedDrawable()) : i->second->drawable;
+        auto external = externalFrames.find(w->id);
+        if (external != externalFrames.end() && external->second.generation != w->generation) {
+            externalFrames.erase(external); external = externalFrames.end();
+        }
+        if (external != externalFrames.end()) d = external->second.frame->drawable;
         const auto& rect = w->GetInRect();
         // Vulkan window quads force useTexAlpha=0, including depth-32 images.
         // Match that opacity when discarding fully covered layers.
-        frame.entries.push_back({d, i == direct.end() ? nullptr : i->second, d->Pixels(), d->Revision(), rect.left, rect.top, true});
-        if (i != direct.end()) {
+        frame.entries.push_back({d, i == direct.end() ? nullptr : i->second, d->Pixels(), d->Revision(),
+                rect.left, rect.top, true, w->id, int(w->GetWidth()), int(w->GetHeight()), {}});
+        if (external != externalFrames.end()) {
+            frame.entries.back().ticket.reset();
+            frame.entries.back().external = external->second.frame;
+        }
+        if (i != direct.end() && external == externalFrames.end()) {
             frame.entries.back().x += i->second->x;
             frame.entries.back().y += i->second->y;
             frame.tickets[w->id] = i->second;
@@ -224,6 +264,14 @@ void NativeScreen::DrawableChanged(Drawable* drawable) {
     PostInvalidate();
 }
 void NativeScreen::PostInvalidate() {
+    for (auto it = externalFrames.begin(); it != externalFrames.end();) {
+        auto* resource = server.GetResource(it->first);
+        if (!resource || resource->GetType() != XResourceType::Window ||
+                resource->As<Window>()->generation != it->second.generation) {
+            it->second.frame->Discard(); it = externalFrames.erase(it);
+        }
+        else ++it;
+    }
     if (DiagnosticsEnabled()) metricSceneBuilds.fetch_add(1, std::memory_order_relaxed);
     Scene frame;
     Collect(server.GetWindowManager().GetRootWindow(), frame, true);
@@ -578,7 +626,7 @@ void NativeScreen::ProtocolError(int client, u8 opcode, u8 minor, u8 code, u32 r
 }
 void NativeScreen::Worker() {
     const auto info = server.GetScreenInfo();
-    auto renderer = CreateNativeRenderer(info.width, info.height, server.ValidationEnabled());
+    auto renderer = CreateNativeRenderer(info.width, info.height, server.ValidationEnabled(), server.RendererConfig());
     // Frames retain the AHBs until the corresponding GPU sampling fences signal.
     // Draw owns context changes. A separate worker retires previously published
     // submissions while Draw may be blocked in acquire/present for another slot.
@@ -714,7 +762,7 @@ void NativeScreen::Worker() {
             if (!dirty) continue;
             if (!surfaceDirty && hasSurface && renderer && !renderer->ReadyToDraw()) {
                 if (DiagnosticsEnabled()) ++metricBusy;
-                // Do not consume the newest X11 request while the next Vulkan
+                // Do not consume the newest X11 request while the next presentation
                 // slot is busy. A newer Present can replace it in the meantime.
                 continue;
             }
@@ -742,13 +790,14 @@ void NativeScreen::Worker() {
         frame.diagnosticSelected = drawStart;
         try {
             if (changeSurface) {
+                renderer->PrepareSurfaceChange();
                 // Resizing/detaching is rare. Finish all previous sampling before
-                // replacing Vulkan surface resources and retiring their tickets.
+                // replacing presentation surface resources and retiring their tickets.
                 {
                     std::lock_guard completionLock(completionMutex);
                     retire(renderer->Drain());
                 }
-                renderer->Surface(nextSurface); nextSurface = nullptr;
+                renderer->Surface(std::exchange(nextSurface, nullptr));
                 hasSurface = nextHasSurface;
             }
             if (changeOptions) renderer->Options(fs, visible, limit, rate, zoom);
@@ -859,7 +908,7 @@ void NativeScreen::Worker() {
     retirement.join();
     // The in-flight frames own AHB references; drain the GPU before destruction.
     if (renderer) {
-        try { retire(renderer->Drain()); }
+        try { renderer->PrepareSurfaceChange(); retire(renderer->Drain()); }
         catch (const std::exception& e) { LOGE("Native GPU shutdown drain failed: {}", e.what()); }
     }
     renderer.reset();

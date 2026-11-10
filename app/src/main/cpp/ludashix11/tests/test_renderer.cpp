@@ -9,11 +9,16 @@ int main() {
         auto defaults = xorg::CreateNativeRenderer(1280, 720);
         defaults->Surface(new ANativeWindow);
         if (VulkanRendererContext::instance->validationRequested) return 13;
+        if (VulkanRendererContext::instance->presentMode != 2) return 14;
     }
-    auto renderer = xorg::CreateNativeRenderer(1280, 720, true);
+    xorg::NativeRendererConfig config;
+    config.presentMode = 1;
+    config.swapRB = true;
+    auto renderer = xorg::CreateNativeRenderer(1280, 720, true, config);
     renderer->Surface(new ANativeWindow);
     auto* context = VulkanRendererContext::instance;
     if (!context->validationRequested) return 12;
+    if (context->presentMode != 1 || !context->swapRB) return 15;
     xorg::NativeVisualOptions options;
     renderer->VisualOptions(options);
     if (renderer->VisualState().enabled || context->filter || context->postFX || context->stretch) return 21;

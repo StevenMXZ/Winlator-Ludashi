@@ -166,6 +166,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private ImageFs imageFs;
     private FrameRating classicHud = null;
     private WinlatorHUD modernHud = null;
+    private boolean graphicsControlsReady;
     private Runnable editInputControlsCallback;
     private Shortcut shortcut;
     private String graphicsDriver = Container.DEFAULT_GRAPHICS_DRIVER;
@@ -591,6 +592,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         xServer = isNativeX11Enabled()
                 ? new com.winlator.cmod.widget.NativeX11InputProxy(new ScreenInfo(screenSize), displayxConfig)
                 : new XServer(new ScreenInfo(screenSize), useDisplayX ? "displayx" : "egl", displayxConfig);
+        if (isNativeX11Enabled() && useDisplayX) xServer.setDisplayDriver("displayx");
         xServer.setWinHandler(winHandler);
         xServer.setRelativeMouseMovement(isRelativeMouseMovement);
         advertisePanelRefreshRates();
@@ -927,6 +929,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     private void exit() {
         if (!exiting.compareAndSet(false, true)) return;
+        saveSidebarGraphicsState();
         NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
         boolean removeLoadingBar = PreferenceManager.getDefaultSharedPreferences(this)
                 .getBoolean("remove_loading_bar_when_booting_games", false);
@@ -1394,7 +1397,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private boolean isDisplayXEnabled() {
-        if (isNativeX11Enabled()) return false;
         if (shortcut != null) return shortcut.getUseDisplayX();
         return container != null && container.getUseDisplayX();
     }
@@ -1420,8 +1422,36 @@ public class XServerDisplayActivity extends AppCompatActivity {
             boolean validationEnabled = "1".equals(nativeValidation)
                     || "true".equalsIgnoreCase(nativeValidation)
                     || "yes".equalsIgnoreCase(nativeValidation);
+            String driverId = shortcut != null ? shortcut.getRendererDriverId()
+                    : (container != null ? container.getRendererDriverId() : "system");
+            String driverPath = "", libraryName = "";
+            if (!useEGL && !useDisplayX && driverId != null && !driverId.isEmpty() && !"system".equalsIgnoreCase(driverId)) {
+                AdrenotoolsManager manager = new AdrenotoolsManager(this);
+                driverPath = getFilesDir().getAbsolutePath() + "/contents/adrenotools/" + driverId + "/";
+                if (manager.isFromResources(driverId) && !new File(driverPath).isDirectory())
+                    manager.extractDriverFromResources(driverId);
+                libraryName = manager.getLibraryName(driverId);
+                if (libraryName.isEmpty()) {
+                    Log.w("LudashiX11", "Selected renderer driver is unavailable: " + driverId);
+                    driverPath = "";
+                }
+            }
+            String presentMode = shortcut != null ? shortcut.getRendererPresentMode()
+                    : (container != null ? container.getRendererPresentMode() : "fifo");
+            if (useDisplayX) presentMode = shortcut != null ? shortcut.getDisplayXPresentMode() : container.getDisplayXPresentMode();
+            int displayXFlags = ((shortcut != null ? shortcut.getTrueDisplayX() : container.getTrueDisplayX()) ? 1 : 0)
+                    | ((shortcut != null ? shortcut.getDisplayXPerformanceMode() : container.getDisplayXPerformanceMode()) ? 2 : 0)
+                    | ((shortcut != null ? shortcut.getDisplayXPresentAtRefreshRate() : container.getDisplayXPresentAtRefreshRate()) ? 4 : 0)
+                    | ((shortcut != null ? shortcut.getDisplayXPrecisePresentation() : container.getDisplayXPrecisePresentation()) ? 8 : 0);
             com.winlator.cmod.widget.NativeX11View nativeView =
-                    new com.winlator.cmod.widget.NativeX11View(this, xServer, validationEnabled);
+                    new com.winlator.cmod.widget.NativeX11View(this, xServer, validationEnabled,
+                            driverPath, libraryName, AppUtils.getNativeLibDir(this),
+                            com.winlator.cmod.contentdialog.RendererOptionsDialog.toVkPresentMode(presentMode),
+                            shortcut != null ? shortcut.getRendererSwapRB()
+                                    : container != null && container.getRendererSwapRB(),
+                            useDisplayX ? 2 : useEGL ? 1 : 0, displayXFlags);
+            nativeView.setFilterMode(shortcut != null ? shortcut.getRendererFilterMode()
+                    : (container != null ? container.getRendererFilterMode() : 0));
             nativeView.setReadyCallback(() -> {
                 preloaderDialog.closeOnUiThread();
                 if (!simulateTouchScreen) nativeView.setCursorVisible(true);
@@ -1473,7 +1503,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     : (container != null ? container.getRendererPresentMode() : "fifo");
             vkRenderer.setVkPresentMode(com.winlator.cmod.contentdialog.RendererOptionsDialog.toVkPresentMode(presentMode));
         }
-        if (renderer instanceof VulkanRendererControls) {
+        if (supportsVulkanRendererEffects()) {
             VulkanRendererControls vkRenderer = (VulkanRendererControls) renderer;
             vkRenderer.setFilterMode(shortcut != null ? shortcut.getRendererFilterMode()
                     : (container != null ? container.getRendererFilterMode() : 0));
@@ -1554,10 +1584,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         if (container != null) {
-            String hudModeExtra = container.getExtra("hudMode");
-            int hudMode = !hudModeExtra.isEmpty()
-                    ? Integer.parseInt(hudModeExtra)
-                    : (container.isShowFPS() ? 1 : 0);
+            int hudMode = getHudMode();
 
             if (hudMode == 1) {
 
@@ -1565,6 +1592,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 classicHud.setVisibility(View.GONE);
                 rootView.addView(classicHud);
                 renderer.setFrameRating(classicHud);
+                classicHud.enableByUser();
             } else if (hudMode == 2) {
 
                 modernHud = new WinlatorHUD(this);
@@ -1750,7 +1778,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         View btItemMagnifier = findViewById(R.id.BTItemMagnifier);
         if (btItemMagnifier != null) {
             btItemMagnifier.setOnClickListener(v -> {
-                if (xServer != null && xServer.isDisplayX()) {
+                if (xServer != null && xServer.isDisplayX() && !(xServerView instanceof com.winlator.cmod.widget.NativeX11View)) {
                     showToast(this, R.string.magnifier_not_available);
                     drawerLayout.closeDrawers();
                     return;
@@ -1847,12 +1875,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
     public String[][] getSidebarRuntimeStatusRows() {
         boolean displayX = xServer != null && xServer.isDisplayX();
         String renderer = xServerView instanceof com.winlator.cmod.widget.NativeX11View
-                ? getString(R.string.sidebar_native_x11_vulkan)
+                ? "X++ / " + ((com.winlator.cmod.widget.NativeX11View) xServerView).getBackendName()
                 : xServerView instanceof VulkanXServerView ? "Vulkan" : displayX ? "DisplayX" : "EGL";
         boolean trueDisplayX = shortcut != null ? shortcut.getTrueDisplayX() : container != null && container.getTrueDisplayX();
         Switch upscaler = findViewById(R.id.SWEnableFSR);
         Spinner mode = findViewById(R.id.SPUpscalerMode);
-        boolean upscalerAvailable = xServerView instanceof VulkanRendererControls || xServerView instanceof XServerView && !displayX;
+        boolean upscalerAvailable = supportsVulkanRendererEffects() || xServerView instanceof XServerView && !displayX;
         boolean upscalerActive = upscalerAvailable && upscaler != null && upscaler.isChecked();
         boolean arm64ec = wineInfo != null && wineInfo.isArm64EC();
         boolean fex = arm64ec && "fexcore".equalsIgnoreCase(emulator);
@@ -1876,7 +1904,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     public boolean isSidebarSoftStretchSupported() {
         // The 4.2 Native X11 renderer gained the same controls as Java Vulkan.
-        return xServerView instanceof VulkanRendererControls;
+        return supportsVulkanRendererEffects();
     }
 
     public int getSidebarDisplayMode() {
@@ -2021,6 +2049,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
         };
     }
 
+    public void refreshSidebarControls() {
+        if (modernSidebar != null) modernSidebar.onRuntimeStatusChanged();
+    }
+
     private void setupSidebarHudControls() {
         Switch       swHudMaster     = findViewById(R.id.SWHudMaster);
         Spinner      spHudStyle      = findViewById(R.id.SPHudStyle);
@@ -2031,23 +2063,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
         CheckBox     cbCpuRam        = findViewById(R.id.CBHudCpuRam);
         CheckBox     cbRam           = findViewById(R.id.CBHudRam);
         CheckBox     cbBattTemp      = findViewById(R.id.CBHudBattTemp);
-        CheckBox     cbGraph         = findViewById(R.id.CBHudGraph);
         CheckBox     cbRenderer      = findViewById(R.id.CBHudRenderer);
         SeekBar      sbScale         = findViewById(R.id.SBHudScale);
         SeekBar      sbAlpha         = findViewById(R.id.SBHudAlpha);
         View         btResetHud      = findViewById(R.id.BTResetHud);
 
-        int currentMode = 0;
-        if      (modernHud  != null) currentMode = 2;
-        else if (classicHud != null) currentMode = 1;
-        else if (container  != null) {
-            String extra = container.getExtra("hudMode");
-            if (!extra.isEmpty())           currentMode = Integer.parseInt(extra);
-            else if (container.isShowFPS()) currentMode = 1;
-        }
-
-        boolean hudOn    = currentMode != 0;
-        boolean isModern = currentMode == 2;
+        int currentMode = getHudMode();
+        boolean hudOn = currentMode != 0;
+        // An off HUD has no selected style yet; the first activation uses Modern.
+        boolean isModern = currentMode != 1;
 
         if (spHudStyle != null) {
             ArrayAdapter<String> styleAdapter = createSidebarSpinnerAdapter(new String[]{"Classic", "Modern"}, new int[]{R.string.ui_classic, R.string.ui_modern});
@@ -2056,11 +2080,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
             spHudStyle.setSelection(isModern ? 1 : 0, false);
         }
         if (llHudStyleRow  != null) llHudStyleRow.setVisibility(hudOn ? View.VISIBLE : View.GONE);
-        if (llModernOptions != null) llModernOptions.setVisibility(isModern ? View.VISIBLE : View.GONE);
+        if (llModernOptions != null) llModernOptions.setVisibility(hudOn && isModern ? View.VISIBLE : View.GONE);
 
         if (modernHud != null) {
-            syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbGraph, cbRenderer, sbScale, sbAlpha);
-            bindModernHudCheckboxes(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer);
+            syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer, sbScale, sbAlpha);
         }
         if (sbScale != null) sbScale.setOnValueChangeListener((sb, v, isFinal) -> {
             if (modernHud != null) modernHud.setHudScale(1f + (v - 50f) / 50f, isFinal);
@@ -2072,7 +2095,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (swHudMaster != null && swHudMaster.isChecked() && spHudStyle != null && spHudStyle.getSelectedItemPosition() == 1) {
                 if (modernHud != null) {
                     modernHud.forceReset();
-                    syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbGraph, cbRenderer, sbScale, sbAlpha);
+                    syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer, sbScale, sbAlpha);
                 }
             }
         });
@@ -2087,8 +2110,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     if (llModernOptions != null)
                         llModernOptions.setVisibility(style == 2 ? View.VISIBLE : View.GONE);
                     if (style == 2 && modernHud != null) {
-                        syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbGraph, cbRenderer, sbScale, sbAlpha);
-                        bindModernHudCheckboxes(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer);
+                        syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer, sbScale, sbAlpha);
                     }
                     saveHudModeToContainer(style);
                 } else {
@@ -2114,8 +2136,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                         if (llModernOptions != null)
                             llModernOptions.setVisibility(newStyle == 2 ? View.VISIBLE : View.GONE);
                         if (newStyle == 2 && modernHud != null) {
-                            syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbGraph, cbRenderer, sbScale, sbAlpha);
-                            bindModernHudCheckboxes(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer);
+                            syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer, sbScale, sbAlpha);
                         }
                         saveHudModeToContainer(newStyle);
                     }
@@ -2126,10 +2147,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private void syncModernHudSidebarUI(CheckBox cbFps, CheckBox cbGpu, CheckBox cbCpuRam,
-                                        CheckBox cbRam, CheckBox cbBattTemp, CheckBox cbGraph,
+                                        CheckBox cbRam, CheckBox cbBattTemp,
                                         CheckBox cbRenderer, SeekBar sbScale, SeekBar sbAlpha) {
         if (modernHud == null) return;
-        modernHud.syncCheckboxes(cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer, cbRam);
+        // Detach legacy listeners before reflecting preferences into the controls.
+        for (CheckBox box : new CheckBox[]{cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer}) {
+            if (box != null) box.setOnCheckedChangeListener(null);
+        }
+        modernHud.syncCheckboxes(cbFps, cbGpu, cbCpuRam, cbBattTemp, cbRenderer, cbRam);
+        bindModernHudCheckboxes(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer);
         if (sbScale != null) sbScale.setValue((modernHud.getHudScale() - 1f) * 50f + 50f);
         if (sbAlpha != null) sbAlpha.setValue(modernHud.getHudAlpha() * 100f);
     }
@@ -2140,15 +2166,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
         final XServerRendererView renderer = xServerView;
 
         boolean rendererAlreadyActive = (activeRendererWindowId != -1);
-        if (renderer instanceof com.winlator.cmod.widget.NativeX11View)
-            ((com.winlator.cmod.widget.NativeX11View) renderer).setHudMode(style);
-
         if (style == 2) {
             if (modernHud == null) {
                 modernHud = new WinlatorHUD(this);
                 modernHud.setVisibility(View.GONE);
                 rootView.addView(modernHud);
-                renderer.setFrameRating(modernHud);
                 if (rendererAlreadyActive) {
 
                     frameRatingWindowId = activeRendererWindowId;
@@ -2158,19 +2180,20 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     modernHud.onRendererDetected(name);
                 }
             }
+            renderer.setFrameRating(modernHud);
             modernHud.enableByUser();
         } else {
             if (classicHud == null) {
                 classicHud = new FrameRating(this, graphicsDriverConfig);
                 classicHud.setVisibility(View.GONE);
                 rootView.addView(classicHud);
-                renderer.setFrameRating(classicHud);
                 if (rendererAlreadyActive) {
                     frameRatingWindowId = activeRendererWindowId;
                     renderer.setFpsWindowId(frameRatingWindowId);
                     runOnUiThread(() -> classicHud.update());
                 }
             }
+            renderer.setFrameRating(classicHud);
             classicHud.enableByUser();
         }
     }
@@ -2187,7 +2210,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private int resolveSelectedStyle(Spinner spHudStyle) {
-        if (spHudStyle == null) return 1;
+        if (spHudStyle == null) return 2;
         return spHudStyle.getSelectedItemPosition() == 1 ? 2 : 1;
     }
 
@@ -2196,6 +2219,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
         container.putExtra("hudMode", String.valueOf(mode));
         container.setShowFPS(mode != 0);
         container.saveData();
+        if (shortcut != null) {
+            shortcut.putExtra("hudMode", String.valueOf(mode));
+            shortcut.saveData();
+        }
         if (xServerView instanceof com.winlator.cmod.widget.NativeX11View) {
             ((com.winlator.cmod.widget.NativeX11View) xServerView).setHudMode(mode);
         }
@@ -2204,8 +2231,42 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
     }
 
+    private String getGraphicsPreference(String key) {
+        String fallback = container != null ? container.getExtra(key) : "";
+        return shortcut != null ? shortcut.getExtra(key, fallback) : fallback;
+    }
+
+    private void saveSidebarGraphicsState() {
+        if (!graphicsControlsReady || container == null) return;
+        Switch enabled = findViewById(R.id.SWEnableFSR);
+        Spinner upscaler = findViewById(R.id.SPUpscalerMode);
+        Spinner postFx = findViewById(R.id.SPPostFXMode);
+        Spinner fps = findViewById(R.id.SPNativeFPS);
+        SeekBar sharpness = findViewById(R.id.SBSharpness);
+        if (enabled == null || upscaler == null || postFx == null || sharpness == null) return;
+        String[][] values = {
+            {"graphicsFilterMode", enabled.isChecked()
+                ? String.valueOf(Math.max(0, upscaler.getSelectedItemPosition()) + 2) : "0"},
+            {"graphicsPostFXMode", String.valueOf(Math.max(0, postFx.getSelectedItemPosition()))},
+            {"graphicsSharpness", String.valueOf(sharpness.getValue())},
+            {"graphicsFpsPreset", String.valueOf(fps != null ? Math.max(0, fps.getSelectedItemPosition()) : 0)},
+            {"graphicsColorMode", "0"}
+        };
+        for (String[] value : values) {
+            if (shortcut != null) shortcut.putExtra(value[0], value[1]);
+            else container.putExtra(value[0], value[1]);
+        }
+        if (shortcut != null) shortcut.saveData();
+        else container.saveData();
+    }
+
+    private boolean supportsVulkanRendererEffects() {
+        return xServerView instanceof VulkanRendererControls && (!(xServerView instanceof com.winlator.cmod.widget.NativeX11View)
+                || ((com.winlator.cmod.widget.NativeX11View) xServerView).isVulkanBackend());
+    }
+
     private void setupSidebarGraphicsControls() {
-        final boolean isVulkanRenderer = xServerView instanceof VulkanRendererControls;
+        final boolean isVulkanRenderer = supportsVulkanRendererEffects();
 
         View reshadePanel = findViewById(R.id.LLSubReshade);
         View postFxDivider = findViewById(R.id.VPostFXDivider);
@@ -2274,8 +2335,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
             ArrayAdapter<String> a = createSidebarSpinnerAdapter(fpsLabels, new int[]{R.string.ui_off, 0, 0, 0, 0});
             a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spNativeFPS.setAdapter(a);
-            String savedFps = container != null ? container.getExtra("graphicsFpsPreset") : "";
-            int savedFpsPos = savedFps.isEmpty() ? 0 : Integer.parseInt(savedFps);
+            String savedFps = getGraphicsPreference("graphicsFpsPreset");
+            int savedFpsPos = safeParseInt(savedFps);
             if (savedFpsPos < 0 || savedFpsPos >= fpsLabels.length) savedFpsPos = 0;
             spNativeFPS.setSelection(savedFpsPos);
             int initialFpsLimit = savedFpsPos < fpsValues.length ? fpsValues[savedFpsPos] : 0;
@@ -2289,9 +2350,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     int fpsLimit = pos < fpsValues.length ? fpsValues[pos] : 0;
                     if (vkRenderer != null) vkRenderer.setFpsLimit(fpsLimit);
                     if (nativeRenderer != null) nativeRenderer.setFpsLimit(fpsLimit);
+                    saveSidebarGraphicsState();
                     if (!isVulkanRenderer && container != null) {
-                        container.putExtra("graphicsFpsPreset", String.valueOf(pos));
-                        container.saveData();
+                        if (shortcut != null) {
+                            shortcut.putExtra("graphicsFpsPreset", String.valueOf(pos)); shortcut.saveData();
+                        } else {
+                            container.putExtra("graphicsFpsPreset", String.valueOf(pos)); container.saveData();
+                        }
                     }
                 }
                 @Override public void onNothingSelected(AdapterView<?> p) {}
@@ -2348,7 +2413,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             });
         }
 
-        if (vkRenderer == null) return;
+        if (vkRenderer == null || !isVulkanRenderer) return;
 
         if (spFrameGenMode != null) {
             ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(frameGenModeLabels, new int[]{R.string.sidebar_automatic_display, R.string.ui_fixed_multiplier, R.string.sidebar_adaptive_60_fps, R.string.sidebar_adaptive_90_fps, R.string.sidebar_adaptive_120_fps, R.string.sidebar_adaptive_144_fps, R.string.sidebar_adaptive_165_fps});
@@ -2485,7 +2550,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         final int baseFilterMode = Math.min(1, shortcut != null ? shortcut.getRendererFilterMode()
                 : container != null ? container.getRendererFilterMode() : 0);
-        String savedFilter = container != null ? container.getExtra("graphicsFilterMode") : "";
+        String savedFilter = getGraphicsPreference("graphicsFilterMode");
         int initialFilter = savedFilter.isEmpty()
                 ? (shortcut != null ? shortcut.getRendererFilterMode()
                     : container != null ? container.getRendererFilterMode() : 0)
@@ -2501,17 +2566,25 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
                     if (swEnableFSR != null && swEnableFSR.isChecked())
                         vkRenderer.setFilterMode(pos + 2);
+                    saveSidebarGraphicsState();
                 }
                 @Override public void onNothingSelected(AdapterView<?> p) {}
             });
         }
 
-        String savedSharp = container != null ? container.getExtra("graphicsSharpness") : "";
-        float  initSharp  = savedSharp.isEmpty() ? 50f : Float.parseFloat(savedSharp);
+        String savedSharp = getGraphicsPreference("graphicsSharpness");
+        float initSharp = 50f;
+        try {
+            float value = Float.parseFloat(savedSharp);
+            if (Float.isFinite(value)) initSharp = Math.max(0f, Math.min(100f, value));
+        } catch (NumberFormatException ignored) {}
         if (sbSharpness != null) {
             sbSharpness.setValue(initSharp);
             vkRenderer.setSharpness(initSharp / 100f);
-            sbSharpness.setOnValueChangeListener((sb, v, isFinal) -> vkRenderer.setSharpness(v / 100f));
+            sbSharpness.setOnValueChangeListener((sb, v, isFinal) -> {
+                vkRenderer.setSharpness(v / 100f);
+                if (isFinal) saveSidebarGraphicsState();
+            });
         }
 
         Runnable updateSharpnessVis = () -> {
@@ -2526,9 +2599,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
             swEnableFSR.setChecked(fsrOn);
             if (spUpscalerMode != null)
                 spUpscalerMode.setVisibility(fsrOn ? View.VISIBLE : View.GONE);
-            if (fsrOn)
-                vkRenderer.setFilterMode(spUpscalerMode != null
-                    ? spUpscalerMode.getSelectedItemPosition() + 2 : 2);
+            vkRenderer.setFilterMode(fsrOn
+                    ? (spUpscalerMode != null ? spUpscalerMode.getSelectedItemPosition() + 2 : 2)
+                    : baseFilterMode);
             swEnableFSR.setOnCheckedChangeListener((btn, checked) -> {
                 if (spUpscalerMode != null)
                     spUpscalerMode.setVisibility(checked ? View.VISIBLE : View.GONE);
@@ -2536,6 +2609,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     ? (spUpscalerMode != null ? spUpscalerMode.getSelectedItemPosition() + 2 : 2)
                     : baseFilterMode);
                 updateSharpnessVis.run();
+                saveSidebarGraphicsState();
             });
         }
 
@@ -2545,27 +2619,29 @@ public class XServerDisplayActivity extends AppCompatActivity {
             a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spPostFXMode.setAdapter(a);
 
-            String savedPFX = container != null ? container.getExtra("graphicsPostFXMode") : "";
-            int initPFX = savedPFX.isEmpty() ? 0 : Integer.parseInt(savedPFX);
+            String savedPFX = getGraphicsPreference("graphicsPostFXMode");
+            int initPFX = safeParseInt(savedPFX);
             if (initPFX < 0 || initPFX >= pfxLabels.length) initPFX = 0;
 
             spPostFXMode.setSelection(initPFX, false);
-            if (initPFX > 0) vkRenderer.setPostFXMode(initPFX);
+            vkRenderer.setPostFXMode(initPFX);
 
             spPostFXMode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
                 @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
                     vkRenderer.setPostFXMode(pos);
                     updateSharpnessVis.run();
+                    saveSidebarGraphicsState();
                 }
                 @Override public void onNothingSelected(AdapterView<?> p) {}
             });
         }
 
-        String savedPFXInit = container != null ? container.getExtra("graphicsPostFXMode") : "";
-        boolean dlsRestored = !savedPFXInit.isEmpty() && Integer.parseInt(savedPFXInit) == 1;
+        String savedPFXInit = getGraphicsPreference("graphicsPostFXMode");
+        boolean dlsRestored = safeParseInt(savedPFXInit) == 1;
         int sharpVis = (fsrOn || dlsRestored) ? View.VISIBLE : View.GONE;
         if (lblSharpnessHeader != null) lblSharpnessHeader.setVisibility(sharpVis);
         if (sbSharpness        != null) sbSharpness.setVisibility(sharpVis);
+        graphicsControlsReady = true;
 
     }
 
@@ -2898,6 +2974,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     public String getHudGraphicsFallback() {
+        if (xServerView instanceof com.winlator.cmod.widget.NativeX11View)
+            return ((com.winlator.cmod.widget.NativeX11View) xServerView).getBackendName();
         return "freedreno".equalsIgnoreCase(graphicsDriver) ? "freedreno" : "Vulkan";
     }
 
@@ -3546,10 +3624,17 @@ public class XServerDisplayActivity extends AppCompatActivity {
         return refreshRate;
     }
 
+    private int getHudMode() {
+        if (container == null) return 0;
+        String base = container.getExtra("hudMode");
+        String mode = shortcut != null ? shortcut.getExtra("hudMode", base) : base;
+        if (mode.isEmpty()) return container.isShowFPS() ? 2 : 0;
+        int parsed = safeParseInt(mode);
+        return parsed == 1 || parsed == 2 ? parsed : 0;
+    }
+
     public boolean isShowFPS() {
-        if (container == null) return false;
-        String hudMode = container.getExtra("hudMode");
-        return !hudMode.isEmpty() ? !"0".equals(hudMode) : container.isShowFPS();
+        return getHudMode() != 0;
     }
 
     public void updateFrameRating(Window window) {

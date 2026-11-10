@@ -14,10 +14,11 @@
 #include "core/xclient.h"
 #include "core/xserver.h"
 #include "native_screen.h"
+#include "native_displayx_bridge.h"
 
 namespace xorg {
-XServer::XServer(jobject instance, ScreenInfo info, bool validation)
-    : java_instance(instance), validationEnabled(validation), screen_info(info), resource_ids(128) {
+XServer::XServer(jobject instance, ScreenInfo info, bool validation, NativeRendererConfig renderer)
+    : java_instance(instance), validationEnabled(validation), rendererConfig(std::move(renderer)), screen_info(info), resource_ids(128) {
     start_time = GetSystemTime();
     // NativeScreen starts workers during construction. Their notification fd
     // must already exist and remain immutable until those workers are joined.
@@ -33,6 +34,7 @@ XServer::XServer(jobject instance, ScreenInfo info, bool validation)
 }
 XServer::~XServer() {
     Shutdown();
+    displayXBridge.reset();
     // Join presentation before any scene/resource objects are destroyed.
     screen.reset();
 }
@@ -43,6 +45,8 @@ void XServer::Start(const std::string& path, const std::string& shm_path) {
     if (server_thread.joinable()) return;
     if (path.empty() || path.size() >= sizeof(sockaddr_un::sun_path))
         throw std::runtime_error("X11 socket path is too long");
+    if (rendererConfig.backend == NativeRendererConfig::Backend::DisplayX && rendererConfig.trueDisplayX)
+        displayXBridge = std::make_unique<NativeDisplayXBridge>(*this);
     shm_manager = std::make_unique<ShmManager>(shm_path);
     server_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (!server_fd.IsValid()) throw std::runtime_error("Cannot create native X11 socket");

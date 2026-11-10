@@ -10,6 +10,7 @@ struct TestFence {
     bool signaled{true};
     void Signal() { std::lock_guard lock(mutex); signaled = true; cv.notify_all(); }
 };
+using VkPresentModeKHR = int;
 using VkDevice = int;
 using VkFence = TestFence*;
 using VkResult = int;
@@ -29,6 +30,10 @@ public:
     bool acquireFails{};
     std::vector<int64_t> boundImages;
     bool validationRequested{};
+    bool swapRB{};
+    void setSwapRB(bool value) { swapRB = value; }
+    int presentMode = -1;
+    void setPresentMode(VkPresentModeKHR value) { presentMode = value; }
     VulkanRendererContext(ANativeWindow* w, int, int, void* = nullptr, bool validation = false) : validationRequested(validation), window(w) { instance = this; }
     ~VulkanRendererContext() { ANativeWindow_release(window); instance = nullptr; }
     void detachSurface() { surfaceDetached = true; }

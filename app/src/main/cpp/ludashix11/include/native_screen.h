@@ -1,4 +1,5 @@
 #pragma once
+#include "native_renderer_config.h"
 #include <condition_variable>
 #include <chrono>
 #include <deque>
@@ -32,6 +33,34 @@ struct PresentTicket {
     std::chrono::steady_clock::time_point diagnosticQueued{};
     std::atomic<bool> idle{false};
 };
+struct NativeExternalFrame {
+    sp<NativeDrawable> drawable;
+    int fence{-1};
+    std::function<void()> completion;
+    std::atomic<bool> acknowledged{false}, claimed{false}, discarded{false};
+    std::mutex completionMutex;
+    std::condition_variable completionCv;
+    bool TryClaim() {
+        { std::lock_guard lock(completionMutex); if (discarded) return false; claimed = true; }
+        completionCv.notify_all(); return true;
+    }
+    void Discard() {
+        { std::lock_guard lock(completionMutex); if (claimed || acknowledged.exchange(true)) return; discarded = true; }
+        if (completion) completion();
+        completionCv.notify_all();
+    }
+    void Abandon() {
+        { std::lock_guard lock(completionMutex); discarded = true; }
+        Complete();
+    }
+    void Complete() {
+        bool first;
+        { std::lock_guard lock(completionMutex); first = !acknowledged.exchange(true); }
+        if (first && completion) completion();
+        completionCv.notify_all();
+    }
+    ~NativeExternalFrame() { if (fence >= 0) close(fence); Complete(); }
+};
 struct NativeEntry {
     sp<NativeDrawable> drawable;
     sp<PresentTicket> ticket;
@@ -39,6 +68,9 @@ struct NativeEntry {
     u64 revision{};
     int x{}, y{};
     bool opaque{};
+    u32 window{};
+    int windowWidth{}, windowHeight{};
+    sp<NativeExternalFrame> external;
 };
 struct NativeFrame {
     bool diagnostics{};
@@ -73,6 +105,8 @@ using NativeFrameLatch = std::function<void(NativeFrame&)>;
 class NativeRenderer {
 public:
     virtual ~NativeRenderer() = default;
+    // Direct scanout must clear queued layer buffers before a surface-loss drain.
+    virtual void PrepareSurfaceChange() {}
     virtual void Surface(ANativeWindow*) = 0;
     // Refresh the retained scene only after the swapchain acquire has finished.
     virtual bool Draw(NativeFrame&, const NativeFrameLatch& latch = {}) = 0;
@@ -90,7 +124,7 @@ public:
     virtual void VisualOptions(const NativeVisualOptions&) {}
     virtual NativeVisualState VisualState() const { return {}; }
 };
-std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 width, u16 height, bool validation = false);
+std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 width, u16 height, bool validation = false, const NativeRendererConfig& config = {});
 
 class NativeScreen final : public XScreen {
 public:
@@ -139,6 +173,8 @@ public:
     bool SelectRandrRate(u16 rate);
     // Called under the XServer lock, as with scene/property changes.
     void SetUnviewableWMClasses(std::vector<std::string> classes);
+    void UpdateExternal(u32 window, u64 generation, sp<NativeExternalFrame> frame);
+    void RemoveExternal(u32 window, u64 generation, const sp<NativeExternalFrame>& frame);
     void WindowPropertyChanged(Window* window, u32 atom);
     void SetDiagnostics(bool enabled);
     void RecordDri3Import() { metricDri3Imports.fetch_add(1, std::memory_order_relaxed); }
@@ -229,6 +265,8 @@ private:
     Scene latest;
     // Producer acknowledgements follow scene updates, independently of GPU retirement.
     std::map<u32, sp<PresentTicket>> direct;
+    struct External { u64 generation; sp<NativeExternalFrame> frame; };
+    std::map<u32, External> externalFrames;
     std::vector<sp<PresentTicket>> requests, waiting;
     // Only touched under the XServer lock (the same thread as Present/Idle).
     std::vector<sp<PresentTicket>> deferredIdles;

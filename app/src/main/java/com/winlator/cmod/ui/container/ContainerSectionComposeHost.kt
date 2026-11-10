@@ -97,6 +97,7 @@ object ContainerSectionComposeHost {
     @JvmStatic
     fun create(
         context: Context,
+        container: com.winlator.cmod.container.Container,
         section: Int,
         description: String,
         rendererEntries: Array<String>,
@@ -147,6 +148,7 @@ object ContainerSectionComposeHost {
         setContent {
             WinZTheme {
                 ContainerSectionScreen(
+                    settingsContainer = container,
                     section = section,
                     description = description,
                     rendererEntries = rendererEntries,
@@ -200,6 +202,7 @@ object ContainerSectionComposeHost {
 
 @Composable
 private fun ContainerSectionScreen(
+    settingsContainer: com.winlator.cmod.container.Container,
     section: Int,
     description: String,
     rendererEntries: Array<String>,
@@ -247,6 +250,12 @@ private fun ContainerSectionScreen(
     callbacks: ContainerSectionCallbacks
 ) {
     var renderer by remember(initialRenderer) { mutableStateOf(initialRenderer) }
+    var surfaceFormat by remember { mutableStateOf(settingsContainer.getSurfaceFormat()) }
+    var displayXBypass by remember { mutableStateOf(settingsContainer.getTrueDisplayX()) }
+    var displayXPerformance by remember { mutableStateOf(settingsContainer.getDisplayXPerformanceMode()) }
+    var displayXRefresh by remember { mutableStateOf(settingsContainer.getDisplayXPresentAtRefreshRate()) }
+    var displayXMode by remember { mutableStateOf(settingsContainer.getDisplayXPresentMode()) }
+    var displayXPrecise by remember { mutableStateOf(settingsContainer.getDisplayXPrecisePresentation()) }
     var displayServer by remember(initialDisplayServer) { mutableStateOf(initialDisplayServer) }
     var screen by remember(initialScreen) { mutableStateOf(initialScreen) }
     var graphics by remember(initialGraphics) { mutableStateOf(initialGraphics) }
@@ -307,6 +316,14 @@ private fun ContainerSectionScreen(
                         val savedScreen = if (screen.equals("Custom", true)) {
                             "${customWidth.toIntOrNull()?.coerceAtLeast(1) ?: 1280}x${customHeight.toIntOrNull()?.coerceAtLeast(1) ?: 720}"
                         } else screen
+                        if (section == 1) {
+                            settingsContainer.setSurfaceFormat(surfaceFormat)
+                            settingsContainer.setTrueDisplayX(displayXBypass)
+                            settingsContainer.setDisplayXPerformanceMode(displayXPerformance)
+                            settingsContainer.setDisplayXPresentAtRefreshRate(displayXRefresh)
+                            settingsContainer.setDisplayXPresentMode(displayXMode)
+                            settingsContainer.setDisplayXPrecisePresentation(displayXPrecise)
+                        }
                         callbacks.onSave(
                             renderer,
                             displayServer,
@@ -404,15 +421,24 @@ private fun ContainerSectionScreen(
                                 Icons.Outlined.DesktopWindows,
                                 uiStr(R.string.ui_display_server),
                                 displayServer,
-                                arrayOf("Java X11", "Ludashi X11 (Native Vulkan)")
+                                arrayOf("Java X11", "X++")
                             ) { displayServer = it }
                             GroupDivider()
                             ChoiceSetting(
                                 Icons.Outlined.DesktopWindows,
-                                uiStr(R.string.ui_renderer_java_x11),
+                                uiStr(R.string.ui_renderer),
                                 renderer,
                                 rendererEntries
-                            ) { renderer = it }
+                            ) {
+                                renderer = it
+                                surfaceFormat = if (it == "DisplayX") "rgba8" else "bgra8"
+                                if (it == "EGL" && filterMode > 1) filterMode = 0
+                            }
+                            GroupDivider()
+                            ChoiceSetting(Icons.Outlined.Tune, uiStr(R.string.ui_surface_format),
+                                if (surfaceFormat == "bgra8") "BGRA" else "RGBA", arrayOf("RGBA", "BGRA")) {
+                                surfaceFormat = if (it == "BGRA") "bgra8" else "rgba8"
+                            }
                             GroupDivider()
                             ActionSetting(
                                 Icons.Outlined.Tune,
@@ -420,9 +446,17 @@ private fun ContainerSectionScreen(
                                 uiStr(R.string.ui_present_mode_driver_filter_and_color_channels),
                                 expanded = rendererOptionsExpanded
                             ) { rendererOptionsExpanded = !rendererOptionsExpanded }
-                            if (rendererOptionsExpanded) {
+                            if (rendererOptionsExpanded && renderer == "DisplayX") {
+                                Column(Modifier.padding(start = 65.dp, end = 12.dp, bottom = 10.dp)) {
+                                    ToggleSetting(uiStr(R.string.ui_bypass_x11), displayXBypass) { displayXBypass = it }
+                                    ToggleSetting(uiStr(R.string.ui_performance_mode), displayXPerformance) { displayXPerformance = it }
+                                    ToggleSetting(uiStr(R.string.ui_present_at_refresh_rate), displayXRefresh) { displayXRefresh = it }
+                                    InlineChoice(uiStr(R.string.ui_present_mode), displayXMode, arrayOf("mailbox", "fifo")) { displayXMode = it }
+                                    ToggleSetting(uiStr(R.string.ui_precise_presentation), displayXPrecise) { displayXPrecise = it }
+                                }
+                            } else if (rendererOptionsExpanded) {
                                 RendererOptionsPanel(
-                                    nativeRenderer = renderer.equals("EGL", true),
+                                    nativeRenderer = !renderer.equals("Vulkan", true),
                                     presentMode = presentMode,
                                     onPresentMode = { presentMode = it },
                                     driverEntries = rendererDriverEntries,

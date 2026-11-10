@@ -877,13 +877,6 @@
                             android:textColor="#FFFFFF"
                             android:textSize="12sp" />
                     </LinearLayout>
-
-                    <CheckBox
-                        android:id="@+id/CBHudGraph"
-                        android:layout_width="0dp"
-                        android:layout_height="0dp"
-                        android:visibility="gone"
-                        android:enabled="false" />
                 </LinearLayout>
 
                 <LinearLayout

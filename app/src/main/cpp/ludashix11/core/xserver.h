@@ -1,4 +1,5 @@
 #pragma once
+#include "native_renderer_config.h"
 
 #include <array>
 #include <thread>
@@ -24,15 +25,19 @@ class Visual;
 class XScreen;
 class ShmManager;
 
+class NativeDisplayXBridge;
+
 class XServer {
 public:
-    explicit XServer(jobject java_instance, ScreenInfo screen_info, bool validation = false);
+    explicit XServer(jobject java_instance, ScreenInfo screen_info, bool validation = false, NativeRendererConfig renderer = {});
 
     ~XServer();
 
     std::unique_lock<std::recursive_mutex> Lock() { return std::unique_lock(mutex); }
 
     jobject GetJavaInstance() const { return java_instance; }
+
+    const NativeRendererConfig& RendererConfig() const { return rendererConfig; }
 
     bool ValidationEnabled() const { return validationEnabled; }
 
@@ -101,6 +106,8 @@ private:
 
     jobject java_instance;
     const bool validationEnabled;
+    const NativeRendererConfig rendererConfig;
+    std::unique_ptr<NativeDisplayXBridge> displayXBridge;
     u64 start_time{};
     size_t syncWaiters{};
     std::recursive_mutex mutex;

@@ -66,7 +66,7 @@ internal fun ContainerSystemInline(containerId: Int, callbacks: ContainerInlineC
     }
     var name by remember { mutableStateOf(container.getName()) }
     var hudMode by remember {
-        mutableStateOf(container.getExtra("hudMode").toIntOrNull() ?: if (container.isShowFPS()) 1 else 0)
+        mutableStateOf(container.getExtra("hudMode").toIntOrNull() ?: if (container.isShowFPS()) 2 else 0)
     }
     var desktopTheme by remember {
         mutableStateOf(if (themeInfo.theme == WineThemeManager.Theme.LIGHT) "Light" else "Dark")

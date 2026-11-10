@@ -54,7 +54,6 @@ public class WinlatorHUD extends View {
     public static final int SHOW_CPU_TEMP = 1 << 8;
     public static final int SHOW_BATTERY_TEMP = 1 << 9;
     public static final int SHOW_CHARGE_STATE = 1 << 10;
-    public static final int SHOW_FRAME_GRAPH = 1 << 14;
 
     public static final int SHOW_GPU = SHOW_GPU_USAGE;
     public static final int SHOW_CPU = SHOW_CPU_USAGE;
@@ -171,8 +170,9 @@ public class WinlatorHUD extends View {
     private final SharedPreferences.OnSharedPreferenceChangeListener prefListener =
             (sharedPreferences, key) -> {
                 if (!KEY_SHOW.equals(key)) return;
-                final int newMask = sharedPreferences.getInt(KEY_SHOW, SHOW_DEFAULT);
                 uiHandler.post(() -> {
+                    // Read the latest value: several toggles may change before this runs.
+                    int newMask = sharedPreferences.getInt(KEY_SHOW, SHOW_DEFAULT);
                     if (showMask == newMask) return;
                     showMask = newMask;
                     if ((newMask & SHOW_GPU_USAGE) == 0) stopGpuSampling();
@@ -185,7 +185,6 @@ public class WinlatorHUD extends View {
     private float snapFps = 0;
     private String generatedFpsText = "";
     private final Paint pGenerated = new Paint(TEXT_FLAGS);
-    private final HudFrametimeGraph frametimeGraph = new HudFrametimeGraph();
     private VulkanRendererControls frameGenerationSource = null;
     private long lastGeneratedFrames = 0;
     private boolean generatedCounterPrimed = false;
@@ -739,7 +738,6 @@ public class WinlatorHUD extends View {
         long generated = sampleGeneratedFrames();
         snapFps = frames * 1_000_000_000f / dt;
         generatedFpsText = frameGenerationActive ? " -> " + Math.round((frames + generated) * 1_000_000_000f / dt) : "";
-        if ((showMask & SHOW_FRAME_GRAPH) != 0) frametimeGraph.record(snapFps);
         lastFpsNs = now;
 
         strFps = Integer.toString(Math.max(0, Math.round(snapFps)));
@@ -763,9 +761,6 @@ public class WinlatorHUD extends View {
 
             if (vertical) drawVertical(canvas);
             else drawHorizontal(canvas);
-            if ((showMask & SHOW_FRAME_GRAPH) != 0)
-                frametimeGraph.draw(canvas, PAD, getHeight() - TS * 2f - PAD,
-                        getWidth() - PAD * 2f, TS * 2f, TS);
         } catch (Exception ignored) {}
     }
 
@@ -1146,7 +1141,6 @@ public class WinlatorHUD extends View {
         float lineH = TS + PAD * 2;
         float width = vertical ? measureVerticalReserved() : measureHorizontalReserved();
         float height = vertical ? (countVerticalRows() * lineH + PAD) : lineH;
-        if ((showMask & SHOW_FRAME_GRAPH) != 0) height += TS * 2f + PAD;
         setMeasuredDimension((int) Math.ceil(width), (int) Math.ceil(height));
     }
 
@@ -1305,6 +1299,19 @@ public class WinlatorHUD extends View {
     }
 
     private void loadPrefs() {
+        showMask = readShowMask(prefs);
+        hudAlpha = prefs.getInt(KEY_ALPHA, 100) / 100f;
+        vertical = prefs.getBoolean(KEY_VERT, false);
+        float scale = prefs.getFloat(KEY_SCALE, 1f);
+        setScaleX(scale);
+        setScaleY(scale);
+        setX(prefs.getFloat(KEY_X, 16f));
+        setY(prefs.getFloat(KEY_Y, 16f));
+        userEnabled = false;
+        setVisibility(GONE);
+    }
+
+    private static int readShowMask(SharedPreferences prefs) {
         int mask;
         if (!prefs.getBoolean(KEY_SHOW_V2, false)) {
             if (prefs.contains(KEY_SHOW)) {
@@ -1327,26 +1334,17 @@ public class WinlatorHUD extends View {
             mask = prefs.getInt(KEY_SHOW, SHOW_DEFAULT);
         }
 
-        showMask = mask;
-        hudAlpha = prefs.getInt(KEY_ALPHA, 100) / 100f;
-        vertical = prefs.getBoolean(KEY_VERT, false);
-        float scale = prefs.getFloat(KEY_SCALE, 1f);
-        setScaleX(scale);
-        setScaleY(scale);
-        setX(prefs.getFloat(KEY_X, 16f));
-        setY(prefs.getFloat(KEY_Y, 16f));
-        userEnabled = false;
-        setVisibility(GONE);
+        return mask & SHOW_DEFAULT;
     }
 
     public static boolean isOptionEnabled(Context context, int bit) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        return (prefs.getInt(KEY_SHOW, SHOW_DEFAULT) & bit) != 0;
+        return (readShowMask(prefs) & bit) != 0;
     }
 
     public static void setOptionPreference(Context context, int bit, boolean enabled) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        int mask = prefs.getInt(KEY_SHOW, SHOW_DEFAULT);
+        int mask = readShowMask(prefs);
         mask = enabled ? (mask | bit) : (mask & ~bit);
         prefs.edit().putInt(KEY_SHOW, mask).apply();
     }
@@ -1492,6 +1490,7 @@ public class WinlatorHUD extends View {
     public void toggleElement(int idx, boolean on) {
         int bit = idxToMask(idx);
         if (bit == 0) return;
+        showMask = readShowMask(prefs);
         if (on) showMask |= bit;
         else showMask &= ~bit;
         if (bit == SHOW_GPU_USAGE && !on && statsHandler != null)
@@ -1512,9 +1511,9 @@ public class WinlatorHUD extends View {
             android.widget.CheckBox cbGpu,
             android.widget.CheckBox cbCpuRam,
             android.widget.CheckBox cbBattTemp,
-            android.widget.CheckBox cbGraph,
             android.widget.CheckBox cbRenderer,
             android.widget.CheckBox cbRam) {
+        showMask = readShowMask(prefs);
         if (cbFps != null) cbFps.setChecked((showMask & SHOW_FPS) != 0);
         if (cbGpu != null) cbGpu.setChecked((showMask & SHOW_GPU_USAGE) != 0);
         if (cbCpuRam != null) cbCpuRam.setChecked((showMask & SHOW_CPU_USAGE) != 0);
@@ -1621,7 +1620,6 @@ public class WinlatorHUD extends View {
         frameAccum.set(0);
         snapFps = 0;
         generatedFpsText = "";
-        frametimeGraph.clear();
         lastFpsNs = 0;
         lastGeneratedFrames = 0;
         generatedCounterPrimed = false;

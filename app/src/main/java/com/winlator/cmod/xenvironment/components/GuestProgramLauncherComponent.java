@@ -475,8 +475,48 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             execEnvVars.put("WINE_FORCE_SSBS", ssbs ? "1" : "0");
         }
 
-        boolean nativeX11 = "1".equals(execEnvVars.get("WINLATOR_NATIVE_X11"));
-        boolean useDisplayX = !nativeX11 && (shortcut != null
+        configureDisplayXEnvironment(execEnvVars, container, shortcut);
+
+        String emulator = container.getEmulator();
+        if (shortcut != null)
+            emulator = shortcut.getExtra("emulator", container.getEmulator());
+
+        String command = "";
+        String overriddenCommand = execEnvVars.get("GUEST_PROGRAM_LAUNCHER_COMMAND");
+        if (!overriddenCommand.isEmpty()) {
+            String[] parts = overriddenCommand.split(";");
+            for (String part : parts)
+                command += part + " ";
+            command = command.trim();
+        }
+        else {
+            if (wineInfo.isArm64EC()) {
+                command = winePath + "/" + guestExecutable;
+                if (emulator.toLowerCase().equals("fexcore"))
+                    execEnvVars.put("HODLL", "libwow64fex.dll");
+                else
+                    execEnvVars.put("HODLL", "wowbox64.dll");
+            } else
+                command = imageFs.getBinDir() + "/box64 " + guestExecutable;
+        }
+
+        File box64File = new File(rootDir, "/usr/bin/box64");
+        if (box64File.exists()) {
+            FileUtils.chmod(box64File, 0755);
+        }
+
+        return ProcessHelper.exec(command, execEnvVars.toStringArray(), rootDir, (status) -> {
+            synchronized (lock) {
+                pid = -1;
+            }
+
+            if (terminationCallback != null)
+                terminationCallback.call(status);
+        });
+    }
+
+    static void configureDisplayXEnvironment(EnvVars execEnvVars, Container container, Shortcut shortcut) {
+        boolean useDisplayX = (shortcut != null
                 ? shortcut.getUseDisplayX()
                 : container != null && container.getUseDisplayX());
         boolean trueDisplayX = shortcut != null
@@ -516,42 +556,6 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             }
         }
 
-        String emulator = container.getEmulator();
-        if (shortcut != null)
-            emulator = shortcut.getExtra("emulator", container.getEmulator());
-
-        String command = "";
-        String overriddenCommand = execEnvVars.get("GUEST_PROGRAM_LAUNCHER_COMMAND");
-        if (!overriddenCommand.isEmpty()) {
-            String[] parts = overriddenCommand.split(";");
-            for (String part : parts)
-                command += part + " ";
-            command = command.trim();
-        }
-        else {
-            if (wineInfo.isArm64EC()) {
-                command = winePath + "/" + guestExecutable;
-                if (emulator.toLowerCase().equals("fexcore"))
-                    execEnvVars.put("HODLL", "libwow64fex.dll");
-                else
-                    execEnvVars.put("HODLL", "wowbox64.dll");
-            } else
-                command = imageFs.getBinDir() + "/box64 " + guestExecutable;
-        }
-
-        File box64File = new File(rootDir, "/usr/bin/box64");
-        if (box64File.exists()) {
-            FileUtils.chmod(box64File, 0755);
-        }
-
-        return ProcessHelper.exec(command, execEnvVars.toStringArray(), rootDir, (status) -> {
-            synchronized (lock) {
-                pid = -1;
-            }
-
-            if (terminationCallback != null)
-                terminationCallback.call(status);
-        });
     }
 
     private void addBox64EnvVars(EnvVars envVars, boolean enableLogs) {

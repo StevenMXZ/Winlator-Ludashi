@@ -1,4 +1,5 @@
 #include "native_screen.h"
+#include "native_displayx_bridge.h"
 #include "core/xserver.h"
 #include "core/xclient.h"
 #include "core/cursor.h"
@@ -18,6 +19,7 @@ namespace xorg {
 class HostRenderer final : public NativeRenderer {
 public:
     HostRenderer() {
+        if (std::getenv("LUDASHI_HOST_DISPLAYX")) pendingLimit = 3;
         if (const char* value = std::getenv("LUDASHI_HOST_FENCE_DELAY_MS")) fenceDelay = std::atoi(value);
         if (const char* value = std::getenv("LUDASHI_HOST_BLOCK_DRAW_MS")) blockDelay = std::atoi(value);
         if (const char* value = std::getenv("LUDASHI_HOST_BLOCK_ACQUIRE_MS")) acquireDelay = std::atoi(value);
@@ -27,11 +29,12 @@ public:
     ~HostRenderer() override { if (surface) ANativeWindow_release(surface); }
     void Surface(ANativeWindow* w) override { if (surface) ANativeWindow_release(surface); surface = w; }
     void Options(bool, bool, int, float, float) override {}
-    bool ReadyToDraw() const override { std::lock_guard lock(pendingMutex); return pending.size() < 2; }
+    bool ReadyToDraw() const override { std::lock_guard lock(pendingMutex); return pending.size() < pendingLimit; }
     size_t PollCompleted(size_t maxReady) override {
         std::lock_guard lock(pendingMutex);
         size_t ready{};
-        while (ready < maxReady && !pending.empty() && pending.front() <= std::chrono::steady_clock::now()) {
+        while (ready < maxReady && !pending.empty() && pending.front().deadline <= std::chrono::steady_clock::now()) {
+            for (const auto& frame : pending.front().external) frame->Complete();
             pending.pop_front(); ++ready;
         }
         return ready;
@@ -41,7 +44,7 @@ public:
         {
             std::lock_guard lock(pendingMutex);
             if (!maxReady || pending.empty()) return 0;
-            deadline = pending.front();
+            deadline = pending.front().deadline;
         }
         std::this_thread::sleep_until(std::min(deadline,
             std::chrono::steady_clock::now() + std::chrono::milliseconds(10)));
@@ -62,6 +65,7 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(acquireDelay));
         }
         if (latch) latch(frame);
+        std::erase_if(frame.entries, [](const auto& entry) { return entry.external && !entry.external->TryClaim(); });
         if (traceScene && initialSerial == 41) {
             u32 selectedSerial{};
             for (const auto& entry : frame.entries) if (entry.ticket) selectedSerial = entry.ticket->serial;
@@ -103,8 +107,11 @@ public:
         }
         {
             std::lock_guard lock(pendingMutex);
-            pending.push_back(std::chrono::steady_clock::now() +
-                             std::chrono::milliseconds(sampled.empty() ? 0 : fenceDelay));
+            std::vector<sp<NativeExternalFrame>> external;
+            for (const auto& entry : frame.entries) if (entry.external) external.push_back(entry.external);
+            const bool busy = !sampled.empty() || !external.empty();
+            pending.push_back({std::chrono::steady_clock::now() +
+                             std::chrono::milliseconds(busy ? fenceDelay : 0), std::move(external)});
         }
         // Model a GPU fence followed by blocking FIFO presentation. Producer
         // notifications must already have been sent independently of both.
@@ -118,18 +125,22 @@ public:
     }
     ANativeWindow* surface{};
     mutable std::mutex pendingMutex;
-    std::deque<std::chrono::steady_clock::time_point> pending;
+    size_t pendingLimit{2};
+    struct Pending { std::chrono::steady_clock::time_point deadline; std::vector<sp<NativeExternalFrame>> external; };
+    std::deque<Pending> pending;
     int fenceDelay{}, blockDelay{}, acquireDelay{};
     bool traceScene{};
     u32 failSerial{UINT32_MAX};
 };
-std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16, u16, bool) { return std::make_unique<HostRenderer>(); }
+std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16, u16, bool, const NativeRendererConfig&) { return std::make_unique<HostRenderer>(); }
 }
 static volatile sig_atomic_t quit;
 int main(int argc, char** argv) {
     if (argc != 2 && argc != 3) return 2;
     signal(SIGTERM, [](int) { quit = 1; }); signal(SIGINT, [](int) { quit = 1; });
     xorg::XServer server(nullptr, xorg::ScreenInfo(1280, 720, 4));
+    std::unique_ptr<xorg::NativeDisplayXBridge> displayX;
+    if (std::getenv("LUDASHI_HOST_DISPLAYX")) displayX = std::make_unique<xorg::NativeDisplayXBridge>(server);
     if (std::string(argv[1]) == "--pending-cow") {
         int sockets[2]; if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) return 2;
         xorg::XClient client(server, sockets[0]);

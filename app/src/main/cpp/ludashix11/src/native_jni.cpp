@@ -27,11 +27,22 @@ struct JavaString {
 };
 }
 #define JNI_NAME(name) Java_com_winlator_cmod_widget_NativeX11View_##name
-extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeCreate)(JNIEnv* env, jclass, jint width, jint height, jboolean validation) {
+extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeCreate)(JNIEnv* env, jclass, jint width, jint height, jboolean validation,
+        jstring driverPath, jstring libraryName, jstring nativeLibDir, jint presentMode, jboolean swapRB, jint backend, jint flags) {
     try {
         if (width < 1 || height < 1 || width > 16384 || height > 16384)
             throw std::runtime_error("Invalid native X11 resolution");
-        auto server = std::make_shared<xorg::XServer>(nullptr, xorg::ScreenInfo(width, height, 4), validation == JNI_TRUE);
+        JavaString path(env, driverPath), library(env, libraryName), nativeLib(env, nativeLibDir);
+        if (!path.text || !library.text || !nativeLib.text) return 0;
+        xorg::NativeRendererConfig config;
+        config.driverPath = path.text; config.libraryName = library.text; config.nativeLibDir = nativeLib.text;
+        config.swapRB = swapRB == JNI_TRUE; config.presentMode = presentMode == 1 ? 1 : 2;
+        config.backend = backend == 2 ? xorg::NativeRendererConfig::Backend::DisplayX
+                : backend == 1 ? xorg::NativeRendererConfig::Backend::EGL : xorg::NativeRendererConfig::Backend::Vulkan;
+        config.trueDisplayX = flags & 1; config.performanceMode = flags & 2;
+        config.presentAtRefreshRate = flags & 4; config.precisePresentation = flags & 8;
+        auto server = std::make_shared<xorg::XServer>(nullptr, xorg::ScreenInfo(width, height, 4),
+                validation == JNI_TRUE, std::move(config));
         std::lock_guard lock(sessions_mutex); jlong handle = next_session++;
         sessions.emplace(handle, std::move(server)); return handle;
     } catch (const std::exception& e) { fail(env, e.what()); return 0; }
