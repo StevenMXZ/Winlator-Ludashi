@@ -52,6 +52,8 @@ object SteamSession {
         private set
     @Volatile var downloadName = ""
         private set
+    @Volatile private var downloadMeter: SteamDownloadMeter? = null
+    internal fun downloadReading() = downloadMeter?.read(SystemClock.elapsedRealtime())
     @Volatile var downloadDone = 0L
         private set
     @Volatile var downloadTotal = 0L
@@ -166,7 +168,7 @@ object SteamSession {
         closing = false
         val current = ++generation
         work {
-            if (session != null || current != generation || closing) return@work
+            if (session != null || current != generation || closing || gameActive) return@work
             recovery.reset(); recoveryBlocked = false; restoreDeadline = 0L
             ensurePolling()
             try { replaceSession(context) } catch (error: Exception) { restoreFailure(error) }
@@ -324,6 +326,7 @@ object SteamSession {
         val dir = SteamStorage.download(context, id, name)
         SteamGoldberg.restore(dir)
         SteamGoldberg.invalidate(dir)
+        downloadMeter = SteamDownloadMeter(depots.map { it.id }, depots.associate { it.id to it.size })
         downloading = true
         downloadId = id; downloadName = name; downloadDone = 0; downloadTotal = 0
         status = "Downloading $name…"
@@ -332,7 +335,9 @@ object SteamSession {
                 "public", dir.absolutePath, false, ca, SteamDownloadSettings.network(SteamDownloadSettings.tier(context)), object : LudashiDownloadListener {
                     override fun onProgress(depotId: Int, depotDone: Long, depotTotal: Long, depotsDone: Int, depotsTotal: Int, verifying: Boolean) {
                         if (session !== s || !signedIn) return
-                        downloadDone = depotDone; downloadTotal = depotTotal
+                        downloadMeter?.update(depotId, depotDone, depotTotal, depotsDone, verifying, SystemClock.elapsedRealtime())
+                        val reading = downloadReading()
+                        downloadDone = reading?.done ?: depotDone; downloadTotal = reading?.total ?: depotTotal
                         status = "$name: depot ${depotsDone + 1}/$depotsTotal — ${if (depotTotal > 0) depotDone * 100 / depotTotal else 0}%" + if (verifying) " (verifying)" else ""
                     }
                     override fun onComplete(success: Boolean, error: String, bytesWritten: Long, depotsCompleted: Int, depotsSkipped: Int) {
@@ -343,13 +348,37 @@ object SteamSession {
                                 main.post { SteamGames.changed() }
                             }
                             downloading = false
-                            status = if (success) "$name installed" else "Download failed: $error"
+                            status = if (success) "$name installed" else if (gameActive) "Download paused while the container runs" else "Download failed: $error"
                         }
                     }
                 }, SteamDownloadSettings.processing(SteamDownloadSettings.tier(context)))
         } catch (e: Exception) { downloading = false; throw e }
     }
     fun cancel() = work { session?.cancelDownload() }
+    /** All ordinary runtimes, including the container desktop, suspend app Steam work. */
+    @JvmStatic fun pauseForCustomGame(context: Context): Boolean {
+        if (app == null || closing || !SteamSettings.enabled(context) || gameActive) return false
+        check(!SteamNativeCloud.busy) { "Wait for Steam Cloud sync to finish before entering the container" }
+        if (downloading) {
+            downloading = false
+            work { session?.cancelDownload() }
+        }
+        SteamSocial.status.value = com.winlator.cmod.ui.uiStr(com.winlator.cmod.R.string.steam_friends_empty)
+        try { beginGame(context) } catch (error: Exception) {
+            // Steam is optional for a custom executable: never fail its launch on a CM timeout.
+            gameActive = true
+            recoveryBlocked = true; restoring = false
+            main.removeCallbacks(poll); main.removeCallbacks(restoreWatch)
+            work {
+                if (!gameActive) return@work
+                val old = session; session = null
+                old?.let { it.setStateObserver(null); it.cancelLogin(); it.logOffAndDisconnect(); it.close() }
+                connected = false; signedIn = false
+            }
+            android.util.Log.w("SteamSession", "Custom launch continues; optional Steam pause queued", error)
+        }
+        return true
+    }
     @JvmStatic fun beginGame(context: Context) {
         check(SteamSettings.enabled(context)) { "Steam is disabled in Steam / Stores settings" }
         check(!SteamNativeCloud.busy) { "Wait for Steam Cloud sync to finish" }
@@ -361,7 +390,7 @@ object SteamSession {
             try {
                 if (!gameActive) return@work
                 recoveryBlocked = true; restoring = false; signingIn = false
-                main.removeCallbacks(poll)
+                main.removeCallbacks(poll); main.removeCallbacks(restoreWatch)
                 val old = session; session = null
                 old?.let { it.setStateObserver(null); it.cancelLogin(); it.logOffAndDisconnect(); it.close() }
                 connected = false; signedIn = false
@@ -381,6 +410,7 @@ object SteamSession {
         if (SteamSettings.enabled(context) && SteamCredentials.load(context) != null) {
             app = context.applicationContext; closing = false
             work {
+                if (gameActive || closing || !SteamSettings.enabled(context)) return@work
                 recovery.reset(); recoveryBlocked = false; restoreDeadline = 0L
                 ensurePolling()
                 try { replaceSession(context.applicationContext) } catch (error: Exception) { restoreFailure(error) }

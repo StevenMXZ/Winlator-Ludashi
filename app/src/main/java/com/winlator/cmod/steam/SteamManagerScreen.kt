@@ -157,6 +157,7 @@ import java.io.File
                     Text(state.name, style = MaterialTheme.typography.titleLarge)
                     Text(if (state.downloading) uiStr(R.string.steam_ui_downloading) else if (File(context.filesDir, "steam-library/${state.id}.json").isFile) uiStr(R.string.steam_ui_installed_game) else uiStr(R.string.steam_ui_paused), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (state.downloading && state.total > 0) LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                    if (state.downloading) Text(downloadTimingText(state), style = MaterialTheme.typography.bodySmall)
                     Text("${state.done / 1048576} / ${state.total / 1048576} MB", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (state.downloading) OutlinedButton(onClick = { SteamSession.cancel() }) { Icon(Icons.Outlined.Pause, null); Text(uiStr(R.string.steam_ui_pause)) }

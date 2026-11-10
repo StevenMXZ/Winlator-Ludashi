@@ -78,12 +78,14 @@ class ModernSidebarController internal constructor(internal val activity: XServe
             else -> R.id.BTItemFPS
         }
         activity.findViewById<View>(button)?.performClick()
+        if (opened && panel == R.id.LLSubGraphics) activity.requestSidebarRuntimeStatus()
+        else activity.cancelSidebarRuntimeStatus()
         refresh()
     }
     fun onRuntimeStatusChanged() { revision++ }
     fun onLocaleChanged() { revision++ }
-    fun onClosed() { opened = false }
-    fun onOpened(isPaused: Boolean) { opened = true; paused = isPaused; select(selected); activity.requestSidebarRuntimeStatus() }
+    fun onClosed() { opened = false; activity.cancelSidebarRuntimeStatus() }
+    fun onOpened(isPaused: Boolean) { opened = true; paused = isPaused; select(selected) }
     internal fun pause() { activity.findViewById<View>(R.id.BTItemPause)?.performClick(); paused = !paused }
     internal fun exit() { activity.findViewById<View>(R.id.BTItemExit)?.performClick() }
 }

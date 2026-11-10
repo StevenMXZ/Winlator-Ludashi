@@ -172,12 +172,12 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
                 shape = WinZShapes.ExtraLarge, color = Color.Black.copy(.48f), border = BorderStroke(1.dp, Color.White.copy(.18f))) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() }, { (callbacks as? SteamDetailCallbacks)?.onSteamCloud() })
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         LandscapeAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), Modifier.weight(1f), callbacks::onConfigure)
                         LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
                         LandscapeAction(Icons.Outlined.Backup, savesLabel(), Modifier.weight(1f), callbacks::onSaves)
                         LandscapeAction(Icons.Outlined.Home, stringResource(R.string.ui_home), Modifier.weight(1f), callbacks::onHome)
-                        LandscapeAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall_game) else stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
+                        LandscapeAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall) else stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
                     }
                     LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
                 }
@@ -206,7 +206,7 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
             DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
             DetailAction(Icons.Outlined.Backup, savesLabel(), callbacks::onSaves)
             DetailAction(Icons.Outlined.Home, stringResource(R.string.ui_add_to_home), callbacks::onHome)
-            DetailAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall_game) else stringResource(R.string.remove), callbacks::onRemove, true)
+            DetailAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall) else stringResource(R.string.remove), callbacks::onRemove, true)
             LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
             Spacer(Modifier.height(12.dp))
         }
@@ -255,7 +255,7 @@ private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit, chooseEx
 
 @Composable
 private fun LandscapeAction(icon: ImageVector, label: String, modifier: Modifier, click: () -> Unit, destructive: Boolean = false) {
-    Surface(click, modifier, shape = WinZShapes.Medium, color = Color.White.copy(.10f), contentColor = if (destructive) MaterialTheme.colorScheme.error else Color.White,
+    Surface(click, modifier.fillMaxHeight(), shape = WinZShapes.Medium, color = Color.White.copy(.10f), contentColor = if (destructive) MaterialTheme.colorScheme.error else Color.White,
         border = BorderStroke(1.dp, Color.White.copy(.16f))) {
         Column(Modifier.padding(horizontal = 4.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Icon(icon, null, Modifier.size(23.dp)); Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)

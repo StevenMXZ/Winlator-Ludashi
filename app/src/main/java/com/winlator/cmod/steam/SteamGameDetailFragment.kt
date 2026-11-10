@@ -105,15 +105,16 @@ class SteamGameDetailFragment : Fragment() {
                 if (SteamGames.configured(context, appId)) HomeShortcuts.pin(requireActivity(), shortcut) else notice(uiStr(R.string.steam_ui_configure_game_first))
             }
             override fun onRemove() {
-                android.app.AlertDialog.Builder(context).setTitle(uiStr(R.string.steam_ui_uninstall_title))
-                    .setMessage(uiStr(R.string.steam_ui_uninstall_confirm, title))
-                    .setNegativeButton(uiStr(R.string.steam_ui_cancel), null).setPositiveButton(uiStr(R.string.steam_ui_uninstall)) { _, _ ->
-                        SteamSession.work {
-                            runCatching { SteamGames.uninstall(context, appId) }.onSuccess {
-                                activity?.runOnUiThread { SteamGames.changed(); if (isAdded) { if (activity is MainActivity) parentFragmentManager.popBackStack() else activity?.finish() } }
-                            }.onFailure { failure -> activity?.runOnUiThread { if (isAdded) notice(failure.message.orEmpty()) } }
-                        }
-                    }.show()
+                com.winlator.cmod.ui.ConfirmActionDialog.show(this@SteamGameDetailFragment,
+                    uiStr(R.string.steam_ui_uninstall), uiStr(R.string.steam_ui_uninstall_confirm, title), uiStr(R.string.steam_ui_uninstall),
+                    Runnable {
+                        val result = java.util.concurrent.CompletableFuture<Unit>()
+                        SteamSession.work { runCatching { SteamGames.uninstall(context, appId) }.onSuccess { result.complete(Unit) }.onFailure { result.completeExceptionally(it) } }
+                        try { result.get() } catch (error: java.util.concurrent.ExecutionException) { throw (error.cause ?: error) }
+                    }, Runnable {
+                        SteamGames.changed()
+                        if (activity is MainActivity) parentFragmentManager.popBackStack() else activity?.finish()
+                    })
             }
         })
     }

@@ -383,19 +383,20 @@ public class ContentsFragment extends Fragment {
                     if (itemId == R.id.content_info) {
                         new ContentInfoDialog(getContext(), profile).show();
                     } else if (itemId == R.id.remove_content) {
-                        ContentDialog.confirm(getContext(), R.string.do_you_want_to_remove_this_content, () -> {
+                        com.winlator.cmod.ui.ConfirmActionDialog.show(ContentsFragment.this, getString(R.string.steam_ui_uninstall),
+                                profile.verName + "\n\n" + getString(R.string.do_you_want_to_remove_this_content), getString(R.string.steam_ui_uninstall), () -> {
                             if (profile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE || profile.type == ContentProfile.ContentType.CONTENT_TYPE_PROTON) {
                                 ContainerManager containerManager = new ContainerManager(getContext());
                                 for (Container container : containerManager.getContainers()) {
                                     if (container.getWineVersion().equals(ContentsManager.getEntryName(profile))) {
-                                        ContentDialog.alert(getContext(), String.format(getString(R.string.unable_to_remove_content_since_container_using), container.getName()), null);
-                                        return;
+                                        throw new IllegalStateException(String.format(getString(R.string.unable_to_remove_content_since_container_using), container.getName()));
                                     }
                                 }
                             }
-                            manager.removeContent(profile);
-                            loadContentList();
-                        });
+                            java.io.File installDir = ContentsManager.getInstallDir(requireContext(), profile);
+                            if (installDir.exists() && !com.winlator.cmod.core.FileUtils.delete(installDir))
+                                throw new IllegalStateException(getString(R.string.ui_component_uninstall_failed));
+                        }, () -> { manager.removeContent(profile); loadContentList(); });
                     }
                     return true;
                 });

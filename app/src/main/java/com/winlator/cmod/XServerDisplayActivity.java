@@ -230,6 +230,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private SharedPreferences playtimePrefs;
     private String shortcutName;
     private Handler handler;
+    private volatile boolean ownsSteamSessionPause;
+    public void markSteamSessionPaused() { ownsSteamSessionPause = true; }
     private Runnable savePlaytimeRunnable;
     private static final long SAVE_INTERVAL_MS = 60000;
 
@@ -351,7 +353,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 handler.postDelayed(this, SAVE_INTERVAL_MS);
             }
         };
-        handler.postDelayed(savePlaytimeRunnable, SAVE_INTERVAL_MS);
+        // onResume owns the single playtime schedule.
 
         hideControlsRunnable = () -> {
             if (DISABLE_TOUCHSCREEN_AUTO_HIDE) {
@@ -851,6 +853,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             environment.onResume();
         }
         startTime = System.currentTimeMillis();
+        handler.removeCallbacks(savePlaytimeRunnable);
         handler.postDelayed(savePlaytimeRunnable, SAVE_INTERVAL_MS);
         if (!isInPictureInPictureMode())
             ProcessHelper.resumeAllWineProcesses();
@@ -1017,9 +1020,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
             com.winlator.cmod.core.ContainerSessionGate.stop(container.id);
             ownsPrefixLease = false;
         }
-        if (shortcut != null && !shortcut.getExtra("steamAppId").isEmpty()) {
-            com.winlator.cmod.steam.SteamSocial.closeGuest();
-            com.winlator.cmod.steam.SteamAchievements.stop();
+        if (ownsSteamSessionPause) {
+            ownsSteamSessionPause = false;
+            if (shortcut != null && !shortcut.getExtra("steamAppId").isEmpty()) {
+                com.winlator.cmod.steam.SteamSocial.closeGuest();
+                com.winlator.cmod.steam.SteamAchievements.stop();
+            }
             com.winlator.cmod.steam.SteamSession.endGame(getApplicationContext());
         }
         super.onDestroy();
@@ -1865,6 +1871,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     // Read-only diagnostics adapted from squalle0nhart's Ludashi Plus.
     // The bounded probe runs away from the UI thread and stops with the Activity.
+    public void cancelSidebarRuntimeStatus() {
+        if (runtimeStatusProbeThread != null) runtimeStatusProbeThread.interrupt();
+    }
+
     public void requestSidebarRuntimeStatus() {
         if (runtimeStatusProbeRunning || runtimeStatusProbeStopped || container == null) return;
         runtimeStatusProbeRunning = true;

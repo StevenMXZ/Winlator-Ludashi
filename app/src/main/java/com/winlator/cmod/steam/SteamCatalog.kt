@@ -7,7 +7,7 @@ import java.io.File
 object SteamCatalog {
     fun desktopExecPath(path: String): String = path.replace("\\", "\\\\\\\\")
 
-    data class Depot(val id: Int, val manifest: Long)
+    data class Depot(val id: Int, val manifest: Long, val size: Long = 0)
     fun depots(info: JSONObject): List<Depot> {
         val depots = info.optJSONObject("depots") ?: error("No depot metadata")
         return depots.keys().asSequence().mapNotNull { key ->
@@ -23,7 +23,7 @@ object SteamCatalog {
             val raw = manifests.opt("public")
             val gid = if (raw is JSONObject) raw.optString("gid") else raw?.toString()
             val manifest = gid?.toULongOrNull()?.toLong() ?: return@mapNotNull null
-            Depot(id, manifest)
+            Depot(id, manifest, if (raw is JSONObject) raw.optLong("size").coerceAtLeast(0) else 0)
         }.toList().also { require(it.isNotEmpty()) { "No supported public Windows depots" } }
     }
     fun installName(info: JSONObject): String {

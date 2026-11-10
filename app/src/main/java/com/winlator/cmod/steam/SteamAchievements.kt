@@ -33,6 +33,7 @@ object SteamAchievements {
     private val syncing = AtomicBoolean(false)
     @Volatile private var nextSyncAt = 0L
     private fun pendingKey(user: Long) = "achievement-pending-$user"
+    internal fun needsWatcher(notifications: Boolean, upload: Boolean) = notifications || upload
     fun enabled(context: Context) = context.getSharedPreferences("steam-settings", 0).getBoolean("achievement-notifications", true)
     internal fun stats(schema: JSONObject, depth: Int = 0): JSONObject? {
         schema.optJSONObject("stats")?.let { return it }
@@ -73,10 +74,11 @@ object SteamAchievements {
         stop()
         val id = shortcut.getExtra("steamAppId").toInt()
         account = SteamCredentials.load(context)?.optLong("id") ?: 0L
-        definitions = SteamUserData.achievementData(context, id)?.let { SteamUserData.parseAchievements(it, id).associateBy { a -> a.key } }.orEmpty()
+        val cached = SteamUserData.achievementData(context, id)
+        definitions = cached?.let { SteamUserData.parseAchievements(it, id).associateBy { a -> a.key } }.orEmpty()
         // Hidden metadata stays concealed in the library, but the earned toast reveals its real name.
         val names = mutableMapOf<String, String>()
-        SteamUserData.achievementData(context, id)?.optJSONObject("schema")?.let { raw -> stats(raw) }?.let { schema ->
+        cached?.optJSONObject("schema")?.let { raw -> stats(raw) }?.let { schema ->
             for (block in schema.keys()) schema.optJSONObject(block)?.optJSONObject("bits")?.let { bits ->
                 for (bit in bits.keys()) bits.optJSONObject(bit)?.let { entry ->
                     val display = entry.optJSONObject("display")
@@ -88,19 +90,29 @@ object SteamAchievements {
         definitions = definitions.mapValues { (key, value) -> value.copy(title = names[key] ?: value.title) }
         if (shortcut.getExtra("steamLaunchMode") == "Goldberg") {
             seed(context, shortcut, SteamGames.directory(context, id))
-            watcher = AchievementWatcher().apply { start(context, id, shortcut.container.rootDir) }
+            if (needsWatcher(enabled(context), context.getSharedPreferences("steam-settings", 0).getBoolean("achievement-sync", false)))
+                watcher = AchievementWatcher().apply { start(context, id, shortcut.container.rootDir) }
         }
         if (!enabled(context)) return
         val activity = context as? ComponentActivity ?: return
         activity.runOnUiThread {
             val root = activity.findViewById<FrameLayout>(android.R.id.content)
-            val view = ComposeView(activity)
-            overlay = view
-            view.setContent { WinZTheme { var text by remember { mutableStateOf("") }
-                LaunchedEffect(Unit) { for (message in events) { text = message; delay(4000); text = "" } }
-                if (text.isNotBlank()) Surface(tonalElevation = 8.dp, shape = MaterialTheme.shapes.large, modifier = Modifier.padding(12.dp)) { Text("🏆 $text", Modifier.padding(14.dp), style = MaterialTheme.typography.titleSmall) }
-            } }
-            root.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+            job = activity.lifecycleScope.launch {
+                for (message in events) {
+                    val view = ComposeView(activity)
+                    overlay = view
+                    view.setContent { WinZTheme {
+                        Surface(tonalElevation = 8.dp, shape = MaterialTheme.shapes.large, modifier = Modifier.padding(12.dp)) {
+                            Text("🏆 $message", Modifier.padding(14.dp), style = MaterialTheme.typography.titleSmall)
+                        }
+                    } }
+                    root.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+                    try { delay(4000) } finally {
+                        view.disposeComposition(); (view.parent as? ViewGroup)?.removeView(view)
+                        if (overlay === view) overlay = null
+                    }
+                }
+            }
         }
     }
     fun surfaceUnlockPill(context: Context, id: Int, api: String): String {

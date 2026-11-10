@@ -106,9 +106,14 @@ object SteamLaunch {
         return shortcut.getExtra("steamConfigured") == "1" && !SteamNativeCloud.busy && shortcut.getExtra("steamLaunchMode", "RealSteam") == SteamSettings.mode(context, shortcut.getExtra("steamAppId").toInt()) && SteamSettings.enabled(context) && (shortcut.getExtra("steamLaunchMode", "RealSteam") != "RealSteam" || SteamCredentials.load(context) != null)
     }
     @JvmStatic fun apply(context: Context, shortcut: Shortcut?, env: EnvVars) {
-        val id = shortcut?.getExtra("steamAppId")?.toIntOrNull() ?: return
+        val owner = context as? com.winlator.cmod.XServerDisplayActivity
+        val id = shortcut?.getExtra("steamAppId")?.toIntOrNull() ?: run {
+            if (owner != null && SteamSession.pauseForCustomGame(context)) owner.markSteamSessionPaused()
+            return
+        }
         check(shortcut?.getExtra("steamConfigured") == "1") { "Configure the Steam launch method and executable before playing" }
         SteamSession.beginGame(context)
+        owner?.markSteamSessionPaused()
         SteamAchievements.begin(context, shortcut!!)
         val game = SteamGames.directory(context, id)
         // Also covers pinned/home shortcuts and a different container sharing this install.

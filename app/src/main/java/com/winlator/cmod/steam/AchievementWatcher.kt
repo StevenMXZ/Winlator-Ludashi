@@ -34,6 +34,9 @@ import java.util.concurrent.TimeUnit
 class AchievementWatcher {
 
     companion object {
+        internal fun affectedFiles(touched: File, targets: List<File>): List<File> = targets.filter {
+            it.absolutePath == touched.absolutePath || it.absolutePath.startsWith(touched.absolutePath + File.separator)
+        }
         private const val TAG = "BH_STEAM_ACHV"
         private const val ACHIEVEMENTS_FILE = "achievements.json"
         // Coalesce a burst of writes (the emulator rewrites the whole file) into one diff pass.
@@ -151,17 +154,13 @@ class AchievementWatcher {
         val obs = object : FileObserver(watchPath, MASK) {
             override fun onEvent(event: Int, path: String?) {
                 try {
-                    // A directory along the chain toward the file was (re)created → re-arm deeper.
-                    // The file itself changed → diff. Either way, nudge a diff.
+                    // A shared ancestor can cover both GSE spellings. Ignore unrelated
+                    // stats/config writes without losing creation events for either store.
+                    val touched = if (path == null) watchDir else File(watchDir, path)
+                    val affected = affectedFiles(touched, candidates)
+                    if (affected.isEmpty()) return
                     scheduleDiff()
-                    val name = path ?: return
-                    val touched = File(watchDir, name)
-                    val target = jsonFile.absolutePath
-                    val touchedPath = touched.absolutePath
-                    // If a directory closer to the file just appeared, re-arm to watch it.
-                    if (target.startsWith(touchedPath + File.separator) || touchedPath == target) {
-                        armForFile(jsonFile)
-                    }
+                    affected.forEach { armForFile(it) }
                 } catch (_: Throwable) { /* never let a callback crash the observer thread */ }
             }
         }

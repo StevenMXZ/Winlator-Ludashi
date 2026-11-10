@@ -594,7 +594,7 @@
   <string name="builtin_decoder">"Decodificador integrado"</string>
   <string name="software_decoding">"Decodificação por software"</string>
   <string name="video_decoder_compatibility_note">"Os decodificadores disponíveis dependem da versão do Wine/Proton. O FFmpeg requer suporte à troca de winedmo."</string>
-    <string name="steam_cloud_saves">Saves na Steam Cloud</string>
+    <string name="steam_cloud_saves">Steam Cloud</string>
     <string name="steam_cloud_conflict">Conflito de saves</string>
     <string name="steam_cloud_conflict_help">Os saves locais e da Steam Cloud são diferentes. Escolha qual cópia manter. Voltar cancela a sincronização e preserva ambas as cópias.</string>
     <string name="steam_cloud_use_remote">Usar Steam Cloud</string>
@@ -631,4 +631,8 @@
     <string name="steam_native_cloud_files">%1$d arquivos de save; %2$d conflitos.</string>
     <string name="steam_native_cloud_done">Sincronização confirmada. Cópias locais anteriores: %1$s</string>
     <string name="steam_native_cloud_busy">Aguarde a sincronização da Steam Cloud terminar.</string>
+    <string name="steam_download_verifying">Verificando arquivos…</string>
+    <string name="steam_download_estimating">Estimando…</string>
+    <string name="steam_download_timing">%1$s MiB/s · Restante: %2$s</string>
+    <string name="ui_component_uninstall_failed">Não foi possível remover este componente.</string>
 </resources>
