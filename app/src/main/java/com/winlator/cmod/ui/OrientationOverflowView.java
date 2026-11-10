@@ -33,8 +33,8 @@ public final class OrientationOverflowView extends AppCompatImageButton {
     public OrientationOverflowView(MainActivity activity) {
         super(activity);
         this.activity = activity;
-        setImageResource(R.drawable.ui_ic_more);
-        setContentDescription("More");
+        setImageResource(R.drawable.ic_orientation);
+        setContentDescription(com.winlator.cmod.ui.UiStrings.get(R.string.ui_lock_screen_orientation));
         setScaleType(ScaleType.CENTER_INSIDE);
         setPadding(dp(11), dp(11), dp(11), dp(11));
         setMinimumWidth(dp(48));

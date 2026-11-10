@@ -1,5 +1,9 @@
 package com.winlator.cmod.steam
 
+import com.winlator.cmod.ui.uiStr
+
+import com.winlator.cmod.R
+
 import android.widget.ImageView
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -36,33 +40,33 @@ import org.json.JSONObject
     }
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Game information", style = MaterialTheme.typography.titleMedium)
+            Text(uiStr(R.string.steam_ui_game_info), style = MaterialTheme.typography.titleMedium)
             val associations = info.optJSONObject("common")?.optJSONObject("associations")
-            for ((type, label) in listOf("developer" to "Developer", "publisher" to "Publisher")) {
+            for ((type, label) in listOf("developer" to uiStr(R.string.steam_ui_developer), "publisher" to uiStr(R.string.steam_ui_publisher))) {
                 val names = associations?.keys()?.asSequence()?.mapNotNull { associations.optJSONObject(it) }
                     ?.filter { it.optString("type") == type }?.map { it.optString("name") }?.filter { it.isNotBlank() }?.toList().orEmpty()
                 val value = names.joinToString(", ").ifBlank { info.optJSONObject("extended")?.optString(type).orEmpty() }
                 if (value.isNotBlank()) Text("$label: $value", style = MaterialTheme.typography.bodySmall)
             }
             val release = info.optJSONObject("common")?.optLong("steam_release_date") ?: 0L
-            if (release > 0) Text("Released: ${DateFormat.getDateInstance().format(Date(release * 1000))}", style = MaterialTheme.typography.bodySmall)
+            if (release > 0) Text(uiStr(R.string.steam_ui_release, DateFormat.getDateInstance().format(Date(release * 1000))), style = MaterialTheme.typography.bodySmall)
             play?.let {
-                Text("Steam playtime: ${"%.1f".format(it.optLong("playtimeForever") / 60.0)} h", style = MaterialTheme.typography.bodySmall)
+                Text(uiStr(R.string.steam_ui_playtime, "%.1f".format(it.optLong("playtimeForever") / 60.0)), style = MaterialTheme.typography.bodySmall)
                 val last = it.optLong("rtimeLastPlayed")
-                if (last > 0) Text("Last played: ${DateFormat.getDateInstance().format(Date(last * 1000))}", style = MaterialTheme.typography.bodySmall)
+                if (last > 0) Text(uiStr(R.string.steam_ui_last_played, DateFormat.getDateInstance().format(Date(last * 1000))), style = MaterialTheme.typography.bodySmall)
             }
             HorizontalDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.EmojiEvents, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
-                Text("Achievements", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                Text(uiStr(R.string.steam_ui_achievements), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 IconButton(enabled = state.signedIn && !state.gameActive && !SteamUserData.busy("achievements-$id"), onClick = {
                     SteamUserData.refreshAchievements(context, id, true)
                     SteamUserData.refreshProfile(context)
-                }) { Icon(Icons.Outlined.Refresh, "Refresh Steam information") }
+                }) { Icon(Icons.Outlined.Refresh, uiStr(R.string.steam_ui_refresh_info)) }
             }
             if (achievements != null) {
                 val unlocked = achievements.count { it.unlocked }
-                Text("$unlocked / ${achievements.size} unlocked", style = MaterialTheme.typography.bodySmall)
+                Text(uiStr(R.string.steam_ui_ach_count, unlocked, achievements.size), style = MaterialTheme.typography.bodySmall)
                 if (achievements.isNotEmpty()) LinearProgressIndicator(progress = { unlocked.toFloat() / achievements.size }, modifier = Modifier.fillMaxWidth())
                 achievements.take(if (expanded) achievements.size else 3).forEach { achievement ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -72,12 +76,12 @@ import org.json.JSONObject
                             Text(achievement.description, style = MaterialTheme.typography.bodySmall, maxLines = 2, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (achievement.unlockedAt > 0) Text(DateFormat.getDateInstance().format(Date(achievement.unlockedAt * 1000)), style = MaterialTheme.typography.labelSmall)
                         }
-                        if (achievement.unlocked) Icon(Icons.Outlined.EmojiEvents, "Unlocked", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        if (achievement.unlocked) Icon(Icons.Outlined.EmojiEvents, uiStr(R.string.steam_ui_unlocked), Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                 }
-                if (achievements.size > 3) TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Show less" else "View all achievements") }
+                if (achievements.size > 3) TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) uiStr(R.string.steam_ui_show_less) else uiStr(R.string.steam_ui_view_achievements)) }
             } else {
-                Text(if (SteamUserData.busy("achievements-$id")) "Loading achievements…" else SteamUserData.error.ifBlank { if (state.signedIn) "Refresh to load Steam achievements" else "Connect Steam to load achievements" }, style = MaterialTheme.typography.bodySmall)
+                Text(if (SteamUserData.busy("achievements-$id")) uiStr(R.string.steam_ui_loading_achievements) else SteamUserData.error.ifBlank { if (state.signedIn) uiStr(R.string.steam_ui_refresh_achievements) else uiStr(R.string.steam_ui_connect_achievements) }, style = MaterialTheme.typography.bodySmall)
             }
         }
     }

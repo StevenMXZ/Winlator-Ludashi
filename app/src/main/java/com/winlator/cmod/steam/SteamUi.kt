@@ -1,5 +1,9 @@
 package com.winlator.cmod.steam
 
+import com.winlator.cmod.ui.uiStr
+
+import com.winlator.cmod.R
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material3.*
@@ -40,7 +44,7 @@ data class SteamUiSnapshot(val signedIn: Boolean, val gameActive: Boolean, val s
                     if (state.total > 0) LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, modifier = Modifier.weight(1f))
                     else LinearProgressIndicator(modifier = Modifier.weight(1f))
                     IconButton(onClick = { SteamSession.cancel() }, modifier = Modifier.size(36.dp)) {
-                        Icon(androidx.compose.material.icons.Icons.Outlined.Pause, "Pause download")
+                        Icon(androidx.compose.material.icons.Icons.Outlined.Pause, uiStr(R.string.steam_ui_pause_download))
                     }
                 }
                 Text("${state.done / 1048576} / ${state.total / 1048576} MB", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

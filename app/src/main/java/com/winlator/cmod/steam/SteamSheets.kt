@@ -1,5 +1,9 @@
 package com.winlator.cmod.steam
 
+import com.winlator.cmod.ui.uiStr
+
+import com.winlator.cmod.R
+
 import android.content.Context
 import android.content.Intent
 import android.view.ViewGroup
@@ -29,8 +33,9 @@ object SteamSheets {
         view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
         root.addView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         view.setContent { WinZOverlayTheme {
-            ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-                Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 16.dp)) { content(dismiss) }
+            ModalBottomSheet(onDismissRequest = dismiss, contentWindowInsets = { WindowInsets(0, 0, 0, 0) }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+                SteamDialogFullscreen()
+                Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)).padding(bottom = 8.dp)) { content(dismiss) }
             }
         } }
     }
@@ -57,7 +62,7 @@ object SteamSheets {
         } }
     }
     @Composable fun MenuEntries(context: Context, dismiss: () -> Unit) {
-        listOf("Manage Steam games" to Icons.Outlined.SportsEsports, "Manage downloads" to Icons.Outlined.Download).forEachIndexed { index, (title, icon) ->
+        listOf(uiStr(R.string.steam_ui_manage_games) to Icons.Outlined.SportsEsports, uiStr(R.string.steam_ui_manage_downloads) to Icons.Outlined.Download).forEachIndexed { index, (title, icon) ->
             DropdownMenuItem(text = { Text(title) }, leadingIcon = { Icon(icon, null) }, onClick = {
                 dismiss(); context.startActivity(Intent(context, SteamActivity::class.java).putExtra("steam_tab", index))
             })
@@ -68,28 +73,29 @@ object SteamSheets {
         context.startForegroundService(Intent(context, SteamService::class.java))
         show(context) { dismiss ->
             val state = observeSteam()
-            val item = remember(state.library, id) { SteamLibrary.items(context, state.library).find { appId -> SteamLibrary.appId(appId.shortcutPath) == id } }
+            val apps = rememberSteamLibrary(context, state.library)
+            val item = remember(apps, id) { apps.find { app -> SteamLibrary.appId(app.shortcutPath) == id } }
             var favorite by remember { mutableStateOf(context.getSharedPreferences("steam-settings", 0).getBoolean("favorite-$id", false)) }
-            Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
-                    update = { Glide.with(it).load("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900_2x.jpg").into(it) }, modifier = Modifier.size(52.dp, 78.dp))
-                Text(item?.name ?: "Steam game", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                    update = { Glide.with(it).load("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900_2x.jpg").into(it) }, modifier = Modifier.size(32.dp, 48.dp))
+                Text(item?.name ?: uiStr(R.string.steam_ui_game), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             }
             val installed = java.io.File(context.filesDir, "steam-library/$id.json").isFile
-            ListItem(headlineContent = { Text(if (installed) "View game" else "Download Steam game") }, leadingContent = { Icon(Icons.Outlined.Download, null) },
-                modifier = Modifier.clickable(enabled = installed || (state.signedIn && !state.downloading && !state.gameActive)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(modifier = Modifier.weight(1f), enabled = installed || (state.signedIn && !state.downloading && !state.gameActive), onClick = {
                     if (installed) { dismiss(); SteamLibrary.open(context, "steam://$id") } else SteamSession.install(id)
-                })
-            ListItem(headlineContent = { Text(if (favorite) "Unfavorite" else "Favorite") }, leadingContent = { Icon(if (favorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, null) },
-                modifier = Modifier.clickable {
+                }) { Icon(Icons.Outlined.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (installed) uiStr(R.string.steam_ui_view_game) else uiStr(R.string.steam_ui_download)) }
+                FilledTonalButton(modifier = Modifier.weight(1f), onClick = {
                     favorite = !favorite; context.getSharedPreferences("steam-settings", 0).edit().putBoolean("favorite-$id", favorite).apply(); SteamGames.changed()
-                })
+                }) { Icon(if (favorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (favorite) uiStr(R.string.steam_ui_unfavorite) else uiStr(R.string.steam_ui_favorite)) }
+            }
             if (state.downloading && state.id == id) SteamDownloadPanel(state)
             else if (!state.signedIn) {
-                Text(state.status, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+                Text(steamStatusText(state.status), Modifier.padding(horizontal = 16.dp, vertical = 4.dp).heightIn(max = 48.dp), style = MaterialTheme.typography.bodySmall)
                 if (!state.restoring && !state.gameActive) TextButton(modifier = Modifier.padding(horizontal = 16.dp), onClick = {
                     if (state.savedAccount) SteamSession.reconnect() else { dismiss(); context.startActivity(Intent(context, SteamActivity::class.java)) }
-                }) { Text(if (state.savedAccount) "Retry connection" else "Connect Steam") }
+                }) { Text(if (state.savedAccount) uiStr(R.string.steam_ui_retry_connection) else uiStr(R.string.steam_ui_connect)) }
             }
         }
     }

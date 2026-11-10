@@ -172,7 +172,7 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
                         LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
                         LandscapeAction(Icons.Outlined.Backup, stringResource(R.string.ui_saves), Modifier.weight(1f), callbacks::onSaves)
                         LandscapeAction(Icons.Outlined.Home, stringResource(R.string.ui_home), Modifier.weight(1f), callbacks::onHome)
-                        LandscapeAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) "Uninstall Steam game" else stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
+                        LandscapeAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall_game) else stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
                     }
                     LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
                 }
@@ -202,7 +202,7 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
             DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
             DetailAction(Icons.Outlined.Backup, stringResource(R.string.ui_saves), callbacks::onSaves)
             DetailAction(Icons.Outlined.Home, stringResource(R.string.ui_add_to_home), callbacks::onHome)
-            DetailAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) "Uninstall Steam game" else stringResource(R.string.remove), callbacks::onRemove, true)
+            DetailAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall_game) else stringResource(R.string.remove), callbacks::onRemove, true)
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -212,7 +212,7 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
 private fun PlayButton(click: () -> Unit) {
     Button(click, enabled = LocalSteamReady.current, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = WinZShapes.Medium,
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)) {
-        Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(if (LocalSteamReady.current) stringResource(R.string.ui_play) else "Configure before playing", fontWeight = FontWeight.Bold)
+        Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(if (LocalSteamReady.current) stringResource(R.string.ui_play) else stringResource(R.string.steam_ui_configure_first), fontWeight = FontWeight.Bold)
     }
 }
 

@@ -28,9 +28,15 @@ object SteamSettings {
 
 /** Same adaptive network ceilings and CPU ratios as Ludashi's DownloadSpeedConfig. */
 object SteamDownloadSettings {
-    val tiers = listOf("Slow", "Medium", "Fast", "Blazing")
-    fun tier(context: Context): Int = context.getSharedPreferences("steam-settings", 0).getInt("download-tier", 2).coerceIn(0, 3)
-    fun setTier(context: Context, tier: Int) { require(tier in 0..3); context.getSharedPreferences("steam-settings", 0).edit().putInt("download-tier", tier).apply() }
-    fun network(tier: Int) = listOf(6, 16, 32, 96)[tier]
-    fun processing(tier: Int, cores: Int = Runtime.getRuntime().availableProcessors()) = (cores * listOf(.2, .4, .5, .8)[tier]).toInt().coerceAtLeast(1)
+    val tiers = listOf(0, 2, 3)
+    fun tier(context: Context): Int {
+        val preferences = context.getSharedPreferences("steam-settings", 0)
+        val saved = preferences.getInt("download-tier", 2)
+        val current = if (saved in tiers) saved else 2
+        if (saved != current) preferences.edit().putInt("download-tier", current).apply()
+        return current
+    }
+    fun setTier(context: Context, tier: Int) { require(tier in tiers); context.getSharedPreferences("steam-settings", 0).edit().putInt("download-tier", tier).apply() }
+    fun network(tier: Int) = when (tier) { 0 -> 6; 3 -> 96; else -> 32 }
+    fun processing(tier: Int, cores: Int = Runtime.getRuntime().availableProcessors()) = (cores * when (tier) { 0 -> .2; 3 -> .8; else -> .5 }).toInt().coerceAtLeast(1)
 }

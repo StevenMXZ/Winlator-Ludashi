@@ -1,5 +1,8 @@
 package com.winlator.cmod.steam
 
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
+
 import android.content.Intent
 import android.os.Bundle
 import android.view.*
@@ -30,20 +33,20 @@ class SteamGameDetailFragment : Fragment() {
         return GameDetailComposeHost.createSteam(context, title, File(context.cacheDir, "steam-art/$appId-banner.jpg").path, appId, object : GameDetailCallbacks {
             override fun onPlay() {
                 val shortcut = SteamGames.shortcut(context, appId)
-                if (shortcut == null || !SteamGames.configured(context, appId)) { notice("Configure the launch method and executable first"); return }
-                if (!SteamLaunch.canLaunch(context, shortcut)) { notice("Enable Steam and sign in before playing"); return }
+                if (shortcut == null || !SteamGames.configured(context, appId)) { notice(uiStr(R.string.steam_ui_configure_mode_exe)); return }
+                if (!SteamLaunch.canLaunch(context, shortcut)) { notice(uiStr(R.string.steam_ui_enable_signin)); return }
                 startActivity(Intent(context, XServerDisplayActivity::class.java).putExtra("container_id", shortcut.container.id)
                     .putExtra("shortcut_path", shortcut.file.path).putExtra("shortcut_name", title))
             }
             override fun onConfigure() {
-                if (SteamSession.gameActive) { notice("Exit the game before configuring"); return }
+                if (SteamSession.gameActive) { notice(uiStr(R.string.steam_ui_exit_configure)); return }
                 if (configuring) return
                 configuring = true
                 viewLifecycleOwner.lifecycleScope.launch {
                     val result = withContext(Dispatchers.IO) { runCatching {
                         SteamGames.shortcut(context, appId) ?: run {
                             val containers = ContainerManager(context).containers
-                            check(containers.isNotEmpty()) { "Create a container first" }
+                            check(containers.isNotEmpty()) { uiStr(R.string.steam_ui_create_container) }
                             val preferred = context.getSharedPreferences("steam-settings", 0).getInt("steam-container-$appId", -1)
                             val container = containers.firstOrNull { it.id == preferred } ?: containers.first()
                             SteamGames.draft(context, appId, container)
@@ -54,24 +57,24 @@ class SteamGameDetailFragment : Fragment() {
                 }.invokeOnCompletion { configuring = false }
             }
             override fun onArguments() {
-                val shortcut = SteamGames.shortcut(context, appId) ?: return notice("Choose a container in Configure first")
+                val shortcut = SteamGames.shortcut(context, appId) ?: return notice(uiStr(R.string.steam_ui_choose_container))
                 startActivity(Intent(context, XServerDisplayActivity::class.java).putExtra("container_id", shortcut.container.id))
             }
             override fun onSaves() {
-                val shortcut = SteamGames.shortcut(context, appId) ?: return notice("Configure the game first")
+                val shortcut = SteamGames.shortcut(context, appId) ?: return notice(uiStr(R.string.steam_ui_configure_game_first))
                 GameSavesComposeDialog.show(this@SteamGameDetailFragment, shortcut)
             }
             override fun onFavorite(favorite: Boolean) {
                 context.getSharedPreferences("steam-settings", 0).edit().putBoolean("favorite-$appId", favorite).apply(); SteamGames.changed()
             }
             override fun onHome() {
-                val shortcut = SteamGames.shortcut(context, appId) ?: return notice("Configure the game first")
-                if (SteamGames.configured(context, appId)) HomeShortcuts.pin(requireActivity(), shortcut) else notice("Configure the game first")
+                val shortcut = SteamGames.shortcut(context, appId) ?: return notice(uiStr(R.string.steam_ui_configure_game_first))
+                if (SteamGames.configured(context, appId)) HomeShortcuts.pin(requireActivity(), shortcut) else notice(uiStr(R.string.steam_ui_configure_game_first))
             }
             override fun onRemove() {
-                android.app.AlertDialog.Builder(context).setTitle("Uninstall Steam game?")
-                    .setMessage("Remove $title and its downloaded files from this device? The game remains in your Steam account.")
-                    .setNegativeButton("Cancel", null).setPositiveButton("Uninstall") { _, _ ->
+                android.app.AlertDialog.Builder(context).setTitle(uiStr(R.string.steam_ui_uninstall_title))
+                    .setMessage(uiStr(R.string.steam_ui_uninstall_confirm, title))
+                    .setNegativeButton(uiStr(R.string.steam_ui_cancel), null).setPositiveButton(uiStr(R.string.steam_ui_uninstall)) { _, _ ->
                         SteamSession.work {
                             runCatching { SteamGames.uninstall(context, appId) }.onSuccess {
                                 activity?.runOnUiThread { SteamGames.changed(); if (isAdded) { if (activity is MainActivity) parentFragmentManager.popBackStack() else activity?.finish() } }

@@ -1,5 +1,9 @@
 package com.winlator.cmod.steam
 
+import com.winlator.cmod.ui.uiStr
+
+import com.winlator.cmod.R
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material3.*
@@ -34,10 +38,10 @@ import kotlinx.coroutines.withContext
     }
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val modes = listOf("RealSteam" to "Steam Client", "Goldberg" to "Offline")
+            val modes = listOf("RealSteam" to uiStr(R.string.steam_ui_client), "Goldberg" to uiStr(R.string.steam_ui_offline))
             Box {
                 OutlinedButton(enabled = !busy && !SteamSession.gameActive, onClick = { modeExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Steam launch", Modifier.weight(1f))
+                    Text(uiStr(R.string.steam_ui_launch), Modifier.weight(1f))
                     Text(modes.first { it.first == mode }.second, style = MaterialTheme.typography.bodySmall)
                     Icon(androidx.compose.material.icons.Icons.Outlined.ArrowDropDown, null)
                 }
@@ -46,7 +50,7 @@ import kotlinx.coroutines.withContext
                 }
             }
             Box {
-                OutlinedButton(enabled = !busy && !SteamSession.gameActive, onClick = { expanded = true }) { Text(exe.ifEmpty { "Choose executable" }) }
+                OutlinedButton(enabled = !busy && !SteamSession.gameActive, onClick = { expanded = true }) { Text(exe.ifEmpty { uiStr(R.string.steam_ui_choose_exe) }) }
                 DropdownMenu(expanded, { expanded = false }, modifier = Modifier.heightIn(max = 300.dp)) {
                     exes.forEach { path -> DropdownMenuItem(text = { Text(path) }, onClick = { exe = path; expanded = false }) }
                 }
@@ -62,11 +66,11 @@ import kotlinx.coroutines.withContext
                         // Keep the editor's in-memory model from overwriting the prepared target/options.
                         shortcut.putExtra("execArgs", Shortcut(shortcut.container, file).getExtra("execArgs")); shortcut.putExtra("steamExecutable", exe); shortcut.putExtra("steamConfigured", "1"); shortcut.putExtra("steamLaunchMode", mode)
                     } }
-                    busy = false; message = result.exceptionOrNull()?.message ?: "Steam launch saved"
+                    busy = false; message = result.exceptionOrNull()?.message ?: uiStr(R.string.steam_ui_launch_saved)
                     if (result.isSuccess) context.getSharedPreferences("steam-settings", 0).edit().putInt("steam-container-$id", shortcut.container.id).apply()
                     SteamGames.changed()
                 }
-            }) { Text(if (busy) "Preparing…" else "Save Steam launch") }
+            }) { Text(if (busy) uiStr(R.string.steam_ui_preparing) else uiStr(R.string.steam_ui_save_launch)) }
             if (message.isNotEmpty()) Text(message, style = MaterialTheme.typography.bodySmall)
         }
     }

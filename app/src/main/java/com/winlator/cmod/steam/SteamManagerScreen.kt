@@ -1,5 +1,7 @@
 package com.winlator.cmod.steam
 
+import com.winlator.cmod.ui.uiStr
+
 import android.widget.ImageView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -48,73 +50,75 @@ import java.io.File
     LaunchedEffect(state.signedIn, state.libraryLoading) {
         if (state.signedIn && !state.libraryLoading && !state.gameActive) SteamUserData.refreshProfile(context)
     }
-    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primary.copy(alpha = .09f), MaterialTheme.colorScheme.background))).displayCutoutPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primary.copy(alpha = .09f), MaterialTheme.colorScheme.background))).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)).imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, uiStr(R.string.steam_ui_back)) }
             Icon(painterResource(R.drawable.ic_steam), null, Modifier.size(38.dp))
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Text("Steam", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("Your Steam library on Ludashi", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(uiStr(R.string.steam_ui_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(enabled = !state.gameActive && !state.downloading, onClick = {
                 if (state.signedIn) { SteamSession.retryLibrary(); SteamUserData.refreshProfile(context, true) } else SteamSession.reconnect()
-            }) { Icon(Icons.Outlined.Refresh, "Refresh Steam") }
+            }) { Icon(Icons.Outlined.Refresh, uiStr(R.string.steam_ui_refresh)) }
             Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Steam options") }
-                DropdownMenu(menu, { menu = false }) { DropdownMenuItem(text = { Text("Sign out") }, onClick = { menu = false; signOut() }) }
+                IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, uiStr(R.string.steam_ui_options)) }
+                DropdownMenu(menu, { menu = false }) { DropdownMenuItem(text = { Text(uiStr(R.string.steam_ui_sign_out)) }, onClick = { menu = false; signOut() }) }
             }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Games" to Icons.Outlined.SportsEsports, "Downloads" to Icons.Outlined.Download, "Installed" to Icons.Outlined.DownloadDone, "Achievements" to Icons.Outlined.EmojiEvents).forEachIndexed { index, (title, icon) ->
+            listOf(uiStr(R.string.steam_ui_games) to Icons.Outlined.SportsEsports, uiStr(R.string.steam_ui_downloads) to Icons.Outlined.Download, uiStr(R.string.steam_ui_installed) to Icons.Outlined.DownloadDone, uiStr(R.string.steam_ui_achievements) to Icons.Outlined.EmojiEvents).forEachIndexed { index, (title, icon) ->
                 FilterChip(tab == index, onClick = { tab = index }, label = { Text(title) }, leadingIcon = { Icon(icon, null, Modifier.size(20.dp)) })
             }
         }
         HorizontalDivider(Modifier.padding(top = 8.dp))
         if (state.restoring || (!state.signedIn && state.savedAccount)) {
             Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(state.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                Text(steamStatusText(state.status), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 if (state.restoring) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else if (!state.gameActive) TextButton(onClick = { SteamSession.reconnect() }) { Text("Retry") }
+                else if (!state.gameActive) TextButton(onClick = { SteamSession.reconnect() }) { Text(uiStr(R.string.steam_ui_retry)) }
             }
         }
         if (state.signedIn && state.libraryLoading) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Loading Steam library… ${state.libraryProgress}%", style = MaterialTheme.typography.labelMedium)
+                Text(uiStr(R.string.steam_ui_loading_library, state.libraryProgress), style = MaterialTheme.typography.labelMedium)
                 LinearProgressIndicator(progress = { state.libraryProgress / 100f }, modifier = Modifier.fillMaxWidth())
             }
         } else if (state.libraryError.isNotEmpty()) Text(state.libraryError, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
-        if (tab != 1) {
-            SteamAccountCard(profile, state.signedIn, apps.size, installed,
-                if (achievementCache.isEmpty()) null else achievementCache.values.sumOf { list -> list.count { it.unlocked } })
-        }
         if (tab == 1) {
             SteamDownloadsScreen(state, openGame, Modifier.weight(1f))
         } else if (tab == 3) {
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item { Text("Achievements", style = MaterialTheme.typography.titleLarge) }
-                item { Text("Open a game to load its Steam achievements. Saved results remain available offline.", style = MaterialTheme.typography.bodySmall) }
+                item { SteamAccountCard(profile, state.signedIn, apps.size, installed) }
+                item { Text(uiStr(R.string.steam_ui_achievements), style = MaterialTheme.typography.titleLarge) }
+                item { Text(uiStr(R.string.steam_ui_achievements_help), style = MaterialTheme.typography.bodySmall) }
                 items(achievementCache.keys.toList()) { id ->
                     val list = achievementCache[id].orEmpty()
                     OutlinedCard(onClick = { if (File(context.filesDir, "steam-library/$id.json").isFile) openGame(id) else SteamSheets.game(context, id) }) {
-                        ListItem(headlineContent = { Text(apps.find { SteamLibrary.appId(it.shortcutPath) == id }?.name ?: "Steam game") },
-                            supportingContent = { Text("${list.count { it.unlocked }} / ${list.size} unlocked") }, leadingContent = { Icon(Icons.Outlined.EmojiEvents, null) })
+                        ListItem(headlineContent = { Text(apps.find { SteamLibrary.appId(it.shortcutPath) == id }?.name ?: uiStr(R.string.steam_ui_game)) },
+                            supportingContent = { Text(uiStr(R.string.steam_ui_ach_count, list.count { it.unlocked }, list.size)) }, leadingContent = { Icon(Icons.Outlined.EmojiEvents, null) })
                     }
                 }
             }
         } else {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (tab == 2) "Installed" else "Library", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                IconButton(onClick = { search = !search }) { Icon(Icons.Outlined.Search, "Search games") }
-                Box {
-                    TextButton(onClick = { sorting = true }) { Icon(Icons.Outlined.SwapVert, null); Text(sort); Icon(Icons.Outlined.ArrowDropDown, null) }
-                    DropdownMenu(sorting, { sorting = false }) { listOf("Recent", "Name", "Playtime").forEach { title -> DropdownMenuItem(text = { Text(title) }, onClick = { sort = title; sorting = false }) } }
-                }
-                IconButton(onClick = { grid = !grid }) { Icon(if (grid) Icons.Outlined.ViewList else Icons.Outlined.GridView, "Change layout") }
-            }
-            if (search) OutlinedTextField(query, { query = it }, label = { Text("Search Steam games") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp))
             val filtered = remember(apps, query, tab) { apps.filter { it.name.contains(query, true) && (tab != 2 || it.containerName == "Steam · Installed") } }
             val visible = remember(filtered, owned, sort) { sortSteamLibrary(filtered, owned, sort) }
             LazyVerticalGrid(if (grid) GridCells.Adaptive(160.dp) else GridCells.Fixed(1), Modifier.weight(1f), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item(key = "account", span = { GridItemSpan(maxLineSpan) }) { SteamAccountCard(profile, state.signedIn, apps.size, installed) }
+                item(key = "controls", span = { GridItemSpan(maxLineSpan) }) {
+                    Column {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (tab == 2) uiStr(R.string.steam_ui_installed) else uiStr(R.string.steam_ui_library), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            IconButton(onClick = { search = !search }) { Icon(Icons.Outlined.Search, uiStr(R.string.steam_ui_search_games)) }
+                            Box {
+                                TextButton(onClick = { sorting = true }) { Icon(Icons.Outlined.SwapVert, null); Text(steamSortLabel(sort)); Icon(Icons.Outlined.ArrowDropDown, null) }
+                                DropdownMenu(sorting, { sorting = false }) { listOf("Recent", "Name", "Playtime").forEach { title -> DropdownMenuItem(text = { Text(steamSortLabel(title)) }, onClick = { sort = title; sorting = false }) } }
+                            }
+                            IconButton(onClick = { grid = !grid }) { Icon(if (grid) Icons.Outlined.ViewList else Icons.Outlined.GridView, uiStr(R.string.steam_ui_layout)) }
+                        }
+                        if (search) OutlinedTextField(query, { query = it }, label = { Text(uiStr(R.string.steam_ui_search)) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp))
+                    }
+                }
                 items(visible, key = { it.id }) { app ->
                     val id = SteamLibrary.appId(app.shortcutPath)!!
                     val isInstalled = app.containerName == "Steam · Installed"
@@ -124,13 +128,13 @@ import java.io.File
                             Column(Modifier.weight(1f)) {
                                 Text(app.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                                 val minutes = owned[id]?.optLong("playtimeForever")
-                                Text(if (minutes != null) "◷ ${"%.1f".format(minutes / 60.0)} h" else if (isInstalled) "Installed" else "Not installed", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (minutes != null) "◷ ${"%.1f".format(minutes / 60.0)} h" else if (isInstalled) uiStr(R.string.steam_ui_installed_game) else uiStr(R.string.steam_ui_not_installed), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            IconButton(onClick = { if (isInstalled) openGame(id) else SteamSheets.game(context, id) }) { Icon(if (isInstalled) Icons.Outlined.PlayArrow else Icons.Outlined.Download, if (isInstalled) "Game details" else "Download Steam game", tint = if (isInstalled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                            IconButton(onClick = { if (isInstalled) openGame(id) else SteamSheets.game(context, id) }) { Icon(if (isInstalled) Icons.Outlined.PlayArrow else Icons.Outlined.Download, if (isInstalled) uiStr(R.string.steam_ui_game_details) else uiStr(R.string.steam_ui_download_game), tint = if (isInstalled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
                     }
                 }
-                if (visible.isEmpty() && !state.libraryLoading) item(span = { GridItemSpan(maxLineSpan) }) { Text(if (tab == 2) "No installed Steam games" else "No games found", Modifier.padding(20.dp)) }
+                if (visible.isEmpty() && !state.libraryLoading) item(span = { GridItemSpan(maxLineSpan) }) { Text(if (tab == 2) uiStr(R.string.steam_ui_no_installed) else uiStr(R.string.steam_ui_no_games), Modifier.padding(20.dp)) }
             }
         }
     }
@@ -143,48 +147,46 @@ import java.io.File
 @Composable private fun SteamDownloadsScreen(state: SteamUiSnapshot, openGame: (Int) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("Downloads", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
+        item { Text(uiStr(R.string.steam_ui_downloads), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
         if (state.id > 0) item {
             OutlinedCard(shape = RoundedCornerShape(20.dp)) {
                 SteamArt("https://shared.steamstatic.com/store_item_assets/steam/apps/${state.id}/header.jpg", Modifier.fillMaxWidth().aspectRatio(460f / 215f))
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(state.name, style = MaterialTheme.typography.titleLarge)
-                    Text(if (state.downloading) "Downloading" else if (File(context.filesDir, "steam-library/${state.id}.json").isFile) "Installed" else "Paused", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (state.downloading) uiStr(R.string.steam_ui_downloading) else if (File(context.filesDir, "steam-library/${state.id}.json").isFile) uiStr(R.string.steam_ui_installed_game) else uiStr(R.string.steam_ui_paused), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (state.downloading && state.total > 0) LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                     Text("${state.done / 1048576} / ${state.total / 1048576} MB", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (state.downloading) OutlinedButton(onClick = { SteamSession.cancel() }) { Icon(Icons.Outlined.Pause, null); Text("Pause") }
-                        else if (File(context.filesDir, "steam-library/${state.id}.json").isFile) Button(onClick = { openGame(state.id) }) { Text("View game") }
-                        else Button(enabled = state.signedIn && !state.gameActive, onClick = { SteamSession.install(state.id) }) { Icon(Icons.Outlined.Download, null); Text("Resume") }
+                        if (state.downloading) OutlinedButton(onClick = { SteamSession.cancel() }) { Icon(Icons.Outlined.Pause, null); Text(uiStr(R.string.steam_ui_pause)) }
+                        else if (File(context.filesDir, "steam-library/${state.id}.json").isFile) Button(onClick = { openGame(state.id) }) { Text(uiStr(R.string.steam_ui_view_game)) }
+                        else Button(enabled = state.signedIn && !state.gameActive, onClick = { SteamSession.install(state.id) }) { Icon(Icons.Outlined.Download, null); Text(uiStr(R.string.steam_ui_resume)) }
                     }
-                    if (state.status.startsWith("Download failed")) Text(state.status, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    if (state.status.startsWith("Download failed")) Text(steamStatusText(state.status), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         } else item {
-            OutlinedCard { ListItem(headlineContent = { Text("No active downloads") }, supportingContent = { Text("Choose a game from your library to download") }, leadingContent = { Icon(Icons.Outlined.DownloadDone, null) }) }
+            OutlinedCard { ListItem(headlineContent = { Text(uiStr(R.string.steam_ui_no_downloads)) }, supportingContent = { Text(uiStr(R.string.steam_ui_choose_download)) }, leadingContent = { Icon(Icons.Outlined.DownloadDone, null) }) }
         }
     }
 }
 
-@Composable private fun SteamAccountCard(profile: JSONObject, connected: Boolean, games: Int, installed: Int, achievements: Int?) {
-    OutlinedCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val hash = profile.optString("avatarHash")
-                if (hash.matches(Regex("[a-fA-F0-9]{40}")) && hash.any { it != '0' }) SteamArt("https://avatars.akamai.steamstatic.com/${hash}_medium.jpg", Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)))
-                else Icon(painterResource(R.drawable.ic_steam), null, Modifier.size(44.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(profile.optString("playerName").ifBlank { "Steam profile" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(if (connected) "● Connected" else "● Offline", style = MaterialTheme.typography.labelMedium, color = if (connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+@Composable private fun SteamAccountCard(profile: JSONObject, connected: Boolean, games: Int, installed: Int) {
+    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            val hash = profile.optString("avatarHash")
+            if (hash.matches(Regex("[a-fA-F0-9]{40}")) && hash.any { it != '0' }) SteamArt("https://avatars.akamai.steamstatic.com/${hash}_medium.jpg", Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)))
+            else Icon(painterResource(R.drawable.ic_steam), null, Modifier.size(36.dp))
+            Column(Modifier.weight(1f)) {
+                Text(profile.optString("playerName").ifBlank { uiStr(R.string.steam_ui_profile) }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Box(Modifier.size(6.dp).background(if (connected) androidx.compose.ui.graphics.Color(0xFF43A047) else MaterialTheme.colorScheme.onSurfaceVariant, androidx.compose.foundation.shape.CircleShape))
+                    Text(if (connected) uiStr(R.string.steam_ui_connected) else uiStr(R.string.steam_ui_offline), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            HorizontalDivider()
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                listOf(Triple(Icons.Outlined.SportsEsports, games.toString(), "Games"), Triple(Icons.Outlined.DownloadDone, installed.toString(), "Installed"), Triple(Icons.Outlined.EmojiEvents, achievements?.toString() ?: "—", "Cached unlocks")).forEach { (icon, count, title) ->
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Icon(icon, null, Modifier.size(19.dp)); Text(count, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                        Text(title, style = MaterialTheme.typography.labelSmall)
-                    }
+            listOf(games to uiStr(R.string.steam_ui_games), installed to uiStr(R.string.steam_ui_installed)).forEach { (count, label) ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(count.toString(), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                 }
             }
         }

@@ -186,7 +186,7 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("language") { GroupCard { AppLanguagePreference() } }
 
             item("stores") {
-                NavigationRow(Icons.Outlined.Storefront, "Steam / Stores", "Accounts, launch methods and integration") {
+                NavigationRow(Icons.Outlined.Storefront, uiStr(R.string.steam_ui_stores), uiStr(R.string.steam_ui_stores_summary)) {
                     context.startActivity(Intent(context, com.winlator.cmod.steam.StoreSettingsActivity::class.java))
                 }
             }
