@@ -1,5 +1,21 @@
 package com.winlator.cmod.ui.library
 
+import com.winlator.cmod.steam.*
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import android.content.Intent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.winlator.cmod.steam.SteamActivity
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
@@ -118,7 +134,29 @@ object LibraryComposeHost {
             setContent {
                 WinZTheme {
                     CompositionLocalProvider(LocalArtworkMotion provides rememberArtworkMotionEnabled()) {
-                        LibraryRootWithoutEmptyDescription(items.value, grid.value, query.value, selectedShortcutPath, callbacks)
+                        val steam = observeSteam()
+                        val enabled = SteamSettings.enabled(context)
+                        LaunchedEffect(enabled) {
+                            if (enabled && SteamCredentials.load(context) != null) context.startForegroundService(Intent(context, SteamService::class.java))
+                        }
+                        val steamItems = remember(enabled, steam.library, steam.tick / 3) { if (enabled) SteamLibrary.items(context, steam.library) else emptyList() }
+                        val merged = items.value.filterNot { local ->
+                            (!enabled && local.name.matches(Regex("Steam-[0-9]+"))) || steamItems.any { local.name == "Steam-${SteamLibrary.appId(it.shortcutPath)}" }
+                        } + steamItems
+                        val combined = object : LibraryCallbacks {
+                            override fun onOpen(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onOpen(path) }
+                            override fun onRun(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onRun(path) }
+                            override fun onGridViewChanged(value: Boolean) = callbacks.onGridViewChanged(value)
+                            override fun onAction(path: String, action: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onAction(path, action) }
+                            override fun onArtworkNeeded(path: String, kind: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.requestArtwork(context, path, kind) else callbacks.onArtworkNeeded(path, kind) }
+                        }
+                        Column(Modifier.fillMaxSize()) {
+                            val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+                            if (configuration.screenWidthDp <= configuration.screenHeightDp) SteamDownloadPanel(steam)
+                            Box(Modifier.weight(1f)) {
+                                LibraryRootWithoutEmptyDescription(merged, grid.value, query.value, selectedShortcutPath, combined)
+                            }
+                        }
                     }
                 }
             }
@@ -127,5 +165,15 @@ object LibraryComposeHost {
     }
 }
 
-internal enum class LibraryFilter { All, Favorites, Recent }
+internal enum class LibraryFilter { All, Favorites, Recent, Steam }
+
+internal fun filterLibraryItems(items: List<LibraryItem>, filter: LibraryFilter): List<LibraryItem> {
+    val local = items.filter { SteamLibrary.appId(it.shortcutPath) == null }
+    return when (filter) {
+        LibraryFilter.All -> local
+        LibraryFilter.Favorites -> local.filter { it.favorite }
+        LibraryFilter.Recent -> local.sortedByDescending { it.lastRunAt }
+        LibraryFilter.Steam -> items.filter { SteamLibrary.appId(it.shortcutPath) != null }
+    }
+}
 

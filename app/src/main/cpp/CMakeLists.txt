@@ -299,3 +299,12 @@ target_link_libraries(vulkan_renderer
 # A separate native X11 session. Its core and renderer have no per-frame Java callbacks.
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ludashix11
                  ${CMAKE_CURRENT_BINARY_DIR}/ludashix11)
+
+add_subdirectory(ludashi-steam-client)
+add_dependencies(winlator ludashisteam_rust_build)
+# Package the optional backend through a separate native target. The emulator core
+# must not load Steam as a DT_NEEDED dependency when the feature is disabled.
+add_library(steam_optional SHARED steam_optional.c)
+target_link_options(steam_optional PRIVATE "-Wl,--no-as-needed")
+target_link_libraries(steam_optional ludashisteam)
+add_dependencies(steam_optional ludashisteam_rust_build)

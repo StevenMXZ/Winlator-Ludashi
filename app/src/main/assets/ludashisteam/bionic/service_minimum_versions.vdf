@@ -1,0 +1,28 @@
+"SteamService"
+{
+	"version"		"6005235"
+	"drivers.exe"
+	{
+		"version"		"6005235"
+	}
+	"secure_desktop_capture.exe"
+	{
+		"version"		"5788668"
+	}
+	"SteamService.dll"
+	{
+		"version"		"6002767"
+	}
+	"SteamService.exe"
+	{
+		"version"		"6002767"
+	}
+}
+"kvsign2"
+{
+	"SteamService"		"843dcc2751cf6678cba9cd575d76295275a4ba4dd78c6162d5c2570d59df496ef1c716c458ae8788acc2e18d56db6c61a5e32b01a73f45e584d399f1e7354b00"
+}
+"kvsignatures"
+{
+	"SteamService"		"5c221556cd87c9dc8687ae253e48e5d98b7526596cf74be8e3b9513fe11d7d8278fdefd57a4f9be4c0530c64af92c41e7da09af2f1845c7ac2c84595125007fba34d66861d3ad725e1527ad8a21d8ffd31fc351b30d2cdabf44993d7d5b9619dabf43dfb81f61d206fe70345e6359f3b2fceed7ea17fc821feda624dc7bef83d"
+}

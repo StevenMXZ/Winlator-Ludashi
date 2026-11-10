@@ -89,6 +89,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class ShortcutsFragment extends Fragment {
     private static final String TAG = "ShortcutsFragment";
+    private static final int MENU_STEAM = 11;
     private static final int MENU_IMPORT_SHORTCUT = 10;
     private static final int MENU_VIEW_MODE = 1;
     private static final int MENU_SEARCH = 2;
@@ -194,6 +195,7 @@ public class ShortcutsFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
+        requireActivity().invalidateOptionsMenu();
         if (manager != null && libraryController != null) loadShortcutsList();
     }
 
@@ -253,13 +255,17 @@ public class ShortcutsFragment extends Fragment {
     public void onCreateOptionsMenu(@NonNull Menu menu, @NonNull MenuInflater inflater) {
         super.onCreateOptionsMenu(menu, inflater);
 
+        MenuItem steamItem = menu.add(0, MENU_STEAM, 0, "Steam account");
+        steamItem.setVisible(com.winlator.cmod.steam.SteamSettings.enabled(requireContext()));
+        steamItem.setIcon(R.drawable.ic_steam);
+        steamItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
         MenuItem viewItem = menu.add(0, MENU_VIEW_MODE, 0, isGridView ? com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_list_view) : com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_grid_view));
         viewItem.setIcon(R.drawable.ui_ic_view);
         viewItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
 
         MenuItem searchItem = menu.add(0, MENU_SEARCH, 1, "Search");
         searchItem.setIcon(R.drawable.ui_ic_search);
-        searchItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS |
+        searchItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM |
                 MenuItem.SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW);
         SearchView searchView = new SearchView(requireContext());
         searchView.setQueryHint(com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_search_games));
@@ -304,6 +310,10 @@ public class ShortcutsFragment extends Fragment {
 
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == MENU_STEAM) {
+            startActivity(new Intent(requireContext(), com.winlator.cmod.steam.SteamActivity.class));
+            return true;
+        }
         if (item.getItemId() == MENU_IMPORT_SHORTCUT) {
             shortcutImportLauncher.launch("*/*");
             return true;

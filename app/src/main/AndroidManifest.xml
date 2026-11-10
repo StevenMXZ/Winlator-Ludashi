@@ -26,6 +26,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <application
         android:name="com.winlator.cmod.WinlatorApplication"
         android:localeConfig="@xml/locales_config"
@@ -40,6 +42,10 @@
         android:hardwareAccelerated="true"
         android:supportsRtl="true"
         tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
+
+        <activity android:name=".steam.StoreSettingsActivity" android:exported="false" />
+        <activity android:name=".steam.SteamActivity" android:exported="false" />
+        <service android:name=".steam.SteamService" android:foregroundServiceType="dataSync" android:exported="false" />
 
         <service
             android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"

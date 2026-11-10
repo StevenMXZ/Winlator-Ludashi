@@ -81,7 +81,7 @@ public abstract class ProcessHelper {
     }
 
     public static int exec(String command, String[] envp, File workingDir, Callback<Integer> terminationCallback) {
-        Log.d("ProcessHelper", "env: " + Arrays.toString(envp) + "\ncmd: " + command);
+        Log.d("ProcessHelper", "cmd: " + command);
 
         // Store env vars for future use
         EnvironmentManager.setEnvVars(envp);

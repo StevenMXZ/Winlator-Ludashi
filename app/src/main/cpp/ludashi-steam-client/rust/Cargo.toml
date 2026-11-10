@@ -1,0 +1,49 @@
+[package]
+name = "ludashi-steam-client"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+publish = false
+
+[lib]
+name = "ludashisteam"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc", "block-padding"] }
+crc32fast = "1"
+hmac = "0.12"
+jni = "0.21"
+# Direct dep for pwrite/fallocate/statvfs on the download write path (already present transitively
+# via rustls/ring, pinned to the same version in Cargo.lock — no new fetch).
+libc = "0.2"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+lzma-rs = { version = "0.3", features = ["raw_decoder"] }
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "gzip"] }
+rsa = "0.9"
+ruzstd = "0.7"
+# B2b async fetch layer ONLY (depot chunk downloads). tokio drives many lightweight concurrent
+# requests on ONE current-thread runtime that feeds the existing (sync) decode+write process pool;
+# decode/write/JobManager stay sync and the rest of the .so is async-free. Both crates are already
+# resolved transitively (via reqwest/hyper) at the pinned versions in Cargo.lock — declaring them
+# direct adds NO new package, only a dependency edge (features `sync`/`rt`/`net`/`time` pull no new
+# crate; `futures-util` uses only its already-resolved `std` feature — no `futures-macro`).
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time", "sync"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+# preserve_order keeps JSON object keys in source order. The Kotlin appinfo
+# decoder groups DLC content depots positionally (a marker depot followed by
+# its content), so reordering depots (BTreeMap's default key sort) misgroups
+# base content depots and zeroes a game's download/install size. C++ emitted
+# source order; match it.
+serde_json = { version = "1", features = ["preserve_order"] }
+sha1 = "0.10"
+sha2 = "0.10"
+tungstenite = { version = "0.26", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
+zeroize = "1"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"

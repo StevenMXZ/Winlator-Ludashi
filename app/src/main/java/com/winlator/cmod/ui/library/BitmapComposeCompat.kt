@@ -99,11 +99,7 @@ internal fun LibraryRoot(
     var filterName by rememberSaveable { mutableStateOf(LibraryFilter.All.name) }
     val filter = LibraryFilter.valueOf(filterName)
     val visible = remember(items, filter, query) {
-        val source = when (filter) {
-            LibraryFilter.All -> items
-            LibraryFilter.Favorites -> items.filter { it.favorite }
-            LibraryFilter.Recent -> items.sortedByDescending { it.lastRunAt }
-        }
+        val source = filterLibraryItems(items, filter)
         if (query.isBlank()) source else source.filter { it.name.contains(query, true) }
     }
     val configuration = LocalConfiguration.current
@@ -133,7 +129,7 @@ internal fun LibraryRoot(
                 )
                 Spacer(Modifier.height(7.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    LibraryFilter.values().forEach { option ->
+                    LibraryFilter.values().filter { it != LibraryFilter.Steam || com.winlator.cmod.steam.SteamSettings.enabled(LocalContext.current) }.forEach { option ->
                         LibraryFilterChip(option.name, option == filter) { filterName = option.name }
                     }
                 }
@@ -157,7 +153,7 @@ internal fun LibraryRoot(
             Spacer(Modifier.height(7.dp))
         }
         Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LibraryFilter.values().forEach { option ->
+            LibraryFilter.values().filter { it != LibraryFilter.Steam || com.winlator.cmod.steam.SteamSettings.enabled(LocalContext.current) }.forEach { option ->
                 LibraryFilterChip(option.name, option == filter) { filterName = option.name }
             }
         }
@@ -226,6 +222,9 @@ private fun LibraryLandscapeHeader(
             fontWeight = FontWeight.Medium
         )
         Spacer(Modifier.weight(1f))
+        if (activity != null && com.winlator.cmod.steam.SteamSettings.enabled(activity)) androidx.compose.material3.IconButton(onClick = { activity.navigateToMainDestination(R.id.main_menu_steam) }) {
+            Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_steam), "Steam account", tint = if (onArtwork) Color.White else MaterialTheme.colorScheme.onBackground)
+        }
         LibraryTopIcon(if (grid) Icons.Outlined.ViewList else Icons.Outlined.GridView, false) {
             onGridViewChanged(!grid)
         }

@@ -184,6 +184,11 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("theme") { WinlatorThemePreferenceCard() }
             item("language") { GroupCard { AppLanguagePreference() } }
 
+            item("stores") {
+                NavigationRow(Icons.Outlined.Apps, "Steam / Stores", "Accounts, launch methods and integration") {
+                    context.startActivity(Intent(context, com.winlator.cmod.steam.StoreSettingsActivity::class.java))
+                }
+            }
             item("environment-title") { SectionTitle(uiStr(R.string.ui_environments)) }
             item("components") {
                 NavigationRow(Icons.Outlined.Apps, uiStr(R.string.ui_components), null, callbacks::onOpenComponents)

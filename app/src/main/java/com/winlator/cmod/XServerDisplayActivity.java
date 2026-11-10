@@ -461,6 +461,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         if (shortcutPath != null && !shortcutPath.isEmpty()) {
             shortcut = new Shortcut(container, new File(shortcutPath));
+            if (!com.winlator.cmod.steam.SteamLaunch.canLaunch(this, shortcut)) {
+                android.widget.Toast.makeText(this, "Sign in from the Steam menu before launching this game.", android.widget.Toast.LENGTH_LONG).show();
+                finish(); return;
+            }
         }
 
         taskAffinityMask = (short) ProcessHelper.getAffinityMask(container.getCPUList(true));
@@ -1004,6 +1008,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
             com.winlator.cmod.core.ContainerSessionGate.stop(container.id);
             ownsPrefixLease = false;
         }
+        if (shortcut != null && !shortcut.getExtra("steamAppId").isEmpty()) {
+            com.winlator.cmod.steam.SteamSession.endGame(getApplicationContext());
+        }
         super.onDestroy();
     }
 
@@ -1352,6 +1359,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                             UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.PULSE_SERVER_PATH)));
         }
 
+        com.winlator.cmod.steam.SteamLaunch.apply(this, shortcut, envVars);
         guestProgramLauncherComponent.setEnvVars(envVars);
         guestProgramLauncherComponent.setTerminationCallback((status) -> runOnUiThread(this::exit));
 

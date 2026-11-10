@@ -402,6 +402,9 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         }
 
         switch (item.getItemId()) {
+            case R.id.main_menu_steam:
+                startActivity(new Intent(this, com.winlator.cmod.steam.SteamActivity.class));
+                break;
             case R.id.main_menu_shortcuts:
                 show(new ShortcutsFragment(), false);
                 break;

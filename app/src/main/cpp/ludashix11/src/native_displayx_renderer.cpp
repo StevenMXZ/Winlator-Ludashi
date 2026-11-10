@@ -42,7 +42,7 @@ struct SurfaceAPI {
         Load<decltype(visibility)>("ASurfaceTransaction_setVisibility");
     void (*transparency)(ASurfaceTransaction *, ASurfaceControl *, ASurfaceTransactionTransparency) =
         Load<decltype(transparency)>("ASurfaceTransaction_setBufferTransparency");
-    void (*complete)(ASurfaceTransaction *, void *, ASurfaceTransaction_OnComplete) =
+    void (*complete)(ASurfaceTransaction *, void *, void (*)(void *, ASurfaceTransactionStats *)) =
         Load<decltype(complete)>("ASurfaceTransaction_setOnComplete");
     void (*reparent)(ASurfaceTransaction *, ASurfaceControl *,
                      ASurfaceControl *) = Load<decltype(reparent)>("ASurfaceTransaction_reparent");
