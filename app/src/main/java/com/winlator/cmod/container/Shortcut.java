@@ -1,5 +1,7 @@
 package com.winlator.cmod.container;
 
+import com.winlator.cmod.core.VideoDecoderSettings;
+
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Environment;
@@ -115,6 +117,8 @@ public class Shortcut {
 
         this.customCoverArtPath = getExtra("customCoverArtPath");
         loadCoverArt();
+        try { VideoDecoderSettings.migrateLegacy(extraData, false); }
+        catch (JSONException ignored) {}
         Container.checkObsoleteOrMissingProperties(extraData);
     }
 
@@ -140,6 +144,32 @@ public class Shortcut {
         this.customCoverArtPath = customCoverArtPath;
         putExtra("customCoverArtPath", customCoverArtPath);
         saveData();
+    }
+
+    public String getBuiltinDecoder() {
+        return VideoDecoderSettings.decoder(getExtra("builtinDecoder", null),
+                VideoDecoderSettings.value(getExtra("wincomponents", null), "builtinDecoder", false),
+                VideoDecoderSettings.value(getExtra("envVars", null), "WINE_USE_DMO", true),
+                container.getBuiltinDecoder());
+    }
+
+    public void setBuiltinDecoder(String value) {
+        putExtra("builtinDecoder", VideoDecoderSettings.normalizeDecoder(value));
+    }
+
+    public boolean getSoftwareDecoding() {
+        return VideoDecoderSettings.software(getExtra("softwareDecoding", null),
+                VideoDecoderSettings.value(getExtra("wincomponents", null), "softwareDecoding", false),
+                VideoDecoderSettings.value(getExtra("envVars", null), "WINE_DO_NOT_CREATE_DXGI_DEVICE_MANAGER", true),
+                container.getSoftwareDecoding());
+    }
+
+    public void setSoftwareDecoding(boolean value) { putExtra("softwareDecoding", value ? "1" : "0"); }
+
+    public String getAudioDriver() {
+        String value = getExtra("audioDriver", null);
+        return value == null || value.trim().isEmpty() ? container.getAudioDriver()
+                : Container.normalizeAudioDriver(value);
     }
 
     public String getExtra(String name) { return getExtra(name, ""); }
@@ -346,6 +376,22 @@ public class Shortcut {
         if (v == null) v = getLegacyDisplayXValue("backPressure");
         return v != null ? v.equals("1") : container.getDisplayXBackPressure();
     }
+
+    public String getDisplayXPresentMode() {
+        String value = getExtra("displayXPresentMode", null);
+        if (value == null || value.isEmpty()) value = getLegacyDisplayXValue("presentMode");
+        if (value == null || value.isEmpty()) {
+            String previous = getExtra("displayXBackPressure", null);
+            if (previous == null) previous = getLegacyDisplayXValue("backPressure");
+            return previous != null ? (previous.equals("1") ? "fifo" : "mailbox")
+                    : container.getDisplayXPresentMode();
+        }
+        return "fifo".equalsIgnoreCase(value) ? "fifo" : "mailbox";
+    }
+
+    public void setDisplayXPresentMode(String value) {
+        putExtra("displayXPresentMode", "fifo".equalsIgnoreCase(value) ? "fifo" : "mailbox");
+    }
     public void setDisplayXBackPressure(boolean v) {
         putExtra("displayXBackPressure", v ? "1" : "0");
     }
@@ -360,10 +406,7 @@ public class Shortcut {
     }
 
     private String getLegacyDisplayXValue(String key) {
-        String config = getExtra("displayxConfig", null);
-        if (config == null || config.isEmpty()) return null;
-        String value = new KeyValueSet(config).get(key);
-        return value.isEmpty() ? null : value;
+        return Container.legacyDisplayXValue(getExtra("displayxConfig", null), key);
     }
 
     public String getRendererPresentMode() {

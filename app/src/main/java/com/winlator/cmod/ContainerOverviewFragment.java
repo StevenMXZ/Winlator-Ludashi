@@ -123,7 +123,7 @@ public class ContainerOverviewFragment extends Fragment {
                 container.getWineVersion(),
                 container.isRendererNative() ? "EGL" : "Vulkan",
                 container.getScreenSize(),
-                container.getAudioDriver().toUpperCase(),
+                Container.getAudioDriverLabel(container.getAudioDriver()),
                 container.getDXWrapper(),
                 container.getGraphicsDriver(),
                 container.getEmulator(),

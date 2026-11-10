@@ -177,7 +177,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var trueDisplayX by mutableStateOf(shortcut.getTrueDisplayX())
     var displayXPerformanceMode by mutableStateOf(shortcut.getDisplayXPerformanceMode())
     var displayXPresentAtRefreshRate by mutableStateOf(shortcut.getDisplayXPresentAtRefreshRate())
-    var displayXBackPressure by mutableStateOf(shortcut.getDisplayXBackPressure())
+    var displayXPresentMode by mutableStateOf(shortcut.getDisplayXPresentMode())
     var displayXPrecisePresentation by mutableStateOf(shortcut.getDisplayXPrecisePresentation())
     var frameGenEnabled by mutableStateOf(
         shortcut.getExtra("frameGen", container.getExtra("frameGen", "0")) == "1"
@@ -218,11 +218,9 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var gpuName by mutableStateOf(readConfig(graphicsConfig, "gpuName", ';').ifBlank { "Device" })
     var blacklistedExtensions by mutableStateOf(readConfig(graphicsConfig, "blacklistedExtensions", ';'))
 
-    var audio by mutableStateOf(StringUtils.parseIdentifier(shortcut.getExtra("audioDriver", container.getAudioDriver())))
-    var oboeProfile by mutableStateOf(shortcut.getExtra("oboeProfile", container.getExtra("oboeProfile", "low")))
-    var oboeApi by mutableStateOf(shortcut.getExtra("oboeApi", container.getExtra("oboeApi", "auto")))
-    var oboeAdaptive by mutableStateOf(shortcut.getExtra("oboeAdaptive", container.getExtra("oboeAdaptive", "1")) != "0")
-    var oboeExclusive by mutableStateOf(shortcut.getExtra("oboeExclusive", container.getExtra("oboeExclusive", "0")) == "1")
+    var builtinDecoder by mutableStateOf(shortcut.getBuiltinDecoder())
+    var softwareDecoding by mutableStateOf(shortcut.getSoftwareDecoding())
+    var audio by mutableStateOf(shortcut.getAudioDriver())
     var wrapper by mutableStateOf(StringUtils.parseIdentifier(shortcut.getExtra("dxwrapper", container.getDXWrapper())))
     var wrapperConfig by mutableStateOf(shortcut.getExtra("dxwrapperConfig", container.getDXWrapperConfig()))
     var dxvkVersion by mutableStateOf(readConfig(wrapperConfig, "version", ',').ifBlank { DefaultVersion.DXVK })
@@ -406,7 +404,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
         shortcut.setTrueDisplayX(trueDisplayX)
         shortcut.setDisplayXPerformanceMode(displayXPerformanceMode)
         shortcut.setDisplayXPresentAtRefreshRate(displayXPresentAtRefreshRate)
-        shortcut.setDisplayXBackPressure(displayXBackPressure)
+        shortcut.setDisplayXPresentMode(displayXPresentMode)
         shortcut.setDisplayXPrecisePresentation(displayXPrecisePresentation)
         save()
     }
@@ -897,36 +895,6 @@ private fun ShortcutCategoryV2(
                 SettingChoice("Audio Driver", audioEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(s.audio, true) } ?: s.audio, audioEntries) {
                     s.audio = StringUtils.parseIdentifier(it); s.extra("audioDriver", s.audio)
                 }
-                if (s.audio == "oboe") {
-                    SettingsDivider()
-                    val latencyLabel = when (s.oboeProfile) {
-                        "ultra" -> "Low Latency"
-                        "stable" -> "Stable"
-                        else -> "Automatic"
-                    }
-                    SettingChoice("Oboe latency", latencyLabel, listOf("Automatic", "Low Latency", "Stable")) {
-                        s.oboeProfile = when (it) {
-                            "Low Latency" -> "ultra"
-                            "Stable" -> "stable"
-                            else -> "low"
-                        }
-                        s.extra("oboeProfile", s.oboeProfile)
-                    }
-                    SettingsDivider()
-                    val apiLabel = when (s.oboeApi) {
-                        "aaudio" -> "AAudio"
-                        "opensles" -> "OpenSL ES"
-                        else -> "Automatic"
-                    }
-                    SettingChoice("Oboe backend", apiLabel, listOf("Automatic", "AAudio", "OpenSL ES")) {
-                        s.oboeApi = when (it) {
-                            "AAudio" -> "aaudio"
-                            "OpenSL ES" -> "opensles"
-                            else -> "auto"
-                        }
-                        s.extra("oboeApi", s.oboeApi)
-                    }
-                }
                 SettingsDivider()
                 SettingToggle("Fullscreen Stretched", s.fullscreen) {
                     s.fullscreen = it; s.extra("fullscreenStretched", if (it) "1" else null)
@@ -1018,8 +986,8 @@ private fun ShortcutCategoryV2(
                         s.saveRenderer()
                     }
                     SettingsDivider()
-                    SettingToggle("Submit every buffer", s.displayXBackPressure) {
-                        s.displayXBackPressure = it
+                    SettingChoice("Present Mode", s.displayXPresentMode, listOf("mailbox", "fifo")) {
+                        s.displayXPresentMode = it
                         s.saveRenderer()
                     }
                     SettingsDivider()
@@ -1260,6 +1228,9 @@ private fun ShortcutCategoryV2(
                 SettingsDivider()
                 CpuSelectorRow("Processor Affinity", s.cpu) { index, checked -> s.cpu[index] = checked; s.saveCpu() }
             }
+            com.winlator.cmod.ui.settings.CodecsSettings(s.builtinDecoder, s.softwareDecoding,
+                { s.builtinDecoder = it; s.extra("builtinDecoder", it) },
+                { s.softwareDecoding = it; s.extra("softwareDecoding", if (it) "1" else "0") })
             SettingsCard { com.winlator.cmod.components.WindowsComponentsEntry(s.container) }
             SettingsCard {
                 SettingChoice("Sharpness Effect", s.sharpnessEffect, listOf("None", "CAS", "DLS")) {

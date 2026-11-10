@@ -3,6 +3,7 @@ package com.winlator.cmod.xserver;
 import android.util.SparseArray;
 
 import com.winlator.cmod.core.Callback;
+import com.winlator.cmod.renderer.GPUImage;
 
 public class DrawableManager extends XResourceManager implements XResourceManager.OnResourceLifecycleListener {
     private final XServer xServer;
@@ -40,6 +41,14 @@ public class DrawableManager extends XResourceManager implements XResourceManage
             throw new IllegalStateException("Drawable with id " + id + " has null data at creation.");
         }
         drawables.put(id, drawable);
+        return drawable;
+    }
+
+    public Drawable createDrawable(int id, short width, short height, byte depth, GPUImage gpuImage) {
+        if (id != 0 && drawables.indexOfKey(id) >= 0) return null;
+        Drawable drawable = new Drawable(id, width, height,
+                xServer.pixmapManager.getVisualForDepth(depth), gpuImage);
+        if (id != 0) drawables.put(id, drawable);
         return drawable;
     }
 

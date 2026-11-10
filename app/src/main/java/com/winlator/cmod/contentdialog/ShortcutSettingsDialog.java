@@ -172,7 +172,7 @@ public class ShortcutSettingsDialog extends ContentDialog implements DXVKConfigD
         final Spinner sAudioDriver = findViewById(R.id.SAudioDriver);
         AppUtils.setSpinnerSelectionFromIdentifier(
                 sAudioDriver,
-                Container.normalizeAudioDriver(shortcut.getExtra("audioDriver", shortcut.container.getAudioDriver())));
+                shortcut.getAudioDriver());
         final Spinner sEmulator = findViewById(R.id.SEmulator);
         AppUtils.setSpinnerSelectionFromIdentifier(sEmulator, shortcut.getExtra("emulator", shortcut.container.getEmulator()));
         final Spinner sEmulator64 = findViewById(R.id.SEmulator64);
@@ -341,6 +341,8 @@ public class ShortcutSettingsDialog extends ContentDialog implements DXVKConfigD
 
         ContainerDetailFragment.createWinComponentsTabFromShortcut(this, getContentView(),
                 shortcut.getExtra("wincomponents", shortcut.container.getWinComponents()), isDarkMode);
+        com.winlator.cmod.widget.CodecsSettingsView.attach(getContentView(),
+                shortcut.getBuiltinDecoder(), shortcut.getSoftwareDecoding());
 
         final EnvVarsView envVarsView = createEnvVarsTab();
 
@@ -480,6 +482,8 @@ public class ShortcutSettingsDialog extends ContentDialog implements DXVKConfigD
 
             String wincomponents = containerDetailFragment.getWinComponents(getContentView());
             shortcut.putExtra("wincomponents", wincomponents);
+            shortcut.setBuiltinDecoder(com.winlator.cmod.widget.CodecsSettingsView.decoder(getContentView()));
+            shortcut.setSoftwareDecoding(com.winlator.cmod.widget.CodecsSettingsView.software(getContentView()));
 
             String envVars = envVarsView.getEnvVars();
             shortcut.putExtra("envVars", !envVars.isEmpty() ? envVars : null);

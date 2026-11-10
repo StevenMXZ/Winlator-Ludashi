@@ -209,6 +209,14 @@ public abstract class WineUtils {
         }
     }
 
+    /** Reconcile the prefix on every launch; saved selection is not proof of registry state. */
+    public static boolean applyStartupSelection(Container container, String selection) {
+        changeServicesStatus(container, selection);
+        if (selection.equals(container.getExtra("startupSelection"))) return false;
+        container.putExtra("startupSelection", selection);
+        return true;
+    }
+
 public static void changeServicesStatus(Container container, String startupSelection) {
     final String[] services = {
         "BITS:3", "Eventlog:2", "HTTP:3", "LanmanServer:3", "NDIS:2",
@@ -254,9 +262,11 @@ public static void changeServicesStatus(Container container, String startupSelec
                 value = (selection == Container.STARTUP_SELECTION_AGGRESSIVE) ? 4 : 2;
             }
 
-            registryEditor.setDwordValue("System\\CurrentControlSet\\Services\\" + name, "Start", value);
-            registryEditor.setDwordValue("System\\ControlSet001\\Services\\" + name, "Start", value);
-            registryEditor.setDwordValue("System\\ControlSet002\\Services\\" + name, "Start", value);
+            for (String controlSet : new String[]{"CurrentControlSet", "ControlSet001", "ControlSet002"}) {
+                String key = "System\\" + controlSet + "\\Services\\" + name;
+                if (registryEditor.getDwordValue(key, "Start", -1) != value)
+                    registryEditor.setDwordValue(key, "Start", value);
+            }
         }
     }
 }

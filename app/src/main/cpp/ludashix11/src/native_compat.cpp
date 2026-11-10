@@ -119,7 +119,7 @@ void XClient::ProcCompat() {
         Write(&r, sizeof(r)); Write(name.data(), name.size()); WritePad((-name.size()) & 3); Flush(); return;
     }
     case X_ListExtensions: {
-        const std::vector<std::string> names = {"BIG-REQUESTS", "MIT-SHM", "DRI3", "Present", "SYNC", "RANDR", "GLX"};
+        const std::vector<std::string> names = {"BIG-REQUESTS", "MIT-SHM", "DRI3", "Present", "SYNC", "RANDR", "GLX", "Composite", "RENDER", "XInputExtension"};
         std::vector<u8> bytes; for (auto& n : names) { bytes.push_back(n.size()); bytes.insert(bytes.end(), n.begin(), n.end()); }
         xListExtensionsReply r{}; r.type = X_Reply; r.sequenceNumber = sequence;
         r.nExtensions = names.size(); r.length = (bytes.size()+3)/4;

@@ -2,9 +2,11 @@ package com.winlator.cmod;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -19,7 +21,6 @@ import androidx.preference.PreferenceManager;
 
 import com.winlator.cmod.contentdialog.ContentDialog;
 import com.winlator.cmod.core.AppUtils;
-import com.winlator.cmod.core.Callback;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.HttpUtils;
 import com.winlator.cmod.inputcontrols.ControlsProfile;
@@ -46,7 +47,6 @@ public class InputControlsFragment extends Fragment {
 
     private InputControlsManager manager;
     private ControlsProfile currentProfile;
-    private Callback<ControlsProfile> importProfileCallback;
     private SharedPreferences preferences;
     private ComposeView composeView;
     private ArrayList<ExternalController> visibleControllers = new ArrayList<>();
@@ -109,21 +109,39 @@ public class InputControlsFragment extends Fragment {
     public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != MainActivity.OPEN_FILE_REQUEST_CODE
-                || resultCode != Activity.RESULT_OK
-                || data == null
-                || data.getData() == null) return;
+                || resultCode != Activity.RESULT_OK || data == null) return;
 
-        try {
-            ControlsProfile importedProfile = manager.importProfile(
-                    new JSONObject(FileUtils.readString(requireContext(), data.getData()))
-            );
-            if (importProfileCallback != null) importProfileCallback.call(importedProfile);
+        ArrayList<Uri> uris = new ArrayList<>();
+        ClipData clipData = data.getClipData();
+        if (clipData != null) {
+            for (int i = 0; i < clipData.getItemCount(); i++) {
+                Uri uri = clipData.getItemAt(i).getUri();
+                if (uri != null && !uris.contains(uri)) uris.add(uri);
+            }
+        } else if (data.getData() != null) {
+            uris.add(data.getData());
         }
-        catch (Exception e) {
-            AppUtils.showToast(requireContext(), R.string.unable_to_import_profile);
+
+        ControlsProfile lastImported = null;
+        int failed = 0;
+        for (Uri uri : uris) {
+            try {
+                ControlsProfile imported = manager.importProfile(
+                        new JSONObject(FileUtils.readString(requireContext(), uri)));
+                if (imported != null) lastImported = imported;
+                else failed++;
+            } catch (Exception e) {
+                failed++;
+            }
         }
-        finally {
-            importProfileCallback = null;
+        if (lastImported != null) {
+            currentProfile = lastImported;
+            refreshCompose();
+        }
+        if (failed > 0) {
+            String message = getString(R.string.unable_to_import_profile);
+            if (uris.size() > 1) message += " (" + failed + "/" + uris.size() + ")";
+            AppUtils.showToast(requireContext(), message);
         }
     }
 
@@ -161,8 +179,7 @@ public class InputControlsFragment extends Fragment {
                         R.string.profile_name,
                         currentProfile.getName(),
                         name -> {
-                            currentProfile.setName(name);
-                            currentProfile.save();
+                            manager.renameProfile(currentProfile, name);
                             refreshCompose();
                         }
                 );
@@ -290,13 +307,10 @@ public class InputControlsFragment extends Fragment {
     }
 
     private void openProfileFile() {
-        importProfileCallback = importedProfile -> {
-            currentProfile = importedProfile;
-            refreshCompose();
-        };
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         requireActivity().startActivityFromFragment(
                 this,
                 intent,

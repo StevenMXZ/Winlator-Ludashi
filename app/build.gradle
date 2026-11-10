@@ -223,6 +223,8 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.14.1'
     testImplementation 'org.conscrypt:conscrypt-openjdk-uber:2.5.2'
+    // Host JNI library for tests that install the real compressed audio asset.
+    testRuntimeOnly 'com.github.luben:zstd-jni:1.5.2-3@jar'
     implementation platform('androidx.compose:compose-bom:2025.08.00')
     implementation 'androidx.activity:activity-compose:1.10.1'
     implementation 'androidx.compose.ui:ui'

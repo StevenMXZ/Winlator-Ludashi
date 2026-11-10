@@ -107,9 +107,24 @@ public class InputControlsManager {
             }
         }
 
-        Collections.sort(profiles);
+        sortAlphabetically(profiles);
         this.profiles = profiles;
         profilesLoaded = true;
+    }
+
+    private static void sortAlphabetically(ArrayList<ControlsProfile> list) {
+        Collections.sort(list, (a, b) -> {
+            String nameA = a.getName() != null ? a.getName() : "";
+            String nameB = b.getName() != null ? b.getName() : "";
+            int result = nameA.compareToIgnoreCase(nameB);
+            return result != 0 ? result : Integer.compare(a.id, b.id);
+        });
+    }
+
+    public void renameProfile(ControlsProfile profile, String name) {
+        profile.setName(name);
+        profile.save();
+        sortAlphabetically(profiles);
     }
 
     public ControlsProfile createProfile(String name) {
@@ -117,6 +132,7 @@ public class InputControlsManager {
         profile.setName(name);
         profile.save();
         profiles.add(profile);
+        sortAlphabetically(profiles);
         return profile;
     }
 
@@ -148,6 +164,7 @@ public class InputControlsManager {
 
         ControlsProfile profile = loadProfile(context, newFile);
         profiles.add(profile);
+        sortAlphabetically(profiles);
         return profile;
     }
 
@@ -178,6 +195,7 @@ public class InputControlsManager {
                 profiles.set(foundIndex, newProfile);
             }
             else profiles.add(newProfile);
+            sortAlphabetically(profiles);
             return newProfile;
         }
         catch (JSONException e) {

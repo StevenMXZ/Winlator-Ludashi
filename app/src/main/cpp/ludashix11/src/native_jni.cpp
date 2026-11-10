@@ -61,6 +61,8 @@ extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeInput)(JNIEnv* env, jclass, jlo
         auto lock = server->Lock();
         if (kind == 0) server->GetMouse().MoveTo(a, b);
         else if (kind == 3) server->GetMouse().MoveBy(a, b);
+        else if (kind == 4) server->GetMouse().AnchorTo(a, b);
+        else if (kind == 5) server->GetMouse().SetRawInputEnabled(a != 0);
         else if (kind == 1) server->GetMouse().SetButton(a, b != 0);
         else if (kind == 2) server->GetKeyboard().SetKeyState(static_cast<xorg::XKeycode>(a), b != 0);
     } catch (const std::exception& e) { fail(env, e.what()); }

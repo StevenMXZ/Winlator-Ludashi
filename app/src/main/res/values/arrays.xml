@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="builtin_decoder_entries">
+        <item>GStreamer</item>
+        <item>FFmpeg (winedmo)</item>
+    </string-array>
     <string-array name="screen_size_entries">
         <item>Custom</item>
         <item>640x360 (16:9)</item>
@@ -26,8 +30,7 @@
         <item>turnip26.2.0</item>
     </string-array>
     <string-array name="audio_driver_entries">
-        <item>ALSA</item>
-        <item>PulseAudio</item>
+        <item>Alsa-Oboe</item>
         <item>PulseAudio-GN</item>
     </string-array>
     <string-array name="binding_type_entries">

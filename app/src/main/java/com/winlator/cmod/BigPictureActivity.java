@@ -862,7 +862,7 @@ public class BigPictureActivity extends AppCompatActivity {
         setTextOrPlaceholder(graphicsDriverVersionView, shortcut.getExtra("graphicsDroverConfig"), container.getGraphicsDriverConfig());
         setTextOrPlaceholder(dxWrapperView, shortcut.getExtra("dxwrapper"), container.getDXWrapper());
         setTextOrPlaceholder(dxWrapperConfigView, shortcut.getExtra("dxwrapperConfig"), container.getDXWrapperConfig());
-        setTextOrPlaceholder(audioDriverView, shortcut.getExtra("audioDriver"), container.getAudioDriver());
+        audioDriverView.setText(Container.getAudioDriverLabel(shortcut.getAudioDriver()));
         setTextOrPlaceholder(box64PresetView, shortcut.getExtra("box64Preset"), container.getBox64Preset());
 
         Bitmap coverArt = null;

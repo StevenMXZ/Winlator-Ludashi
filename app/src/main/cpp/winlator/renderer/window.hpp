@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -9,6 +11,8 @@
 #include "cursor.hpp"
 
 struct Window {
+    inline static std::atomic<uint64_t> nextGeneration{1};
+    uint64_t generation{nextGeneration.fetch_add(1, std::memory_order_relaxed)};
     int id;
     int width;
     int height;

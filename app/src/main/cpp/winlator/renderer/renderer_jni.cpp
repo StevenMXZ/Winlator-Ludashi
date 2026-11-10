@@ -179,7 +179,6 @@ Java_com_winlator_cmod_widget_XServerView_nativeInit(JNIEnv *env, jobject thiz, 
     if (xserver.isDisplayX()) {
         displayX.setPerformanceMode(env->GetBooleanField(context, cache.performanceMode));
         displayX.setPresentRR(env->GetBooleanField(context, cache.presentRR));
-        displayX.setBackPressure(env->GetBooleanField(context, cache.backPressure));
         displayX.setPrecisePresentation(env->GetBooleanField(context, cache.precisePresentation));
     } else {
         renderer.setTextureFilter(env->GetIntField(context, cache.textureFilter));
@@ -289,13 +288,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeDestroyWindow(JNIEnv *env, jobje
     if (!window) return;
     
     if (xserver.isDisplayX()) {
-        displayX.queueEvent([window] { 
-            if (window->inputOutput && window->drawable->composerTexture != nullptr)
-                effectComposer.destroyComposerTexture(window->drawable.get());
-                
-            displayX.destroyWindowControl(window);
-            windowManager.deleteWindow(window); 
-        });
+        displayX.queueEvent([id] { displayX.destroyWindow(id); });
     }    
     else {
         renderer.queueEvent([window] { 
@@ -385,7 +378,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeBindCursor(JNIEnv *env, jobject 
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_winlator_cmod_widget_XServerView_nativePointerMove(JNIEnv *env, jobject thiz, jint posX, jint posY) {
+Java_com_winlator_cmod_widget_XServerView_nativePointerMove(jint posX, jint posY) {
     cursorManager.pointer.posX = posX;
     cursorManager.pointer.posY = posY;
     
@@ -452,7 +445,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeUpdateWindowGeometry(JNIEnv *env
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_winlator_cmod_widget_XServerView_nativeUpdateWindowContent(JNIEnv *env, jobject thiz, jint id) {
+Java_com_winlator_cmod_widget_XServerView_nativeUpdateWindowContent(jint id) {
     auto window = windowManager.getWindow(id);
     if (!window) return;
     
@@ -620,7 +613,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeAddDirectContent(JNIEnv *env, jo
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_winlator_cmod_widget_XServerView_nativeUpdateDirectContent(JNIEnv *env, jclass obj, jint windowId, jint drawableId) {
+Java_com_winlator_cmod_widget_XServerView_nativeUpdateDirectContent(jint windowId, jint drawableId) {
     auto window = windowManager.getWindow(windowId);
     if (!window) return;
     
@@ -652,7 +645,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeSetCompositeRedirected(JNIEnv *e
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_winlator_cmod_widget_XServerView_nativeCompositeRedirect(JNIEnv *env, jclass obj, jint srcDrawableId, jint dstDrawableId, jshort dstX, jshort dstY) {
+Java_com_winlator_cmod_widget_XServerView_criticalCompositeRedirect(jint srcDrawableId, jint dstDrawableId, jshort dstX, jshort dstY) {
     auto srcWindow = windowManager.getWindow(srcDrawableId);
     if (!srcWindow) return;
     
@@ -687,8 +680,19 @@ Java_com_winlator_cmod_widget_XServerView_nativeCompositeRedirect(JNIEnv *env, j
         else {
             if (positionChanged || zOrderChanged)  {
                 renderer.queueEvent([sibling]{ renderer.updateWindowPosition(sibling); });
-                renderer.queueEvent([sibling]{ renderer.updateScene(); });
+                renderer.queueEvent([]{ renderer.updateScene(); });
             }    
         }
     }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_winlator_cmod_widget_XServerView_registerNatives(JNIEnv* env, jclass type) {
+    const JNINativeMethod methods[] = {
+        {"nativePointerMove", "(II)V", reinterpret_cast<void*>(Java_com_winlator_cmod_widget_XServerView_nativePointerMove)},
+        {"nativeUpdateWindowContent", "(I)V", reinterpret_cast<void*>(Java_com_winlator_cmod_widget_XServerView_nativeUpdateWindowContent)},
+        {"nativeUpdateDirectContent", "(II)V", reinterpret_cast<void*>(Java_com_winlator_cmod_widget_XServerView_nativeUpdateDirectContent)},
+        {"criticalCompositeRedirect", "(IISS)V", reinterpret_cast<void*>(Java_com_winlator_cmod_widget_XServerView_criticalCompositeRedirect)},
+    };
+    env->RegisterNatives(type, methods, sizeof(methods) / sizeof(methods[0]));
 }

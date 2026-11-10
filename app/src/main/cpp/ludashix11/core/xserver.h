@@ -3,6 +3,7 @@
 #include <array>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <android/native_window.h>
 #include <jni.h>
 #include <sys/epoll.h>
@@ -85,6 +86,9 @@ public:
     void RemoveResource(u32 id);
 
     u32 GetTimestamp() const;
+    void SelectRawInput(XClient* client, bool enabled);
+    void SendRawMotion(s32 dx, s32 dy);
+    void SendRawButton(u16 button, bool down);
 
 private:
     void Shutdown();
@@ -109,6 +113,7 @@ private:
     ResourceIDs resource_ids;
     std::array<epoll_event, 10> events{};
     std::unordered_map<int, std::unique_ptr<XClient>> clients;
+    std::unordered_set<XClient*> rawInputClients;
     std::thread server_thread;
     std::unique_ptr<ShmManager> shm_manager;
     std::unique_ptr<XScreen> screen;

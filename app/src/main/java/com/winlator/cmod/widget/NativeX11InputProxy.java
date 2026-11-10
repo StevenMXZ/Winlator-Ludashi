@@ -10,6 +10,21 @@ public final class NativeX11InputProxy extends XServer {
         super(info, "egl", config);
     }
 
+    @Override public void setRelativeMouseMovement(boolean enabled) {
+        super.setRelativeMouseMovement(enabled);
+        cursorLocker.setEnabled(false);
+        if (getXServerView() instanceof NativeX11View)
+            ((NativeX11View) getXServerView()).setRawInputEnabled(!enabled);
+    }
+
+    @Override public void injectPointerWarp(int x, int y) {
+        if (isMouseDisabled()) return;
+        pointer.setX(x);
+        pointer.setY(y);
+        if (getXServerView() instanceof NativeX11View)
+            ((NativeX11View) getXServerView()).warpPointer(x, y);
+    }
+
     @Override public void injectPointerMoveDelta(int dx, int dy) {
         if (isMouseDisabled()) return;
         // Preserve the UI's local coordinates without deriving a new delta from them:

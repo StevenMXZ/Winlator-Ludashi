@@ -15,6 +15,10 @@ def run(binary):
         try:
             assert process.stdout.readline().strip() == 'ready'
             c = Client(channel)
+            p = c.reply(c.send(117))
+            assert p[1] == 7 and len(p) == 40, p.hex()
+            assert p[32:] == bytes([1, 2, 3, 4, 5, 6, 7, 0]), p.hex()
+            c.barrier()  # The mapping's padding must not consume the next reply.
             def intern(name):
                 b = name.encode()
                 p = c.reply(c.send(16, payload=struct.pack('<HH',len(b),0)+b+b'\0'*((-len(b))%4)))

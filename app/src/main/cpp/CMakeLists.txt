@@ -8,6 +8,9 @@ add_subdirectory(OpenXR-SDK)
 add_subdirectory(patchelf)
 add_subdirectory(adrenotools)
 
+# Optional, read-only KGSL HUD load fallback (Ludashi / DroidDeck).
+add_library(gpuusage SHARED gpuusage/kgsl_busy.c)
+
 # Shaders for Winlator Labs' offscreen rotating 3D cube benchmark.
 # Generated only at build time; no impact on normal VulkanRendererContext.
 add_custom_command(
@@ -41,8 +44,9 @@ add_library(winlator SHARED
         winlator/gpu_image.c
         winlator/process_helper.c
         winlator/sysvshared_memory.c
+        winlator/xinput_stream.c
+        winlator/xoutput_stream.c
         winlator/xconnector_epoll.c
-        winlator/alsa_client.c
         winlator/vulkan.c
         winlator/renderer/egl.cpp
         winlator/renderer/renderer_jni.cpp
@@ -58,7 +62,8 @@ add_library(winlator SHARED
 add_dependencies(winlator labs_cube_shaders)
 target_include_directories(winlator PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_options(winlator PRIVATE -Wall -Wextra)
-target_include_directories(winlator PRIVATE winlator/renderer winlator/renderer/effectcomposer)
+target_compile_features(winlator PRIVATE cxx_std_17)
+target_include_directories(winlator PRIVATE winlator/renderer winlator/renderer/effectcomposer winlator/include)
 
 target_link_libraries(winlator
         log
@@ -66,7 +71,6 @@ target_link_libraries(winlator
         android
         jnigraphics
         openxr_loader
-        aaudio
         EGL
         GLESv2
         GLESv3

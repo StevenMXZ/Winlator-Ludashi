@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
+#include <poll.h>
 
 namespace xorg {
 class HostRenderer final : public NativeRenderer {
@@ -257,7 +258,25 @@ int main(int argc, char** argv) {
         static_cast<xorg::NativeScreen&>(server.GetScreen()).SetOptions(false, true, std::atoi(limit), 60.f);
     server.StartTest(std::stoi(argv[1]), argc == 3 ? std::stoi(argv[2]) : -1);
     std::cout << "ready" << std::endl;
-    while (!quit) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    const bool inputTest = std::getenv("LUDASHI_HOST_INPUT") != nullptr;
+    while (!quit) {
+        if (!inputTest) { std::this_thread::sleep_for(std::chrono::milliseconds(10)); continue; }
+        pollfd input{STDIN_FILENO, POLLIN, 0};
+        if (poll(&input, 1, 10) <= 0 || !(input.revents & POLLIN)) continue;
+        std::string line, command; int a{}, b{};
+        if (!std::getline(std::cin, line)) break;
+        std::istringstream parser(line); parser >> command >> a >> b;
+        {
+            auto lock = server.Lock();
+            auto& mouse = server.GetMouse();
+            if (command == "relative") mouse.MoveBy(a, b);
+            else if (command == "absolute") mouse.MoveTo(a, b);
+            else if (command == "anchor") mouse.AnchorTo(a, b);
+            else if (command == "button") mouse.SetButton(a, b != 0);
+            else if (command == "raw") mouse.SetRawInputEnabled(a != 0);
+        }
+        std::cout << "input" << std::endl;
+    }
 }
 
 

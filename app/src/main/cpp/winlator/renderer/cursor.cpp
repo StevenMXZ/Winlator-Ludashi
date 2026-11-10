@@ -1,5 +1,16 @@
 #include "cursor.hpp"
 
+void CursorManager::releaseRootCursorImage() {
+    if (rootCursor && rootCursor->image && rootCursor->image->ahb) {
+        AHardwareBuffer_release(rootCursor->image->ahb);
+        rootCursor->image->ahb = nullptr;
+    }
+}
+
+CursorManager::~CursorManager() {
+    releaseRootCursorImage();
+}
+
 void CursorManager::addCursor(int id, std::unique_ptr<struct Cursor> cursor) {
     auto lock = cursorLock.lock();
     this->cursors[id] = std::move(cursor);
@@ -21,6 +32,7 @@ Cursor* CursorManager::getCursor(int id) {
 }
 
 void CursorManager::setRootCursor(std::unique_ptr<struct Cursor> cursor) {
+    releaseRootCursorImage();
     this->rootCursor = std::move(cursor);
 }
 

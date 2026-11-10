@@ -152,6 +152,8 @@ private fun AdvancedContainerScreen(containerId: Int, onCancel: () -> Unit, onSa
     val components = remember(container.getWinComponents()) {
         mutableStateMapOf<String, Int>().apply { putAll(parseComponents(container.getWinComponents())) }
     }
+    var builtinDecoder by remember { mutableStateOf(container.getBuiltinDecoder()) }
+    var softwareDecoding by remember { mutableStateOf(container.getSoftwareDecoding()) }
     var startup by remember { mutableIntStateOf(container.getStartupSelection().toInt().coerceIn(0, 2)) }
     var exclusive by remember { mutableStateOf(container.isExclusiveXInput()) }
     var xinput by remember { mutableStateOf((container.getInputType() and WinHandler.FLAG_INPUT_TYPE_XINPUT.toInt()) != 0) }
@@ -204,7 +206,8 @@ private fun AdvancedContainerScreen(containerId: Int, onCancel: () -> Unit, onSa
                 ) {
                     when (tab) {
                         0 -> AdvancedEnvironmentPage(envRows)
-                        1 -> AdvancedComponentsPage(components)
+                        1 -> AdvancedComponentsPage(components, builtinDecoder, softwareDecoding,
+                            { builtinDecoder = it }, { softwareDecoding = it })
                         2 -> AdvancedStartupInputPage(
                             startup = startup,
                             onStartup = { startup = it },
@@ -250,6 +253,8 @@ private fun AdvancedContainerScreen(containerId: Int, onCancel: () -> Unit, onSa
                             container.setWinComponents(componentRows.joinToString(",") { (key, _) ->
                                 "$key=${components[key] ?: 0}"
                             })
+                            container.setBuiltinDecoder(builtinDecoder)
+                            container.setSoftwareDecoding(softwareDecoding)
                             container.setStartupSelection(startup.toByte())
                             container.setExclusiveXInput(exclusive)
                             var inputType = 0
@@ -356,7 +361,8 @@ private fun AdvancedEnvRow(item: AdvancedEnvEntry, onValue: (String) -> Unit, on
 }
 
 @Composable
-private fun AdvancedComponentsPage(values: MutableMap<String, Int>) {
+private fun AdvancedComponentsPage(values: MutableMap<String, Int>, decoder: String, software: Boolean,
+    onDecoder: (String) -> Unit, onSoftware: (Boolean) -> Unit) {
     val entries = listOf("Builtin (Wine)", "Native (Windows)")
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(10.dp)) {
         items(componentRows) { (key, label) ->
@@ -364,6 +370,7 @@ private fun AdvancedComponentsPage(values: MutableMap<String, Int>) {
             AdvancedChoice(label, entries[selected], entries) { values[key] = entries.indexOf(it).coerceAtLeast(0) }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
         }
+        item { com.winlator.cmod.ui.settings.CodecsSettings(decoder, software, onDecoder, onSoftware) }
     }
 }
 

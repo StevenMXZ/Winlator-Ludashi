@@ -486,7 +486,7 @@ private fun ContainerSectionScreen(
                         2 -> {
                             ChoiceSetting(Icons.Outlined.VolumeUp, "Audio Driver", audio, audioEntries) { audio = it }
                             GroupDivider()
-                            InfoText("ALSA offers direct audio output. PulseAudio can improve compatibility in some applications.")
+                            InfoText("Alsa-Oboe offers direct audio output. PulseAudio-GN is available for compatibility.")
                         }
                         else -> {
                             ChoiceSetting(Icons.Outlined.VerifiedUser, "DX Wrapper", wrapper, wrapperEntries) {

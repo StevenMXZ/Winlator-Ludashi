@@ -17,6 +17,7 @@
 #include "window.hpp"
 #include "effect_composer.hpp"
 #include "cursor.hpp"
+#include "displayx_present_queue.hpp"
 
 class DisplayX {
     private:
@@ -47,56 +48,24 @@ class DisplayX {
            }
         };
         
-        struct PresentRequest {
-            Drawable *drawable;
-            int sync_fence;
-            uint64_t presentId;
-            uint8_t swapchainId;
-            int clientFd;
-            Window *window;
-        };
-        
-        class PresentQueue {
-            private:
-                std::queue<std::unique_ptr<PresentRequest>> mQueue;
-                std::unordered_set<Window *> mSet;
-
-            public:
-                void push(std::unique_ptr<PresentRequest> request) {
-                    if (!request || !request->window)
-                        return;
-                        
-                    if (mSet.count(request->window)) {
-                        if (request->sync_fence >= 0)
-                            close(request->sync_fence);
-                            
-                        return;
-                    }        
-                    
-                    mSet.insert(request->window);     
-                    mQueue.push(std::move(request));
-                }
-
-                std::unique_ptr<PresentRequest> pop() {
-                    if (mQueue.empty())
-                        return nullptr;
-                    
-                    auto val = std::move(mQueue.front());
-                    mQueue.pop();
-                    
-                    mSet.erase(val->window);
-                    return val;
-                }
-
-                bool empty() const {
-                    return mQueue.empty();
-                }
-        };
+        using PresentRequest = DisplayXPresentRequest;
+        using PresentQueue = DisplayXPresentQueue;
         
         struct DisplayXSwapchain {
             uint8_t id;
             Window *window;
+            uint32_t windowId;
+            uint64_t windowGeneration;
+            int clientFd;
+            uint32_t imageCount;
+            uint32_t presentMode;
+            uint32_t format;
+            uint32_t width;
+            uint32_t height;
             std::vector<std::unique_ptr<Drawable>> images;
+            ~DisplayXSwapchain() {
+                for (auto& image : images) if (image && image->ahb) AHardwareBuffer_release(image->ahb);
+            }
         };
         
         struct OnCompleteContext {
@@ -112,6 +81,7 @@ class DisplayX {
         
         APerformanceHintManager *performanceHintManager = nullptr;
         APerformanceHintSession *performanceHintSession = nullptr;
+        std::mutex performanceHintLock;
         
         DisplayXLock eventLock;
         DisplayXLock presentLock;
@@ -133,7 +103,6 @@ class DisplayX {
         std::atomic_bool surfaceChanged{false};
         std::atomic_bool perfMode{true};
         std::atomic_bool presentRR{true};
-        std::atomic_bool backPressure{false};
         std::atomic_bool precisePresentation{false};
         
         bool requestUpdate = false;
@@ -159,6 +128,7 @@ class DisplayX {
         void destroyRootWindowControl();
         void destroyRootCursorControl();
         void restoreControlState();
+        void releaseWindowControls(Window* window);
         
     public:
         WindowManager *windowManager;
@@ -183,7 +153,7 @@ class DisplayX {
         void updateCursorPosition();
         
         void createWindowControl(Window *window);
-        void destroyWindowControl(Window *window);
+        void destroyWindow(int id);
         void mapWindow(Window *window);
         void unmapWindow(Window *window);
         void changeGeometry(Window *window, bool resized);
@@ -194,6 +164,5 @@ class DisplayX {
         void toggleFullscreen();
         void setPerformanceMode(bool perfMode);
         void setPresentRR(bool presentRR);
-        void setBackPressure(bool backPressure);
         void setPrecisePresentation(bool precisePresentation);
 };

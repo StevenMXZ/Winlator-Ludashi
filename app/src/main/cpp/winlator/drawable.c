@@ -169,7 +169,7 @@ Java_com_winlator_cmod_xserver_Drawable_copyArea2(JNIEnv *env, jclass obj, jshor
 }
 
 JNIEXPORT void JNICALL
-Java_com_winlator_cmod_xserver_Drawable_copyArea3(JNIEnv *env, jclass obj, jshort srcX,
+Java_com_winlator_cmod_xserver_Drawable_copyArea3(jshort srcX,
                                             jshort srcY, jshort dstX, jshort dstY,
                                             jshort width, jshort height, jshort srcStride,
                                             jshort dstStride, jlong srcData,
@@ -205,7 +205,7 @@ Java_com_winlator_cmod_xserver_Drawable_copyArea3(JNIEnv *env, jclass obj, jshor
 }
 
 JNIEXPORT void JNICALL
-Java_com_winlator_cmod_xserver_Drawable_copyAreaOp(JNIEnv *env, jclass obj, jshort srcX,
+Java_com_winlator_cmod_xserver_Drawable_copyAreaOp(jshort srcX,
                                               jshort srcY, jshort dstX, jshort dstY,
                                               jshort width, jshort height, jshort srcStride,
                                               jshort dstStride, jlong srcData,
@@ -251,7 +251,7 @@ Java_com_winlator_cmod_xserver_Drawable_copyAreaOp(JNIEnv *env, jclass obj, jsho
 }
 
 JNIEXPORT void JNICALL
-Java_com_winlator_cmod_xserver_Drawable_fillRect(JNIEnv *env, jclass obj, jshort x, jshort y,
+Java_com_winlator_cmod_xserver_Drawable_fillRect(jshort x, jshort y,
                                             jshort width, jshort height, jint color, jshort stride,
                                             jlong data) {
     int ret;                                            
@@ -290,7 +290,7 @@ Java_com_winlator_cmod_xserver_Drawable_fillRect(JNIEnv *env, jclass obj, jshort
 }
 
 JNIEXPORT void JNICALL
-Java_com_winlator_cmod_xserver_Drawable_drawLine(JNIEnv *env, jclass obj, jshort x0, jshort y0,
+Java_com_winlator_cmod_xserver_Drawable_drawLine(jshort x0, jshort y0,
                                             jshort x1, jshort y1, jint color, jshort lineWidth,
                                             jshort stride, jlong data) {
     int ret;                                            
@@ -350,8 +350,7 @@ Java_com_winlator_cmod_xserver_Drawable_drawLine(JNIEnv *env, jclass obj, jshort
 }
 
 JNIEXPORT void JNICALL
-Java_com_winlator_cmod_xserver_Drawable_drawAlphaMaskedBitmap(JNIEnv *env, jclass obj,
-                                                         jbyte foreRed, jbyte foreGreen,
+Java_com_winlator_cmod_xserver_Drawable_drawAlphaMaskedBitmap(jbyte foreRed, jbyte foreGreen,
                                                          jbyte foreBlue, jbyte backRed,
                                                          jbyte backGreen, jbyte backBlue,
                                                          jlong srcData, jshort srcStride,
@@ -544,4 +543,15 @@ Java_com_winlator_cmod_xserver_Drawable_unlockBuffer(JNIEnv *env, jclass obj, jl
         return;
     
     AHardwareBuffer_unlock(hardwareBuffer, NULL);
+}
+JNIEXPORT void JNICALL
+Java_com_winlator_cmod_xserver_Drawable_registerNatives(JNIEnv* env, jclass type) {
+    const JNINativeMethod methods[] = {
+        {"drawAlphaMaskedBitmap", "(BBBBBBJSJSSSSJ)V", (void*)Java_com_winlator_cmod_xserver_Drawable_drawAlphaMaskedBitmap},
+        {"copyArea3", "(SSSSSSSSJJ)V", (void*)Java_com_winlator_cmod_xserver_Drawable_copyArea3},
+        {"copyAreaOp", "(SSSSSSSSJJI)V", (void*)Java_com_winlator_cmod_xserver_Drawable_copyAreaOp},
+        {"fillRect", "(SSSSISJ)V", (void*)Java_com_winlator_cmod_xserver_Drawable_fillRect},
+        {"drawLine", "(SSSSISSJ)V", (void*)Java_com_winlator_cmod_xserver_Drawable_drawLine},
+    };
+    (*env)->RegisterNatives(env, type, methods, sizeof(methods) / sizeof(methods[0]));
 }

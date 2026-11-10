@@ -31,8 +31,10 @@ class CursorManager {
     private:
         std::unordered_map<int, std::unique_ptr<struct Cursor>> cursors;
         std::unique_ptr<struct Cursor> rootCursor;
+        void releaseRootCursorImage();
         
     public: 
+        ~CursorManager();
         Pointer pointer{0, 0};
         ASurfaceControl *control;
         CursorLock cursorLock;

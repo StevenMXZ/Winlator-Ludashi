@@ -115,6 +115,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
                 .getBoolean("high_refresh_rate_mode", false);
         displayManager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
         handle = nativeCreate(inputProxy.screenInfo.width, inputProxy.screenInfo.height, validationEnabled);
+        setRawInputEnabled(!inputProxy.isRelativeMouseMovement());
         inputProxy.setXServerView(this);
         inputProxy.cursorLocker.setEnabled(false);
         inputProxy.pointer.addOnPointerMotionListener(this);
@@ -234,6 +235,12 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     }
     public synchronized void moveRelative(int dx, int dy) {
         if (handle != 0) nativeInput(handle, 3, dx, dy);
+    }
+    public synchronized void warpPointer(int x, int y) {
+        if (handle != 0) nativeInput(handle, 4, x, y);
+    }
+    public synchronized void setRawInputEnabled(boolean enabled) {
+        if (handle != 0) nativeInput(handle, 5, enabled ? 1 : 0, 0);
     }
     public synchronized long getFocusedWindowHandle() { return handle != 0 ? nativeFocusHandle(handle) : 0; }
     public synchronized boolean hasWindowHandle(long hwnd) { return handle != 0 && nativeHasWindow(handle, hwnd); }

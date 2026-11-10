@@ -682,4 +682,8 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="game_folder">Game Folder</string>
 
     <string name="magnifier_not_available">Magnifier is not available in DisplayX mode</string>
+    <string name="codecs">Codecs</string>
+    <string name="builtin_decoder">Builtin Decoder</string>
+    <string name="software_decoding">Software decoding (video compatibility)</string>
+    <string name="video_decoder_compatibility_note">Available backends depend on the Wine/Proton build. FFmpeg requires winedmo switching support.</string>
 </resources>

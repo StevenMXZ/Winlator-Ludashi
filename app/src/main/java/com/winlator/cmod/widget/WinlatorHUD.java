@@ -23,6 +23,7 @@ import com.winlator.cmod.XServerDisplayActivity;
 import com.winlator.cmod.container.Container;
 import com.winlator.cmod.core.CPUStatus;
 import com.winlator.cmod.core.GPUInformation;
+import com.winlator.cmod.widget.gpu.KgslLoadFallback;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -173,6 +174,7 @@ public class WinlatorHUD extends View {
                 uiHandler.post(() -> {
                     if (showMask == newMask) return;
                     showMask = newMask;
+                    if ((newMask & SHOW_GPU_USAGE) == 0) stopGpuSampling();
                     requestRelayout();
                 });
             };
@@ -458,23 +460,32 @@ public class WinlatorHUD extends View {
 
     private void readStats() {
         int mask = showMask;
-        if ((mask & SHOW_GPU_USAGE) != 0) readGpu();
+        if ((mask & SHOW_GPU_USAGE) != 0 && userEnabled && isShown()) readGpu();
+        else KgslLoadFallback.stop();
         if ((mask & (SHOW_CPU_USAGE | SHOW_CPU_TEMP)) != 0) readCpu();
         if ((mask & SHOW_RAM) != 0) readRam();
         if ((mask & (SHOW_POWER | SHOW_BATTERY_TEMP | SHOW_CHARGE_STATE)) != 0) readBattery();
     }
 
     private void readGpu() {
-        if (gpuUnavailable) return;
-
         int value = -1;
-        for (String path : gpuPaths) {
-            value = readGpuSample(path);
-            if (value >= 0) break;
+        boolean fromSysfs = false;
+        if (!gpuUnavailable) {
+            for (String path : gpuPaths) {
+                value = readGpuSample(path);
+                if (value >= 0) break;
+            }
+            fromSysfs = value >= 0;
+            if (fromSysfs) gpuConsecutiveFailures = 0;
+            else if (++gpuConsecutiveFailures >= 3) gpuUnavailable = true;
+        }
+        if (fromSysfs) KgslLoadFallback.stop();
+        else {
+            Integer fallback = KgslLoadFallback.busyPercent();
+            if (fallback != null) value = fallback;
         }
 
         if (value >= 0) {
-            gpuConsecutiveFailures = 0;
             if (value != snapGpu) {
                 snapGpu = value;
                 strGpu = value + "%";
@@ -483,13 +494,9 @@ public class WinlatorHUD extends View {
             return;
         }
 
-        if (++gpuConsecutiveFailures >= 3) {
-            gpuUnavailable = true;
-            if (snapGpu < 0) {
-                strGpu = "N/A";
-                wDynGpu = pVal.measureText(strGpu);
-            }
-        }
+        snapGpu = -1;
+        strGpu = "N/A";
+        wDynGpu = pVal.measureText(strGpu);
     }
 
     private int readGpuSample(String path) {
@@ -1223,8 +1230,16 @@ public class WinlatorHUD extends View {
         statsHandler.post(statsRunnable);
     }
 
+    private void stopGpuSampling() {
+        if (statsHandler != null) statsHandler.post(KgslLoadFallback::stop);
+        else KgslLoadFallback.stop();
+    }
+
     private void stopStatsThread() {
-        if (statsHandler != null) statsHandler.removeCallbacks(statsRunnable);
+        if (statsHandler != null) {
+            statsHandler.removeCallbacks(statsRunnable);
+            statsHandler.post(KgslLoadFallback::stop);
+        } else KgslLoadFallback.stop();
         if (statsThread != null) {
             statsThread.quitSafely();
             statsThread = null;
@@ -1256,6 +1271,7 @@ public class WinlatorHUD extends View {
         if (visibility == VISIBLE && userEnabled) {
             scheduleRedraw();
         } else {
+            if (statsHandler != null) statsHandler.post(KgslLoadFallback::stop);
             uiHandler.removeCallbacks(redrawRunnable);
             redrawScheduled = false;
         }
@@ -1461,6 +1477,8 @@ public class WinlatorHUD extends View {
         if (bit == 0) return;
         if (on) showMask |= bit;
         else showMask &= ~bit;
+        if (bit == SHOW_GPU_USAGE && !on && statsHandler != null)
+            statsHandler.post(KgslLoadFallback::stop);
         prefs.edit().putInt(KEY_SHOW, showMask).apply();
         requestRelayout();
     }

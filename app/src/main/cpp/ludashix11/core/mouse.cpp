@@ -14,9 +14,26 @@ Mouse::Mouse(XServer& server)
 
 Mouse::~Mouse() = default;
 
-void Mouse::MoveBy(s16 dx, s16 dy) { MoveTo(x + dx, y + dy); }
+void Mouse::MoveBy(s16 dx, s16 dy) {
+    auto lock = server.Lock();
+    if (rawEnabled) server.SendRawMotion(dx, dy);
+    absoluteAnchored = false;
+    WarpTo(x + dx, y + dy);
+}
 
 void Mouse::MoveTo(s16 new_x, s16 new_y) {
+    auto lock = server.Lock();
+    if (absoluteAnchored && rawEnabled) server.SendRawMotion(new_x - absoluteX, new_y - absoluteY);
+    AnchorTo(new_x, new_y);
+}
+
+void Mouse::AnchorTo(s16 new_x, s16 new_y) {
+    auto lock = server.Lock();
+    absoluteAnchored = true; absoluteX = new_x; absoluteY = new_y;
+    WarpTo(new_x, new_y);
+}
+
+void Mouse::WarpTo(s16 new_x, s16 new_y) {
     auto lock = server.Lock();
     if (x != new_x || y != new_y) {
         x = new_x;
@@ -27,6 +44,7 @@ void Mouse::MoveTo(s16 new_x, s16 new_y) {
 }
 
 void Mouse::SetButton(u16 button, bool down) {
+    if (button < 1 || button > 7) return;
     auto guard = server.Lock();
     const u32 mask = 0x80 << button;
     if (down) {
@@ -41,6 +59,7 @@ void Mouse::SetButton(u16 button, bool down) {
         buttons &= ~mask;
     }
     auto lock = server.Lock();
+    if (rawEnabled) server.SendRawButton(button, down);
     server.GetWindowManager().OnPointerButtonChange(button, down);
 }
 
@@ -61,7 +80,7 @@ void Mouse::FixPosition() {
         new_y = static_cast<s16>(std::floor(screen_height + (fix_y - screen_height) * damping));
     }
     if (new_x != x || new_y != y) {
-        MoveTo(new_x, new_y);
+        WarpTo(new_x, new_y);
     }
 }
 

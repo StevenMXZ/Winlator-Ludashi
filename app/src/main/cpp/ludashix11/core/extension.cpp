@@ -29,6 +29,7 @@ ExtensionManager::ExtensionManager() {
     AddExtension("Composite", [](XClient* c) { c->ProcComposite(); }, 0, 0);
     // RENDER cursor subset; Wine GDI is kept on its existing core path.
     AddExtension("RENDER", [](XClient* c) { c->ProcRender(); }, 0, 5);
+    AddExtension("XInputExtension", [](XClient* c) { c->ProcXInput(); }, 17, 5);
 }
 
 ExtensionManager::~ExtensionManager() {}

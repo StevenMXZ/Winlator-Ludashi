@@ -21,6 +21,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 
 public class PulseAudioComponent extends EnvironmentComponent {
+    // GN binaries retain the original SONAMEs inside their private runtime.
     private static final String[] LIBRARY_NAMES = {
             "libltdl.so",
             "libpulseaudio.so",
@@ -39,17 +40,11 @@ public class PulseAudioComponent extends EnvironmentComponent {
     };
 
     private final UnixSocketConfig socketConfig;
-    private final boolean gameNative;
     private static int pid = -1;
     private static final Object lock = new Object();
 
     public PulseAudioComponent(UnixSocketConfig socketConfig) {
-        this(socketConfig, false);
-    }
-
-    public PulseAudioComponent(UnixSocketConfig socketConfig, boolean gameNative) {
         this.socketConfig = socketConfig;
-        this.gameNative = gameNative;
     }
 
     @Override
@@ -71,7 +66,7 @@ public class PulseAudioComponent extends EnvironmentComponent {
     }
 
     private void copyFromLibraryDir(File dst) {
-        String[] sourceNames = gameNative ? GN_LIBRARY_NAMES : LIBRARY_NAMES;
+        String[] sourceNames = GN_LIBRARY_NAMES;
         for (int i = 0; i < LIBRARY_NAMES.length; i++) {
             String path = "lib/arm64-v8a/" + sourceNames[i];
             ClassLoader loader = PulseAudioComponent.class.getClassLoader();
@@ -91,13 +86,9 @@ public class PulseAudioComponent extends EnvironmentComponent {
 
     private int execPulseAudio() {
         Context context = environment.getContext();
-        String runtimeName = gameNative ? "pulseaudio-gn" : "pulseaudio";
-        String assetName = gameNative
-                ? "pulseaudio-gamenative-20260612.tzst"
-                : "pulseaudio.tzst";
-        String markerName = gameNative
-                ? ".gamenative-20260612"
-                : ".legacy-runtime";
+        String runtimeName = "pulseaudio-gn";
+        String assetName = "pulseaudio-gamenative-20260612.tzst";
+        String markerName = ".gamenative-20260612";
 
         File workingDir = new File(context.getFilesDir(), runtimeName);
         File versionMarker = new File(workingDir, markerName);
@@ -120,23 +111,13 @@ public class PulseAudioComponent extends EnvironmentComponent {
         if (configDir.exists()) FileUtils.delete(configDir);
 
         File configFile = new File(workingDir, "default.pa");
-        if (gameNative) {
-            FileUtils.writeString(configFile, String.join("\n",
-                    "load-module module-native-protocol-unix auth-anonymous=1 auth-cookie-enabled=false socket=\"" + socketConfig.path + "\"",
-                    "load-module module-aaudio-sink volume=1.0 performance_mode=1 low_latency=true"
-            ));
-        } else {
-            FileUtils.writeString(configFile, String.join("\n",
-                    "load-module module-native-protocol-unix auth-anonymous=1 auth-cookie-enabled=0 socket=\"" + socketConfig.path + "\"",
-                    "load-module module-aaudio-sink",
-                    "set-default-sink AAudioSink"
-            ));
-        }
+        FileUtils.writeString(configFile, String.join("\n",
+                "load-module module-native-protocol-unix auth-anonymous=1 auth-cookie-enabled=false socket=\"" + socketConfig.path + "\"",
+                "load-module module-aaudio-sink volume=1.0 performance_mode=1 low_latency=true"
+        ));
 
         String archName = AppUtils.getArchName();
-        File modulesDir = gameNative
-                ? new File(workingDir, "modules")
-                : new File(workingDir, "modules/" + archName);
+        File modulesDir = new File(workingDir, "modules");
         String systemLibPath = archName.equals("arm64") ? "/system/lib64" : "/system/lib";
 
         ArrayList<String> envVars = new ArrayList<>();

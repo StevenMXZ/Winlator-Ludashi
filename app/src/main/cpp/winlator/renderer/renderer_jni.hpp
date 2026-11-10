@@ -97,7 +97,6 @@ class JNICache {
         jmethodID updateFrameRating;
         jmethodID isShowFPS;
         jfieldID performanceMode;
-        jfieldID backPressure;
         jfieldID presentRR;
         jfieldID precisePresentation;
         jfieldID textureFilter;
@@ -172,7 +171,6 @@ class JNICache {
             LOAD_METHOD_ID(getRefreshRate, env, xserverDisplayActivityClass, "getRefreshRate", "()F");
             LOAD_FIELD_ID(performanceMode, env, xserverDisplayActivityClass, "performanceMode", "Z");
             LOAD_FIELD_ID(presentRR, env, xserverDisplayActivityClass, "presentRR", "Z");
-            LOAD_FIELD_ID(backPressure, env, xserverDisplayActivityClass, "backPressure", "Z");
             LOAD_FIELD_ID(precisePresentation, env, xserverDisplayActivityClass, "precisePresentation", "Z");
             LOAD_FIELD_ID(textureFilter, env, xserverDisplayActivityClass, "textureFilter", "I");
             

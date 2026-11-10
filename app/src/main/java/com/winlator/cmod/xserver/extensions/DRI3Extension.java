@@ -177,8 +177,7 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
     private void pixmapFromHardwareBuffer(XClient client, int pixmapId, short width, short height, byte depth, int fd, Window window) throws IOException, XRequestError {
         try {
             GPUImage gpuImage = new GPUImage(fd);
-            Drawable drawable = client.xServer.drawableManager.createDrawable(pixmapId, width, height, depth);
-            drawable.setGPUImage(gpuImage);
+            Drawable drawable = client.xServer.drawableManager.createDrawable(pixmapId, width, height, depth, gpuImage);
             drawable.setDirectScanout(true);
             drawable.setOnDrawListener(() -> client.xServer.windowManager.triggerOnUpdateWindowContentDirect(window, drawable));
             client.xServer.getXServerView().addDirectContent(window.id, drawable, gpuImage);

@@ -25,6 +25,7 @@ XClient::XClient(XServer& server, int fd) : server(server), socket_fd(fd), input
 }
 
 XClient::~XClient() {
+    server.SelectRawInput(this, false);
     is_dead = true;
     if (!await_fences.empty()) server.RemoveSyncWaiter();
     server.GetWindowManager().RemoveCompositeClient(this);

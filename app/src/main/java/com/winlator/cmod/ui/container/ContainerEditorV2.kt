@@ -140,11 +140,9 @@ private class ContainerEditorStateV2(
     var runtime by mutableStateOf(editing?.wineVersion.orEmpty())
     var name by mutableStateOf(editing?.name ?: "Container-${manager.nextContainerId}")
     var screen by mutableStateOf(editing?.screenSize ?: Container.DEFAULT_SCREEN_SIZE)
+    var builtinDecoder by mutableStateOf(editing?.getBuiltinDecoder() ?: "gstreamer")
+    var softwareDecoding by mutableStateOf(editing?.getSoftwareDecoding() ?: false)
     var audio by mutableStateOf(editing?.audioDriver ?: Container.DEFAULT_AUDIO_DRIVER)
-    var oboeProfile by mutableStateOf(editing?.getExtra("oboeProfile", "low") ?: "low")
-    var oboeApi by mutableStateOf(editing?.getExtra("oboeApi", "auto") ?: "auto")
-    var oboeAdaptive by mutableStateOf((editing?.getExtra("oboeAdaptive", "1") ?: "1") != "0")
-    var oboeExclusive by mutableStateOf((editing?.getExtra("oboeExclusive", "0") ?: "0") == "1")
     var hudMode by mutableIntStateOf(
         editing?.getExtra("hudMode", if (editing.isShowFPS) "1" else "0")?.toIntOrNull() ?: 0
     )
@@ -184,7 +182,7 @@ private class ContainerEditorStateV2(
     var trueDisplayX by mutableStateOf(editing?.getTrueDisplayX() ?: false)
     var displayXPerformanceMode by mutableStateOf(editing?.getDisplayXPerformanceMode() ?: true)
     var displayXPresentAtRefreshRate by mutableStateOf(editing?.getDisplayXPresentAtRefreshRate() ?: true)
-    var displayXBackPressure by mutableStateOf(editing?.getDisplayXBackPressure() ?: false)
+    var displayXPresentMode by mutableStateOf(editing?.getDisplayXPresentMode() ?: "mailbox")
     var displayXPrecisePresentation by mutableStateOf(editing?.getDisplayXPrecisePresentation() ?: false)
     var frameGenEnabled by mutableStateOf((editing?.getExtra("frameGen", "0") ?: "0") == "1")
     var frameGenMultiplier by mutableIntStateOf(
@@ -326,10 +324,10 @@ private class ContainerEditorStateV2(
     }
 
     fun fingerprint(): String = listOf(
-        name, screen, audio, oboeProfile, oboeApi, oboeAdaptive, oboeExclusive, hudMode, locale, soundFont,
+        name, screen, audio, builtinDecoder, softwareDecoding, hudMode, locale, soundFont,
         fullscreen, desktopTheme, desktopBackground, wallpaperStamp, mouseWarp, drives,
         displayServer, renderer, rendererPresentMode, rendererDriver, filterMode, surfaceFormat, trueDisplayX,
-        displayXPerformanceMode, displayXPresentAtRefreshRate, displayXBackPressure,
+        displayXPerformanceMode, displayXPresentAtRefreshRate, displayXPresentMode,
         displayXPrecisePresentation, frameGenEnabled, frameGenMultiplier,
         frameGenTargetRate, frameGenFlowScale, graphicsDriver, graphicsConfig,
         wrapper, wrapperConfig, emulator, fexVersion, boxVersion, fexPreset, boxPreset, exclusive, xinput, dinput,
@@ -476,7 +474,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.setTrueDisplayX(state.trueDisplayX)
         container.setDisplayXPerformanceMode(state.displayXPerformanceMode)
         container.setDisplayXPresentAtRefreshRate(state.displayXPresentAtRefreshRate)
-        container.setDisplayXBackPressure(state.displayXBackPressure)
+        container.setDisplayXPresentMode(state.displayXPresentMode)
         container.setDisplayXPrecisePresentation(state.displayXPrecisePresentation)
         container.putExtra("frameGen", if (state.frameGenEnabled) "1" else "0")
         container.putExtra("frameGenMultiplier", state.frameGenMultiplier.toString())
@@ -484,11 +482,9 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.putExtra("frameGenFlowScale", state.frameGenFlowScale.toString())
         container.setDXWrapper(state.wrapper)
         container.setDXWrapperConfig(state.wrapperConfig)
+        container.setBuiltinDecoder(state.builtinDecoder)
+        container.setSoftwareDecoding(state.softwareDecoding)
         container.setAudioDriver(state.audio)
-        container.putExtra("oboeProfile", state.oboeProfile)
-        container.putExtra("oboeApi", state.oboeApi)
-        container.putExtra("oboeAdaptive", if (state.oboeAdaptive) "1" else "0")
-        container.putExtra("oboeExclusive", if (state.oboeExclusive) "1" else "0")
         container.setEmulator(if (arm64) if (state.emulator == "FEXCore") "FEXCore" else "Box64" else "Box64")
         container.setWinComponents(serializeContainerComponentsV2(state.components))
         container.setShowFPS(state.hudMode != 0)
@@ -566,6 +562,8 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                 put("midiSoundFont", state.soundFont)
                 put("lc_all", state.locale)
                 put("extraData", JSONObject()
+                    .put("builtinDecoder", state.builtinDecoder)
+                    .put("softwareDecoding", if (state.softwareDecoding) "1" else "0")
                     .put("hudMode", state.hudMode.toString())
                     .put("mouseWarpOverride", state.mouseWarp)
                     .put("displayServer", if (state.displayServer.startsWith("Ludashi")) "native" else "java")
@@ -574,16 +572,12 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                     .put("trueDisplayX", if (state.trueDisplayX) "1" else "0")
                     .put("displayXPerformanceMode", if (state.displayXPerformanceMode) "1" else "0")
                     .put("displayXPresentAtRefreshRate", if (state.displayXPresentAtRefreshRate) "1" else "0")
-                    .put("displayXBackPressure", if (state.displayXBackPressure) "1" else "0")
+                    .put("displayXPresentMode", state.displayXPresentMode)
                     .put("displayXPrecisePresentation", if (state.displayXPrecisePresentation) "1" else "0")
                     .put("frameGen", if (state.frameGenEnabled) "1" else "0")
                     .put("frameGenMultiplier", state.frameGenMultiplier.toString())
                     .put("frameGenTargetRate", state.frameGenTargetRate.toString())
                     .put("frameGenFlowScale", state.frameGenFlowScale.toString())
-                    .put("oboeProfile", state.oboeProfile)
-                    .put("oboeApi", state.oboeApi)
-                    .put("oboeAdaptive", if (state.oboeAdaptive) "1" else "0")
-                    .put("oboeExclusive", if (state.oboeExclusive) "1" else "0")
                     .put("openGlDefaultInitialized", if (state.openGlDefaultInitialized) "1" else "0")
                     .put("autoMesaGlVersionOverride", if (state.autoMesaGlVersionOverride) "1" else "0"))
             }
@@ -766,34 +760,6 @@ private fun ContainerCategoryV2(
                     audioEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(s.audio, true) } ?: s.audio,
                     audioEntries
                 ) { s.audio = StringUtils.parseIdentifier(it) }
-                if (s.audio == "oboe") {
-                    SettingsDivider()
-                    val latencyLabel = when (s.oboeProfile) {
-                        "ultra" -> "Low Latency"
-                        "stable" -> "Stable"
-                        else -> "Automatic"
-                    }
-                    SettingChoice("Oboe latency", latencyLabel, listOf("Automatic", "Low Latency", "Stable")) {
-                        s.oboeProfile = when (it) {
-                            "Low Latency" -> "ultra"
-                            "Stable" -> "stable"
-                            else -> "low"
-                        }
-                    }
-                    SettingsDivider()
-                    val apiLabel = when (s.oboeApi) {
-                        "aaudio" -> "AAudio"
-                        "opensles" -> "OpenSL ES"
-                        else -> "Automatic"
-                    }
-                    SettingChoice("Oboe backend", apiLabel, listOf("Automatic", "AAudio", "OpenSL ES")) {
-                        s.oboeApi = when (it) {
-                            "AAudio" -> "aaudio"
-                            "OpenSL ES" -> "opensles"
-                            else -> "auto"
-                        }
-                    }
-                }
                 SettingsDivider()
                 val hudEntries = listOf("Off", "Classic", "Modern")
                 SettingChoice("Winlator HUD", hudEntries.getOrElse(s.hudMode) { "Off" }, hudEntries) {
@@ -892,8 +858,8 @@ private fun ContainerCategoryV2(
                         s.displayXPresentAtRefreshRate = it
                     }
                     SettingsDivider()
-                    SettingToggle("Submit every buffer", s.displayXBackPressure) {
-                        s.displayXBackPressure = it
+                    SettingChoice("Present Mode", s.displayXPresentMode, listOf("mailbox", "fifo")) {
+                        s.displayXPresentMode = it
                     }
                     SettingsDivider()
                     SettingToggle("Precise presentation", s.displayXPrecisePresentation) {
@@ -1130,6 +1096,8 @@ private fun ContainerCategoryV2(
                 SettingsDivider()
                 CpuSelectorRow("Processor Affinity (32-bit apps)", s.cpu32) { index, checked -> s.cpu32[index] = checked }
             }
+            com.winlator.cmod.ui.settings.CodecsSettings(s.builtinDecoder, s.softwareDecoding,
+                { s.builtinDecoder = it }, { s.softwareDecoding = it })
             SettingsCard { com.winlator.cmod.components.WindowsComponentsEntry(s.editing) }
             SettingsCard {
                 containerComponentRowsV2.forEachIndexed { index, (key, label) ->

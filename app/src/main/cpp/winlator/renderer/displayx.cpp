@@ -7,6 +7,7 @@
 #include <string.h>
 #include <thread>
 #include <mutex>
+#include <cerrno>
 
 #include <android/api-level.h>
 #include <android/log.h>
@@ -165,189 +166,191 @@ static int readFD(int& socket) {
     msg.msg_control = control_buf.data();
     msg.msg_controllen = control_buf.size();
             
-    recvmsg(socket, &msg, MSG_WAITALL);
-            
+    ssize_t received;
+    do { received = recvmsg(socket, &msg, MSG_WAITALL | MSG_CMSG_CLOEXEC); }
+    while (received < 0 && errno == EINTR);
+    if (received != 1) return -1;
     struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
-    int fd = *reinterpret_cast<int*>(CMSG_DATA(cmsg));
-            
+    if (!cmsg || cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS ||
+        cmsg->cmsg_len != CMSG_LEN(sizeof(int))) return -1;
+    int fd;
+    memcpy(&fd, CMSG_DATA(cmsg), sizeof(fd));
+    if (msg.msg_flags & MSG_CTRUNC) { close(fd); return -1; }
     return fd;
 }
 
-void DisplayX::networkThreadLoop() {
-    static constexpr int ADD_CLIENT_SWAPCHAIN = 1;
-    static constexpr int PRESENT_IMAGE = 2;
-    static constexpr int DESTROY_CLIENT_SWAPCHAIN = 3;
-    
-    std::array<struct epoll_event, 2> events;
-    int n;
-    int res;
-    int efd;
-    int server_fd;
-    std::unordered_map<uint8_t, std::unique_ptr<DisplayXSwapchain>> clientSwapchains;
-    
-    server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (server_fd < 0) 
-        printf("Failed to create native rendering socket");
-                
-    struct sockaddr_un addr{};
-    addr.sun_family = AF_UNIX;
-    memcpy(addr.sun_path + 1, "displayx", strlen("displayx"));
-    addr.sun_path[0] = '\0';
-    socklen_t len = offsetof(struct sockaddr_un, sun_path) + 1 + strlen("displayx");
-    res = bind(server_fd, (struct sockaddr *)&addr, len);
-    if (res < 0)
-        printf("Failed to bind native rendering socket");
-               
-    res = listen(server_fd, 1);
-    if (res < 0)
-        printf("Failed to listent to native rendering socket");
-                
-    efd = epoll_create1(0);
-    struct epoll_event event{};
-    event.data.fd = server_fd;
-    event.events = EPOLLIN;
-            
-    epoll_ctl(efd, EPOLL_CTL_ADD, server_fd, &event);
+static bool readDisplayX(int fd, void* destination, size_t count) {
+    auto* data = static_cast<uint8_t*>(destination);
+    while (count) {
+        const ssize_t received = read(fd, data, count);
+        if (received < 0 && errno == EINTR) continue;
+        if (received <= 0) return false;
+        data += received; count -= received;
+    }
+    return true;
+}
 
-    JNIEnv *env = cache->getEnv();
-           
-    while ((n = epoll_wait(efd, events.data(), 2, -1))) {
-        if (stopped) {
-            printf("Stopping networkThread");
-            close(server_fd);
-            clientSwapchains.erase(clientSwapchains.begin(), clientSwapchains.end());
-            return;
+void DisplayX::networkThreadLoop() {
+    static constexpr int CONNECT = 0, ADD_CLIENT_SWAPCHAIN = 1, PRESENT_IMAGE = 2, DESTROY_CLIENT_SWAPCHAIN = 3;
+    const int serverFd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (serverFd < 0) return;
+    sockaddr_un address{};
+    address.sun_family = AF_UNIX;
+    memcpy(address.sun_path + 1, "displayx", 8);
+    const socklen_t addressLength = offsetof(sockaddr_un, sun_path) + 1 + 8;
+    if (bind(serverFd, reinterpret_cast<sockaddr*>(&address), addressLength) < 0 || listen(serverFd, 8) < 0) {
+        close(serverFd); return;
+    }
+    const int epollFd = epoll_create1(EPOLL_CLOEXEC);
+    if (epollFd < 0) { close(serverFd); return; }
+    epoll_event listener{}; listener.data.fd = serverFd; listener.events = EPOLLIN;
+    epoll_ctl(epollFd, EPOLL_CTL_ADD, serverFd, &listener);
+
+    std::unordered_map<int, std::shared_ptr<DisplayXPeer>> peers;
+    std::unordered_map<uint64_t, std::unique_ptr<DisplayXSwapchain>> swapchains;
+    auto key = [](int fd, uint8_t id) { return (uint64_t(uint32_t(fd)) << 8) | id; };
+    // Called with presentLock held, which also serializes window destruction.
+    auto releaseSwapchain = [&](DisplayXSwapchain& swapchain) {
+        auto* current = windowManager->getWindow(swapchain.windowId);
+        for (const auto& image : swapchain.images) {
+            presentRequests.removeDrawable(image.get());
+            if (current && current->generation == swapchain.windowGeneration && current->externalContent == image.get())
+                current->externalContent = nullptr;
         }
-        
-        for (int i = 0; i < n; i++) {
-            if (events[i].data.fd == server_fd) {
-                if (events[i].events & EPOLLIN) {
-                    printf("Received new client connection");
-                    int client_fd = accept(server_fd, nullptr, nullptr);
-                    struct epoll_event event{};
-                    event.data.fd = client_fd;
-                    event.events = EPOLLIN;
-                    epoll_ctl(efd, EPOLL_CTL_ADD, client_fd, &event);
+    };
+    auto disconnect = [&](int fd) {
+        const auto peer = peers.find(fd);
+        if (peer == peers.end()) return;
+        peer->second->connected = false;
+        shutdown(fd, SHUT_RDWR);
+        epoll_ctl(epollFd, EPOLL_CTL_DEL, fd, nullptr);
+        auto lock = presentLock.lock();
+        for (auto entry = swapchains.begin(); entry != swapchains.end();) {
+            if (entry->second->clientFd == fd) {
+                releaseSwapchain(*entry->second); entry = swapchains.erase(entry);
+            } else ++entry;
+        }
+        // In-flight completion callbacks retain the old FD until they finish.
+        peers.erase(peer);
+    };
+
+    JNIEnv* networkEnv = cache->getEnv();
+    std::array<epoll_event, 2> events{};
+    while (!stopped) {
+        const int count = epoll_wait(epollFd, events.data(), events.size(), -1);
+        if (count < 0) { if (errno == EINTR) continue; break; }
+        if (stopped) break;
+        for (int i = 0; i < count; ++i) {
+            const int fd = events[i].data.fd;
+            if (fd == serverFd) {
+                const int client = accept4(serverFd, nullptr, nullptr, SOCK_CLOEXEC);
+                if (client >= 0) {
+                    peers[client] = std::make_shared<DisplayXPeer>(client);
+                    epoll_event event{}; event.data.fd = client; event.events = EPOLLIN;
+                    if (epoll_ctl(epollFd, EPOLL_CTL_ADD, client, &event) < 0) peers.erase(client);
                 }
-            } 
-            else {
-                if (events[i].events & (EPOLLERR | EPOLLHUP)) {
-                    printf("Client has disconnected");
-                    epoll_ctl(efd, EPOLL_CTL_DEL, events[i].data.fd, nullptr);
-                    close(events[i].data.fd);
-                    clientSwapchains.erase(clientSwapchains.begin(), clientSwapchains.end());
-                    continue;
+                continue;
+            }
+            if (events[i].events & (EPOLLERR | EPOLLHUP)) { disconnect(fd); continue; }
+            if (!(events[i].events & EPOLLIN) || !peers.count(fd)) continue;
+            int request;
+            if (!readDisplayX(fd, &request, sizeof(request))) { disconnect(fd); continue; }
+            switch (request) {
+            case CONNECT:
+                break;
+            case ADD_CLIENT_SWAPCHAIN: {
+                uint8_t id;
+                uint32_t imageCount, windowId, presentMode, format, width, height;
+                if (!readDisplayX(fd, &id, 1) || !readDisplayX(fd, &imageCount, 4) ||
+                    !readDisplayX(fd, &windowId, 4) || !readDisplayX(fd, &presentMode, 4) ||
+                    !readDisplayX(fd, &format, 4) || !readDisplayX(fd, &width, 4) ||
+                    !readDisplayX(fd, &height, 4) || imageCount == 0) {
+                    disconnect(fd); break;
                 }
-                
-                if (events[i].events & EPOLLIN) {
-                    int request_code;
-                    int size = read(events[i].data.fd, &request_code, 4);
-                    if (size <= 0)
-                        continue;
-                            
-                    switch (request_code) {
-                        case ADD_CLIENT_SWAPCHAIN:
-                        {
-                            uint8_t id;
-                            uint32_t imageCount;
-                            uint32_t windowId;
-                                    
-                            read(events[i].data.fd, &id, 1);
-                            read(events[i].data.fd, &imageCount, 4);
-                            read(events[i].data.fd, &windowId, 4);
-                            
-                            auto window = windowManager->getWindow(windowId);
-                            if (!window)
-                                continue;
-                                    
-                            printf("Received new swapchain from client, id %d images %d", id, imageCount);
-                            
-                            auto swapchain = std::make_unique<DisplayXSwapchain>();
-                            swapchain->id = id;
-                            swapchain->window = window;
-                            swapchain->images.resize(imageCount);
-                                    
-                            for (uint32_t j = 0; j < imageCount; j++) {
-                                auto drawable = std::make_unique<Drawable>();
-                                drawable->id = -1;
-                                drawable->width = window->width;
-                                drawable->height = window->height;
-                                drawable->data = nullptr;
-                                AHardwareBuffer_recvHandleFromUnixSocket(events[i].data.fd, &drawable->ahb);
-                                AHardwareBuffer_Desc outDesc{};
-                                AHardwareBuffer_describe(drawable->ahb, &outDesc);
-                                drawable->stride = outDesc.stride;
-                                drawable->format = outDesc.format;
-                                drawable->isDirectContent = false;
-                                drawable->isDisplayX = true;
-                                drawable->drawableObj = nullptr;
-                                drawable->sync_fence = -1;
-                                
-                                swapchain->images[j] = std::move(drawable);
-                            }
-                             
-                            if (window->parent) window->parent->surface = window;
-                            clientSwapchains[id] = std::move(swapchain);
-                            break;
-                        }    
-                        case PRESENT_IMAGE:
-                        {
-                            uint8_t id;
-                            int index;
-                            int fence;
-                            uint64_t present_id;
-                                    
-                            read(events[i].data.fd, &id, 1);
-                            read(events[i].data.fd, &index, 4);
-                            
-                            fence = readFD(events[i].data.fd);
-                            
-                            read(events[i].data.fd, &present_id, 8);
-                            
-                            auto swapchain = clientSwapchains[id].get();
-                            if (!swapchain)
-                                continue;
-                            
-                            auto drawable = swapchain->images.at(index).get();
-                            if (!drawable)
-                                continue;
-                            
-                            auto lock = presentLock.lock();   
-                            
-                            swapchain->window->externalContent = drawable;
-                            auto presentRequest = std::make_unique<PresentRequest>();
-                            presentRequest->drawable = drawable;
-                            presentRequest->sync_fence = fence;
-                            presentRequest->presentId = present_id;
-                            presentRequest->clientFd = events[i].data.fd;
-                            presentRequest->window = swapchain->window;
-                            presentRequest->swapchainId = id;
-                            
-                            presentRequests.push(std::move(presentRequest));
-                            if (xServer->isShowFPS.load(std::memory_order_relaxed))
-                                env->CallVoidMethod(xServer->xserverDisplayActivity, cache->updateFrameRating, swapchain->window->windowObj);
-                            if (!presentRR) presentLock.notify();
-                            break;
-                        }    
-                        case DESTROY_CLIENT_SWAPCHAIN: {
-                            uint8_t id;
-                            read(events[i].data.fd, &id, 1);
-                            
-                            auto swapchain = clientSwapchains[id].get();
-                            if (!swapchain)
-                                continue;
-                            
-                            swapchain->window->externalContent = nullptr;
-                            clientSwapchains.erase(id);
-                            break;
-                        }
-                        default:
-                            break;            
+                auto swapchain = std::make_unique<DisplayXSwapchain>();
+                swapchain->id = id; swapchain->clientFd = fd; swapchain->windowId = windowId;
+                swapchain->width = width; swapchain->height = height; swapchain->format = format;
+                swapchain->imageCount = imageCount; swapchain->presentMode = presentMode;
+                bool valid = true;
+                for (uint32_t index = 0; index < imageCount; ++index) {
+                    auto drawable = std::make_unique<Drawable>();
+                    drawable->id = -1; drawable->width = width; drawable->height = height;
+                    drawable->isDirectContent = false; drawable->isDisplayX = true;
+                    drawable->drawableObj = nullptr; drawable->sync_fence = -1;
+                    if (AHardwareBuffer_recvHandleFromUnixSocket(fd, &drawable->ahb) != 0 || !drawable->ahb) {
+                        valid = false; break;
                     }
+                    AHardwareBuffer_Desc description{}; AHardwareBuffer_describe(drawable->ahb, &description);
+                    drawable->stride = description.stride; drawable->format = description.format;
+                    swapchain->images.push_back(std::move(drawable));
                 }
+                if (!valid) { disconnect(fd); break; }
+                // Importing handles may block; only lock once every handle has arrived.
+                auto lock = presentLock.lock();
+                auto* window = windowManager->getWindow(windowId);
+                if (!window) { lock.unlock(); disconnect(fd); break; }
+                swapchain->window = window;
+                swapchain->windowGeneration = window->generation;
+                const auto previous = swapchains.find(key(fd, id));
+                if (previous != swapchains.end()) releaseSwapchain(*previous->second);
+                if (window->parent) window->parent->surface = window;
+                swapchains[key(fd, id)] = std::move(swapchain);
+                break;
+            }
+            case PRESENT_IMAGE: {
+                uint8_t id; uint32_t index; uint64_t presentId;
+                if (!readDisplayX(fd, &id, 1) || !readDisplayX(fd, &index, 4)) { disconnect(fd); break; }
+                int socket = fd;
+                const int fence = readFD(socket);
+                if (fence < 0) { disconnect(fd); break; }
+                if (!readDisplayX(fd, &presentId, 8)) {
+                    if (fence >= 0) close(fence);
+                    disconnect(fd); break;
+                }
+                auto lock = presentLock.lock();
+                const auto found = swapchains.find(key(fd, id));
+                if (found == swapchains.end() || index >= found->second->images.size()) {
+                    if (fence >= 0) close(fence);
+                    lock.unlock(); disconnect(fd); break;
+                }
+                auto* swapchain = found->second.get();
+                auto* window = windowManager->getWindow(swapchain->windowId);
+                if (!window || window->generation != swapchain->windowGeneration) {
+                    if (fence >= 0) close(fence);
+                    lock.unlock(); disconnect(fd); break;
+                }
+                auto* drawable = swapchain->images[index].get();
+                window->externalContent = drawable;
+                auto pending = std::make_unique<PresentRequest>();
+                pending->drawable = drawable; pending->window = window; pending->sync_fence = fence;
+                pending->presentId = presentId; pending->imageIndex = index; pending->swapchainId = id;
+                pending->presentMode = swapchain->presentMode; pending->clientFd = fd; pending->peer = peers.at(fd);
+                presentRequests.push(std::move(pending), swapchain->presentMode == VK_PRESENT_MODE_MAILBOX_KHR);
+                if (xServer->isShowFPS.load(std::memory_order_relaxed))
+                    networkEnv->CallVoidMethod(xServer->xserverDisplayActivity, cache->updateFrameRating, window->windowObj);
+                if (!presentRR) presentLock.notify();
+                break;
+            }
+            case DESTROY_CLIENT_SWAPCHAIN: {
+                uint8_t id;
+                if (!readDisplayX(fd, &id, 1)) { disconnect(fd); break; }
+                auto lock = presentLock.lock();
+                const auto found = swapchains.find(key(fd, id));
+                if (found != swapchains.end()) { releaseSwapchain(*found->second); swapchains.erase(found); }
+                break;
+            }
+            default:
+                disconnect(fd); break;
             }
         }
     }
+    for (auto& entry : peers) { entry.second->connected = false; shutdown(entry.first, SHUT_RDWR); }
+    {
+        auto lock = presentLock.lock();
+        for (auto& entry : swapchains) releaseSwapchain(*entry.second);
+        swapchains.clear(); peers.clear();
+    }
+    close(epollFd); close(serverFd); cache->detachEnv(networkEnv);
 }
 
 void DisplayX::eventThreadLoop() {
@@ -444,6 +447,7 @@ int64_t DisplayX::getCurrentTimeNanos() {
 
 void DisplayX::onCommitCallback(void *context, ASurfaceTransactionStats *stats) {
     auto *self = reinterpret_cast<DisplayX *>(context);
+    std::lock_guard lock(self->performanceHintLock);
     if (!self->isPerformanceHintAPIAvailable() || !self->performanceHintSession || !self->performanceHintManager || !self->perfMode)
         return;
     
@@ -463,11 +467,21 @@ void DisplayX::onCompleteCallback(void *context, ASurfaceTransactionStats *stats
     std::unique_ptr<OnCompleteContext> completeContext(static_cast<OnCompleteContext *>(context));
     
     for (auto &request : completeContext->requests) {
-        if (request->presentId >= 0) {
-            int requestCode = 4;
-            write(request->clientFd, &requestCode, 4);
-            write(request->clientFd, &request->swapchainId, 1);
-            write(request->clientFd, &request->presentId, 8);
+        auto peer = request->peer;
+        std::array<uint8_t, 17> packet{};
+        if (!peer || !peer->connected || !displayXCompletion(*request, packet)) continue;
+        std::lock_guard output(peer->outputLock);
+        if (!peer->connected) continue;
+        size_t offset = 0;
+        while (offset < packet.size()) {
+            const ssize_t sent = send(peer->fd, packet.data() + offset, packet.size() - offset, MSG_NOSIGNAL);
+            if (sent < 0 && errno == EINTR) continue;
+            if (sent <= 0) {
+                peer->connected = false;
+                shutdown(peer->fd, SHUT_RDWR);
+                break;
+            }
+            offset += sent;
         }
     }
 }
@@ -476,6 +490,7 @@ void DisplayX::presentThreadLoop() {
     ASurfaceTransaction *presentTransaction = pfnASurfaceTransactionCreate();
     
     if (isPerformanceHintAPIAvailable() && perfMode) {
+        std::lock_guard lock(performanceHintLock);
         performanceHintManager = pfnAPerformanceHintGetManager();
         float targetFloat = xServer->refreshRate * 100.0f;
         int64_t targetWorkDuration = static_cast<int64_t>(1000000000.0f / targetFloat);
@@ -499,29 +514,28 @@ void DisplayX::presentThreadLoop() {
             break;
         }
         
-        std::queue<std::unique_ptr<PresentRequest>> requests;
-        
-        while (!presentRequests.empty()) {
-            auto presentRequest = presentRequests.pop();
-            requests.push(std::move(presentRequest));
-        }
+        auto requests = presentRR ? presentRequests.buildWindowTree() : presentRequests.getLast();
         
         if (vsyncId > -1) pfnASurfaceTransactionSetFrameTimeline(presentTransaction, vsyncId);
         
         if (presentRR) requestUpdate = false;
-        lock.unlock();
-        
         auto completeContext = std::make_unique<OnCompleteContext>();
         
         while (!requests.empty()) {
             auto presentRequest = std::move(requests.front());
-            requests.pop();
+            requests.pop_front();
             
             auto window = presentRequest->window;
-            if (!window || !window->control) continue;
+            if (!window || !window->control) {
+                if (presentRequest->sync_fence >= 0) close(presentRequest->sync_fence);
+                continue;
+            }
         
             auto drawable = presentRequest->drawable;
-            if (!drawable) continue;
+            if (!drawable) {
+                if (presentRequest->sync_fence >= 0) close(presentRequest->sync_fence);
+                continue;
+            }
         
             if (!window->enabled) {
                 pfnASurfaceTransactionSetBuffer(presentTransaction, window->control, nullptr, presentRequest->sync_fence);
@@ -535,23 +549,31 @@ void DisplayX::presentThreadLoop() {
                 }
                 
                 pfnASurfaceTransactionSetBufferTransparency(presentTransaction, window->control, ASURFACE_TRANSACTION_TRANSPARENCY_OPAQUE);
-                if (drawable->isDisplayX) {
-                   completeContext->requests.push_back(std::move(presentRequest));
-                }    
-                if (!window->backPressureEnabled && pfnASurfaceTransactionSetEnableBackPressure && backPressure)  {
-                    pfnASurfaceTransactionSetEnableBackPressure(presentTransaction, window->control, true);
-                    window->backPressureEnabled = true;
+                if (presentRequest->clientFd >= 0 && pfnASurfaceTransactionSetEnableBackPressure) {
+                    const bool fifo = presentRequest->presentMode == VK_PRESENT_MODE_FIFO_KHR;
+                    if (window->backPressureEnabled != fifo) {
+                        pfnASurfaceTransactionSetEnableBackPressure(presentTransaction, window->control, fifo);
+                        window->backPressureEnabled = fifo;
+                    }
                 }
             }
+            if (drawable->isDisplayX && presentRequest->clientFd >= 0)
+                completeContext->requests.push_back(std::move(presentRequest));
         }
         
         if (perfMode && pfnASurfaceTransactionSetOnCommit) pfnASurfaceTransactionSetOnCommit(presentTransaction, this, DisplayX::onCommitCallback);
         if (!completeContext->requests.empty()) pfnASurfaceTransactionSetOnComplete(presentTransaction, completeContext.release(), DisplayX::onCompleteCallback);
         pfnASurfaceTransactionApply(presentTransaction);
+        // Keep controls and drawables alive until SurfaceControl retains the transaction.
+        lock.unlock();
     }
     
-    if (isPerformanceHintAPIAvailable() && performanceHintSession) {
-        pfnAPerformanceHintCloseSession(performanceHintSession);
+    {
+        std::lock_guard lock(performanceHintLock);
+        if (isPerformanceHintAPIAvailable() && performanceHintSession)
+            pfnAPerformanceHintCloseSession(performanceHintSession);
+        performanceHintSession = nullptr;
+        performanceHintManager = nullptr;
     }
 }
 
@@ -710,12 +732,23 @@ void DisplayX::createWindowControl(Window *window) {
     pfnASurfaceTransactionApply(windowTransaction);
 }
 
-void DisplayX::destroyWindowControl(Window *window) {
+void DisplayX::releaseWindowControls(Window* window) {
+    for (auto* child : window->children) releaseWindowControls(child);
+    presentRequests.removeWindow(window);
+    if (window->drawable && window->drawable->composerTexture)
+        effectComposer->destroyComposerTexture(window->drawable.get());
+    if (window->control) {
+        pfnASurfaceControlRelease(window->control);
+        window->control = nullptr;
+    }
+}
+
+void DisplayX::destroyWindow(int id) {
+    auto lock = presentLock.lock();
+    auto* window = windowManager->getWindow(id);
     if (!window) return;
-    if (!window->control) return;
-    
-    pfnASurfaceControlRelease(window->control);
-    window->control = nullptr;
+    releaseWindowControls(window);
+    windowManager->deleteWindow(window);
 }
 
 void DisplayX::mapWindow(Window *window) {
@@ -889,11 +922,6 @@ void DisplayX::destroyRootCursorControl() {
     auto rootCursor = cursorManager->getRootCursor();
     if (!rootCursor) return;
     
-    if (rootCursor->image->ahb) {
-        AHardwareBuffer_release(rootCursor->image->ahb);
-        rootCursor->image->ahb = nullptr;
-    }
-    
     if (!cursorManager->control) return;
 
     pfnASurfaceControlRelease(cursorManager->control);
@@ -999,10 +1027,6 @@ void DisplayX::setPerformanceMode(bool perfMode) {
 
 void DisplayX::setPresentRR(bool presentRR) {
     this->presentRR = presentRR;
-}
-
-void DisplayX::setBackPressure(bool backPressure) {
-    this->backPressure = backPressure;
 }
 
 void DisplayX::setPrecisePresentation(bool precisePresentation) {

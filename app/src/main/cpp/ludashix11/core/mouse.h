@@ -18,6 +18,9 @@ public:
     void MoveBy(s16 dx, s16 dy);
 
     void MoveTo(s16 new_x, s16 new_y);
+    void WarpTo(s16 new_x, s16 new_y);
+    void AnchorTo(s16 new_x, s16 new_y);
+    void SetRawInputEnabled(bool enabled) { rawEnabled = enabled; absoluteAnchored = false; }
 
     void SetButton(u16 button, bool down);
 
@@ -36,6 +39,8 @@ private:
     s16 x{};
     s16 y{};
     u16 buttons{};
+    bool absoluteAnchored{}, rawEnabled{true};
+    s16 absoluteX{}, absoluteY{};
     u32 max_distance{};
     float damping{0.25f};
     bool stop_requested{};

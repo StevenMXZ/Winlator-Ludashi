@@ -266,7 +266,7 @@ were removed; at runtime the binary is exec'd from applicationInfo.nativeLibrary
 LD_LIBRARY_PATH set to that dir so the loader finds the bundled libraries. No code was
 modified — only ELF metadata (SONAME/NEEDED/RUNPATH).
 
-
+============================================================================
 KGSL GPU usage library license
 ==============================
                     GNU GENERAL PUBLIC LICENSE

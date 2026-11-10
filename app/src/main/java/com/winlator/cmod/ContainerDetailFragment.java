@@ -705,6 +705,9 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
         createWineConfigurationTab(view);
         final EnvVarsView envVarsView = createEnvVarsTab(view);
         createWinComponentsTab(view, isEditMode() ? container.getWinComponents() : Container.DEFAULT_WINCOMPONENTS);
+        com.winlator.cmod.widget.CodecsSettingsView.attach(view,
+                isEditMode() ? container.getBuiltinDecoder() : "gstreamer",
+                isEditMode() && container.getSoftwareDecoding());
         createDrivesTab(view);
         getChildFragmentManager().beginTransaction().replace(R.id.LLTabDrivers, new AdrenotoolsFragment()).commit();
 
@@ -746,6 +749,8 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
                 String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem());
                 String emulator = StringUtils.parseIdentifier(sEmulator.getSelectedItem());
                 String wincomponents = getWinComponents(view);
+                String builtinDecoder = com.winlator.cmod.widget.CodecsSettingsView.decoder(view);
+                boolean softwareDecoding = com.winlator.cmod.widget.CodecsSettingsView.software(view);
                 String drives = getDrives(view);
                 int hudMode = sHudMode.getSelectedItemPosition();
                 boolean showFPS = hudMode != 0;
@@ -792,6 +797,8 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
                     container.setAudioDriver(audioDriver);
                     container.setEmulator(emulator);
                     container.setWinComponents(wincomponents);
+                    container.setBuiltinDecoder(builtinDecoder);
+                    container.setSoftwareDecoding(softwareDecoding);
                     container.setDrives(drives);
                     container.setShowFPS(showFPS);
                     container.putExtra("hudMode", String.valueOf(hudMode));
@@ -835,6 +842,8 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
                     data.put("audioDriver", audioDriver);
                     data.put("emulator", emulator);
                     data.put("wincomponents", wincomponents);
+                    data.put("extraData", new JSONObject().put("builtinDecoder", builtinDecoder)
+                            .put("softwareDecoding", softwareDecoding ? "1" : "0"));
                     data.put("drives", drives);
                     data.put("showFPS", showFPS);
                     data.put("hudMode", hudMode);
@@ -1121,11 +1130,13 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
         ViewGroup parent = view.findViewById(R.id.LLTabWinComponents);
         ArrayList<View> views = new ArrayList<>();
         AppUtils.findViewsWithClass(parent, Spinner.class, views);
-        String[] wincomponents = new String[views.size()];
+        ArrayList<String> wincomponents = new ArrayList<>();
 
-        for (int i = 0; i < views.size(); i++) {
-            Spinner spinner = (Spinner) views.get(i);
-            wincomponents[i] = spinner.getTag() + "=" + spinner.getSelectedItemPosition();
+        for (View item : views) {
+            Spinner spinner = (Spinner) item;
+            // Codec settings are saved separately and are not component DLL overrides.
+            if (spinner.getTag() instanceof String)
+                wincomponents.add(spinner.getTag() + "=" + spinner.getSelectedItemPosition());
         }
         return String.join(",", wincomponents);
     }

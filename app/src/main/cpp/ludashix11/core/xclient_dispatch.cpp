@@ -1179,7 +1179,7 @@ void XClient::ProcWarpPointer() {
         }
     }
 
-    mouse.MoveTo(x, y);
+    mouse.WarpTo(x, y);
 }
 
 }  // namespace xorg

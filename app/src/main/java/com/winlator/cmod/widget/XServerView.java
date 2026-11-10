@@ -31,6 +31,7 @@ import com.winlator.cmod.xserver.WindowManager;
 import com.winlator.cmod.xserver.XLock;
 import com.winlator.cmod.xserver.XServer;
 import dalvik.annotation.optimization.FastNative;
+import dalvik.annotation.optimization.CriticalNative;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -298,6 +299,7 @@ public class XServerView extends XServerRendererView implements SurfaceHolder.Ca
     
     static {
         System.loadLibrary("winlator");
+        registerNatives();
     }
     
     @FastNative
@@ -326,8 +328,8 @@ public class XServerView extends XServerRendererView implements SurfaceHolder.Ca
     public native void nativeChangeWindowZOrder(int stackMode, int id, int siblingId);
     @FastNative
     public native void nativeUpdateWindowGeometry(int id, int width, int height, int x, int y, boolean resized);
-    @FastNative
-    public native void nativePointerMove(int x, int y);
+    @CriticalNative
+    public static native void nativePointerMove(int x, int y);
     @FastNative
     public native void nativeToggleFullscreen();
     @FastNative
@@ -344,8 +346,8 @@ public class XServerView extends XServerRendererView implements SurfaceHolder.Ca
     public native void nativeSetWindowClassName(int id, String className);
     @FastNative
     public native void nativeUpdatePointWindow(int id);
-    @FastNative
-    public native void nativeUpdateWindowContent(int id);
+    @CriticalNative
+    public static native void nativeUpdateWindowContent(int id);
     @FastNative
     public native void nativeReparentWindow(int id, int parentId, short x, short y);
     @FastNative
@@ -356,12 +358,19 @@ public class XServerView extends XServerRendererView implements SurfaceHolder.Ca
     public native void nativeStop();
     @FastNative
     public native void nativeAddDirectContent(int windowId, Drawable drawable);
-    @FastNative
-    public native void nativeUpdateDirectContent(int windowId, int drawableId);
+    @CriticalNative
+    public static native void nativeUpdateDirectContent(int windowId, int drawableId);
     @FastNative
     public native void nativeRemoveDirectContent(int windowId, int pixmapId);
     @FastNative
     public native void nativeSetCompositeRedirected(int windowId, boolean redirected);
-    @FastNative
-    public native void nativeCompositeRedirect(int srcDrawableId, int dstDrawableId, short dstX, short dstY);
+    @Override
+    public void nativeCompositeRedirect(int srcDrawableId, int dstDrawableId, short dstX, short dstY) {
+        criticalCompositeRedirect(srcDrawableId, dstDrawableId, dstX, dstY);
+    }
+    @CriticalNative
+    private static native void criticalCompositeRedirect(int srcDrawableId, int dstDrawableId, short dstX, short dstY);
+
+    // Explicit registration is required for CriticalNative on Android 9–11.
+    private static native void registerNatives();
 }

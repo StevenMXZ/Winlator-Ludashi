@@ -35,6 +35,7 @@ public:
     int Socket() const { return socket_fd; }
 
     void SendEvent(xEvent& event);
+    void SendXIRawEvent(u16 type, u32 detail, s32 dx = 0, s32 dy = 0);
 
     XResource* GetResource(u32 id) const;
     sp<XResource> ShareResource(u32 id) const;
@@ -73,6 +74,10 @@ private:
     void ProcSync();
     void ProcRandR();
     void ProcCompat();
+    void ProcXInput();
+    std::unordered_map<u32, std::unordered_map<u16, u32>> xiSelections;
+    u32 xiRawMask{};
+    u8 xiOpcode{};
     std::vector<u8> pending_output;
     size_t output_offset{};
     bool outputWritable{};

@@ -28,6 +28,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -109,7 +110,7 @@ import com.winlator.cmod.winhandler.WinHandler;
 import com.winlator.cmod.xconnector.UnixSocketConfig;
 import com.winlator.cmod.xenvironment.ImageFs;
 import com.winlator.cmod.xenvironment.XEnvironment;
-import com.winlator.cmod.xenvironment.components.ALSAServerComponent;
+import com.winlator.cmod.xenvironment.components.ALSAComponent;
 import com.winlator.cmod.xenvironment.components.GuestProgramLauncherComponent;
 import com.winlator.cmod.xenvironment.components.PulseAudioComponent;
 import com.winlator.cmod.xenvironment.components.SysVSharedMemoryComponent;
@@ -196,7 +197,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private KeyValueSet displayxConfig;
     public boolean performanceMode;
     public boolean presentRR;
-    public boolean backPressure;
     public boolean precisePresentation;
     public int textureFilter;
     private short taskAffinityMask = 0;
@@ -515,7 +515,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
             graphicsDriver = shortcut.getExtra("graphicsDriver", container.getGraphicsDriver());
             graphicsDriverConfig = shortcut.getExtra("graphicsDriverConfig", container.getGraphicsDriverConfig());
-            audioDriver = Container.normalizeAudioDriver(shortcut.getExtra("audioDriver", container.getAudioDriver()));
+            audioDriver = shortcut.getAudioDriver();
             emulator = shortcut.getExtra("emulator", container.getEmulator());
             dxwrapper = shortcut.getExtra("dxwrapper", container.getDXWrapper());
             dxwrapperConfig = shortcut.getExtra("dxwrapperConfig", container.getDXWrapperConfig());
@@ -565,8 +565,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 ? shortcut.getDisplayXPerformanceMode() : container.getDisplayXPerformanceMode();
         presentRR = shortcut != null
                 ? shortcut.getDisplayXPresentAtRefreshRate() : container.getDisplayXPresentAtRefreshRate();
-        backPressure = shortcut != null
-                ? shortcut.getDisplayXBackPressure() : container.getDisplayXBackPressure();
         precisePresentation = shortcut != null
                 ? shortcut.getDisplayXPrecisePresentation() : container.getDisplayXPrecisePresentation();
         textureFilter = shortcut != null
@@ -578,7 +576,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
         displayxConfig.put("performanceMode", performanceMode ? "1" : "0");
         displayxConfig.put("surfaceFormat", getSelectedSurfaceFormat());
         displayxConfig.put("presentRR", presentRR ? "1" : "0");
-        displayxConfig.put("backPressure", backPressure ? "1" : "0");
+        displayxConfig.put("presentMode", shortcut != null
+                ? shortcut.getDisplayXPresentMode() : container.getDisplayXPresentMode());
         displayxConfig.put("precisePresentation", precisePresentation ? "1" : "0");
         xServer = isNativeX11Enabled()
                 ? new com.winlator.cmod.widget.NativeX11InputProxy(new ScreenInfo(screenSize), displayxConfig)
@@ -1174,11 +1173,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         else
             startupSelection = String.valueOf(container.getStartupSelection());
 
-        if (!startupSelection.equals(container.getExtra("startupSelection"))) {
-            WineUtils.changeServicesStatus(container, startupSelection);
-            container.putExtra("startupSelection", startupSelection);
-            containerDataChanged = true;
-        }
+        containerDataChanged |= WineUtils.applyStartupSelection(container, startupSelection);
         if (containerDataChanged)
             container.saveData();
     }
@@ -1278,18 +1273,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.XSERVER_PATH)));
         }
 
-        if (audioDriver.equals("alsa")) {
-            envVars.put("ANDROID_ALSA_SERVER", rootPath + UnixSocketConfig.ALSA_SERVER_PATH);
-            envVars.put("ANDROID_ASERVER_USE_SHM", "true");
-            environment.addComponent(
-                    new ALSAServerComponent(
-                            UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.ALSA_SERVER_PATH)));
-        } else if (audioDriver.equals("pulseaudio") || audioDriver.equals("pulse-audio-gn")) {
+        if (audioDriver.equals("alsa-oboe")) {
+            environment.addComponent(new ALSAComponent(this, imageFs));
+        } else if (audioDriver.equals("pulse-audio-gn")) {
             envVars.put("PULSE_SERVER", rootPath + UnixSocketConfig.PULSE_SERVER_PATH);
             environment.addComponent(
                     new PulseAudioComponent(
-                            UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.PULSE_SERVER_PATH),
-                            audioDriver.equals("pulse-audio-gn")));
+                            UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.PULSE_SERVER_PATH)));
         }
 
         guestProgramLauncherComponent.setEnvVars(envVars);
@@ -3022,22 +3012,27 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     private static final int RECAPTURE_DELAY_MS = 10000;
 
+    static boolean isSidebarKey(KeyEvent event) {
+        int code = event.getKeyCode();
+        if (code == KeyEvent.KEYCODE_BUTTON_MODE || code == KeyEvent.KEYCODE_HOME) return true;
+        return code == KeyEvent.KEYCODE_BACK && (event.getFlags() & KeyEvent.FLAG_FALLBACK) == 0
+                && (event.isFromSource(InputDevice.SOURCE_GAMEPAD)
+                        || event.isFromSource(InputDevice.SOURCE_JOYSTICK)
+                        || ExternalController.isGameController(event.getDevice()));
+    }
+
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-
-        if (event.getAction() == KeyEvent.ACTION_DOWN) {
-            if (event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_MODE || event.getKeyCode() == KeyEvent.KEYCODE_HOME
-                    || event.getKeyCode() == KeyEvent.KEYCODE_BUTTON_SELECT) {
-                boolean handled = inputControlsView.onKeyEvent(event)
-                        || (winHandler != null && winHandler.onKeyEvent(event))
-                                && (xServer != null && xServer.keyboard.onKeyEvent(event));
-                return true;
-            }
+        if (isSidebarKey(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
+                onBackPressed();
+            return true;
         }
 
-        return (!inputControlsView.onKeyEvent(event) && !winHandler.onKeyEvent(event)
-                && xServer.keyboard.onKeyEvent(event)) ||
-                (!ExternalController.isGameController(event.getDevice()) && super.dispatchKeyEvent(event));
+        if (inputControlsView != null && inputControlsView.onKeyEvent(event)) return true;
+        if (winHandler != null && winHandler.onKeyEvent(event)) return true;
+        if (xServer != null && xServer.keyboard.onKeyEvent(event)) return true;
+        return !ExternalController.isGameController(event.getDevice()) && super.dispatchKeyEvent(event);
     }
 
     public InputControlsView getInputControlsView() {
@@ -3095,7 +3090,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this, "ddrawrapper/nglide.tzst", windowsDir,
                     onExtractFileListener);
 
-            if (ddrawrapper.contains("None")) {
+            if ("none".equalsIgnoreCase(ddrawrapper)) {
                 Log.d(TAG, "No DDRaw wrapper has been selected, restoring original ddraw files");
                 restoreOriginalDllFiles(new String[] { "ddraw.dll", "d3dimm.dll" });
             } else {
@@ -3334,9 +3329,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
             File rootDir = imageFs.getRootDir();
             File userRegFile = new File(rootDir, ImageFs.WINEPREFIX + "/user.reg");
             try (WineRegistryEditor registryEditor = new WineRegistryEditor(userRegFile)) {
-                if (audioDriver.equals("alsa")) {
+                if (audioDriver.equals("alsa-oboe")) {
                     registryEditor.setStringValue("Software\\Wine\\Drivers", "Audio", "alsa");
-                } else if (audioDriver.equals("pulseaudio") || audioDriver.equals("pulse-audio-gn")) {
+                } else if (audioDriver.equals("pulse-audio-gn")) {
                     registryEditor.setStringValue("Software\\Wine\\Drivers", "Audio", "pulse");
                 }
             }

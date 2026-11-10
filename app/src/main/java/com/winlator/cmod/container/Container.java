@@ -9,6 +9,7 @@ import com.winlator.cmod.core.DefaultVersion;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.KeyValueSet;
 import com.winlator.cmod.core.WineInfo;
+import com.winlator.cmod.core.VideoDecoderSettings;
 import com.winlator.cmod.core.WineThemeManager;
 import com.winlator.cmod.fexcore.FEXCorePreset;
 import com.winlator.cmod.winhandler.WinHandler;
@@ -29,7 +30,7 @@ public class Container {
     public static final String DEFAULT_ENV_VARS = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=1 TU_DEBUG=noconform,sysmem DXVK_HUD=devinfo,fps,frametimes,gpuload,version,api VKD3D_SHADER_MODEL=6_6";
     public static final String DEFAULT_SCREEN_SIZE = "1280x720";
     public static final String DEFAULT_GRAPHICS_DRIVER = "wrapper";
-    public static final String DEFAULT_AUDIO_DRIVER = "pulse-audio-gn";
+    public static final String DEFAULT_AUDIO_DRIVER = "alsa-oboe";
     public static final String DEFAULT_EMULATOR = "FEXCore";
     public static final String DEFAULT_DXWRAPPER = "dxvk+vkd3d";
     public static final String DEFAULT_DXWRAPPERCONFIG = "version=" + DefaultVersion.DXVK + ",framerate=0,async=0,asyncCache=0" + ",vkd3dVersion=" + DefaultVersion.VKD3D + ",vkd3dLevel=12_1" + ",ddrawrapper=" + Container.DEFAULT_DDRAWRAPPER + ",csmt=3" + ",gpuName=NVIDIA GeForce GTX 480" + ",videoMemorySize=2048" + ",strict_shader_math=1" + ",OffscreenRenderingMode=fbo" + ",renderer=gl";
@@ -192,6 +193,30 @@ public class Container {
     public boolean getDisplayXBackPressure() {
         return "1".equals(getExtra("displayXBackPressure", "0"));
     }
+
+    public String getDisplayXPresentMode() {
+        String value = getExtra("displayXPresentMode", null);
+        if (value == null || value.isEmpty())
+            value = legacyDisplayXValue(getExtra("displayxConfig", null), "presentMode");
+        if (value == null || value.isEmpty()) return getDisplayXBackPressure() ? "fifo" : "mailbox";
+        return "fifo".equalsIgnoreCase(value) ? "fifo" : "mailbox";
+    }
+
+    public void setDisplayXPresentMode(String value) {
+        putExtra("displayXPresentMode", "fifo".equalsIgnoreCase(value) ? "fifo" : "mailbox");
+    }
+
+    static String legacyDisplayXValue(String config, String key) {
+        if (config == null || config.isEmpty()) return null;
+        for (String entry : config.split(",")) {
+            int separator = entry.indexOf('=');
+            if (separator == key.length() && entry.substring(0, separator).equals(key)) {
+                String value = entry.substring(separator + 1);
+                return value.isEmpty() ? null : value;
+            }
+        }
+        return null;
+    }
     public void setDisplayXBackPressure(boolean v) {
         putExtra("displayXBackPressure", v ? "1" : "0");
     }
@@ -224,14 +249,42 @@ public class Container {
     }
 
     public static String normalizeAudioDriver(String audioDriver) {
-        if (audioDriver == null || audioDriver.isEmpty()) return DEFAULT_AUDIO_DRIVER;
-        if (audioDriver.equals("oboe")) return "pulse-audio-gn";
-        return audioDriver;
+        if (audioDriver == null || audioDriver.trim().isEmpty()) return DEFAULT_AUDIO_DRIVER;
+        String value = com.winlator.cmod.core.StringUtils.parseIdentifier(audioDriver.trim());
+        switch (value) {
+            case "pulseaudio":
+            case "pulse-audio":
+            case "pulse-audio-gn":
+                return "pulse-audio-gn";
+            default:
+                // ALSA and the retired Oboe backend now use the direct ALSA–Oboe plugin.
+                return DEFAULT_AUDIO_DRIVER;
+        }
+    }
+
+    public static String getAudioDriverLabel(String audioDriver) {
+        return "pulse-audio-gn".equals(normalizeAudioDriver(audioDriver)) ? "PulseAudio-GN" : "Alsa-Oboe";
     }
 
     public void setAudioDriver(String audioDriver) {
         this.audioDriver = normalizeAudioDriver(audioDriver);
     }
+
+    public String getBuiltinDecoder() {
+        return VideoDecoderSettings.decoder(getExtra("builtinDecoder", null),
+                VideoDecoderSettings.value(wincomponents, "builtinDecoder", false),
+                VideoDecoderSettings.value(envVars, "WINE_USE_DMO", true), VideoDecoderSettings.DEFAULT_DECODER);
+    }
+
+    public void setBuiltinDecoder(String value) { putExtra("builtinDecoder", VideoDecoderSettings.normalizeDecoder(value)); }
+
+    public boolean getSoftwareDecoding() {
+        return VideoDecoderSettings.software(getExtra("softwareDecoding", null),
+                VideoDecoderSettings.value(wincomponents, "softwareDecoding", false),
+                VideoDecoderSettings.value(envVars, "WINE_DO_NOT_CREATE_DXGI_DEVICE_MANAGER", true), false);
+    }
+
+    public void setSoftwareDecoding(boolean value) { putExtra("softwareDecoding", value ? "1" : "0"); }
 
     public String getWinComponents() {
         return wincomponents;
@@ -532,6 +585,7 @@ public class Container {
     public void loadData(JSONObject data) throws JSONException {
         wineVersion = WineInfo.MAIN_WINE_VERSION.identifier();
         dxwrapperConfig = "";
+        VideoDecoderSettings.migrateLegacy(data, true);
         checkObsoleteOrMissingProperties(data);
 
         for (Iterator<String> it = data.keys(); it.hasNext(); ) {

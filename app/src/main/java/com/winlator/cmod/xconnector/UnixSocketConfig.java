@@ -6,7 +6,6 @@ import java.io.File;
 
 public class UnixSocketConfig {
     public static final String SYSVSHM_SERVER_PATH = "/usr/tmp/.sysvshm/SM0";
-    public static final String ALSA_SERVER_PATH = "/usr/tmp/.sound/AS0";
     public static final String PULSE_SERVER_PATH = "/usr/tmp/.sound/PS0";
     public static final String XSERVER_PATH = "/usr/tmp/.X11-unix/X0";
     public static final String VIRGL_SERVER_PATH = "/tmp/.virgl/V0";
