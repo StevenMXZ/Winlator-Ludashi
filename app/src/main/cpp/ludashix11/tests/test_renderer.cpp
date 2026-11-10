@@ -5,6 +5,10 @@
 
 int main() {
     using namespace std::chrono_literals;
+    std::cout << std::unitbuf;
+    // This is a deadlock/ordering test, not a scheduling-speed benchmark.
+    // Sanitizer runners may deschedule a newly launched thread for >100 ms.
+    constexpr auto schedulingTimeout = 2s;
     {
         auto defaults = xorg::CreateNativeRenderer(1280, 720);
         defaults->Surface(new ANativeWindow);
@@ -50,12 +54,19 @@ int main() {
     const unsigned before = VulkanRendererContext::waits;
     VulkanRendererContext::holdWait = true;
     auto retirement = std::async(std::launch::async, [&] { return renderer->WaitCompleted(1); });
-    const auto deadline = std::chrono::steady_clock::now() + 1s;
+    const auto deadline = std::chrono::steady_clock::now() + schedulingTimeout;
     while (VulkanRendererContext::waits == before && std::chrono::steady_clock::now() < deadline)
         std::this_thread::yield();
     if (VulkanRendererContext::waits == before) return 2;
     auto draw = std::async(std::launch::async, [&] { return renderer->Draw(frame); });
-    if (draw.wait_for(100ms) != std::future_status::ready || !draw.get()) std::abort();
+    if (draw.wait_for(schedulingTimeout) != std::future_status::ready) {
+        std::cerr << "FAIL: Draw blocked while the other slot waits for its fence\n";
+        std::abort();
+    }
+    if (!draw.get()) {
+        std::cerr << "FAIL: Draw rejected the free presentation slot\n";
+        std::abort();
+    }
     if (renderer->ReadyToDraw()) return 3; // Both slots are still retained.
     context->fences[0].Signal(); context->fences[1].Signal();
     auto ready = retirement.get();
@@ -95,9 +106,13 @@ int main() {
         selected.entries[0] = {newestImage, nullptr, newestImage->Pixels(), newestImage->Revision(), 0,0,true};
     };
     auto acquired = std::async(std::launch::async, [&] { return renderer->Draw(frame, latch); });
-    const auto acquireDeadline = std::chrono::steady_clock::now() + 1s;
+    const auto acquireDeadline = std::chrono::steady_clock::now() + schedulingTimeout;
     while (!context->acquireEntered && std::chrono::steady_clock::now() < acquireDeadline) std::this_thread::yield();
-    if (!context->acquireEntered || latches || context->boundImages != callsBefore) std::abort();
+    if (!context->acquireEntered || latches || context->boundImages != callsBefore) {
+        std::cerr << "FAIL: acquire entry=" << context->acquireEntered << " early_latches=" << latches
+                  << " scene_changed=" << (context->boundImages != callsBefore) << '\n';
+        std::abort();
+    }
     context->acquireBlocked = false;
     if (!acquired.get() || latches != 1 || context->boundImages != std::vector<int64_t>{int64_t(newestImage->ID())}) return 14;
     if (context->texMap.contains(oldImage->ID()) || !context->texMap.at(newestImage->ID()).isAHB) return 16;
