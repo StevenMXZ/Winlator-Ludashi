@@ -57,6 +57,7 @@ int main() {
     };
     auto oldImage = imported(), newestImage = imported();
     frame.commandCacheEnabled = false; // Late selection also applies with replay disabled.
+    frame.diagnostics = true; // Exercise AHB import accounting in the native adapter.
     frame.entries.push_back({oldImage, nullptr, oldImage->Pixels(), oldImage->Revision(), 0, 0, true});
     context->acquireEntered = false; context->acquireBlocked = true;
     const auto callsBefore = context->boundImages;
@@ -72,6 +73,8 @@ int main() {
     context->acquireBlocked = false;
     if (!acquired.get() || latches != 1 || context->boundImages != std::vector<int64_t>{int64_t(newestImage->ID())}) return 14;
     if (context->texMap.contains(oldImage->ID()) || !context->texMap.at(newestImage->ID()).isAHB) return 16;
+    const auto stats = renderer->TakeAHBMetrics();
+    if (stats.vkImports != 1 || stats.cacheHits != 0 || stats.cacheEntries != 1) return 20;
     if (context->nativeCommandCacheEnabled || frame.commandCacheEnabled) return 19;
     if (context->nativeFrameReady || context->nativeFrameReadyData) return 15;
     context->fences[0].Signal(); context->fences[1].Signal(); renderer->Drain();

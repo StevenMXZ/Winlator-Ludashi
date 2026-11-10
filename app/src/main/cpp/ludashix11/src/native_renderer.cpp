@@ -89,6 +89,12 @@ public:
         return std::none_of(pending.begin(), pending.end(),
                             [slot](const Submission& item) { return item.slot == slot; });
     }
+    NativeAHBMetrics TakeAHBMetrics() override {
+        NativeAHBMetrics snapshot = ahbMetrics;
+        snapshot.cacheEntries = context ? context->ahbImportCache.size() : 0;
+        ahbMetrics = {};
+        return snapshot;
+    }
     bool Draw(NativeFrame& frame, const NativeFrameLatch& latch) override {
         if (!context || context->surfaceDetached.load()) return false;
         context->setNativeDiagnostics(frame.diagnostics);
@@ -132,14 +138,40 @@ private:
             // references remain retained independently until this GPU work retires.
             auto& d = *entry.drawable;
             u64 id = d.ID(); registry.try_emplace(id, entry.drawable);
-            if (d.HardwareBuffer()) {
+            if (AHardwareBuffer* ahb = d.HardwareBuffer()) {
                 const auto imported = context->texMap.find(id);
                 if (imported == context->texMap.end() || !imported->second.isAHB ||
-                    imported->second.ahb != d.HardwareBuffer()) {
-                    context->updateWindowContentAHB(id, d.HardwareBuffer(), d.GetWidth(), d.GetHeight(), entry.x, entry.y);
+                    imported->second.ahb != ahb) {
+                    // Optional diagnostics: no cache probe or clock read when disabled.
+                    const bool trace = frame.diagnostics;
+                    const bool cached = trace && context->ahbImportCache.contains(ahb);
+                    const auto start = trace && !cached
+                        ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+                    context->updateWindowContentAHB(id, ahb, d.GetWidth(), d.GetHeight(), entry.x, entry.y);
                     const auto updated = context->texMap.find(id);
-                    if (updated == context->texMap.end() || !updated->second.isAHB)
+                    if (updated == context->texMap.end() || !updated->second.isAHB ||
+                        updated->second.ahb != ahb)
                         throw std::runtime_error("Native AHB import failed");
+                    if (trace) {
+                        if (cached) {
+                            ++ahbMetrics.cacheHits;
+                        } else {
+                            ++ahbMetrics.vkImports;
+                            const auto ns = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now() - start).count());
+                            ahbMetrics.importNs += ns;
+                            ahbMetrics.maxImportNs = std::max(ahbMetrics.maxImportNs, ns);
+#ifdef LUDASHI_NATIVE_X11
+                            if (importLogCount++ < 8)
+                                __android_log_print(ANDROID_LOG_DEBUG, "Winlator_Renderer",
+                                    "updateWindowContentAHB: imported new AHB %p img=%p for id=%llu (%dx%d)",
+                                    (void*)ahb, (void*)updated->second.img,
+                                    static_cast<unsigned long long>(id), updated->second.w, updated->second.h);
+#endif
+                        }
+                    }
+                } else if (frame.diagnostics) {
+                    ++ahbMetrics.unchangedDrawables;
                 }
             } else if (revisions[id] != entry.revision) {
                 const auto& pixels = *entry.pixels;
@@ -193,6 +225,8 @@ private:
     bool fullscreen{}, cursor{true};
     float refresh{60};
     u64 cursorID{};
+    NativeAHBMetrics ahbMetrics{};
+    u32 importLogCount{};
     std::unique_ptr<VulkanRendererContext> context;
     std::unordered_map<u64, u64> revisions;
     std::unordered_map<u64, std::weak_ptr<NativeDrawable>> registry;

@@ -42,9 +42,14 @@ public:
     void setCursorVisible(bool) {}
     void updatePointerPosition(int, int) {}
     void updateCursorImage(void*, int, int, int, int, int) {}
-    struct Texture { bool isAHB{}; AHardwareBuffer* ahb{}; };
+    struct Texture { bool isAHB{}; AHardwareBuffer* ahb{}; void* img{}; int w{}, h{}; };
     std::unordered_map<int64_t, Texture> texMap;
-    void updateWindowContentAHB(int64_t id, AHardwareBuffer* b, int, int, int, int) { texMap[id] = {true, b}; }
+    std::unordered_map<AHardwareBuffer*, Texture> ahbImportCache;
+    void updateWindowContentAHB(int64_t id, AHardwareBuffer* b, int w, int h, int, int) {
+        auto [it, inserted] = ahbImportCache.try_emplace(b, Texture{true, b, b, w, h});
+        (void)inserted;
+        texMap[id] = it->second;
+    }
     void updateWindowContent(int64_t id, void*, int, int, int, int, int) { texMap[id] = {}; }
     void removeWindow(int64_t id) { texMap.erase(id); }
     void setExternalRenderList(const int64_t* ids, const int*, const int*, int count) {

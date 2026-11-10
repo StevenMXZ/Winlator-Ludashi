@@ -747,6 +747,12 @@ void NativeScreen::Worker() {
                      seconds, metricRequests.exchange(0), metricRequestBytes.exchange(0),
                      readAvg, readMax, dispatchAvg, dispatchMax, lockAvg, lockMax,
                      metricOutputBlocked.exchange(0), metricOutputPeak.exchange(0));
+                const auto ahb = renderer->TakeAHBMetrics();
+                LOGI("X11AHBMetrics seconds={:.2f} dri3_received={} vk_import_new={} vk_cache_hit={} "
+                     "scene_unchanged_ahb={} cache_entries={} vk_import_us(avg/max)={:.1f}/{:.1f}",
+                     seconds, metricDri3Imports.exchange(0), ahb.vkImports, ahb.cacheHits,
+                     ahb.unchangedDrawables, ahb.cacheEntries,
+                     ahb.importNs / 1000.0 / std::max<u64>(1, ahb.vkImports), ahb.maxImportNs / 1000.0);
                 metricWindow = now;
                 metricSubmits = metricBusy = metricDrawNs = metricDrawMaxNs = 0;
                 metricDraws = 0;

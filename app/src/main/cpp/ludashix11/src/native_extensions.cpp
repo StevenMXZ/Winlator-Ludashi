@@ -79,8 +79,10 @@ void XClient::ProcDRI3() {
                 LOGE("DRI3 AHB receive failed: pixmap={} result={}", pixmap, receiveResult);
             throw BadMatchError();
         }
+        auto& diagScreen = static_cast<NativeScreen&>(server.GetScreen());
+        if (diagScreen.DiagnosticsEnabled()) diagScreen.RecordDri3Import();
         static unsigned reportedImports = 0;
-        if (static_cast<NativeScreen&>(server.GetScreen()).DiagnosticsEnabled() && reportedImports++ < 8) {
+        if (diagScreen.DiagnosticsEnabled() && reportedImports++ < 8) {
             AHardwareBuffer_Desc desc{};
             AHardwareBuffer_describe(ahb, &desc);
             LOGI("DRI3 AHB pixmap={} drawable={} request={}x{} depth={} allocated={}x{} stride={} format={}",

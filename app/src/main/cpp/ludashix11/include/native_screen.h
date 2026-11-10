@@ -51,6 +51,10 @@ struct NativeFrame {
     std::chrono::steady_clock::time_point diagnosticSubmit{};
     std::chrono::steady_clock::time_point diagnosticSelected{};
 };
+struct NativeAHBMetrics {
+    u64 vkImports{}, cacheHits{}, unchangedDrawables{}, cacheEntries{};
+    u64 importNs{}, maxImportNs{};
+};
 using NativeFrameLatch = std::function<void(NativeFrame&)>;
 class NativeRenderer {
 public:
@@ -67,6 +71,7 @@ public:
     virtual size_t WaitCompleted(size_t maxReady) = 0;
     // Surface changes may block once; never drain the GPU on the Present hot path.
     virtual size_t Drain() = 0;
+    virtual NativeAHBMetrics TakeAHBMetrics() { return {}; }
     virtual void Options(bool fullscreen, bool cursor, int fps, float refresh) = 0;
 };
 std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 width, u16 height, bool validation = false);
@@ -108,6 +113,7 @@ public:
     void SetUnviewableWMClasses(std::vector<std::string> classes);
     void WindowPropertyChanged(Window* window, u32 atom);
     void SetDiagnostics(bool enabled);
+    void RecordDri3Import() { metricDri3Imports.fetch_add(1, std::memory_order_relaxed); }
     void SetCommandCacheEnabled(bool enabled) { commandCacheEnabled.store(enabled, std::memory_order_relaxed); }
     void RecordInputRead(u64 ns) { metricInputRead.Record(ns); }
     void RecordRequest(u64 ns, size_t bytes) {
@@ -176,6 +182,7 @@ private:
     std::atomic<bool> diagnostics{false};
     std::atomic<bool> commandCacheEnabled{true};
     std::atomic<u64> metricPresents{0}, metricIdles{0}, metricCoalesced{0}, metricErrors{0};
+    std::atomic<u64> metricDri3Imports{0};
     std::atomic<u64> metricScenePatches{0}, metricSceneBuilds{0}, metricCursorPatches{0}, metricDrawablePatches{0}, metricOffscreenWrites{0};
     std::atomic<u64> metricOffscreenPresents{0};
     Timing metricCompleteDelay, metricIdleDelay;
