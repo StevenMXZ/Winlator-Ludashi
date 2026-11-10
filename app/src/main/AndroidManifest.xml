@@ -51,6 +51,28 @@
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|density|navigation"
             android:exported="false" />
 
+        <service
+            android:name="com.winlator.cmod.ui.settings.GpuTestWorkerService"
+            android:process=":labs_gpu_test"
+            android:exported="false"
+            android:stopWithTask="true" />
+
+        <activity
+            android:name="com.winlator.cmod.ui.settings.GpuTestsActivity"
+            android:theme="@style/AppThemeFullscreen.Dark"
+            android:screenOrientation="sensor"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|density|navigation"
+            android:exported="false" />
+
+        <activity
+            android:name="com.winlator.cmod.ui.settings.WinlatorLabsActivity"
+            android:theme="@style/AppThemeFullscreen.Dark"
+            android:screenOrientation="sensor"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|density|navigation"
+            android:exported="false" />
+
         <activity
             android:name="com.winlator.cmod.ui.settings.ContainersSettingsActivity"
             android:theme="@style/AppThemeFullscreen.Dark"

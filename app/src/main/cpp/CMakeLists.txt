@@ -8,6 +8,27 @@ add_subdirectory(OpenXR-SDK)
 add_subdirectory(patchelf)
 add_subdirectory(adrenotools)
 
+# Shaders for Winlator Labs' offscreen rotating 3D cube benchmark.
+# Generated only at build time; no impact on normal VulkanRendererContext.
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/labs_cube_vert.h
+    COMMAND glslangValidator -V --vn labs_cube_vert_code -x
+            -o ${CMAKE_CURRENT_BINARY_DIR}/labs_cube_vert.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/winlator/labs_cube.vert
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/winlator/labs_cube.vert
+)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/labs_cube_frag.h
+    COMMAND glslangValidator -V --vn labs_cube_frag_code -x
+            -o ${CMAKE_CURRENT_BINARY_DIR}/labs_cube_frag.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/winlator/labs_cube.frag
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/winlator/labs_cube.frag
+)
+add_custom_target(labs_cube_shaders DEPENDS
+    ${CMAKE_CURRENT_BINARY_DIR}/labs_cube_vert.h
+    ${CMAKE_CURRENT_BINARY_DIR}/labs_cube_frag.h
+)
+
 # Add Winlator shared library
 add_library(winlator SHARED
         xr/engine.c
@@ -34,11 +55,14 @@ add_library(winlator SHARED
         winlator/renderer/effectcomposer/effect_composer.cpp
 )
 
+add_dependencies(winlator labs_cube_shaders)
+target_include_directories(winlator PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_options(winlator PRIVATE -Wall -Wextra)
 target_include_directories(winlator PRIVATE winlator/renderer winlator/renderer/effectcomposer)
 
 target_link_libraries(winlator
         log
+        m
         android
         jnigraphics
         openxr_loader

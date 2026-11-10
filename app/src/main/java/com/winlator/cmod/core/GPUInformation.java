@@ -16,10 +16,19 @@ public abstract class GPUInformation {
 
         return !renderer.toLowerCase().contains("unknown");
     }
-    public native static String getVulkanVersion(String driverName, Context context);
-    public native static int getVendorID(String driverName, Context context);
-    public native static String getRenderer(String driverName, Context context);
-    public native static String[] enumerateExtensions(String driverName, Context context);
+    public static synchronized native String getVulkanVersion(String driverName, Context context);
+    public static synchronized native int getVendorID(String driverName, Context context);
+    public static synchronized native String getRenderer(String driverName, Context context);
+    public static synchronized native String[] enumerateExtensions(String driverName, Context context);
+    /** Offscreen real 3D cube. Runs only in the separate GPU test service process. */
+    public static synchronized native String runGpuCubeBenchmark(String driverName, Context context, Object previewReporter);
+
+    /** Offscreen transfer smoke/throughput test. Use only in the separate GPU test process. */
+    public static synchronized native String runGpuTransferTest(String driverName, Context context, boolean preflight);
+
+    /** Read-only Vulkan capabilities (tab-separated rows). */
+    public static synchronized native String[] queryCapabilities(String driverName, Context context);
+
 
     static {
         System.loadLibrary("winlator");

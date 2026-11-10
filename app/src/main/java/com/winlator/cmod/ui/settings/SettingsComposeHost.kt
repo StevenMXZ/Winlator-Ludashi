@@ -1,6 +1,7 @@
 package com.winlator.cmod.ui.settings
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.view.View
 import androidx.compose.foundation.BorderStroke
@@ -195,6 +196,17 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
                 NavigationRow(Icons.Outlined.Apps, "Components", "Wine, Proton, DXVK, VKD3D and runtimes", callbacks::onOpenComponents)
             }
 
+            item("file-manager") {
+                NavigationRow(Icons.Outlined.FolderOpen, "File Manager", null) {
+                    activity?.navigateToMainDestination(R.id.main_menu_file_manager)
+                }
+            }
+            item("labs") {
+                NavigationRow(Icons.Outlined.Memory, "Labs", null) {
+                    context.startActivity(Intent(context, WinlatorLabsActivity::class.java))
+                }
+            }
+
             item("presets-title") { SectionTitle("PRESETS") }
             item("presets") {
                 GroupCard {
@@ -220,11 +232,6 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
                 }
             }
 
-            item("sound-title") { SectionTitle(stringResource(R.string.sound)) }
-            item("soundfonts") {
-                SoundFontCard(model.soundFonts, callbacks::onInstallSoundFont, callbacks::onRemoveSoundFont)
-            }
-
             item("paths-title") { SectionTitle("PATH SETTINGS") }
             item("winlator-path") { NavigationRow(Icons.Outlined.Storage, "Winlator Path", model.winlatorPath, callbacks::onChooseWinlatorPath) }
             item("shortcut-path") { NavigationRow(Icons.Outlined.FolderOpen, "Shortcut Export Path", model.shortcutPath, callbacks::onChooseShortcutPath) }
@@ -235,16 +242,16 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
                     ToggleRow(
                         "Download game artwork automatically",
                         model.autoDownloadGameArtwork,
-                        "Fetch missing covers and banners from SteamGridDB"
+                        null
                     ) { callbacks.onBooleanChanged("auto_download_game_artwork", it) }
                     GroupDivider()
                     ToggleRow(
                         "Game Saves for all shortcuts",
                         model.gameSavesAllShortcuts,
-                        "Automatically detect and back up saves when any shortcut exits"
+                        null
                     ) { callbacks.onBooleanChanged("game_saves_all_shortcuts", it) }
                     GroupDivider()
-                    ToggleRow("Animated artwork", com.winlator.cmod.ui.library.rememberArtworkMotionEnabled(), "Slow zoom and movement on large game covers") {
+                    ToggleRow("Animated artwork", com.winlator.cmod.ui.library.rememberArtworkMotionEnabled()) {
                         callbacks.onBooleanChanged("animated_artwork", it)
                     }
                 }

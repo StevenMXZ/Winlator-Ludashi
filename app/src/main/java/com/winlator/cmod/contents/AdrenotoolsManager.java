@@ -20,10 +20,10 @@ import com.winlator.cmod.core.OnExtractFileListener;
 import com.winlator.cmod.core.TarCompressorUtils;
 import com.winlator.cmod.xenvironment.ImageFs;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.zip.ZipEntry;
@@ -126,7 +126,7 @@ public class AdrenotoolsManager {
         
         for (File f : adrenotoolsContentDir.listFiles()) {
             boolean fromResources = isFromResources(f.getName());
-            if (!fromResources && new File(f, "meta.json").exists())
+            if (!f.getName().startsWith(".import-") && !fromResources && new File(f, "meta.json").exists())
                 driversList.add(f.getName());
         }
         return driversList;
@@ -200,47 +200,100 @@ public class AdrenotoolsManager {
         return hasExtracted;
     }
     
+    /**
+     * Install an AdrenoTools ZIP. Extract to a private staging directory first,
+     * validate meta.json and the driver library, then move to the live directory.
+     * Never leave a half-installed driver visible to the Vulkan selector.
+     */
     public String installDriver(Uri driverUri) {
-        File tmpDir = new File(adrenotoolsContentDir, "tmp");
-        if (tmpDir.exists()) tmpDir.delete();
-        tmpDir.mkdirs();
-        ZipInputStream zis;
-        InputStream is;
-        String name = "";
-        
+        // Extract into a private staging directory. Never accept unvalidated metadata
+        // or allow ZIP paths to escape the driver's directory.
+        File staging = new File(adrenotoolsContentDir,
+                ".import-" + Long.toHexString(System.nanoTime()));
+        final long maxUnpackedBytes = 1024L * 1024L * 1024L;
+        final long maxFileBytes = 512L * 1024L * 1024L;
         try {
-            is = mContext.getContentResolver().openInputStream(driverUri);
-            zis = new ZipInputStream(is);
-            ZipEntry entry = zis.getNextEntry();
-            while (entry != null) {
-                File dstFile = new File(tmpDir, entry.getName());
-                Files.copy(zis, dstFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                entry = zis.getNextEntry();
-            }
-            zis.close();
-            if (new File(tmpDir, "meta.json").exists()) {
-                name = getDriverName(tmpDir.getName());
-                File dst = new File(adrenotoolsContentDir, name);
-                if (!dst.exists() && !name.equals(""))
-                    tmpDir.renameTo(dst);
-                else {
-                    name = "";
-                    FileUtils.delete(tmpDir);
+            if (!staging.mkdirs()) throw new IOException("Cannot create temporary driver directory");
+            String safeRoot = staging.getCanonicalPath() + File.separator;
+            long unpacked = 0;
+            int entryCount = 0;
+            try (InputStream input = mContext.getContentResolver().openInputStream(driverUri)) {
+                if (input == null) throw new IOException("Driver archive cannot be opened");
+                try (ZipInputStream zip = new ZipInputStream(input)) {
+                    ZipEntry entry;
+                    byte[] buffer = new byte[16384];
+                    while ((entry = zip.getNextEntry()) != null) {
+                        if (++entryCount > 4096) throw new IOException("Too many driver ZIP entries");
+                        String entryName = entry.getName();
+                        if (entryName == null || entryName.isEmpty()
+                                || entryName.startsWith("/") || entryName.indexOf('\\') >= 0) {
+                            throw new IOException("Unsafe driver ZIP path");
+                        }
+                        File dstFile = new File(staging, entryName).getCanonicalFile();
+                        if (!dstFile.getPath().startsWith(safeRoot)) {
+                            throw new IOException("Driver ZIP entry escapes installation directory");
+                        }
+                        if (entry.isDirectory()) {
+                            if (!dstFile.isDirectory() && !dstFile.mkdirs())
+                                throw new IOException("Cannot create driver subdirectory");
+                        } else {
+                            File parent = dstFile.getParentFile();
+                            if (parent == null || (!parent.isDirectory() && !parent.mkdirs()))
+                                throw new IOException("Cannot create driver archive parent");
+                            long fileBytes = 0;
+                            try (java.io.FileOutputStream output = new java.io.FileOutputStream(dstFile)) {
+                                int read;
+                                while ((read = zip.read(buffer)) != -1) {
+                                    fileBytes += read;
+                                    unpacked += read;
+                                    if (fileBytes > maxFileBytes || unpacked > maxUnpackedBytes)
+                                        throw new IOException("Driver ZIP exceeds extraction limits");
+                                    output.write(buffer, 0, read);
+                                }
+                            }
+                        }
+                        zip.closeEntry();
+                    }
                 }
             }
-            else {
-                Log.d("AdrenotoolsManager", "Failed to install driver, a valid driver has not been selected");
-                tmpDir.delete();
+            if (entryCount == 0) throw new IOException("Empty driver ZIP");
+            File base = staging;
+            if (!new File(base, "meta.json").isFile()) {
+                File[] contents = staging.listFiles();
+                if (contents != null && contents.length == 1 && contents[0].isDirectory()
+                        && new File(contents[0], "meta.json").isFile()) {
+                    base = contents[0];
+                }
             }
+
+            File manifest = new File(base, "meta.json");
+            if (!manifest.isFile()) throw new IOException("Missing AdrenoTools meta.json");
+            JSONObject metadata = new JSONObject(FileUtils.readString(manifest));
+            String name = metadata.optString("name", "").trim();
+            String libName = metadata.optString("libraryName", "").trim();
+            if (name.isEmpty() || libName.isEmpty() || name.equals(".")
+                    || name.equals("..") || name.indexOf('/') >= 0
+                    || name.indexOf('\\') >= 0 || name.indexOf('\u0000') >= 0) {
+                throw new IOException("Invalid AdrenoTools metadata");
+            }
+            File library = new File(base, libName).getCanonicalFile();
+            if (!library.getPath().startsWith(base.getCanonicalPath() + File.separator)
+                    || !library.isFile()) {
+                throw new IOException("Driver library is missing or outside the package");
+            }
+
+            File destination = new File(adrenotoolsContentDir, name);
+            if (destination.exists()) throw new IOException("Driver is already installed");
+            if (!base.renameTo(destination)) throw new IOException("Cannot finalize driver installation");
+            return name;
+        } catch (Exception e) {
+            Log.e("AdrenotoolsManager", "Local driver import failed", e);
+            return "";
+        } finally {
+            FileUtils.delete(staging);
         }
-        catch (IOException e) {
-            Log.d("AdrenotoolsManager", "Failed to install driver, a valid driver has not been selected");
-            tmpDir.delete();
-        }
-        
-        return name;
     }
-    
+
     public void setDriverById(EnvVars envVars, ImageFs imagefs, String adrenotoolsDriverId) {
         boolean isFromResources = isFromResources(adrenotoolsDriverId);
 
