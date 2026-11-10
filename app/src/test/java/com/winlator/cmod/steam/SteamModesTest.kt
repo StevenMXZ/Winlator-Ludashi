@@ -56,6 +56,7 @@ class SteamModesTest {
         val context = RuntimeEnvironment.getApplication()
         val component = File(context.filesDir, "steam-components/goldberg/regular/x64").apply { mkdirs() }
         File(component, "steam_api64.dll").writeText("replacement")
+        File(component.parentFile, "x86/steam_api.dll").apply { parentFile!!.mkdirs(); writeText("replacement32") }
         val game = File(context.filesDir, "goldberg-test").apply { mkdirs() }
         val original = File(game, "steam_api64.dll").apply { writeText("original") }
         SteamGoldberg.prepare(context, game, 99813)

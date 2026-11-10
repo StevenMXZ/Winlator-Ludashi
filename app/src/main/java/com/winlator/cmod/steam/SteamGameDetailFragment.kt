@@ -89,7 +89,8 @@ class SteamGameDetailFragment : Fragment() {
                         SteamGames.shortcut(context, appId) ?: SteamGames.draft(context, appId, ContainerManager(context).containers.firstOrNull() ?: error(uiStr(R.string.steam_ui_create_container)))
                     } }
                     found.onSuccess { shortcut ->
-                        SteamCloud.showStatus(this@SteamGameDetailFragment, appId, shortcut)
+                        if (SteamSettings.mode(context, appId) == "RealSteam") SteamCloud.showStatus(this@SteamGameDetailFragment, appId, shortcut)
+                        else GameSavesComposeDialog.show(this@SteamGameDetailFragment, shortcut)
                     }.onFailure { notice(it.message.orEmpty()) }
                 }
             }

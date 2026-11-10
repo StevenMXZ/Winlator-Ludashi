@@ -42,7 +42,7 @@ import java.io.File
     var sorting by remember { mutableStateOf(false) }
     var sort by rememberSaveable { mutableStateOf("Recent") }
     val apps = rememberSteamLibrary(context, state.library)
-    val demos = rememberSteamLibrary(context, state.library, filterType = "demo")
+    val demos = rememberSteamLibrary(context, state.library, enabled = tab == 4, filterType = "demo")
     val installed = remember(apps) { apps.count { it.containerName == "Steam · Installed" } }
     val user = rememberSteamUserSnapshot(context)
     val profile = user.profile
