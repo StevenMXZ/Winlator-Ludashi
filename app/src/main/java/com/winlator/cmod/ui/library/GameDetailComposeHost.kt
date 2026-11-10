@@ -45,6 +45,8 @@ interface GameDetailCallbacks {
     fun onHome()
 }
 
+interface SteamDetailCallbacks : GameDetailCallbacks { fun onSteamMode(mode: String) }
+
 // Layout and statistics adapted from teldommm/WinLite. Ludashi keeps its original
 // artwork selection/crop (including offline icons) and all six user-selected palettes.
 object GameDetailComposeHost {
@@ -73,6 +75,7 @@ object GameDetailComposeHost {
 private val LocalSteamInfoId = compositionLocalOf<Int?> { null }
 private val LocalSteamDetail = compositionLocalOf { false }
 private val LocalSteamReady = compositionLocalOf { true }
+private val LocalSteamMode = compositionLocalOf { "RealSteam" }
 
 @Composable
 private fun GameDetailScreen(title: String, subtitle: String, artworkPath: String?, fallback: Bitmap?, initialFavorite: Boolean, shortcut: Shortcut?, callbacks: GameDetailCallbacks, steamId: Int? = null) {
@@ -120,7 +123,7 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
     var favorite by remember(initialFavorite) { mutableStateOf(initialFavorite) }
     val toggle = { favorite = !favorite; callbacks.onFavorite(favorite) }
     val configured = steamId == null || shortcut?.getExtra("steamConfigured") == "1"
-    androidx.compose.runtime.CompositionLocalProvider(LocalSteamInfoId provides steamId, LocalSteamDetail provides (steamId != null), LocalSteamReady provides configured) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalSteamInfoId provides steamId, LocalSteamDetail provides (steamId != null), LocalSteamReady provides configured, LocalSteamMode provides (steamId?.let { com.winlator.cmod.steam.SteamSettings.mode(context, it) } ?: "RealSteam")) {
     if (landscape) LandscapeDetail(title, subtitle, artwork, favorite, stats, callbacks, toggle)
     else PortraitDetail(title, subtitle, artwork, favorite, stats, callbacks, toggle)
     }
@@ -166,11 +169,11 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
             Surface(Modifier.align(Alignment.BottomEnd).padding(18.dp).width(panelWidth).heightIn(max = (maxHeight - 116.dp).coerceAtLeast(100.dp)),
                 shape = WinZShapes.ExtraLarge, color = Color.Black.copy(.48f), border = BorderStroke(1.dp, Color.White.copy(.18f))) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PlayButton(callbacks::onPlay)
+                    PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) })
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         LandscapeAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), Modifier.weight(1f), callbacks::onConfigure)
                         LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
-                        LandscapeAction(Icons.Outlined.Backup, stringResource(R.string.ui_saves), Modifier.weight(1f), callbacks::onSaves)
+                        LandscapeAction(Icons.Outlined.Backup, savesLabel(), Modifier.weight(1f), callbacks::onSaves)
                         LandscapeAction(Icons.Outlined.Home, stringResource(R.string.ui_home), Modifier.weight(1f), callbacks::onHome)
                         LandscapeAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall_game) else stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
                     }
@@ -196,23 +199,45 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
         }
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth())
-            PlayButton(callbacks::onPlay)
+            PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) })
             DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)
-            LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
             DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
-            DetailAction(Icons.Outlined.Backup, stringResource(R.string.ui_saves), callbacks::onSaves)
+            DetailAction(Icons.Outlined.Backup, savesLabel(), callbacks::onSaves)
             DetailAction(Icons.Outlined.Home, stringResource(R.string.ui_add_to_home), callbacks::onHome)
             DetailAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall_game) else stringResource(R.string.remove), callbacks::onRemove, true)
+            LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
             Spacer(Modifier.height(12.dp))
         }
     }
 }
 
 @Composable
-private fun PlayButton(click: () -> Unit) {
-    Button(click, enabled = LocalSteamReady.current, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = WinZShapes.Medium,
-        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)) {
-        Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(if (LocalSteamReady.current) stringResource(R.string.ui_play) else stringResource(R.string.steam_ui_configure_first), fontWeight = FontWeight.Bold)
+private fun savesLabel(): String = if (LocalSteamDetail.current && LocalSteamMode.current == "RealSteam")
+    stringResource(R.string.steam_cloud_saves) else stringResource(R.string.ui_saves)
+
+@Composable
+private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit) {
+    val steam = LocalSteamDetail.current
+    val mode = LocalSteamMode.current
+    var expanded by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Button(click, enabled = LocalSteamReady.current, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = WinZShapes.Medium) {
+            Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp))
+            Text(if (!LocalSteamReady.current) stringResource(R.string.steam_ui_configure_first)
+                else if (steam) stringResource(if (mode == "RealSteam") R.string.steam_ui_client else R.string.steam_ui_offline)
+                else stringResource(R.string.ui_play), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (steam) Box {
+            FilledTonalIconButton(onClick = { expanded = true }, enabled = !com.winlator.cmod.steam.SteamSession.gameActive) {
+                Icon(Icons.Outlined.ArrowDropDown, stringResource(R.string.steam_ui_launch))
+            }
+            DropdownMenu(expanded, { expanded = false }) {
+                listOf("RealSteam" to R.string.steam_ui_client, "Goldberg" to R.string.steam_ui_offline).forEach { (value, label) ->
+                    DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { expanded = false; chooseMode(value) },
+                        trailingIcon = { if (mode == value) Icon(Icons.Outlined.Check, null) })
+                }
+            }
+        }
     }
 }
 

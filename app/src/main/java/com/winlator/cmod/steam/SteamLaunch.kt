@@ -88,22 +88,40 @@ object SteamLaunch {
         }
         return file
     }
+    /** Rebuild the launch target when the Play selector changes the saved mode. */
+    fun prepareConfigured(context: Context, shortcut: Shortcut, mode: String): Shortcut {
+        val id = shortcut.getExtra("steamAppId").toInt()
+        val exe = shortcut.getExtra("steamExecutable")
+        check(exe.isNotBlank() && shortcut.getExtra("steamConfigured") == "1") { "Configure the game executable first" }
+        SteamSettings.setMode(context, id, mode)
+        if (shortcut.getExtra("steamLaunchMode") == mode) return shortcut
+        val file = createShortcut(context, shortcut.container, id, SteamGames.info(context, id), exe)
+        return Shortcut(shortcut.container, file).apply {
+            putExtra("steamExecutable", exe); putExtra("steamConfigured", "1"); saveData()
+            SteamGames.changed()
+        }
+    }
     @JvmStatic fun canLaunch(context: Context, shortcut: Shortcut?): Boolean {
         if (shortcut?.getExtra("steamAppId")?.toIntOrNull() == null) return true
-        return shortcut.getExtra("steamConfigured") == "1" && SteamSettings.enabled(context) && (shortcut.getExtra("steamLaunchMode", "RealSteam") != "RealSteam" || SteamCredentials.load(context) != null)
+        return shortcut.getExtra("steamConfigured") == "1" && shortcut.getExtra("steamLaunchMode", "RealSteam") == SteamSettings.mode(context, shortcut.getExtra("steamAppId").toInt()) && SteamSettings.enabled(context) && (shortcut.getExtra("steamLaunchMode", "RealSteam") != "RealSteam" || SteamCredentials.load(context) != null)
     }
     @JvmStatic fun apply(context: Context, shortcut: Shortcut?, env: EnvVars) {
         val id = shortcut?.getExtra("steamAppId")?.toIntOrNull() ?: return
         check(shortcut?.getExtra("steamConfigured") == "1") { "Configure the Steam launch method and executable before playing" }
         SteamSession.beginGame(context)
-        if (shortcut!!.getExtra("steamLaunchMode", "RealSteam") != "RealSteam") return
+        val game = SteamGames.directory(context, id)
+        // Also covers pinned/home shortcuts and a different container sharing this install.
+        SteamGoldberg.restore(game)
+        if (shortcut!!.getExtra("steamLaunchMode") == "Goldberg") SteamGoldberg.prepare(context, game, id)
+        if (shortcut.getExtra("steamLaunchMode", "RealSteam") != "RealSteam") return
         val saved = SteamCredentials.load(context) ?: error("Sign in to Steam before launching this game")
         env.put("LUDASHI_STEAM_TOKEN", saved.getString("token"))
         env.put("LUDASHI_STEAM_USERNAME", saved.getString("account"))
         env.put("LUDASHI_STEAM_STEAMID", saved.getLong("id"))
         env.put("LUDASHI_STEAM_APPID", id)
         val info = JSONObject(File(context.filesDir, "steam-library/$id.json").readText())
-        env.put("LUDASHI_STEAM_AGENT_CLOUD", "0")
+        SteamCloud.begin(context, shortcut)
+        env.put("LUDASHI_STEAM_AGENT_CLOUD", "1")
         env.put("LUDASHI_STEAM_LANGUAGE", "english")
         env.put("LUDASHI_STEAM_APP_NAME", info.optJSONObject("common")?.optString("name").orEmpty())
         env.put("LUDASHI_STEAM_BUILD_ID", info.optJSONObject("depots")?.optJSONObject("branches")?.optJSONObject("public")?.optString("buildid", "0") ?: "0")

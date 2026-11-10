@@ -20,9 +20,8 @@ import kotlinx.coroutines.withContext
     val id = shortcut.getExtra("steamAppId").toIntOrNull() ?: return
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var mode by remember { mutableStateOf(if (SteamSettings.mode(context, id) == "RealSteam") "RealSteam" else "Goldberg") }
+    val mode = SteamSettings.mode(context, id)
     var exe by remember { mutableStateOf(shortcut.getExtra("steamExecutable")) }
-    var modeExpanded by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -38,17 +37,6 @@ import kotlinx.coroutines.withContext
     }
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val modes = listOf("RealSteam" to uiStr(R.string.steam_ui_client), "Goldberg" to uiStr(R.string.steam_ui_offline))
-            Box {
-                OutlinedButton(enabled = !busy && !SteamSession.gameActive, onClick = { modeExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(uiStr(R.string.steam_ui_launch), Modifier.weight(1f))
-                    Text(modes.first { it.first == mode }.second, style = MaterialTheme.typography.bodySmall)
-                    Icon(androidx.compose.material.icons.Icons.Outlined.ArrowDropDown, null)
-                }
-                DropdownMenu(modeExpanded, { modeExpanded = false }) {
-                    modes.forEach { (value, title) -> DropdownMenuItem(text = { Text(title) }, onClick = { mode = value; modeExpanded = false }) }
-                }
-            }
             Box {
                 OutlinedButton(enabled = !busy && !SteamSession.gameActive, onClick = { expanded = true }) { Text(exe.ifEmpty { uiStr(R.string.steam_ui_choose_exe) }) }
                 DropdownMenu(expanded, { expanded = false }, modifier = Modifier.heightIn(max = 300.dp)) {

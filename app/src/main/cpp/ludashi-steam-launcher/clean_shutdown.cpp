@@ -79,6 +79,16 @@ constexpr int kSyncChangesBoth    = 6;
 constexpr int kSyncConflicting    = 7;
 constexpr int kSyncNotInitialized = 8;
 
+// Small atomic protocol consumed by the Android UI. Never infer success from elapsed time.
+void cs_report(unsigned int appId, const char* phase, int state, int transfers = 0) {
+    const char* tmp = "C:\\ludashi-steam-cloud-status.tmp";
+    FILE* f = fopen(tmp, "wb");
+    if (!f) return;
+    fprintf(f, "appid=%u\nphase=%s\nstate=%d\ntransfers=%d\n", appId, phase, state, transfers);
+    fclose(f);
+    MoveFileExA(tmp, "C:\\ludashi-steam-cloud-status.txt", MOVEFILE_REPLACE_EXISTING);
+}
+
 const char* cs_sync_state_name(int v) {
     switch (v) {
         case kSyncDisabled:       return "disabled";
@@ -369,6 +379,8 @@ void teardown(const char* reason) {
 
     ludashi_log("clean logoff complete");
 
+    FILE* done = fopen("C:\\ludashi-steam-shutdown-complete.txt", "wb");
+    if (done) { fputs("done", done); fclose(done); }
     ::DeleteFileA(kSentinelPath);
 
     g_teardown_complete.store(true);
@@ -392,6 +404,9 @@ void watch_loop() {
     while (g_watch_run.load()) {
         if (::GetFileAttributesA(kSentinelPath) != INVALID_FILE_ATTRIBUTES) {
             teardown("sentinel");
+            // Main may already be uploading after a natural game exit. Do not cut
+            // that upload short just because compare_exchange rejected a second teardown.
+            while (!g_teardown_complete.load()) ::Sleep(50);
             g_watch_run.store(false);
             ::ExitProcess(0);
             return;
@@ -506,6 +521,13 @@ extern "C" void ludashi_launcher_arm_clean_shutdown(void* hSteamClient, int pipe
     std::thread(watch_loop).detach();
 }
 
+extern "C" bool ludashi_launcher_shutdown_started(void) { return g_done.load(); }
+
+extern "C" void ludashi_launcher_ready_for_shutdown(void) {
+    FILE* ready = fopen("C:\\ludashi-steam-launcher-ready.txt", "wb");
+    if (ready) { fputs("ready", ready); fclose(ready); }
+}
+
 extern "C" void ludashi_launcher_set_cloud_context(void* engine, int hUser, int hPipe,
                                               unsigned int appId) {
     g_cs_engine = engine;
@@ -533,6 +555,7 @@ static bool cs_wait_conflict_answer(int timeoutMs, bool* keepLocalOut, int* wait
             DeleteFileA(kCloudConflictAnswerPath);
             DeleteFileA(kCloudConflictRequestPath);
             if (waitedOut) *waitedOut = waited;
+            if (strcmp(buf, "local") != 0 && strcmp(buf, "cloud") != 0) return false;
             *keepLocalOut = (strcmp(buf, "local") == 0);
             char line[128];
             std::snprintf(line, sizeof(line),
@@ -576,6 +599,7 @@ static bool cs_resolve_conflict(void* rs, void** rs_vt, unsigned int appId,
         fclose(f);
     }
 
+    cs_report(appId, "launch", kSyncConflicting);
     bool keepLocal = false;
     int userWaited = 0;
     bool answered = cs_wait_conflict_answer(kCloudConflictAnswerWaitMs, &keepLocal, &userWaited);
@@ -592,12 +616,14 @@ static bool cs_resolve_conflict(void* rs, void** rs_vt, unsigned int appId,
 
 extern "C" int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,
                                      unsigned int appId, int onExit, int timeoutMs) {
-    if (!engine || appId == 0) return -1;
+    cs_report(appId, onExit ? "exit" : "launch", kSyncInProgress);
+    auto failed = [&]() { cs_report(appId, onExit ? "exit" : "launch", -1); return -1; };
+    if (!engine || appId == 0) return failed();
     void** engine_vt = *reinterpret_cast<void***>(engine);
     void* getRsP = engine_vt[kVtEngine_GetIClientRemoteStorage];
     if (!cs_is_exec_ptr(getRsP)) {
         ludashi_log("cloud: GetIClientRemoteStorage slot not executable — skipping sync");
-        return -1;
+        return failed();
     }
     using GetRsFn = void* (LUDASHI_THISCALL *)(void*, int, int);
     void* rs = reinterpret_cast<GetRsFn>(getRsP)(engine, hUser, hPipe);
@@ -638,7 +664,7 @@ extern "C" int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,
     }
     if (!rs) {
         ludashi_log("cloud: IClientRemoteStorage null — skipping sync");
-        return -1;
+        return failed();
     }
     void** rs_vt = *reinterpret_cast<void***>(rs);
     void* runP    = rs_vt[onExit ? kVtRS_RunAutoCloudOnAppExit : kVtRS_RunAutoCloudOnAppLaunch];
@@ -646,7 +672,7 @@ extern "C" int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,
     void* stateP  = rs_vt[kVtRS_GetLastKnownSyncState];
     if (!cs_is_exec_ptr(runP) || !cs_is_exec_ptr(inProgP) || !cs_is_exec_ptr(stateP)) {
         ludashi_log("cloud: RemoteStorage slot(s) not executable — skipping sync");
-        return -1;
+        return failed();
     }
     using RunFn    = bool (LUDASHI_THISCALL *)(void*, unsigned int);
     using InProgFn = bool (LUDASHI_THISCALL *)(void*, unsigned int);
@@ -667,6 +693,7 @@ extern "C" int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,
     }
 
     const char* phase = onExit ? "exit" : "launch";
+    cs_report(appId, phase, kSyncInProgress);
     char buf[512];
     int finalState = -1;
     const DWORD startTick = ::GetTickCount();
@@ -870,7 +897,7 @@ extern "C" int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,
                        "prompt to the next launch, where the UI is alive to answer it");
                 break;
             }
-            if (!cs_resolve_conflict(rs, rs_vt, appId, &userWaitMs)) break;
+            if (!cs_resolve_conflict(rs, rs_vt, appId, &userWaitMs)) { finalState = -1; break; }
             continue;
         }
 
@@ -896,7 +923,8 @@ extern "C" int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,
         break;
     }
 
-    if (!onExit && !(sawSyncCallback && lastSyncResult != kEResultOK)) {
+    if (!onExit && (finalState == kSyncSynchronized || finalState == kSyncChangesLocally) &&
+        !(sawSyncCallback && lastSyncResult != kEResultOK)) {
         bool recorded = reinterpret_cast<RunFn>(runP)(rs, appId);
         std::snprintf(buf, sizeof(buf),
             "cloud: RunAutoCloudOnAppLaunch(app=%u) after the download -> %d "
@@ -928,6 +956,7 @@ extern "C" int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,
     if (onExit && finalState == kSyncChangesLocally) {
         ludashi_log("cloud: exit sync left local saves ahead of Steam Cloud — the app must upload them");
     }
+    cs_report(appId, phase, finalState, lastSyncTransfers);
     return finalState;
 }
 

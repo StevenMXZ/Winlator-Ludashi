@@ -24,19 +24,35 @@ class SteamGameDetailFragment : Fragment() {
         fun newInstance(appId: Int) = SteamGameDetailFragment().apply { arguments = Bundle().apply { putInt("appId", appId) } }
     }
     private var configuring = false
+    private var preparing = false
     private val appId get() = requireArguments().getInt("appId")
     private fun notice(text: String) = Toast.makeText(requireContext(), text, Toast.LENGTH_LONG).show()
     override fun onCreateView(inflater: LayoutInflater, parent: ViewGroup?, state: Bundle?): View {
         val context = requireContext()
         val title = SteamGames.info(context, appId).optJSONObject("common")?.optString("name").orEmpty().ifBlank { "Steam $appId" }
         SteamLibrary.requestArtwork(context, "steam://$appId", "banner")
-        return GameDetailComposeHost.createSteam(context, title, File(context.cacheDir, "steam-art/$appId-banner.jpg").path, appId, object : GameDetailCallbacks {
+        return GameDetailComposeHost.createSteam(context, title, File(context.cacheDir, "steam-art/$appId-banner.jpg").path, appId, object : SteamDetailCallbacks {
             override fun onPlay() {
                 val shortcut = SteamGames.shortcut(context, appId)
                 if (shortcut == null || !SteamGames.configured(context, appId)) { notice(uiStr(R.string.steam_ui_configure_mode_exe)); return }
-                if (!SteamLaunch.canLaunch(context, shortcut)) { notice(uiStr(R.string.steam_ui_enable_signin)); return }
-                startActivity(Intent(context, XServerDisplayActivity::class.java).putExtra("container_id", shortcut.container.id)
-                    .putExtra("shortcut_path", shortcut.file.path).putExtra("shortcut_name", title))
+                if (!SteamSettings.enabled(context) || (SteamSettings.mode(context, appId) == "RealSteam" && SteamCredentials.load(context) == null)) { notice(uiStr(R.string.steam_ui_enable_signin)); return }
+                if (preparing || SteamSession.gameActive) return
+                preparing = true
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val result = withContext(Dispatchers.IO) { runCatching {
+                        SteamLaunch.prepareConfigured(context, shortcut, SteamSettings.mode(context, appId))
+                    } }
+                    preparing = false
+                    if (isAdded) result.onSuccess { prepared ->
+                        startActivity(Intent(context, XServerDisplayActivity::class.java).putExtra("container_id", prepared.container.id)
+                            .putExtra("shortcut_path", prepared.file.path).putExtra("shortcut_name", title))
+                    }.onFailure { notice(it.message.orEmpty()) }
+                }.invokeOnCompletion { preparing = false }
+            }
+            override fun onSteamMode(mode: String) {
+                if (preparing || SteamSession.gameActive) return
+                SteamSettings.setMode(context, appId, mode)
+                SteamGames.changed()
             }
             override fun onConfigure() {
                 if (SteamSession.gameActive) { notice(uiStr(R.string.steam_ui_exit_configure)); return }
@@ -62,7 +78,8 @@ class SteamGameDetailFragment : Fragment() {
             }
             override fun onSaves() {
                 val shortcut = SteamGames.shortcut(context, appId) ?: return notice(uiStr(R.string.steam_ui_configure_game_first))
-                GameSavesComposeDialog.show(this@SteamGameDetailFragment, shortcut)
+                if (SteamSettings.mode(context, appId) == "RealSteam") SteamCloud.showStatus(this@SteamGameDetailFragment, appId, shortcut)
+                else GameSavesComposeDialog.show(this@SteamGameDetailFragment, shortcut)
             }
             override fun onFavorite(favorite: Boolean) {
                 context.getSharedPreferences("steam-settings", 0).edit().putBoolean("favorite-$appId", favorite).apply(); SteamGames.changed()

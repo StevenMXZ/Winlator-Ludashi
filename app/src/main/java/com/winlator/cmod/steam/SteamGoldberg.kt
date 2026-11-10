@@ -30,14 +30,25 @@ object SteamGoldberg {
         } finally { archive.delete() }
     }
     private fun readUrl(url: String): ByteArray = URL(url).openConnection().apply { connectTimeout = 15000; readTimeout = 15000 }.getInputStream().use { it.readBytes() }
+    private val dllIndex = java.util.concurrent.ConcurrentHashMap<String, List<File>>()
+    fun invalidate(game: File) { dllIndex.remove(game.canonicalPath) }
+    private fun apiDlls(game: File): List<File> {
+        val root = game.canonicalFile
+        return dllIndex.getOrPut(root.path) {
+            root.walkTopDown().onEnter { it.canonicalFile.toPath().startsWith(root.toPath()) }
+                .filter { it.isFile && it.canonicalFile.toPath().startsWith(root.toPath()) }
+                .map { if (it.name.endsWith(".ludashi-original")) File(it.parentFile, it.name.removeSuffix(".ludashi-original")) else it }
+                .filter { it.name.lowercase() in setOf("steam_api.dll", "steam_api64.dll") }.distinctBy { it.path }.toList()
+        }
+    }
     fun restore(game: File) {
-        game.walkTopDown().filter { it.isFile && it.name.endsWith(".ludashi-original") }.forEach { backup ->
-            backup.copyTo(File(backup.parentFile, backup.name.removeSuffix(".ludashi-original")), true)
+        apiDlls(game).forEach { target ->
+            File(target.parentFile, target.name + ".ludashi-original").takeIf { it.isFile }?.copyTo(target, true)
         }
     }
     fun prepare(context: Context, game: File, id: Int) {
         ensureInstalled(context)
-        val dlls = game.walkTopDown().filter { it.isFile && it.name.lowercase() in setOf("steam_api.dll", "steam_api64.dll") }.toList()
+        val dlls = apiDlls(game).filter { it.isFile }
         check(dlls.isNotEmpty()) { "No Steam API DLL found for regular Goldberg mode. Use SteamLudashi or Raw for this game." }
         dlls.forEach { dll ->
             val backup = File(dll.parentFile, dll.name + ".ludashi-original")

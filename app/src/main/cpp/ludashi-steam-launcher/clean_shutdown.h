@@ -17,6 +17,9 @@ unsigned long ludashi_launcher_first_game_pid(void);
 void ludashi_launcher_arm_clean_shutdown(void* hSteamClient, int pipe, int user,
                                     const char* logPath);
 
+bool ludashi_launcher_shutdown_started(void);
+void ludashi_launcher_ready_for_shutdown(void);
+
 void ludashi_launcher_set_cloud_context(void* engine, int hUser, int hPipe, unsigned int appId);
 
 int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,

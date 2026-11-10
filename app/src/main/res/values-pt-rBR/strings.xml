@@ -594,4 +594,18 @@
   <string name="builtin_decoder">"Decodificador integrado"</string>
   <string name="software_decoding">"Decodificação por software"</string>
   <string name="video_decoder_compatibility_note">"Os decodificadores disponíveis dependem da versão do Wine/Proton. O FFmpeg requer suporte à troca de winedmo."</string>
+    <string name="steam_cloud_saves">Saves na Steam Cloud</string>
+    <string name="steam_cloud_conflict">Conflito de saves</string>
+    <string name="steam_cloud_conflict_help">Os saves locais e da Steam Cloud são diferentes. Escolha qual cópia manter. Voltar cancela a sincronização e preserva ambas as cópias.</string>
+    <string name="steam_cloud_use_remote">Usar Steam Cloud</string>
+    <string name="steam_cloud_keep_local">Manter local</string>
+    <string name="steam_cloud_failed">A Steam Cloud não concluiu a sincronização. O jogo não foi iniciado para proteger seus saves. Volte à página do jogo para tentar novamente ou escolher Offline.</string>
+    <string name="steam_cloud_synced">Última sincronização: %1$s</string>
+    <string name="steam_cloud_disabled">A Steam Cloud está indisponível ou desativada para este jogo/conta.</string>
+    <string name="steam_cloud_not_synced">Ainda não há sincronização confirmada.</string>
+    <string name="steam_cloud_pending">Sincronização incompleta. Os saves locais foram mantidos.</string>
+    <string name="steam_cloud_help">O Steam Client baixa os saves da nuvem antes de iniciar e envia ao sair normalmente, nos jogos com Steam Cloud. Backups locais continuam separados. Offline/Goldberg pode usar outras pastas e não envia saves nem conquistas.</string>
+    <string name="steam_cloud_backup">Backup local</string>
+    <string name="steam_cloud_uploaded">Envio à nuvem confirmado: %1$s</string>
+    <string name="steam_cloud_downloaded">Download da nuvem confirmado: %1$s</string>
 </resources>

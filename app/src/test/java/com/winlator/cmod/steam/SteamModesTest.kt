@@ -44,6 +44,9 @@ class SteamModesTest {
         assertFalse(SteamLaunch.canLaunch(context, result))
         result.putExtra("steamConfigured", "1"); result.saveData()
         assertTrue(SteamLaunch.canLaunch(context, result))
+        SteamSettings.setMode(context, 99812, "RealSteam")
+        assertFalse("A pinned shortcut must not launch a different mode than the Play selection", SteamLaunch.canLaunch(context, result))
+        SteamSettings.setMode(context, 99812, "Raw")
         SteamSettings.setEnabled(context, false)
         assertFalse(SteamLaunch.canLaunch(context, result))
         SteamSettings.setEnabled(context, true)
@@ -95,4 +98,24 @@ class SteamModesTest {
         assertEquals("KEEP=1", Shortcut(container, prepared).getExtra("envVars"))
         assertFalse(original.exists())
     }
+    @Test fun launchRestoresOriginalDllsEvenWhenPinnedShortcutDidNotReopenConfiguration() {
+        val context = RuntimeEnvironment.getApplication()
+        SteamSettings.setEnabled(context, true)
+        val game = File(context.filesDir, "steam-library/common/Pinned Restore").apply { mkdirs() }
+        File(game, "steam_api64.dll").writeText("offline replacement")
+        File(game, "steam_api64.dll.ludashi-original").writeText("original API")
+        val container = Container(99820).apply { rootDir = File(context.filesDir, "pinned-container").apply { mkdirs() } }
+        container.desktopDir.mkdirs()
+        val file = File(container.desktopDir, "Pinned.desktop").apply { writeText("[Desktop Entry]\nName=Pinned\nExec=wine game.exe\n\n[Extra Data]\n") }
+        val shortcut = Shortcut(container, file).apply {
+            putExtra("steamAppId", "99820"); putExtra("steamConfigured", "1"); putExtra("steamLaunchMode", "Raw"); saveData()
+        }
+        File(context.filesDir, "steam-library/99820.json").writeText("""{"config":{"installdir":"Pinned Restore"}}""")
+        try {
+            SteamLaunch.apply(context, shortcut, com.winlator.cmod.core.EnvVars())
+            assertEquals("original API", File(game, "steam_api64.dll").readText())
+            assertTrue(File(game, "steam_api64.dll.ludashi-original").isFile)
+        } finally { SteamSession.endGame(context) }
+    }
+
 }

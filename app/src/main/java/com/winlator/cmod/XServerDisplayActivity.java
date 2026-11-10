@@ -931,6 +931,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
         editor.apply();
     }
 
+    public void exitSteamLaunchFailure() { exit(); }
+
     private void exit() {
         if (!exiting.compareAndSet(false, true)) return;
         saveSidebarGraphicsState();
@@ -939,13 +941,19 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 .getBoolean("remove_loading_bar_when_booting_games", false);
         if (!removeLoadingBar) preloaderDialog.showOnUiThread(R.string.shutdown);
 
-        if (xServerView != null) {
-            xServerView.forceCleanup();
-        }
-
         savePlaytimeData();
         handler.removeCallbacks(savePlaytimeRunnable);
 
+        if (shortcut != null && "RealSteam".equals(shortcut.getExtra("steamLaunchMode")) && !shortcut.getExtra("steamAppId").isEmpty()) {
+            new Thread(() -> {
+                com.winlator.cmod.steam.SteamCloud.awaitShutdown(this, shortcut);
+                runOnUiThread(this::finishExitAfterSteam);
+            }, "SteamCloudShutdown").start();
+        } else finishExitAfterSteam();
+    }
+
+    private void finishExitAfterSteam() {
+        if (xServerView != null) xServerView.forceCleanup();
         if (midiHandler != null)
             midiHandler.stop();
 

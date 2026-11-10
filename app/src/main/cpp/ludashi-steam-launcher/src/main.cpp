@@ -3276,8 +3276,16 @@ int main(int argc, char** argv) {
     const bool cloudEnvOn = env_int_signed("LUDASHI_STEAM_AGENT_CLOUD", 1) != 0;
     const bool agentCloud = cloudEnvOn && !offlineMode;
     if (loggedOn && engine && appId != 0 && agentCloud) {
+        const int cloudState = ludashi_launcher_cloud_run(engine, hUser, pipe, appId, 0, 120000);
+        // Do not start a new save session after an unresolved cloud conflict/failure.
+        // The user can retry or explicitly select Offline in the game's Play control.
+        if (cloudState != 0 && cloudState != 2 && cloudState != 5) {
+            log_line("[ludashi-launcher] launch blocked: Steam Cloud not ready (state=%d)", cloudState);
+            if (steamApiScanThread.joinable()) steamApiScanThread.join();
+            ludashi_launcher_clean_shutdown_now("launch-failed");
+            return 1;
+        }
         ludashi_launcher_set_cloud_context(engine, hUser, pipe, appId);
-        ludashi_launcher_cloud_run(engine, hUser, pipe, appId, 0, 120000);
     } else if (offlineMode && engine && appId != 0) {
         log_line("[ludashi-launcher] cloud: launch download skipped — Steam Offline Mode keeps local "
                  "saves off the cloud until the shortcut goes back online");
@@ -3674,8 +3682,10 @@ int main(int argc, char** argv) {
                                            : "CreateProcess fallback";
         log_line("[ludashi-launcher] watching \"%s\" for exit (%s)", exeName, path);
 
+        ludashi_launcher_ready_for_shutdown();
         log_active_process_registry("post-launch");
         for (int i = 0; i < 20; ++i) {
+            if (ludashi_launcher_shutdown_started()) { ludashi_launcher_wait_clean_shutdown(90000); return 0; }
             if (bGetCallback && freeLastCallback) {
                 char cb[64];
                 while (bGetCallback(pipe, cb)) freeLastCallback(pipe);
@@ -3687,6 +3697,7 @@ int main(int argc, char** argv) {
         int absent = 0;
         while (absent < 2) {
             Sleep(1000);
+            if (ludashi_launcher_shutdown_started()) { ludashi_launcher_wait_clean_shutdown(90000); return 0; }
             if (bGetCallback && freeLastCallback) {
                 char cb[64];
                 while (bGetCallback(pipe, cb)) freeLastCallback(pipe);

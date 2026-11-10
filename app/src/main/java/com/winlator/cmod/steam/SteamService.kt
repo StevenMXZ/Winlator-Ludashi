@@ -318,6 +318,7 @@ object SteamSession {
         val depots = SteamCatalog.depots(info)
         val dir = File(context.filesDir, "steam-library/common/$name").apply { mkdirs() }
         SteamGoldberg.restore(dir)
+        SteamGoldberg.invalidate(dir)
         downloading = true
         downloadId = id; downloadName = name; downloadDone = 0; downloadTotal = 0
         status = "Downloading $name…"

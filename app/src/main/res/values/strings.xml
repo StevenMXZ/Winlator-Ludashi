@@ -686,4 +686,18 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="builtin_decoder">Builtin Decoder</string>
     <string name="software_decoding">Software decoding</string>
     <string name="video_decoder_compatibility_note">Available backends depend on the Wine/Proton build. FFmpeg requires winedmo switching support.</string>
+    <string name="steam_cloud_saves">Steam Cloud saves</string>
+    <string name="steam_cloud_conflict">Save conflict</string>
+    <string name="steam_cloud_conflict_help">Local and Steam Cloud saves differ. Choose which copy to keep. Going back cancels synchronization and leaves both copies intact.</string>
+    <string name="steam_cloud_use_remote">Use Steam Cloud</string>
+    <string name="steam_cloud_keep_local">Keep local</string>
+    <string name="steam_cloud_failed">Steam Cloud could not finish syncing. The game was not started to protect your saves. Return to the game page to retry or choose Offline.</string>
+    <string name="steam_cloud_synced">Last synchronized: %1$s</string>
+    <string name="steam_cloud_disabled">Steam Cloud is unavailable or disabled for this game/account.</string>
+    <string name="steam_cloud_not_synced">No confirmed synchronization yet.</string>
+    <string name="steam_cloud_pending">Synchronization incomplete. Local saves are kept.</string>
+    <string name="steam_cloud_help">Steam Client downloads cloud saves before launch and uploads them after a normal exit, for games that support Steam Cloud. Local backups remain separate. Offline/Goldberg may use different save folders and does not upload saves or achievements.</string>
+    <string name="steam_cloud_backup">Local backup</string>
+    <string name="steam_cloud_uploaded">Cloud upload confirmed: %1$s</string>
+    <string name="steam_cloud_downloaded">Cloud download confirmed: %1$s</string>
 </resources>
