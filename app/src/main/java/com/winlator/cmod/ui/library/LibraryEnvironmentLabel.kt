@@ -2,15 +2,10 @@ package com.winlator.cmod.ui.library
 
 import android.content.Context
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
-import androidx.compose.ui.platform.LocalContext
 import com.winlator.cmod.container.ContainerManager
 import com.winlator.cmod.container.Shortcut
 import com.winlator.cmod.contents.ContentsManager
 import com.winlator.cmod.core.WineInfo
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 private fun environmentText(
     context: Context,
@@ -43,14 +38,5 @@ internal fun resolveLibraryEnvironmentLabels(context: Context, items: List<Libra
     }
 }.getOrDefault(items)
 
-internal fun resolveLibraryEnvironmentLabel(context: Context, item: LibraryItem): String =
-    resolveLibraryEnvironmentLabels(context, listOf(item)).firstOrNull()?.containerName ?: item.containerName
-
 @Composable
-internal fun libraryEnvironmentLabel(item: LibraryItem): String {
-    val context = LocalContext.current
-    val label by produceState(item.containerName, item.shortcutPath) {
-        value = withContext(Dispatchers.IO) { resolveLibraryEnvironmentLabel(context, item) }
-    }
-    return label
-}
+internal fun libraryEnvironmentLabel(item: LibraryItem): String = item.containerName
