@@ -27,6 +27,7 @@ import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.contents.AdrenotoolsManager;
 import com.winlator.cmod.contents.ContentProfile;
 import com.winlator.cmod.contents.ContentsManager;
+import com.winlator.cmod.contents.LocalDriverArchive;
 import com.winlator.cmod.contents.RemoteDriverCatalog;
 import com.winlator.cmod.core.DefaultVersion;
 import com.winlator.cmod.core.OpenGLDriverDefaults;
@@ -45,6 +46,7 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -788,23 +790,6 @@ public class OnboardingActivity extends AppCompatActivity {
         }
     }
 
-    private boolean isZipArchive(Uri uri) {
-        try (InputStream stream = getContentResolver().openInputStream(uri)) {
-            if (stream == null) return false;
-            byte[] signature = new byte[4];
-            int offset = 0;
-            while (offset < signature.length) {
-                int read = stream.read(signature, offset, signature.length - offset);
-                if (read < 0) return false;
-                offset += read;
-            }
-            return signature[0] == 'P' && signature[1] == 'K'
-                    && signature[2] == 3 && signature[3] == 4;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -816,26 +801,35 @@ public class OnboardingActivity extends AppCompatActivity {
             String displayName = localDisplayName(uri);
             composeController.updateInstallProgress("Preparing " + displayName, 0);
             io.execute(() -> {
-                if (isZipArchive(uri)) {
-                    // The Components local picker also accepts AdrenoTools ZIP drivers.
-                    // Do not try a ZIP as an XZ/ZSTD component archive.
-                    postInstallProgress("Installing driver " + displayName, -1);
-                    String installed = adrenotoolsManager.installDriver(uri);
-                    if (installed != null && !installed.isEmpty()) {
-                        runOnUiThread(() -> {
-                            syncComposeCatalog();
-                            finishInstall("local", null);
-                        });
-                    } else {
-                        runOnUiThread(() -> finishInstall("local",
-                                "Invalid or unsupported AdrenoTools driver ZIP."));
+                // "Local package" is shared by Wine components and AdrenoTools drivers.
+                // ZIPs are routed through the same validated installer as "Local driver".
+                // WCP / tar.xz / tar.zst archives retain the original component importer.
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IOException("Unable to open local package");
+                    if (LocalDriverArchive.isZip(input)) {
+                        postInstallProgress("Installing driver " + displayName, -1);
+                        String installed = adrenotoolsManager.installDriver(uri);
+                        if (installed != null && !installed.isEmpty()) {
+                            postInstallProgress("Installed " + installed, 100);
+                            runOnUiThread(() -> {
+                                syncComposeCatalog();
+                                finishInstall("local", null);
+                            });
+                        } else {
+                            runOnUiThread(() -> finishInstall("local",
+                                    "Invalid AdrenoTools driver ZIP or driver already installed."));
+                        }
+                        return;
                     }
-                } else {
-                    installContentArchive(uri, displayName, 5, () -> {
-                        rebuildCatalog();
-                        runOnUiThread(() -> finishInstall("local", null));
-                    }, error -> runOnUiThread(() -> finishInstall("local", error)));
+                } catch (IOException | SecurityException error) {
+                    runOnUiThread(() -> finishInstall("local", "Unable to read local package: " + error.getMessage()));
+                    return;
                 }
+
+                installContentArchive(uri, displayName, 5, () -> {
+                    rebuildCatalog();
+                    runOnUiThread(() -> finishInstall("local", null));
+                }, error -> runOnUiThread(() -> finishInstall("local", error)));
             });
         } else if (requestCode == REQUEST_LOCAL_DRIVER && resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
             if (installBusy) return;

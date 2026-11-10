@@ -3,6 +3,7 @@ package com.winlator.cmod;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
@@ -34,7 +35,9 @@ import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.contentdialog.ContentDialog;
 import com.winlator.cmod.contentdialog.ContentInfoDialog;
 import com.winlator.cmod.contentdialog.ContentUntrustedDialog;
+import com.winlator.cmod.contents.AdrenotoolsManager;
 import com.winlator.cmod.contents.ContentProfile;
+import com.winlator.cmod.contents.LocalDriverArchive;
 import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.contents.Downloader;
 import com.winlator.cmod.core.AppUtils;
@@ -43,6 +46,8 @@ import com.winlator.cmod.core.PreloaderDialog;
 import com.winlator.cmod.core.DownloadProgressDialog;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -124,7 +129,7 @@ public class ContentsFragment extends Fragment {
         View btInstallContent = layout.findViewById(R.id.BTInstallContent);
         btInstallContent.setOnClickListener(v -> {
             ContentDialog.confirm(getContext(), getString(R.string.do_you_want_to_install_content) + " " + getString(R.string.pls_make_sure_content_trustworthy) + " "
-                    + getString(R.string.content_suffix_is_wcp_packed_xz_zst) + '\n' + getString(R.string.get_more_contents_form_github), () -> {
+                    + getString(R.string.content_suffix_is_wcp_packed_xz_zst) + '\n' + "AdrenoTools driver ZIP files are also supported." + '\n' + getString(R.string.get_more_contents_form_github), () -> {
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("*/*");
@@ -174,7 +179,14 @@ public class ContentsFragment extends Fragment {
     @Override
     public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         if (requestCode == MainActivity.OPEN_FILE_REQUEST_CODE && resultCode == Activity.RESULT_OK) {
-            PreloaderDialog preloaderDialog = new PreloaderDialog(getActivity());
+            final Uri selectedFile = data != null ? data.getData() : null;
+            if (selectedFile == null) {
+                AppUtils.showToast(getContext(), R.string.unable_to_import_profile);
+                return;
+            }
+            final Activity activity = requireActivity();
+            final Context appContext = requireContext().getApplicationContext();
+            PreloaderDialog preloaderDialog = new PreloaderDialog(activity);
             preloaderDialog.showOnUiThread(R.string.installing_content);
             try {
                 ContentsManager.OnInstallFinishedCallback callback = new ContentsManager.OnInstallFinishedCallback() {
@@ -232,7 +244,38 @@ public class ContentsFragment extends Fragment {
                     }
                 };
                 Executors.newSingleThreadExecutor().execute(() -> {
-                    manager.extraContentFile(data.getData(), callback);
+                    // Driver ZIPs and WCP/tar components share the picker, but not an installer.
+                    // Check the signature rather than the extension supplied by the file provider.
+                    try (InputStream input = appContext.getContentResolver().openInputStream(selectedFile)) {
+                        if (input == null) throw new IOException("Could not open the selected file");
+                        if (LocalDriverArchive.isZip(input)) {
+                            String driver = new AdrenotoolsManager(appContext).installDriver(selectedFile);
+                            activity.runOnUiThread(() -> {
+                                preloaderDialog.closeOnUiThread();
+                                if (!isAdded()) return;
+                                if (!driver.isEmpty()) {
+                                    ContentDialog.alert(getContext(),
+                                            "AdrenoTools driver installed: " + driver +
+                                            ". It is now available in Graphics Driver settings.", null);
+                                } else {
+                                    ContentDialog.alert(getContext(),
+                                            getString(R.string.install_failed) +
+                                            ": Invalid AdrenoTools driver ZIP or the driver is already installed.", null);
+                                }
+                            });
+                            return;
+                        }
+                    } catch (IOException | SecurityException e) {
+                        activity.runOnUiThread(() -> {
+                            preloaderDialog.closeOnUiThread();
+                            if (isAdded()) ContentDialog.alert(getContext(),
+                                    getString(R.string.install_failed) + ": Unable to read the selected file.", null);
+                        });
+                        return;
+                    }
+
+                    // Preserve the existing WCP/tar import and its trust/profile dialogs.
+                    manager.extraContentFile(selectedFile, callback);
                 });
             } catch (Exception e) {
                 preloaderDialog.closeOnUiThread();
