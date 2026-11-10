@@ -291,7 +291,7 @@ public class ShortcutsFragment extends Fragment {
         MainActivity activity = (MainActivity) requireActivity();
         SubMenu moreMenu = menu.addSubMenu(0, MENU_MORE, 3, com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_more));
         MenuItem moreItem = moreMenu.getItem();
-        moreItem.setIcon(R.drawable.ui_ic_more);
+        moreItem.setIcon(R.drawable.ic_orientation);
         moreItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
 
         moreMenu.add(0, MENU_IMPORT_SHORTCUT, 0, com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_import_shortcut));
@@ -311,7 +311,7 @@ public class ShortcutsFragment extends Fragment {
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         if (item.getItemId() == MENU_STEAM) {
-            startActivity(new Intent(requireContext(), com.winlator.cmod.steam.SteamActivity.class));
+            com.winlator.cmod.steam.SteamLibrary.showMenu(requireContext());
             return true;
         }
         if (item.getItemId() == MENU_IMPORT_SHORTCUT) {
@@ -633,6 +633,10 @@ public class ShortcutsFragment extends Fragment {
     }
 
     private void openGameDetails(Shortcut shortcut) {
+        if (!shortcut.getExtra("steamAppId").isEmpty()) {
+            com.winlator.cmod.steam.SteamLibrary.INSTANCE.open(requireContext(), "steam://" + shortcut.getExtra("steamAppId"));
+            return;
+        }
         String baseName = FileUtils.getBasename(shortcut.file.getPath());
         File banner = new File(getBannerDir(), baseName + ".png");
         if (isLegacyLowResolutionBanner(banner)) requestBanner(shortcut, banner);

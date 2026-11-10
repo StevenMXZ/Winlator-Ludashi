@@ -25,3 +25,12 @@ object SteamSettings {
         context.getSharedPreferences("steam-settings", 0).edit().putString("mode-$id", mode).apply()
     }
 }
+
+/** Same adaptive network ceilings and CPU ratios as Ludashi's DownloadSpeedConfig. */
+object SteamDownloadSettings {
+    val tiers = listOf("Slow", "Medium", "Fast", "Blazing")
+    fun tier(context: Context): Int = context.getSharedPreferences("steam-settings", 0).getInt("download-tier", 2).coerceIn(0, 3)
+    fun setTier(context: Context, tier: Int) { require(tier in 0..3); context.getSharedPreferences("steam-settings", 0).edit().putInt("download-tier", tier).apply() }
+    fun network(tier: Int) = listOf(6, 16, 32, 96)[tier]
+    fun processing(tier: Int, cores: Int = Runtime.getRuntime().availableProcessors()) = (cores * listOf(.2, .4, .5, .8)[tier]).toInt().coerceAtLeast(1)
+}

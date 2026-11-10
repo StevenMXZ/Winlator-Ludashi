@@ -1,6 +1,7 @@
 package com.winlator.cmod.steam
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -28,15 +29,21 @@ data class SteamUiSnapshot(val signedIn: Boolean, val gameActive: Boolean, val s
 
 @Composable fun SteamDownloadPanel(state: SteamUiSnapshot) {
     if (!state.downloading) return
-    Surface(tonalElevation = 3.dp, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(state.name, style = MaterialTheme.typography.titleMedium)
-            Text(state.status, style = MaterialTheme.typography.bodySmall)
-            if (state.total > 0) LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-            else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${state.done / 1048576} / ${state.total / 1048576} MB", style = MaterialTheme.typography.labelMedium)
-                TextButton(onClick = { SteamSession.cancel() }) { Text("Pause download") }
+    OutlinedCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            androidx.compose.ui.viewinterop.AndroidView(factory = { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP } },
+                update = { com.bumptech.glide.Glide.with(it).load("https://shared.steamstatic.com/store_item_assets/steam/apps/${state.id}/library_600x900_2x.jpg").into(it) },
+                modifier = Modifier.size(44.dp, 66.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(state.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    if (state.total > 0) LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, modifier = Modifier.weight(1f))
+                    else LinearProgressIndicator(modifier = Modifier.weight(1f))
+                    IconButton(onClick = { SteamSession.cancel() }, modifier = Modifier.size(36.dp)) {
+                        Icon(androidx.compose.material.icons.Icons.Outlined.Pause, "Pause download")
+                    }
+                }
+                Text("${state.done / 1048576} / ${state.total / 1048576} MB", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

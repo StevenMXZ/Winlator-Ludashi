@@ -1,6 +1,10 @@
 package com.winlator.cmod.ui.library
 
 import com.winlator.cmod.steam.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import android.content.Intent
@@ -140,9 +144,10 @@ object LibraryComposeHost {
                             if (enabled && SteamCredentials.load(context) != null) context.startForegroundService(Intent(context, SteamService::class.java))
                         }
                         val steamItems = remember(enabled, steam.library, steam.tick / 3) { if (enabled) SteamLibrary.items(context, steam.library) else emptyList() }
-                        val merged = items.value.filterNot { local ->
-                            (!enabled && local.name.matches(Regex("Steam-[0-9]+"))) || steamItems.any { local.name == "Steam-${SteamLibrary.appId(it.shortcutPath)}" }
-                        } + steamItems
+                        val steamPaths by produceState(emptySet<String>(), items.value) {
+                            value = withContext(Dispatchers.IO) { items.value.filter { item -> runCatching { java.io.File(item.shortcutPath).readText().contains("steamAppId=") }.getOrDefault(false) }.map { it.shortcutPath }.toSet() }
+                        }
+                        val merged = items.value.filterNot { it.shortcutPath in steamPaths } + steamItems
                         val combined = object : LibraryCallbacks {
                             override fun onOpen(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onOpen(path) }
                             override fun onRun(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onRun(path) }
@@ -168,7 +173,7 @@ object LibraryComposeHost {
 internal enum class LibraryFilter { All, Favorites, Recent, Steam }
 
 internal fun filterLibraryItems(items: List<LibraryItem>, filter: LibraryFilter): List<LibraryItem> {
-    val local = items.filter { SteamLibrary.appId(it.shortcutPath) == null }
+    val local = items.filter { SteamLibrary.appId(it.shortcutPath) == null || it.containerName == "Steam · Installed" }
     return when (filter) {
         LibraryFilter.All -> local
         LibraryFilter.Favorites -> local.filter { it.favorite }

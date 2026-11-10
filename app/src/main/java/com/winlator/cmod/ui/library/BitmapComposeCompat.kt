@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Settings
@@ -250,7 +251,7 @@ private fun LibraryOrientationMenu(activity: MainActivity?) {
     }
 
     Box {
-        LibraryTopIcon(Icons.Outlined.MoreVert, false) { expanded = true }
+        LibraryTopIcon(androidx.compose.material.icons.Icons.Outlined.ScreenRotation, false) { expanded = true }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             OrientationToggleMenuItem(uiStr(R.string.ui_lock_screen_orientation), orientationState.first) {
                 activity?.toggleOrientationLock()

@@ -113,6 +113,7 @@ class LudashiSteamSession : AutoCloseable {
         caBundlePath: String,
         maxWorkers: Int,
         listener: LudashiDownloadListener,
+        decompressWorkers: Int = 2,
     ) {
         require(depotIds.size == manifestIds.size) {
             "ludashisteam: depotIds/manifestIds size mismatch"
@@ -123,7 +124,7 @@ class LudashiSteamSession : AutoCloseable {
             return
         }
         nativeDownloadApp(h, appId, depotIds, manifestIds, branch, installDir,
-                          fresh, caBundlePath, maxWorkers, 2, listener)
+                          fresh, caBundlePath, maxWorkers, decompressWorkers, listener)
     }
 
     // Abort the current depot download.

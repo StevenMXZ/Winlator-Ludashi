@@ -370,7 +370,8 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     public boolean onOptionsItemSelected(MenuItem menuItem) {
         if (menuItem.getItemId() == android.R.id.home) {
             Fragment current = getSupportFragmentManager().findFragmentById(R.id.FLFragmentContainer);
-            if (current instanceof GameDetailFragment
+            if (current instanceof com.winlator.cmod.steam.SteamGameDetailFragment
+                    || current instanceof GameDetailFragment
                     || current instanceof ContainerOverviewFragment
                     || current instanceof ContainerDetailFragment
                     || current instanceof ContainerSectionFragment
@@ -403,7 +404,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
         switch (item.getItemId()) {
             case R.id.main_menu_steam:
-                startActivity(new Intent(this, com.winlator.cmod.steam.SteamActivity.class));
+                com.winlator.cmod.steam.SteamLibrary.showMenu(this);
                 break;
             case R.id.main_menu_shortcuts:
                 show(new ShortcutsFragment(), false);

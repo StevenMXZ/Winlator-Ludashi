@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Apps
@@ -185,7 +186,7 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("language") { GroupCard { AppLanguagePreference() } }
 
             item("stores") {
-                NavigationRow(Icons.Outlined.Apps, "Steam / Stores", "Accounts, launch methods and integration") {
+                NavigationRow(Icons.Outlined.Storefront, "Steam / Stores", "Accounts, launch methods and integration") {
                     context.startActivity(Intent(context, com.winlator.cmod.steam.StoreSettingsActivity::class.java))
                 }
             }
@@ -199,12 +200,6 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
                     activity?.navigateToMainDestination(R.id.main_menu_file_manager)
                 }
             }
-            item("labs") {
-                NavigationRow(Icons.Outlined.Memory, uiStr(R.string.ui_labs), null) {
-                    context.startActivity(Intent(context, WinlatorLabsActivity::class.java))
-                }
-            }
-
             item("presets-title") { SectionTitle(uiStr(R.string.ui_presets)) }
             item("presets") {
                 GroupCard {
@@ -311,6 +306,12 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
 
             item("imagefs-title") { SectionTitle(stringResource(R.string.imagefs)) }
             item("imagefs") { NavigationRow(Icons.Outlined.Refresh, stringResource(R.string.reinstall_imagefs), null, callbacks::onReinstallImageFs) }
+
+            item("labs") {
+                NavigationRow(Icons.Outlined.Memory, uiStr(R.string.ui_labs), null) {
+                    context.startActivity(Intent(context, WinlatorLabsActivity::class.java))
+                }
+            }
 
             item("about-title") { SectionTitle(uiStr(R.string.ui_about)) }
             item("app-updates") {

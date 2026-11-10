@@ -462,7 +462,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (shortcutPath != null && !shortcutPath.isEmpty()) {
             shortcut = new Shortcut(container, new File(shortcutPath));
             if (!com.winlator.cmod.steam.SteamLaunch.canLaunch(this, shortcut)) {
-                android.widget.Toast.makeText(this, "Sign in from the Steam menu before launching this game.", android.widget.Toast.LENGTH_LONG).show();
+                android.widget.Toast.makeText(this, "Configure the Steam game first, then enable Steam and sign in if required.", android.widget.Toast.LENGTH_LONG).show();
                 finish(); return;
             }
         }

@@ -10,7 +10,7 @@ import java.security.MessageDigest
 /** Optional upstream Goldberg regular mode. Never modifies an original without keeping a backup. */
 object SteamGoldberg {
     private fun root(context: Context) = File(context.filesDir, "steam-components/goldberg")
-    fun ensureInstalled(context: Context) {
+    @Synchronized fun ensureInstalled(context: Context) {
         if (File(root(context), "regular/x64/steam_api64.dll").isFile) return
         val catalog = JSONObject(readUrl("https://raw.githubusercontent.com/The412Banner/winlator-contents/main/goldberg.json").toString(Charsets.UTF_8))
         val url = catalog.getString("url")

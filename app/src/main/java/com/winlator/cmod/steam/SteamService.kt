@@ -271,7 +271,7 @@ object SteamSession {
         status = "Downloading $name…"
         try {
             s.downloadApp(id, depots.map { it.id }.toIntArray(), depots.map { it.manifest }.toLongArray(),
-                "public", dir.absolutePath, false, ca, 4, object : LudashiDownloadListener {
+                "public", dir.absolutePath, false, ca, SteamDownloadSettings.network(SteamDownloadSettings.tier(context)), object : LudashiDownloadListener {
                     override fun onProgress(depotId: Int, depotDone: Long, depotTotal: Long, depotsDone: Int, depotsTotal: Int, verifying: Boolean) {
                         if (session !== s || !signedIn) return
                         downloadDone = depotDone; downloadTotal = depotTotal
@@ -287,7 +287,7 @@ object SteamSession {
                             status = if (success) "$name installed" else "Download failed: $error"
                         }
                     }
-                })
+                }, SteamDownloadSettings.processing(SteamDownloadSettings.tier(context)))
         } catch (e: Exception) { downloading = false; throw e }
     }
     fun cancel() = work { session?.cancelDownload() }

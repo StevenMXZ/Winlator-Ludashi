@@ -49,6 +49,13 @@ interface GameDetailCallbacks {
 // artwork selection/crop (including offline icons) and all six user-selected palettes.
 object GameDetailComposeHost {
     @JvmStatic
+    fun createSteam(context: Context, title: String, artwork: String?, id: Int, callbacks: GameDetailCallbacks): ComposeView =
+        ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent { WinZTheme { GameDetailScreen(title, "Steam", artwork, null, context.getSharedPreferences("steam-settings", 0).getBoolean("favorite-$id", false),
+                com.winlator.cmod.steam.SteamGames.shortcut(context, id), callbacks, id) } }
+        }
+    @JvmStatic
     fun create(context: Context, title: String, subtitle: String, artworkPath: String?, fallback: Bitmap?, favorite: Boolean, shortcut: Shortcut, callbacks: GameDetailCallbacks): ComposeView {
         applyAppFullscreen(context as? MainActivity)
         return ComposeView(context).apply {
@@ -58,8 +65,11 @@ object GameDetailComposeHost {
     }
 }
 
+private val LocalSteamDetail = compositionLocalOf { false }
+private val LocalSteamReady = compositionLocalOf { true }
+
 @Composable
-private fun GameDetailScreen(title: String, subtitle: String, artworkPath: String?, fallback: Bitmap?, initialFavorite: Boolean, shortcut: Shortcut, callbacks: GameDetailCallbacks) {
+private fun GameDetailScreen(title: String, subtitle: String, artworkPath: String?, fallback: Bitmap?, initialFavorite: Boolean, shortcut: Shortcut?, callbacks: GameDetailCallbacks, steamId: Int? = null) {
     val activity = LocalContext.current as? MainActivity
     val context = LocalContext.current.applicationContext
     val landscape = LocalConfiguration.current.screenWidthDp > LocalConfiguration.current.screenHeightDp
@@ -72,7 +82,16 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
     val artworkRevision = LibraryImageCache.revision
     val key = LibraryImageCache.keyFor(artworkPath)
     val artwork by produceState(LibraryImageCache.peek(key) ?: fallback, key, fallback, artworkRevision) {
-        value = withContext(Dispatchers.IO) { LibraryImageCache.load(artworkPath) ?: fallback }
+        value = withContext(Dispatchers.IO) {
+            LibraryImageCache.load(artworkPath) ?: fallback ?: steamId?.let { id ->
+                runCatching {
+                    val request = com.bumptech.glide.Glide.with(context).downloadOnly()
+                        .load("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/header.jpg").submit()
+                    try { android.graphics.BitmapFactory.decodeFile(request.get(20, java.util.concurrent.TimeUnit.SECONDS).path) }
+                    finally { com.bumptech.glide.Glide.with(context).clear(request) }
+                }.getOrNull()
+            }
+        }
     }
     var resumeSerial by remember { mutableIntStateOf(0) }
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -83,7 +102,8 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
-    val stats by produceState(GameStats(), shortcut.file.path, resumeSerial) {
+    val stats by produceState(GameStats(), shortcut?.file?.path, resumeSerial) {
+        if (shortcut == null) return@produceState
         val loaded = withContext(Dispatchers.IO) { GameStatsLoader.load(context, shortcut) }
         value = loaded
         value = withContext(Dispatchers.IO) {
@@ -93,8 +113,11 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
     }
     var favorite by remember(initialFavorite) { mutableStateOf(initialFavorite) }
     val toggle = { favorite = !favorite; callbacks.onFavorite(favorite) }
+    val configured = steamId == null || shortcut?.getExtra("steamConfigured") == "1"
+    androidx.compose.runtime.CompositionLocalProvider(LocalSteamDetail provides (steamId != null), LocalSteamReady provides configured) {
     if (landscape) LandscapeDetail(title, subtitle, artwork, favorite, stats, callbacks, toggle)
     else PortraitDetail(title, subtitle, artwork, favorite, stats, callbacks, toggle)
+    }
 }
 
 @Composable
@@ -107,7 +130,7 @@ private fun Artwork(artwork: Bitmap?, modifier: Modifier) {
 
 @Composable
 private fun ArtControls(favorite: Boolean, toggle: () -> Unit) {
-    val activity = LocalContext.current as? MainActivity
+    val activity = LocalContext.current as? androidx.activity.ComponentActivity
     Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         ArtButton({ activity?.onBackPressedDispatcher?.onBackPressed() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.ui_back)) }
         ArtButton(toggle) { Icon(if (favorite) Icons.Outlined.Star else Icons.Outlined.StarBorder, stringResource(R.string.ui_favorite)) }
@@ -143,7 +166,7 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
                         LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
                         LandscapeAction(Icons.Outlined.Backup, stringResource(R.string.ui_saves), Modifier.weight(1f), callbacks::onSaves)
                         LandscapeAction(Icons.Outlined.Home, stringResource(R.string.ui_home), Modifier.weight(1f), callbacks::onHome)
-                        LandscapeAction(Icons.Outlined.DeleteOutline, stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
+                        LandscapeAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) "Uninstall Steam game" else stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
                     }
                 }
             }
@@ -171,7 +194,7 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
             DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
             DetailAction(Icons.Outlined.Backup, stringResource(R.string.ui_saves), callbacks::onSaves)
             DetailAction(Icons.Outlined.Home, stringResource(R.string.ui_add_to_home), callbacks::onHome)
-            DetailAction(Icons.Outlined.DeleteOutline, stringResource(R.string.remove), callbacks::onRemove, true)
+            DetailAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) "Uninstall Steam game" else stringResource(R.string.remove), callbacks::onRemove, true)
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -179,9 +202,9 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
 
 @Composable
 private fun PlayButton(click: () -> Unit) {
-    Button(click, Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = WinZShapes.Medium,
+    Button(click, enabled = LocalSteamReady.current, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = WinZShapes.Medium,
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)) {
-        Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.ui_play), fontWeight = FontWeight.Bold)
+        Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(if (LocalSteamReady.current) stringResource(R.string.ui_play) else "Configure before playing", fontWeight = FontWeight.Bold)
     }
 }
 

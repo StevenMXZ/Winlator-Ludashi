@@ -8,7 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -39,11 +40,14 @@ class SteamActivity : AppCompatActivity() {
         supportActionBar?.hide()
         if (!SteamSettings.enabled(this)) { startActivity(Intent(this, StoreSettingsActivity::class.java)); finish(); return }
         startForegroundService(Intent(this, SteamService::class.java))
-        setContent { WinZTheme { SteamScreen() } }
+        if (savedInstanceState != null && supportFragmentManager.findFragmentById(android.R.id.content) is SteamGameDetailFragment) return
+        val selectedId = intent.getIntExtra("steam_app_id", 0)
+        if (selectedId > 0 && isInstalled(selectedId)) showDetail(selectedId)
+        else setContent { WinZTheme { SteamScreen() } }
     }
     @Composable private fun SteamScreen() {
         val state = observeSteam()
-        var tab by rememberSaveable { mutableStateOf(0) }
+        var tab by rememberSaveable { mutableStateOf(intent.getIntExtra("steam_tab", 0).coerceIn(0, 1)) }
         var query by rememberSaveable { mutableStateOf("") }
         var selected by rememberSaveable { mutableStateOf(intent.getIntExtra("steam_app_id", 0)) }
         val apps = SteamLibrary.items(this, state.library)
@@ -52,7 +56,7 @@ class SteamActivity : AppCompatActivity() {
                 Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { finish() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back to library") }
                     Column(Modifier.weight(1f)) {
-                        Text("STEAM", style = MaterialTheme.typography.titleLarge)
+                        Text("Steam", style = MaterialTheme.typography.titleLarge)
                         Text(if (state.signedIn || state.savedAccount) "${apps.size} games in your library" else "Connect your account", style = MaterialTheme.typography.bodySmall)
                     }
                     if (state.signedIn || state.savedAccount) TextButton(onClick = { signOut() }) { Text("Sign out") }
@@ -79,8 +83,8 @@ class SteamActivity : AppCompatActivity() {
                             Text(if (state.id > 0) state.name else "No active downloads", style = MaterialTheme.typography.titleMedium)
                             Text(state.status, style = MaterialTheme.typography.bodyMedium)
                             if (state.id > 0) Button(onClick = {
-                                if (isInstalled(state.id)) chooseContainer(state.id) else SteamSession.install(state.id)
-                            }) { Text(if (isInstalled(state.id)) "Play" else "Resume download") }
+                                if (isInstalled(state.id)) showDetail(state.id) else SteamSession.install(state.id)
+                            }) { Text(if (isInstalled(state.id)) "View game" else "Resume download") }
                         }
                     } else {
                         SteamDownloadPanel(state)
@@ -101,18 +105,19 @@ class SteamActivity : AppCompatActivity() {
                                 TextButton(onClick = { SteamSession.retryLibrary() }) { Text("Refresh library") }
                             }
                         }
-                        LazyVerticalGrid(GridCells.Adaptive(150.dp), contentPadding = PaddingValues(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             items(apps.filter { it.name.contains(query, true) }.sortedBy { it.name }, key = { it.id }) { app ->
                                 val id = SteamLibrary.appId(app.shortcutPath)!!
-                                Card(onClick = { selected = id }, shape = RoundedCornerShape(16.dp)) {
-                                    AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
-                                        update = { Glide.with(it).load("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900_2x.jpg").into(it) },
-                                        modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f))
-                                    Column(Modifier.padding(12.dp)) {
-                                        Text(app.name, maxLines = 2, style = MaterialTheme.typography.titleSmall)
-                                        Text(if (isInstalled(id)) "Installed · Play" else "Download", style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.primary)
+                                Card(onClick = { if (isInstalled(id)) showDetail(id) else selected = id }, shape = RoundedCornerShape(16.dp)) {
+                                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                        AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
+                                            update = { Glide.with(it).load("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900_2x.jpg").into(it) },
+                                            modifier = Modifier.size(52.dp, 78.dp))
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                            Text(app.name, maxLines = 2, style = MaterialTheme.typography.titleSmall)
+                                            Text(if (isInstalled(id)) "Installed" else "Ready to download", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        Icon(if (isInstalled(id)) Icons.Outlined.ChevronRight else Icons.Outlined.Download, null)
                                     }
                                 }
                             }
@@ -123,28 +128,17 @@ class SteamActivity : AppCompatActivity() {
             if ((state.signedIn || state.savedAccount) && selected > 0) {
                 val id = selected
                 val app = apps.find { SteamLibrary.appId(it.shortcutPath) == id }
-                var launchMode by remember(id) { mutableStateOf(SteamSettings.mode(this, id)) }
                 AlertDialog(onDismissRequest = { selected = 0 }, title = { Text(app?.name ?: "Steam $id") },
                     text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (isInstalled(id)) {
-                            Text("Launch method", style = MaterialTheme.typography.titleSmall)
-                            listOf("RealSteam" to "SteamLudashi / Real Steam", "Goldberg" to "Goldberg — offline", "Raw" to "Raw — run executable directly").forEach { (value, title) ->
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    RadioButton(selected = launchMode == value, onClick = { launchMode = value; SteamSettings.setMode(this@SteamActivity, id, value) })
-                                    Text(title)
-                                }
-                            }
-                            Text("Goldberg is an offline Steam API replacement. Raw requires a game that works without Steam.", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Text(if (isInstalled(id)) "Ready to play. Choose a Ludashi container to launch this game." else "Download this game from your Steam account.")
+                        Text("Download this game from your Steam account.")
                         if (state.downloading && state.id == id) SteamDownloadPanel(state)
                         Text(state.status, style = MaterialTheme.typography.bodySmall)
                     } },
                     confirmButton = {
                         Button(enabled = !state.gameActive && !state.downloading && (state.signedIn || isInstalled(id)), onClick = {
-                            if (isInstalled(id)) chooseContainer(id) else { SteamSession.install(id); tab = 1 }
+                            if (isInstalled(id)) showDetail(id) else { SteamSession.install(id); tab = 1 }
                             selected = 0
-                        }) { Text(if (isInstalled(id)) "Play" else "Download") }
+                        }) { Text(if (isInstalled(id)) "View game" else "Download") }
                     }, dismissButton = { TextButton(onClick = { selected = 0 }) { Text("Close") } })
             }
         }
@@ -192,28 +186,7 @@ class SteamActivity : AppCompatActivity() {
         File(filesDir, "steam-library-cache.json").delete()
         stopService(Intent(this, SteamService::class.java)); finish()
     }
-    private fun chooseContainer(id: Int) {
-        val containers = ContainerManager(this).containers
-        if (containers.isEmpty()) { Toast.makeText(this, "Create a container first", Toast.LENGTH_LONG).show(); return }
-        android.app.AlertDialog.Builder(this).setTitle("Play with container").setItems(containers.map { it.name }.toTypedArray()) { _, idx ->
-            SteamSession.work {
-                val info = JSONObject(File(filesDir, "steam-library/$id.json").readText())
-                val dir = File(filesDir, "steam-library/common/${SteamCatalog.installName(info)}")
-                val exes = SteamCatalog.executables(info, dir)
-                check(exes.isNotEmpty()) { "No installed Windows executable in Steam metadata" }
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) android.app.AlertDialog.Builder(this).setTitle("Game executable").setItems(exes.toTypedArray()) { _, exeIdx ->
-                        SteamSession.work {
-                            val shortcut = SteamLaunch.createShortcut(this, containers[idx], id, info, exes[exeIdx])
-                            runOnUiThread {
-                                if (!isFinishing && !isDestroyed) startActivity(Intent(this, XServerDisplayActivity::class.java)
-                                    .putExtra("container_id", containers[idx].id).putExtra("shortcut_path", shortcut.path)
-                                    .putExtra("shortcut_name", "Steam-$id"))
-                            }
-                        }
-                    }.show()
-                }
-            }
-        }.show()
+    private fun showDetail(id: Int) {
+        supportFragmentManager.beginTransaction().replace(android.R.id.content, SteamGameDetailFragment.newInstance(id)).commit()
     }
 }

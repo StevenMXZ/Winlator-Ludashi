@@ -22,4 +22,10 @@ class SteamLibraryFilterTest {
         assertTrue(filterLibraryItems(listOf(steam), LibraryFilter.All).isEmpty())
         assertEquals(listOf(steam), filterLibraryItems(listOf(steam), LibraryFilter.Steam))
     }
+    @Test fun installedSteamGamesAlsoAppearInAll() {
+        val installed = item("steam://42").copy(containerName = "Steam · Installed")
+        val pending = item("steam://43")
+        assertEquals(listOf(installed), filterLibraryItems(listOf(installed, pending), LibraryFilter.All))
+        assertEquals(listOf(installed, pending), filterLibraryItems(listOf(installed, pending), LibraryFilter.Steam))
+    }
 }

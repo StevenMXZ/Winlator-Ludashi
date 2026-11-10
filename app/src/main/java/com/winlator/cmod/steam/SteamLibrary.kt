@@ -14,8 +14,13 @@ object SteamLibrary {
     private val requested = ConcurrentHashMap.newKeySet<String>()
     fun appId(path: String): Int? = path.removePrefix("steam://").takeIf { path.startsWith("steam://") }?.toIntOrNull()
     fun items(context: Context, json: String): List<LibraryItem> = runCatching {
-        val apps = JSONObject(json).optJSONArray("owned_apps") ?: return emptyList()
-        (0 until apps.length()).map { apps.getJSONObject(it) }.filter {
+        val apps = JSONObject(json).optJSONArray("owned_apps") ?: org.json.JSONArray()
+        val owned = (0 until apps.length()).map { apps.getJSONObject(it) }
+        val installed = File(context.filesDir, "steam-library").listFiles().orEmpty().filter { it.isFile && it.nameWithoutExtension.toIntOrNull() != null && it.extension == "json" }.mapNotNull { file ->
+            runCatching { val info = JSONObject(file.readText()); JSONObject().put("id", file.nameWithoutExtension.toInt()).put("type", "game")
+                .put("name", info.optJSONObject("common")?.optString("name").orEmpty().ifBlank { "Steam ${file.nameWithoutExtension}" }) }.getOrNull()
+        }
+        (owned + installed).distinctBy { it.getInt("id") }.filter {
             it.optString("type").equals("game", true)
         }.map { app ->
             val id = app.getInt("id")
@@ -24,7 +29,7 @@ object SteamLibrary {
                 if (installed) "Steam · Installed" else "Steam · Not installed",
                 artwork(context, id, "cover").takeIf { it.isFile }?.path,
                 artwork(context, id, "banner").takeIf { it.isFile }?.path,
-                null, null, false, 0L)
+                null, null, context.getSharedPreferences("steam-settings", 0).getBoolean("favorite-$id", false), 0L)
         }
     }.getOrDefault(emptyList())
     private fun artwork(context: Context, id: Int, kind: String) = File(context.cacheDir, "steam-art/$id-$kind.jpg")
@@ -45,7 +50,20 @@ object SteamLibrary {
             } catch (_: Exception) { requested.remove("$id-$type") }
         }
     }
+    @JvmStatic fun showMenu(context: Context) {
+        android.app.AlertDialog.Builder(context).setTitle("Steam")
+            .setItems(arrayOf("Manage Steam games", "Manage downloads")) { _, tab ->
+                context.startActivity(Intent(context, SteamActivity::class.java).putExtra("steam_tab", tab))
+            }.show()
+    }
     fun open(context: Context, path: String) {
+        val id = appId(path)
+        if (id != null && File(context.filesDir, "steam-library/$id.json").isFile && context is com.winlator.cmod.MainActivity) {
+            context.supportFragmentManager.beginTransaction()
+                .replace(com.winlator.cmod.R.id.FLFragmentContainer, SteamGameDetailFragment.newInstance(id))
+                .addToBackStack("steam-game").commit()
+            return
+        }
         appId(path)?.let { context.startActivity(Intent(context, SteamActivity::class.java).putExtra("steam_app_id", it)) }
     }
 }

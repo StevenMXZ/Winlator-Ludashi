@@ -41,6 +41,8 @@ class SteamModesTest {
         assertTrue(result.path.endsWith("game.exe"))
         assertEquals("CUSTOM=1", result.getExtra("envVars"))
         assertEquals("-windowed", result.getExtra("execArgs"))
+        assertFalse(SteamLaunch.canLaunch(context, result))
+        result.putExtra("steamConfigured", "1"); result.saveData()
         assertTrue(SteamLaunch.canLaunch(context, result))
         SteamSettings.setEnabled(context, false)
         assertFalse(SteamLaunch.canLaunch(context, result))
@@ -75,5 +77,22 @@ class SteamModesTest {
         val method = com.winlator.cmod.feature.stores.steam.ludashisteam.LudashiSteamSession::class.java.declaredMethods.single { it.name == "nativeDownloadApp" }
         assertEquals(11, method.parameterTypes.size)
         assertEquals(Int::class.javaPrimitiveType, method.parameterTypes[9])
+    }
+    @Test fun preparingRenamedSteamShortcutRetainsItsSettingsAndFilename() {
+        val context = RuntimeEnvironment.getApplication()
+        SteamSettings.setEnabled(context, true)
+        val game = File(context.filesDir, "steam-library/common/Renamed Game").apply { mkdirs() }
+        File(game, "game.exe").writeText("exe")
+        val container = Container(99814).apply { rootDir = File(context.filesDir, "rename-container").apply { mkdirs() } }
+        SteamSettings.setMode(context, 99814, "Raw")
+        val info = JSONObject("""{"config":{"installdir":"Renamed Game"}}""")
+        val original = SteamLaunch.createShortcut(context, container, 99814, info, "game.exe")
+        Shortcut(container, original).apply { putExtra("envVars", "KEEP=1"); saveData() }
+        val renamed = File(original.parentFile, "My Game.desktop")
+        assertTrue(original.renameTo(renamed))
+        val prepared = SteamLaunch.createShortcut(context, container, 99814, info, "game.exe")
+        assertEquals(renamed, prepared)
+        assertEquals("KEEP=1", Shortcut(container, prepared).getExtra("envVars"))
+        assertFalse(original.exists())
     }
 }

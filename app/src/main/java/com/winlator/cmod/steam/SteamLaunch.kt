@@ -75,7 +75,9 @@ object SteamLaunch {
     }
     private fun writeShortcut(container: Container, id: Int, target: String, args: String, mode: String): File {
         container.desktopDir.mkdirs()
-        val file = File(container.desktopDir, "Steam-$id.desktop")
+        val file = container.desktopDir.listFiles()?.firstOrNull {
+            it.extension == "desktop" && Shortcut(container, it).getExtra("steamAppId") == id.toString()
+        } ?: File(container.desktopDir, "Steam-$id.desktop")
         val previous = if (file.isFile) Shortcut(container, file) else null
         val effectiveArgs = if (mode != "RealSteam" && previous?.getExtra("steamLaunchMode") == mode) previous.getExtra("execArgs") else args
         val exec = "Exec=wine ${SteamCatalog.desktopExecPath(target)}"
@@ -88,10 +90,11 @@ object SteamLaunch {
     }
     @JvmStatic fun canLaunch(context: Context, shortcut: Shortcut?): Boolean {
         if (shortcut?.getExtra("steamAppId")?.toIntOrNull() == null) return true
-        return SteamSettings.enabled(context) && (shortcut.getExtra("steamLaunchMode", "RealSteam") != "RealSteam" || SteamCredentials.load(context) != null)
+        return shortcut.getExtra("steamConfigured") == "1" && SteamSettings.enabled(context) && (shortcut.getExtra("steamLaunchMode", "RealSteam") != "RealSteam" || SteamCredentials.load(context) != null)
     }
     @JvmStatic fun apply(context: Context, shortcut: Shortcut?, env: EnvVars) {
         val id = shortcut?.getExtra("steamAppId")?.toIntOrNull() ?: return
+        check(shortcut?.getExtra("steamConfigured") == "1") { "Configure the Steam launch method and executable before playing" }
         SteamSession.beginGame(context)
         if (shortcut!!.getExtra("steamLaunchMode", "RealSteam") != "RealSteam") return
         val saved = SteamCredentials.load(context) ?: error("Sign in to Steam before launching this game")

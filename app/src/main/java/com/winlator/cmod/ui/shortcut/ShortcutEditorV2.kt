@@ -550,6 +550,11 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
         val target = containers.firstOrNull { it.id == targetId } ?: return
         if (target.id == state.container.id) return
         if (shortcut.cloneToContainer(target)) {
+            shortcut.getExtra("steamAppId").toIntOrNull()?.let { steamId ->
+                Shortcut(target, java.io.File(target.desktopDir, shortcut.file.name)).apply { putExtra("steamConfigured", "0"); saveData() }
+                context.getSharedPreferences("steam-settings", 0).edit().putInt("steam-container-$steamId", target.id).apply()
+                com.winlator.cmod.steam.SteamGames.changed()
+            }
             Toast.makeText(context, uiStr(R.string.ui_shortcut_copied_to_1_s, target.name), Toast.LENGTH_SHORT).show()
             if (fragment is ShortcutsFragment) fragment.loadShortcutsList()
             close()
@@ -622,6 +627,7 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item(category) {
+                        if (category == "General") com.winlator.cmod.steam.SteamGameOptions(shortcut)
                         ShortcutCategoryV2(
                             category, state, catalog, screenEntries, graphicsEntries, audioEntries,
                             wrapperEntries, localeEntries, soundFonts, gpuNames, fexPresets, boxPresets,
@@ -648,6 +654,7 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item(category) {
+                        if (category == "General") com.winlator.cmod.steam.SteamGameOptions(shortcut)
                         ShortcutCategoryV2(
                             category, state, catalog, screenEntries, graphicsEntries, audioEntries,
                             wrapperEntries, localeEntries, soundFonts, gpuNames, fexPresets, boxPresets,
