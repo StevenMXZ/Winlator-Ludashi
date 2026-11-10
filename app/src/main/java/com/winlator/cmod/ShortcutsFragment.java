@@ -344,6 +344,10 @@ public class ShortcutsFragment extends Fragment {
     private void fetchArtworkFromSteamGrid(Shortcut shortcut, File destFile, String dimensions,
                                             Runnable onSuccess, Runnable onFail) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
+        if (!prefs.getBoolean("auto_download_game_artwork", true)) {
+            if (onFail != null) onFail.run();
+            return;
+        }
         if (prefs.getBoolean("enable_custom_api_key", false)) {
             String custom = prefs.getString("custom_api_key", "");
             if (custom != null && !custom.isEmpty()) STEAMGRID_API_KEY = custom;

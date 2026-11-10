@@ -107,6 +107,7 @@ data class SettingsModel(
     val pauseWine: Boolean,
     val removeLoadingBar: Boolean,
     val gameSavesAllShortcuts: Boolean,
+    val autoDownloadGameArtwork: Boolean,
     val wineDebug: Boolean,
     val wineDebugChannels: String,
     val winlatorLogs: Boolean,
@@ -227,6 +228,17 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("paths-title") { SectionTitle("PATH SETTINGS") }
             item("winlator-path") { NavigationRow(Icons.Outlined.Storage, "Winlator Path", model.winlatorPath, callbacks::onChooseWinlatorPath) }
             item("shortcut-path") { NavigationRow(Icons.Outlined.FolderOpen, "Shortcut Export Path", model.shortcutPath, callbacks::onChooseShortcutPath) }
+
+            item("library-title") { SectionTitle("LIBRARY") }
+            item("library-artwork") {
+                GroupCard {
+                    ToggleRow(
+                        "Download game artwork automatically",
+                        model.autoDownloadGameArtwork,
+                        "Fetch missing covers and banners from SteamGridDB"
+                    ) { callbacks.onBooleanChanged("auto_download_game_artwork", it) }
+                }
+            }
 
             item("game-saves-title") { SectionTitle("GAME SAVES") }
             item("game-saves") {
