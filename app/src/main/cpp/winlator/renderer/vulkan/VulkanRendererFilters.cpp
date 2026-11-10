@@ -1,5 +1,6 @@
 #include "VulkanRendererContext.h"
 #include "VulkanRendererPipelineOpt.h"
+#include "lsfg/vkr_lsfg.h"
 
 #include <algorithm>
 #include <cmath>
@@ -99,7 +100,7 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
     float ox, float oy, float sx, float sy, float cw, float ch,
     short ptrX, short ptrY, short curHotX, short curHotY,
     short curW, short curH, bool curVis,
-    VkRect2D scissorRect)
+    VkRect2D scissorRect, uint32_t generatedCount, bool useFrameGeneration)
 {
     VkCommandBufferBeginInfo bi{};
     bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -202,8 +203,10 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
 
     VkRenderPassBeginInfo rpi{};
     rpi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    rpi.renderPass = renderPass;
-    rpi.framebuffer = swapchainFBs[imgIdx];
+    rpi.renderPass = useFrameGeneration ? frameGenRenderPass : renderPass;
+    rpi.framebuffer = useFrameGeneration
+        ? frameGenTargets[currentFrame].framebuffer
+        : swapchainFBs[imgIdx];
     rpi.renderArea = {{0, 0}, swapchainExt};
     VkClearValue clear = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
     rpi.clearValueCount = 1;
@@ -359,6 +362,30 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
 
     vk_.CmdEndRenderPass(cb);
 
+    if (useFrameGeneration) {
+        FrameGenTarget& realTarget = frameGenTargets[currentFrame];
+        vkr_lsfg_process(frameGen, cb, realTarget.image, swapchainExt.width,
+                         swapchainExt.height, generatedCount);
+        if (frameGenSwapchainStorage && generatedCount > 0) {
+            vkr_lsfg_generate_into(frameGen, cb, 0, 0,
+                                   swapchainImages[imgIdx], swapchainViews[imgIdx],
+                                   swapchainExt.width, swapchainExt.height);
+            transitionGeneratedSwapchainImage(cb, swapchainImages[imgIdx]);
+        } else {
+            for (uint32_t generation = 0; generation < generatedCount; generation++) {
+                const uint32_t targetIndex = MAX_FRAMES_IN_FLIGHT + generation;
+                FrameGenTarget& generatedTarget = frameGenTargets[targetIndex];
+                vkr_lsfg_generate_into(frameGen, cb, generation, targetIndex,
+                                       generatedTarget.image, generatedTarget.view,
+                                       swapchainExt.width, swapchainExt.height);
+            }
+            const FrameGenTarget& firstOutput = generatedCount > 0
+                ? frameGenTargets[MAX_FRAMES_IN_FLIGHT]
+                : realTarget;
+            copyFrameGenTarget(cb, firstOutput, swapchainImages[imgIdx]);
+        }
+    }
+
     VkResult endStatus = vk_.EndCommandBuffer(cb);
     if (endStatus != VK_SUCCESS) {
         RLOG_E("recordCmdBuf: EndCommandBuffer failed status=%d draws=%zu mode=%d",
@@ -366,4 +393,5 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
         throw std::runtime_error("end cb");
     }
 }
+
 

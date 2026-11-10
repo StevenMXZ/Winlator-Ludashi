@@ -81,6 +81,7 @@ import com.winlator.cmod.ui.settings.DDrawWrapperChoice
 import com.winlator.cmod.ui.settings.DriverOption
 import com.winlator.cmod.ui.settings.DxvkAsyncMode
 import com.winlator.cmod.ui.settings.EnvironmentVariablesEditor
+import com.winlator.cmod.ui.settings.FrameGenerationSettings
 import com.winlator.cmod.ui.settings.SettingChoice
 import com.winlator.cmod.ui.settings.SettingDriverChoice
 import com.winlator.cmod.ui.settings.SettingInstallChoice
@@ -181,6 +182,16 @@ private class ContainerEditorStateV2(
     var displayXPresentAtRefreshRate by mutableStateOf(editing?.getDisplayXPresentAtRefreshRate() ?: true)
     var displayXBackPressure by mutableStateOf(editing?.getDisplayXBackPressure() ?: false)
     var displayXPrecisePresentation by mutableStateOf(editing?.getDisplayXPrecisePresentation() ?: false)
+    var frameGenEnabled by mutableStateOf((editing?.getExtra("frameGen", "0") ?: "0") == "1")
+    var frameGenMultiplier by mutableIntStateOf(
+        (editing?.getExtra("frameGenMultiplier", "2") ?: "2").toIntOrNull()?.coerceIn(2, 4) ?: 2
+    )
+    var frameGenTargetRate by mutableIntStateOf(
+        (editing?.getExtra("frameGenTargetRate", "-1") ?: "-1").toIntOrNull()?.coerceAtLeast(-1) ?: -1
+    )
+    var frameGenFlowScale by mutableIntStateOf(
+        (editing?.getExtra("frameGenFlowScale", "70") ?: "70").toIntOrNull()?.coerceIn(25, 100) ?: 70
+    )
 
     var graphicsDriver by mutableStateOf(
         editing?.graphicsDriver ?: if (preferredDriver == DefaultVersion.WRAPPER_ADRENO) {
@@ -314,7 +325,8 @@ private class ContainerEditorStateV2(
         fullscreen, desktopTheme, desktopBackground, wallpaperStamp, mouseWarp, drives,
         renderer, rendererPresentMode, rendererDriver, filterMode, surfaceFormat, trueDisplayX,
         displayXPerformanceMode, displayXPresentAtRefreshRate, displayXBackPressure,
-        displayXPrecisePresentation, graphicsDriver, graphicsConfig,
+        displayXPrecisePresentation, frameGenEnabled, frameGenMultiplier,
+        frameGenTargetRate, frameGenFlowScale, graphicsDriver, graphicsConfig,
         wrapper, wrapperConfig, emulator, fexVersion, boxVersion, fexPreset, boxPreset, exclusive, xinput, dinput,
         syncCpu, startup, openGlDefaultInitialized, autoMesaGlVersionOverride, envVars,
         cpu64.joinToString(), cpu32.joinToString(), components.entries.sortedBy { it.key }.joinToString()
@@ -460,6 +472,10 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.setDisplayXPresentAtRefreshRate(state.displayXPresentAtRefreshRate)
         container.setDisplayXBackPressure(state.displayXBackPressure)
         container.setDisplayXPrecisePresentation(state.displayXPrecisePresentation)
+        container.putExtra("frameGen", if (state.frameGenEnabled) "1" else "0")
+        container.putExtra("frameGenMultiplier", state.frameGenMultiplier.toString())
+        container.putExtra("frameGenTargetRate", state.frameGenTargetRate.toString())
+        container.putExtra("frameGenFlowScale", state.frameGenFlowScale.toString())
         container.setDXWrapper(state.wrapper)
         container.setDXWrapperConfig(state.wrapperConfig)
         container.setAudioDriver(state.audio)
@@ -551,6 +567,10 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                     .put("displayXPresentAtRefreshRate", if (state.displayXPresentAtRefreshRate) "1" else "0")
                     .put("displayXBackPressure", if (state.displayXBackPressure) "1" else "0")
                     .put("displayXPrecisePresentation", if (state.displayXPrecisePresentation) "1" else "0")
+                    .put("frameGen", if (state.frameGenEnabled) "1" else "0")
+                    .put("frameGenMultiplier", state.frameGenMultiplier.toString())
+                    .put("frameGenTargetRate", state.frameGenTargetRate.toString())
+                    .put("frameGenFlowScale", state.frameGenFlowScale.toString())
                     .put("oboeProfile", state.oboeProfile)
                     .put("oboeApi", state.oboeApi)
                     .put("oboeAdaptive", if (state.oboeAdaptive) "1" else "0")
@@ -894,6 +914,18 @@ private fun ContainerCategoryV2(
                     }
                 }
             }
+            if (s.renderer == "Vulkan") {
+                FrameGenerationSettings(
+                    enabled = s.frameGenEnabled,
+                    multiplier = s.frameGenMultiplier,
+                    targetRate = s.frameGenTargetRate,
+                    flowScale = s.frameGenFlowScale,
+                    onEnabledChanged = { s.frameGenEnabled = it },
+                    onMultiplierChanged = { s.frameGenMultiplier = it },
+                    onTargetRateChanged = { s.frameGenTargetRate = it },
+                    onFlowScaleChanged = { s.frameGenFlowScale = it },
+                )
+            }
             SettingsCard {
                 SettingChoice(
                     "Graphics Driver",
@@ -1185,4 +1217,5 @@ private fun containerDesktopThemeValueV2(theme: String, background: String, wall
     else
         "$themeId,$backgroundId,#0277bd"
 }
+
 

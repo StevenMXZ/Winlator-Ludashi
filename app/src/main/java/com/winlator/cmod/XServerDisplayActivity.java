@@ -88,6 +88,7 @@ import com.winlator.cmod.core.WinlatorLogcatLogger;
 import com.winlator.cmod.inputcontrols.ControlsProfile;
 import com.winlator.cmod.inputcontrols.ExternalController;
 import com.winlator.cmod.inputcontrols.InputControlsManager;
+import com.winlator.cmod.lsfg.LosslessScaling;
 import com.winlator.cmod.math.Mathf;
 import com.winlator.cmod.math.XForm;
 import com.winlator.cmod.midi.MidiHandler;
@@ -1278,6 +1279,41 @@ public class XServerDisplayActivity extends AppCompatActivity {
             vkRenderer.setVkPresentMode(com.winlator.cmod.contentdialog.RendererOptionsDialog.toVkPresentMode(presentMode));
             vkRenderer.setFilterMode(shortcut != null ? shortcut.getRendererFilterMode()
                     : (container != null ? container.getRendererFilterMode() : 0));
+
+            String containerFrameGen = container != null ? container.getExtra("frameGen", "0") : "0";
+            String containerMultiplier = container != null
+                    ? container.getExtra("frameGenMultiplier", "2") : "2";
+            String containerTargetRate = container != null
+                    ? container.getExtra("frameGenTargetRate", "-1") : "-1";
+            String containerFlowScale = container != null
+                    ? container.getExtra("frameGenFlowScale", "70") : "70";
+            boolean frameGenRequested = "1".equals(shortcut != null
+                    ? shortcut.getExtra("frameGen", containerFrameGen) : containerFrameGen);
+            int frameGenMultiplier = safeParseInt(shortcut != null
+                    ? shortcut.getExtra("frameGenMultiplier", containerMultiplier)
+                    : containerMultiplier);
+            int frameGenTargetRate = safeParseInt(shortcut != null
+                    ? shortcut.getExtra("frameGenTargetRate", containerTargetRate)
+                    : containerTargetRate);
+            int frameGenFlowScale = safeParseInt(shortcut != null
+                    ? shortcut.getExtra("frameGenFlowScale", containerFlowScale)
+                    : containerFlowScale);
+            if (frameGenMultiplier < 2 || frameGenMultiplier > 4) frameGenMultiplier = 2;
+            if (frameGenTargetRate < -1) frameGenTargetRate = -1;
+            if (frameGenFlowScale < 25 || frameGenFlowScale > 100) frameGenFlowScale = 70;
+
+            File frameGenCache = frameGenRequested
+                    ? LosslessScaling.resolveCacheFile(this, true) : null;
+            if (frameGenRequested && frameGenCache == null) {
+                Log.w("XServerDisplayActivity",
+                        "LSFG requested but Lossless.dll shaders have not been imported");
+            }
+            float panelRefreshRate = getWindowManager().getDefaultDisplay().getRefreshRate();
+            vkRenderer.setFrameGenerationConfig(
+                    frameGenRequested && frameGenCache != null,
+                    frameGenCache != null ? frameGenCache.getAbsolutePath() : null,
+                    frameGenMultiplier, frameGenTargetRate, frameGenFlowScale,
+                    panelRefreshRate);
         }
 
         if (shortcut != null) {
@@ -1961,10 +1997,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
         Spinner spColorMode        = findViewById(R.id.SPColorMode);
         View    btSaveGraphicsPreset = findViewById(R.id.BTSaveGraphicsPreset);
         View    llFrameGenOptions  = findViewById(R.id.LLFrameGenOptions);
-        Spinner spFrameGenFPS      = findViewById(R.id.SPFrameGenFPS);
+        Switch  swEnableFrameGen   = findViewById(R.id.SWEnableFrameGen);
+        View    llFrameGenSettings = findViewById(R.id.LLFrameGenSettings);
+        View    llFrameGenMultiplierSettings = findViewById(R.id.LLFrameGenMultiplierSettings);
+        Spinner spFrameGenMode = findViewById(R.id.SPFrameGenMode);
+        Spinner spFrameGenMultiplier = findViewById(R.id.SPFrameGenMultiplier);
+        Spinner spFrameGenQuality = findViewById(R.id.SPFrameGenQuality);
 
-        if (llFrameGenOptions != null) llFrameGenOptions.setVisibility(View.GONE);
-        if (spFrameGenFPS  != null) spFrameGenFPS.setVisibility(View.GONE);
+        if (llFrameGenOptions != null)
+            llFrameGenOptions.setVisibility(isVulkanRenderer ? View.VISIBLE : View.GONE);
         if (spColorMode    != null) spColorMode.setVisibility(View.GONE);
         if (llStandardOptions != null) llStandardOptions.setVisibility(isVulkanRenderer ? View.VISIBLE : View.GONE);
         if (btSaveGraphicsPreset != null) btSaveGraphicsPreset.setVisibility(isVulkanRenderer ? View.VISIBLE : View.GONE);
@@ -1978,6 +2019,18 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         final int[]    fpsValues = {0, 30, 60, 90, 120};
         final String[] fpsLabels = {"Off", "30 FPS", "60 FPS", "90 FPS", "120 FPS"};
+        final int[] frameGenTargetValues = {-1, 0, 60, 90, 120, 144, 165};
+        final String[] frameGenModeLabels = {
+            "Automatic (display)", "Fixed multiplier", "Adaptive 60 FPS",
+            "Adaptive 90 FPS", "Adaptive 120 FPS", "Adaptive 144 FPS",
+            "Adaptive 165 FPS"
+        };
+        final int[] frameGenMultiplierValues = {2, 3, 4};
+        final String[] frameGenMultiplierLabels = {"2x", "3x", "4x"};
+        final int[] frameGenQualityValues = {40, 50, 70, 100};
+        final String[] frameGenQualityLabels = {
+            "Ultra Performance", "Performance", "Balanced", "Quality"
+        };
 
         if (spNativeFPS != null) {
             ArrayAdapter<String> a = createSidebarSpinnerAdapter(fpsLabels);
@@ -1993,7 +2046,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
             spNativeFPS.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
                 @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
                     if (llStandardOptions != null) llStandardOptions.setVisibility(isVulkanRenderer ? View.VISIBLE : View.GONE);
-                    if (llFrameGenOptions != null) llFrameGenOptions.setVisibility(View.GONE);
+                    if (llFrameGenOptions != null)
+                        llFrameGenOptions.setVisibility(isVulkanRenderer ? View.VISIBLE : View.GONE);
                     int fpsLimit = pos < fpsValues.length ? fpsValues[pos] : 0;
                     if (vkRenderer != null) vkRenderer.setFpsLimit(fpsLimit);
                     if (nativeRenderer != null) nativeRenderer.setFpsLimit(fpsLimit);
@@ -2020,6 +2074,36 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     container.putExtra("graphicsPostFXMode",
                         String.valueOf(spPostFXMode != null ? spPostFXMode.getSelectedItemPosition() : 0));
                     container.putExtra("graphicsColorMode", "0");
+                    int modePos = spFrameGenMode != null
+                        ? spFrameGenMode.getSelectedItemPosition() : 1;
+                    int multiplierPos = spFrameGenMultiplier != null
+                        ? spFrameGenMultiplier.getSelectedItemPosition() : 0;
+                    int qualityPos = spFrameGenQuality != null
+                        ? spFrameGenQuality.getSelectedItemPosition() : 2;
+                    modePos = Math.max(0, Math.min(frameGenTargetValues.length - 1, modePos));
+                    multiplierPos = Math.max(0,
+                        Math.min(frameGenMultiplierValues.length - 1, multiplierPos));
+                    qualityPos = Math.max(0,
+                        Math.min(frameGenQualityValues.length - 1, qualityPos));
+                    String frameGenEnabledValue =
+                        vkRenderer.isFrameGenerationEnabled() ? "1" : "0";
+                    String frameGenMultiplierValue =
+                        String.valueOf(frameGenMultiplierValues[multiplierPos]);
+                    String frameGenTargetValue =
+                        String.valueOf(frameGenTargetValues[modePos]);
+                    String frameGenQualityValue =
+                        String.valueOf(frameGenQualityValues[qualityPos]);
+                    container.putExtra("frameGen", frameGenEnabledValue);
+                    container.putExtra("frameGenMultiplier", frameGenMultiplierValue);
+                    container.putExtra("frameGenTargetRate", frameGenTargetValue);
+                    container.putExtra("frameGenFlowScale", frameGenQualityValue);
+                    if (shortcut != null) {
+                        shortcut.putExtra("frameGen", frameGenEnabledValue);
+                        shortcut.putExtra("frameGenMultiplier", frameGenMultiplierValue);
+                        shortcut.putExtra("frameGenTargetRate", frameGenTargetValue);
+                        shortcut.putExtra("frameGenFlowScale", frameGenQualityValue);
+                        shortcut.saveData();
+                    }
                 }
                 container.saveData();
                 Toast.makeText(this, "Preset saved", Toast.LENGTH_SHORT).show();
@@ -2027,6 +2111,139 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         if (vkRenderer == null) return;
+
+        if (spFrameGenMode != null) {
+            ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(frameGenModeLabels);
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spFrameGenMode.setAdapter(adapter);
+            int selected = 1;
+            int targetRate = vkRenderer.getFrameGenerationTargetRate();
+            for (int i = 0; i < frameGenTargetValues.length; i++) {
+                if (frameGenTargetValues[i] == targetRate) {
+                    selected = i;
+                    break;
+                }
+            }
+            spFrameGenMode.setSelection(selected, false);
+        }
+        if (spFrameGenMultiplier != null) {
+            ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(frameGenMultiplierLabels);
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spFrameGenMultiplier.setAdapter(adapter);
+            int multiplier = Math.max(2, Math.min(4,
+                vkRenderer.getFrameGenerationMultiplier()));
+            spFrameGenMultiplier.setSelection(multiplier - 2, false);
+        }
+        if (spFrameGenQuality != null) {
+            ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(frameGenQualityLabels);
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spFrameGenQuality.setAdapter(adapter);
+            int flowScale = vkRenderer.getFrameGenerationFlowScale();
+            int selected = 2;
+            int smallestDistance = Integer.MAX_VALUE;
+            for (int i = 0; i < frameGenQualityValues.length; i++) {
+                int distance = Math.abs(frameGenQualityValues[i] - flowScale);
+                if (distance < smallestDistance) {
+                    selected = i;
+                    smallestDistance = distance;
+                }
+            }
+            spFrameGenQuality.setSelection(selected, false);
+        }
+
+        Runnable updateFrameGenVisibility = () -> {
+            boolean enabled = swEnableFrameGen != null && swEnableFrameGen.isChecked();
+            if (llFrameGenSettings != null)
+                llFrameGenSettings.setVisibility(enabled ? View.VISIBLE : View.GONE);
+            int modePos = spFrameGenMode != null
+                ? spFrameGenMode.getSelectedItemPosition() : 1;
+            boolean fixedMultiplier = modePos >= 0 &&
+                frameGenTargetValues[Math.min(modePos, frameGenTargetValues.length - 1)] == 0;
+            if (llFrameGenMultiplierSettings != null)
+                llFrameGenMultiplierSettings.setVisibility(
+                    enabled && fixedMultiplier ? View.VISIBLE : View.GONE);
+        };
+        Runnable applyFrameGenSettings = () -> {
+            if (swEnableFrameGen == null || !swEnableFrameGen.isChecked()) return;
+            int modePos = spFrameGenMode != null
+                ? spFrameGenMode.getSelectedItemPosition() : 1;
+            int multiplierPos = spFrameGenMultiplier != null
+                ? spFrameGenMultiplier.getSelectedItemPosition() : 0;
+            int qualityPos = spFrameGenQuality != null
+                ? spFrameGenQuality.getSelectedItemPosition() : 2;
+            modePos = Math.max(0, Math.min(frameGenTargetValues.length - 1, modePos));
+            multiplierPos = Math.max(0,
+                Math.min(frameGenMultiplierValues.length - 1, multiplierPos));
+            qualityPos = Math.max(0,
+                Math.min(frameGenQualityValues.length - 1, qualityPos));
+            vkRenderer.setFrameGenerationSettings(
+                frameGenMultiplierValues[multiplierPos], frameGenTargetValues[modePos],
+                frameGenQualityValues[qualityPos]);
+        };
+
+        if (spFrameGenMode != null) {
+            spFrameGenMode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                    updateFrameGenVisibility.run();
+                    applyFrameGenSettings.run();
+                }
+                @Override public void onNothingSelected(AdapterView<?> p) {}
+            });
+        }
+        AdapterView.OnItemSelectedListener applyFrameGenSelection =
+            new AdapterView.OnItemSelectedListener() {
+                @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                    applyFrameGenSettings.run();
+                }
+                @Override public void onNothingSelected(AdapterView<?> p) {}
+            };
+        if (spFrameGenMultiplier != null)
+            spFrameGenMultiplier.setOnItemSelectedListener(applyFrameGenSelection);
+        if (spFrameGenQuality != null)
+            spFrameGenQuality.setOnItemSelectedListener(applyFrameGenSelection);
+
+        if (swEnableFrameGen != null) {
+            final boolean[] updatingFrameGenSwitch = {false};
+            swEnableFrameGen.setOnCheckedChangeListener((button, checked) -> {
+                if (updatingFrameGenSwitch[0]) return;
+                if (checked && LosslessScaling.getStatus(this, true) !=
+                        LosslessScaling.STATUS_OK) {
+                    updatingFrameGenSwitch[0] = true;
+                    swEnableFrameGen.setChecked(false);
+                    updatingFrameGenSwitch[0] = false;
+                    updateFrameGenVisibility.run();
+                    Toast.makeText(this,
+                        "Import a valid Lossless.dll in the container settings first.",
+                        Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if (!vkRenderer.setFrameGenerationEnabled(checked)) {
+                    updatingFrameGenSwitch[0] = true;
+                    swEnableFrameGen.setChecked(false);
+                    updatingFrameGenSwitch[0] = false;
+                    updateFrameGenVisibility.run();
+                    Toast.makeText(this,
+                        "LSFG could not be enabled with the current Vulkan driver or surface.",
+                        Toast.LENGTH_LONG).show();
+                    return;
+                }
+                updateFrameGenVisibility.run();
+                if (checked) applyFrameGenSettings.run();
+                Log.i("XServerDisplayActivity",
+                    "LSFG runtime toggle: " + (checked ? "enabled" : "disabled"));
+            });
+            vkRenderer.setOnFrameGenerationStateChangedListener(() -> {
+                updatingFrameGenSwitch[0] = true;
+                swEnableFrameGen.setChecked(vkRenderer.isFrameGenerationEnabled());
+                updatingFrameGenSwitch[0] = false;
+                updateFrameGenVisibility.run();
+                if (modernSidebar != null) modernSidebar.onRuntimeStatusChanged();
+            });
+            updatingFrameGenSwitch[0] = true;
+            swEnableFrameGen.setChecked(vkRenderer.isFrameGenerationEnabled());
+            updatingFrameGenSwitch[0] = false;
+        }
+        updateFrameGenVisibility.run();
 
         final String[] upscalerLabels = {"SGSR", "FSR", "Lanczos 2", "Color Boost"};
         if (spUpscalerMode != null) {
@@ -2104,13 +2321,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
         int sharpVis = (fsrOn || dlsRestored) ? View.VISIBLE : View.GONE;
         if (lblSharpnessHeader != null) lblSharpnessHeader.setVisibility(sharpVis);
         if (sbSharpness        != null) sbSharpness.setVisibility(sharpVis);
-
-        final String[] frameGenLabels = {"2x Interpolation", "Always On"};
-        if (spFrameGenFPS != null) {
-            ArrayAdapter<String> a = createSidebarSpinnerAdapter(frameGenLabels);
-            a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-            spFrameGenFPS.setAdapter(a);
-        }
 
     }
 
@@ -2527,8 +2737,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         envVars.put("VK_ICD_FILENAMES", imageFs.getShareDir() + "/vulkan/icd.d/wrapper_icd.aarch64.json");
 
+        // Refresh existing containers that may have received the CI-repacked
+        // Gamescope wrapper instead of the repository's common wrapper asset.
         File graphicsRuntimeMarker = new File(rootDir,
-                "usr/lib/.winlator-graphics-runtime-c7474f7e-25b50a11-v2");
+                "usr/lib/.winlator-graphics-runtime-c7474f7e-25b50a11-v3-stock-wrapper");
         if (firstTimeBoot || !graphicsRuntimeMarker.isFile()) {
             Log.d("XServerDisplayActivity", "Installing paired Pipetto wrapper and common graphics runtime");
             TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this, "graphics_driver/wrapper" + ".tzst",

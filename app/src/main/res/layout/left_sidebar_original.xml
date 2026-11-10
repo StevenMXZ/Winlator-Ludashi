@@ -204,6 +204,79 @@
                         android:background="@drawable/sidebar_spinner" />
                 </LinearLayout>
                 <LinearLayout
+                    android:id="@+id/LLFrameGenOptions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="@drawable/sidebar_card"
+                    android:orientation="vertical"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:visibility="gone">
+                    <Switch
+                        android:id="@+id/SWEnableFrameGen"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:text="LSFG Frame Generation"
+                        android:textColor="#FFFFFF"
+                        android:textSize="15sp" />
+                    <LinearLayout
+                        android:id="@+id/LLFrameGenSettings"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingBottom="12dp"
+                        android:visibility="gone">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Generation Mode"
+                            android:textColor="#FFFFFF"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+                        <Spinner
+                            android:id="@+id/SPFrameGenMode"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:layout_marginTop="4dp"
+                            android:background="@drawable/sidebar_spinner" />
+                        <LinearLayout
+                            android:id="@+id/LLFrameGenMultiplierSettings"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="Multiplier"
+                                android:textColor="#FFFFFF"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+                            <Spinner
+                                android:id="@+id/SPFrameGenMultiplier"
+                                android:layout_width="match_parent"
+                                android:layout_height="40dp"
+                                android:layout_marginTop="4dp"
+                                android:background="@drawable/sidebar_spinner" />
+                        </LinearLayout>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="Quality Preset"
+                            android:textColor="#FFFFFF"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+                        <Spinner
+                            android:id="@+id/SPFrameGenQuality"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:layout_marginTop="4dp"
+                            android:background="@drawable/sidebar_spinner" />
+                    </LinearLayout>
+                </LinearLayout>
+                <LinearLayout
                     android:id="@+id/LLStandardOptions"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -357,29 +430,6 @@
                     </LinearLayout>
                 </com.winlator.cmod.ui.ReshadeSidebarPanelView>
 
-                <LinearLayout
-                    android:id="@+id/LLFrameGenOptions"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:orientation="vertical"
-                    android:background="@drawable/sidebar_card"
-                    android:padding="12dp"
-                    android:visibility="gone">
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="Frame Generation"
-                        android:textColor="#FFFFFF"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-                    <Spinner
-                        android:id="@+id/SPFrameGenFPS"
-                        android:layout_width="match_parent"
-                        android:layout_height="42dp"
-                        android:layout_marginTop="8dp"
-                        android:background="@drawable/sidebar_spinner" />
-                </LinearLayout>
                 <LinearLayout
                     android:id="@+id/BTSaveGraphicsPreset"
                     android:layout_width="match_parent"
@@ -1028,4 +1078,5 @@
             android:visibility="gone" />
     </FrameLayout>
 </LinearLayout>
+
 

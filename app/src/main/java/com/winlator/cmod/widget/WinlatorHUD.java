@@ -72,6 +72,7 @@ public class WinlatorHUD extends View {
     private static final int C_CHG = Color.rgb(0x40, 0xC4, 0x40);
     private static final int C_TEMP = Color.rgb(0xEF, 0x53, 0x50);
     private static final int C_FPS = Color.rgb(0x76, 0xFF, 0x03);
+    private static final int C_FPS_FG = Color.rgb(0x00, 0xE6, 0x76);
     private static final int C_REND = Color.rgb(0xFF, 0xEA, 0x00);
     private static final int C_RAM = Color.rgb(0xB0, 0xFF, 0xB0);
     private static final int C_SEP = Color.rgb(0x60, 0x60, 0x60);
@@ -179,6 +180,10 @@ public class WinlatorHUD extends View {
     private final AtomicInteger frameAccum = new AtomicInteger(0);
     private long lastFpsNs = 0;
     private float snapFps = 0;
+    private VulkanXServerView frameGenerationSource = null;
+    private long lastGeneratedFrames = 0;
+    private boolean generatedCounterPrimed = false;
+    private boolean frameGenerationActive = false;
 
     private int snapGpu = -1, snapCpu = -1, snapCpuTemp = -1, snapMw = -1;
     private int snapTmp = -1, snapPct = -1, snapRam = -1;
@@ -715,7 +720,8 @@ public class WinlatorHUD extends View {
         if (dt < 350_000_000L) return;
 
         int frames = frameAccum.getAndSet(0);
-        snapFps = frames * 1_000_000_000f / dt;
+        long generated = sampleGeneratedFrames();
+        snapFps = (frames + generated) * 1_000_000_000f / dt;
         lastFpsNs = now;
 
         String value = String.format(Locale.US, "%.0f", snapFps);
@@ -834,7 +840,7 @@ public class WinlatorHUD extends View {
             if (hasGroup) x += drawSep(canvas, x, baseline);
             canvas.drawText("FPS ", x, baseline, pFps);
             x += wLabelFps;
-            canvas.drawText(strFps, x, baseline, pVal);
+            canvas.drawText(strFps, x, baseline, frameGenerationActive ? pFps : pVal);
         }
     }
 
@@ -910,7 +916,8 @@ public class WinlatorHUD extends View {
 
         if ((showMask & SHOW_FPS) != 0) {
             canvas.drawText("FPS ", PAD, y + TS, pFps);
-            canvas.drawText(strFps, PAD + wLabelFps, y + TS, pVal);
+            canvas.drawText(strFps, PAD + wLabelFps, y + TS,
+                    frameGenerationActive ? pFps : pVal);
         }
     }
 
@@ -1348,9 +1355,7 @@ public class WinlatorHUD extends View {
         uiHandler.post(() -> {
             uiHandler.removeCallbacks(redrawRunnable);
             redrawScheduled = false;
-            frameAccum.set(0);
-            snapFps = 0;
-            lastFpsNs = 0;
+            resetFpsTracking();
             mesaRendererActive = false;
             refreshBackendRenderer(true);
 
@@ -1396,9 +1401,7 @@ public class WinlatorHUD extends View {
 
         uiHandler.postDelayed(() -> {
             if (rendererActive) return;
-            frameAccum.set(0);
-            snapFps = 0;
-            lastFpsNs = 0;
+            resetFpsTracking();
             if (!"0".equals(strFps)) {
                 strFps = "0";
                 wDynFps = pVal.measureText("0");
@@ -1483,6 +1486,12 @@ public class WinlatorHUD extends View {
 
     public void setDataSource(Object dataSource) {}
 
+    public void setFrameGenerationSource(VulkanXServerView source) {
+        frameGenerationSource = source;
+        generatedCounterPrimed = false;
+        lastGeneratedFrames = 0;
+    }
+
     public void setHudScale(float scale, boolean isFinalInput) {
         setScaleX(scale);
         setScaleY(scale);
@@ -1496,9 +1505,7 @@ public class WinlatorHUD extends View {
     }
 
     public void reset() {
-        frameAccum.set(0);
-        snapFps = 0;
-        lastFpsNs = 0;
+        resetFpsTracking();
         mesaRendererActive = false;
         refreshBackendRenderer(true);
     }
@@ -1514,9 +1521,7 @@ public class WinlatorHUD extends View {
         uiHandler.post(() -> {
             uiHandler.removeCallbacks(redrawRunnable);
             redrawScheduled = false;
-            frameAccum.set(0);
-            snapFps = 0;
-            lastFpsNs = 0;
+            resetFpsTracking();
             dragging = false;
             touchDownMs = 0;
             rendererActive = true;
@@ -1544,6 +1549,43 @@ public class WinlatorHUD extends View {
             requestLayout();
             invalidate();
         } catch (Exception ignored) {}
+    }
+
+    private long sampleGeneratedFrames() {
+        VulkanXServerView source = frameGenerationSource;
+        boolean active = source != null && source.isFrameGenerationEnabled();
+        if (active != frameGenerationActive) {
+            frameGenerationActive = active;
+            pFps.setColor(active ? C_FPS_FG : C_FPS);
+            generatedCounterPrimed = false;
+        }
+
+        if (!active) {
+            lastGeneratedFrames = 0;
+            return 0;
+        }
+
+        long current = source.getGeneratedFrameCount();
+        if (!generatedCounterPrimed || current < lastGeneratedFrames) {
+            lastGeneratedFrames = current;
+            generatedCounterPrimed = true;
+            return 0;
+        }
+
+        long delta = current - lastGeneratedFrames;
+        lastGeneratedFrames = current;
+
+        return Math.max(0L, delta);
+    }
+
+    private void resetFpsTracking() {
+        frameAccum.set(0);
+        snapFps = 0;
+        lastFpsNs = 0;
+        lastGeneratedFrames = 0;
+        generatedCounterPrimed = false;
+        frameGenerationActive = false;
+        pFps.setColor(C_FPS);
     }
 
     private int idxToMask(int idx) {

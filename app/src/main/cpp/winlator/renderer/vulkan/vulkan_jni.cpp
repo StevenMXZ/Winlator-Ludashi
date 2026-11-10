@@ -7,6 +7,7 @@
 #include <cstring>
 #include <algorithm>
 #include <string>
+#include <exception>
 #include "../../../adrenotools/include/adrenotools/driver.h"
 #include "VulkanRendererContext.h"
 
@@ -92,10 +93,18 @@ Java_com_winlator_cmod_widget_VulkanXServerView_nativeInit(
         return reinterpret_cast<jlong>(
             new VulkanRendererContext(win, w, h, adrenotoolsHandle,
                                       validationEnabled == JNI_TRUE));
-    } catch (...) {
+    } catch (const std::exception& error) {
+        __android_log_print(ANDROID_LOG_ERROR, "Winlator_Renderer",
+                           "Vulkan renderer initialization failed: %s", error.what());
         ANativeWindow_release(win);
         if (adrenotoolsHandle) dlclose(adrenotoolsHandle);
         return 0;
+    } catch (...) {
+        __android_log_print(ANDROID_LOG_ERROR, "Winlator_Renderer",
+                           "Vulkan renderer initialization failed with an unknown exception");
+        ANativeWindow_release(win);
+        if (adrenotoolsHandle) dlclose(adrenotoolsHandle);
+            return 0;
     }
 }
 
@@ -367,6 +376,46 @@ Java_com_winlator_cmod_widget_VulkanXServerView_nativeGetSwapchainSize(
     return arr;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeConfigureFrameGeneration(
+    JNIEnv* env, jobject, jlong handle, jboolean enabled, jstring cachePath,
+    jint multiplier, jint targetRate, jint flowScalePercent, jfloat refreshRate)
+{
+    auto* r = reinterpret_cast<VulkanRendererContext*>(handle);
+    if (!r) return JNI_FALSE;
+    const char* cache = cachePath
+        ? env->GetStringUTFChars(cachePath, nullptr)
+        : nullptr;
+    r->configureFrameGeneration(enabled == JNI_TRUE, cache, multiplier, targetRate,
+                                flowScalePercent, refreshRate);
+    if (cache) env->ReleaseStringUTFChars(cachePath, cache);
+    return r->isFrameGenerationEnabled() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeSetFrameGenerationSourceCount(
+    JNIEnv*, jobject, jlong handle, jlong count)
+{
+    auto* r = reinterpret_cast<VulkanRendererContext*>(handle);
+    if (r) r->setFrameGenerationSourceCount(static_cast<uint64_t>(std::max<jlong>(0, count)));
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeIsFrameGenerationSupported(
+    JNIEnv*, jobject, jlong handle)
+{
+    auto* r = reinterpret_cast<VulkanRendererContext*>(handle);
+    return r && r->isFrameGenerationSupported() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeGetGeneratedFrameCount(
+    JNIEnv*, jobject, jlong handle)
+{
+    auto* r = reinterpret_cast<VulkanRendererContext*>(handle);
+    return r ? static_cast<jlong>(r->getGeneratedFrameCount()) : 0;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_winlator_cmod_widget_VulkanXServerView_nativeDetachSurface(
     JNIEnv*, jobject, jlong handle)
@@ -386,3 +435,4 @@ Java_com_winlator_cmod_widget_VulkanXServerView_nativeReattachSurface(
     bool ok = r->reattachSurface(win);
     return (jboolean)ok;
 }
+

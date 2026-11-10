@@ -220,6 +220,21 @@ add_library(vulkan_renderer SHARED
         ${VULKAN_CONTEXT_LEGACY}
         winlator/renderer/vulkan/VulkanRendererFilters.cpp
         winlator/renderer/vulkan/VulkanRendererPipelineOpt.cpp
+        winlator/renderer/vulkan/vk_dispatch.c
+
+        winlator/renderer/vulkan/lsfg/lsfg_dll.c
+        winlator/renderer/vulkan/lsfg/lsfg_common.cpp
+        winlator/renderer/vulkan/lsfg/lsfg_shaders.cpp
+        winlator/renderer/vulkan/lsfg/lsfg_mipmaps.cpp
+        winlator/renderer/vulkan/lsfg/lsfg_generate.cpp
+        winlator/renderer/vulkan/lsfg/lsfg_alpha.cpp
+        winlator/renderer/vulkan/lsfg/lsfg_beta.cpp
+        winlator/renderer/vulkan/lsfg/lsfg_gamma.cpp
+        winlator/renderer/vulkan/lsfg/lsfg_delta.cpp
+        winlator/renderer/vulkan/lsfg/lsfg_chain.cpp
+        winlator/renderer/vulkan/lsfg/lsfg_pacer.cpp
+        winlator/renderer/vulkan/lsfg/vkr_lsfg.cpp
+        winlator/renderer/vulkan/lsfg/lsfg_jni.c
 
         winlator/renderer/vulkan/view_transformation.cpp
         winlator/renderer/vulkan/xform.cpp
@@ -251,3 +266,4 @@ target_link_libraries(vulkan_renderer
         dl
         atomic
 )
+

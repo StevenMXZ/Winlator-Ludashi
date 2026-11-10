@@ -2,22 +2,12 @@
 #include "VulkanRendererContext.h"
 
 #include <android/log.h>
-#include <mutex>
-#include <unordered_map>
 
 #include "window_vert.h"
 #include "window_frag.h"
 
 namespace {
 constexpr const char* LOG_TAG = "Winlator_Renderer";
-
-struct OpaquePipelineState {
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    bool attempted = false;
-};
-
-std::mutex gOpaquePipelineMutex;
-std::unordered_map<VulkanRendererContext*, OpaquePipelineState> gOpaquePipelines;
 
 VkShaderModule createShader(VulkanRendererContext* ctx, const uint32_t* code, size_t size) {
     VkShaderModuleCreateInfo info{};
@@ -122,17 +112,15 @@ VkPipeline createOpaquePipeline(VulkanRendererContext* ctx) {
 VkPipeline VulkanRendererGetOpaquePipeline(VulkanRendererContext* ctx) {
     if (!ctx) return VK_NULL_HANDLE;
 
-    std::lock_guard<std::mutex> lock(gOpaquePipelineMutex);
-    OpaquePipelineState& state = gOpaquePipelines[ctx];
-    if (state.pipeline != VK_NULL_HANDLE) return state.pipeline;
-    if (state.attempted) return ctx->pipeline;
-
-    state.attempted = true;
-    state.pipeline = createOpaquePipeline(ctx);
-    if (state.pipeline != VK_NULL_HANDLE) {
+    // Called by the render thread, or teardown after the render thread joins.
+    if (ctx->opaquePipeline != VK_NULL_HANDLE) return ctx->opaquePipeline;
+    if (ctx->opaquePipelineAttempted) return ctx->pipeline;
+    ctx->opaquePipelineAttempted = true;
+    ctx->opaquePipeline = createOpaquePipeline(ctx);
+    if (ctx->opaquePipeline != VK_NULL_HANDLE) {
         __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
             "RendererOpt: USING opaque window pipeline (blend OFF; cursor alpha isolated)");
-        return state.pipeline;
+        return ctx->opaquePipeline;
     }
 
     __android_log_print(ANDROID_LOG_WARN, LOG_TAG,
@@ -142,15 +130,9 @@ VkPipeline VulkanRendererGetOpaquePipeline(VulkanRendererContext* ctx) {
 
 void VulkanRendererDestroyOpaquePipeline(VulkanRendererContext* ctx) {
     if (!ctx) return;
-
-    std::lock_guard<std::mutex> lock(gOpaquePipelineMutex);
-    auto it = gOpaquePipelines.find(ctx);
-    if (it == gOpaquePipelines.end()) return;
-
-    if (it->second.pipeline != VK_NULL_HANDLE && ctx->device != VK_NULL_HANDLE &&
-        ctx->vk_.DestroyPipeline) {
-        ctx->vk_.DestroyPipeline(ctx->device, it->second.pipeline, nullptr);
-    }
-    gOpaquePipelines.erase(it);
+    if (ctx->opaquePipeline != VK_NULL_HANDLE && ctx->device != VK_NULL_HANDLE &&
+        ctx->vk_.DestroyPipeline)
+        ctx->vk_.DestroyPipeline(ctx->device, ctx->opaquePipeline, nullptr);
+    ctx->opaquePipeline = VK_NULL_HANDLE;
+    ctx->opaquePipelineAttempted = false;
 }
-

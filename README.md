@@ -66,10 +66,4 @@ You can find updated components (known as `wcps`) to improve compatibility and p
   - CNC DDraw: [github.com/FunkyFr3sh/cnc-ddraw](https://github.com/FunkyFr3sh/cnc-ddraw)
 [ptitseb](https://github.com/ptitSeb) (Box86/Box64), [Danylo](https://blogs.igalia.com/dpiliaiev/tags/mesa/) (Turnip), [alexvorxx](https://github.com/alexvorxx) (Mods/Tips) and others.
 
-
-
-
-
-
-
-
+- Frame Generation (LSFG): adapted from [Eden’s LSFG implementation](https://git.eden-emu.dev/eden-emu/eden/src/branch/master/src/video_core/frame_gen).

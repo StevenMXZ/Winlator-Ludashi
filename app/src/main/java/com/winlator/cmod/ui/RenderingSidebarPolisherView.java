@@ -61,6 +61,9 @@ public class RenderingSidebarPolisherView extends View {
         View standard = root.findViewById(R.id.LLStandardOptions);
         restoreCard(standard, 12);
 
+        View frameGen = root.findViewById(R.id.LLFrameGenOptions);
+        restoreCard(frameGen, 12);
+
         Switch superResolution = root.findViewById(R.id.SWEnableFSR);
         if (superResolution != null) {
             superResolution.setBackground(null);
@@ -218,3 +221,4 @@ public class RenderingSidebarPolisherView extends View {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 }
+

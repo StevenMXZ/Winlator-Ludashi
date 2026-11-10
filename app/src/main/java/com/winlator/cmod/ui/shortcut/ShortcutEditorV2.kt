@@ -94,6 +94,7 @@ import com.winlator.cmod.ui.settings.CpuSelectorRow
 import com.winlator.cmod.ui.settings.DriverOption
 import com.winlator.cmod.ui.settings.DxvkAsyncMode
 import com.winlator.cmod.ui.settings.EnvironmentVariablesEditor
+import com.winlator.cmod.ui.settings.FrameGenerationSettings
 import com.winlator.cmod.ui.settings.DDrawWrapperChoice
 import com.winlator.cmod.ui.settings.SettingChoice
 import com.winlator.cmod.ui.settings.SettingDriverChoice
@@ -174,6 +175,22 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var displayXPresentAtRefreshRate by mutableStateOf(shortcut.getDisplayXPresentAtRefreshRate())
     var displayXBackPressure by mutableStateOf(shortcut.getDisplayXBackPressure())
     var displayXPrecisePresentation by mutableStateOf(shortcut.getDisplayXPrecisePresentation())
+    var frameGenEnabled by mutableStateOf(
+        shortcut.getExtra("frameGen", container.getExtra("frameGen", "0")) == "1"
+    )
+    var frameGenMultiplier by mutableIntStateOf(
+        shortcut.getExtra("frameGenMultiplier", container.getExtra("frameGenMultiplier", "2"))
+            .toIntOrNull()?.coerceIn(2, 4) ?: 2
+    )
+    var frameGenTargetRate by mutableIntStateOf(
+        shortcut.getExtra("frameGenTargetRate", container.getExtra("frameGenTargetRate", "-1"))
+            .toIntOrNull()?.coerceAtLeast(-1) ?: -1
+    )
+    var frameGenFlowScale by mutableIntStateOf(
+        shortcut.getExtra("frameGenFlowScale", container.getExtra("frameGenFlowScale", "70"))
+            .toIntOrNull()?.coerceIn(25, 100) ?: 70
+    )
+
     var graphicsDriver by mutableStateOf(StringUtils.parseIdentifier(shortcut.getExtra("graphicsDriver", container.getGraphicsDriver())))
     private val defaultDriverVersion = runCatching {
         val context = container.manager.context
@@ -1023,6 +1040,30 @@ private fun ShortcutCategoryV2(
                     }
                 }
             }
+            if (s.renderer == "Vulkan") {
+                FrameGenerationSettings(
+                    enabled = s.frameGenEnabled,
+                    multiplier = s.frameGenMultiplier,
+                    targetRate = s.frameGenTargetRate,
+                    flowScale = s.frameGenFlowScale,
+                    onEnabledChanged = {
+                        s.frameGenEnabled = it
+                        s.extra("frameGen", if (it) "1" else "0")
+                    },
+                    onMultiplierChanged = {
+                        s.frameGenMultiplier = it
+                        s.extra("frameGenMultiplier", it.toString())
+                    },
+                    onTargetRateChanged = {
+                        s.frameGenTargetRate = it
+                        s.extra("frameGenTargetRate", it.toString())
+                    },
+                    onFlowScaleChanged = {
+                        s.frameGenFlowScale = it
+                        s.extra("frameGenFlowScale", it.toString())
+                    },
+                )
+            }
             SettingsCard {
                 SettingChoice("Graphics Driver", graphicsEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(s.graphicsDriver, true) } ?: s.graphicsDriver, graphicsEntries) {
                     s.selectGraphicsDriver(StringUtils.parseIdentifier(it))
@@ -1367,4 +1408,5 @@ private fun renameShortcutV2(shortcut: Shortcut, requested: String) {
         if (!newLink.exists()) oldLink.renameTo(newLink)
     }
 }
+
 
