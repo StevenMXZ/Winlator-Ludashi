@@ -47,9 +47,10 @@ tasks.register("downloadProton") {
     def assetDir = new File(project.rootDir, ["app","src","main","assets"].join(File.separator))
     File protonARM64EC = new File(assetDir, "proton-9.0-arm64ec.tar.zst")
     File staleProtonARM64EC = new File(assetDir, "proton-10.0-5-arm64ec.tar.zst")
-    String protonURL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/c/proton-9.0-arm64ec.tar.zst"
-    String protonSHA256 = "5f9375640479a5b2c4c3998fda689bb5085febc8fcdb7b6998c79d925392991a"
-    long protonSize = 73570637L
+    // The release .wcp is a Zstandard tar archive; keep the bundled asset name used by ImageFsInstaller.
+    String protonURL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/pnew/proton-wine-9.0-arm64ec.wcp"
+    String protonSHA256 = "49087c7a0ce6131fcf740e7fcb48c79eb98401d82470bb1e1ecf8047a4eb205e"
+    long protonSize = 117659936L
 
     def fileSHA256 = { File file ->
         MessageDigest digest = MessageDigest.getInstance("SHA-256")

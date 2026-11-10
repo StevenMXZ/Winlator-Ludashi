@@ -26,6 +26,7 @@ public abstract class ProtonPackageManager {
     private static final String RELEASE_BASE_URL = "https://github.com/Other-backup/winlator-imagefs/releases/download/protons-zst-latest/";
     private static final String RELEASE_NEW_BASE_URL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/c/";
     private static final String RELEASE_D_BASE_URL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/d/";
+    private static final String RELEASE_PNEW_BASE_URL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/pnew/";
     private static final OkHttpClient HTTP = new OkHttpClient();
 
     public static class PackageInfo {
@@ -56,21 +57,21 @@ public abstract class ProtonPackageManager {
     }
 
     private static final List<PackageInfo> PACKAGES = Arrays.asList(
-            new PackageInfo("proton-9.0-arm64ec", "Proton 9 arm64ec", "proton-9.0-arm64ec.tar.zst",
-                    new long[]{73570637L}, RELEASE_NEW_BASE_URL + "proton-9.0-arm64ec.tar.zst",
-                    "5f9375640479a5b2c4c3998fda689bb5085febc8fcdb7b6998c79d925392991a"),
-            new PackageInfo("proton-10.0-5-arm64ec", "Proton 10.0-5 arm64ec", "proton-wine-10.0-5-arm64ec.tar.zst",
-                    new long[]{132067976L}, RELEASE_D_BASE_URL + "proton-wine-10.0-5-arm64ec.tar.zst",
-                    "8cf0db4bb5e7e266e9e22e45e76722fb62cfbbf4e5e0e167a90c05c508e310ee"),
+            new PackageInfo("proton-9.0-arm64ec", "Proton 9 arm64ec", "proton-wine-9.0-arm64ec.wcp",
+                    new long[]{117659936L}, RELEASE_PNEW_BASE_URL + "proton-wine-9.0-arm64ec.wcp",
+                    "49087c7a0ce6131fcf740e7fcb48c79eb98401d82470bb1e1ecf8047a4eb205e"),
+            new PackageInfo("proton-10.0-6-arm64ec", "Proton 10.0-6 arm64ec", "proton-wine-10.0-6-arm64ec.wcp",
+                    new long[]{105090672L}, RELEASE_PNEW_BASE_URL + "proton-wine-10.0-6-arm64ec.wcp",
+                    "6ebe8c6d29269451c014137a00bf0711cc6746aa3f6447ed9077fddbdf0aecb4"),
             new PackageInfo("proton-9.0-x86_64", "Proton 9 x86_64", "proton-9.0-x86_64.tar.zst",
                     new long[]{54043009L}, RELEASE_NEW_BASE_URL + "proton-9.0-x86_64.tar.zst",
                     "b4688130cd15818c2c46e66f2f7f7146d459a2d95bee1b3daf970f50dc4f8331"),
             new PackageInfo("proton-10.0-5-x86_64", "Proton 10.0-5 x86_64", "proton-10.0-5-x86_64.wcp",
                     new long[]{72882772L}, RELEASE_D_BASE_URL + "proton-10.0-5-x86_64.wcp",
                     "2a5759e48b5f856d36eedac3e5159054629260a792fcf9c167140e02c06d8f0c"),
-            new PackageInfo("proton-11.0-1-arm64ec", "Proton 11.0-1 arm64ec", "proton-wine-11.0-1-arm64ec.wcp.xz",
-                    new long[]{127896076L}, RELEASE_D_BASE_URL + "proton-wine-11.0-1-arm64ec.wcp.xz",
-                    "a360f849f0ce3a808dacec854f25a641735a62ecc0eca8e09b7b7f7ff44041ff"),
+            new PackageInfo("proton-11.0-7-arm64ec", "Proton 11.0-7 arm64ec", "proton-wine-11.0-7-arm64ec.wcp",
+                    new long[]{112615007L}, RELEASE_PNEW_BASE_URL + "proton-wine-11.0-7-arm64ec.wcp",
+                    "a761cf68412bcdbda3a0ab58948a96654003473280701a3ec3026d7e6df4774f"),
             new PackageInfo("proton-10-arm64ec", "Proton 10 arm64ec (Legacy)", "proton-10-arm64ec.tar.zst",
                     new long[]{52428800L, 52428800L, 52428800L, 52428800L, 7195940L})
     );
