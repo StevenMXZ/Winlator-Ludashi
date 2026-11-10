@@ -750,4 +750,11 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="steam_store_cloud_setup">Install and configure a game container to transfer cloud saves.</string>
     <string name="steam_store_no_media">No media available</string>
     <string name="steam_store_videos">Videos</string>
+    <string name="steam_store_game_size">Size: %1$s</string>
+    <string name="steam_store_size_unknown">Unavailable</string>
+    <string name="steam_store_version">Version</string>
+    <string name="steam_store_language">Language</string>
+    <string name="steam_store_apply_options">Download selected version/language</string>
+    <string name="steam_download_cancel_delete">Cancel and delete</string>
+    <string name="steam_download_cancel_confirm">Delete all partially downloaded game files? This cannot be undone.</string>
 </resources>

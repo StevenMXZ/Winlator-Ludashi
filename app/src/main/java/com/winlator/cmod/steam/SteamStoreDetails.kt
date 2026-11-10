@@ -58,6 +58,10 @@ internal object SteamStoreMetadata {
 internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapshot) {
     val context = LocalContext.current
     var tab by remember(id) { mutableIntStateOf(0) }
+    var branch by remember(id) { mutableStateOf(SteamInstallOptions.branch(context, id)) }
+    var language by remember(id) { mutableStateOf(SteamInstallOptions.language(context, id)) }
+    var branchMenu by remember { mutableStateOf(false) }
+    var languageMenu by remember { mutableStateOf(false) }
     val data by produceState(Pair(JSONObject(), JSONObject()), id, state.signedIn, installed) {
         value = withContext(Dispatchers.IO) {
             Pair(
@@ -68,6 +72,24 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
     }
     val pics = data.first
     val store = data.second
+    val branches = remember(pics) { SteamCatalog.branches(pics) }
+    val languages = remember(pics) { SteamCatalog.languages(pics) }
+    val downloadSize = remember(pics, branch, language) {
+        runCatching { SteamCatalog.depots(pics, branch, language).sumOf { it.size } }.getOrDefault(0L)
+    }
+    val installedSize by produceState<Long?>(null, id, installed) {
+        value = if (!installed) null else withContext(Dispatchers.IO) {
+            runCatching {
+                val dir = SteamGames.directory(context, id)
+                dir.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+                    .filter { it.isFile }.sumOf { it.length() }
+            }.getOrNull()
+        }
+    }
+    val recordedBranch = if (installed) pics.optString("ludashiInstallBranch", "public") else "public"
+    val recordedLanguage = if (installed) pics.optString("ludashiInstallLanguage", "english") else "english"
+    fun readableSize(bytes: Long): String = if (bytes >= 1073741824L) "%.1f GiB".format(bytes / 1073741824.0)
+        else "%.1f MiB".format(bytes / 1048576.0)
     val cached = rememberSteamGameSnapshot(context, id)
     val ach = cached.achievements
     var showCloud by remember(id) { mutableStateOf(false) }
@@ -100,6 +122,52 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
                     val description = store.optString("short_description")
                         .replace(Regex("<[^>]+>"), "").trim()
                     if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodyMedium)
+                    val bytes = installedSize?.takeIf { installed } ?: downloadSize
+                    Text(uiStr(R.string.steam_store_game_size,
+                        if (bytes > 0) readableSize(bytes) else uiStr(R.string.steam_store_size_unknown)),
+                        style = MaterialTheme.typography.bodySmall)
+                    if (pics.optJSONObject("depots") != null) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.weight(1f)) {
+                                OutlinedButton(onClick = { branchMenu = true }, enabled = !state.downloading && !state.gameActive,
+                                    modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                                    Text(uiStr(R.string.steam_store_version) + ": " + branch,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                DropdownMenu(branchMenu, { branchMenu = false }) {
+                                    branches.forEach { option ->
+                                        DropdownMenuItem(text = { Text(option) }, onClick = {
+                                            SteamInstallOptions.setBranch(context, id, option)
+                                            branch = option
+                                            branchMenu = false
+                                        })
+                                    }
+                                }
+                            }
+                            Box(Modifier.weight(1f)) {
+                                OutlinedButton(onClick = { languageMenu = true }, enabled = !state.downloading && !state.gameActive,
+                                    modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 10.dp)) {
+                                    Text(uiStr(R.string.steam_store_language) + ": " + language,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                DropdownMenu(languageMenu, { languageMenu = false }) {
+                                    languages.forEach { option ->
+                                        DropdownMenuItem(text = { Text(option) }, onClick = {
+                                            SteamInstallOptions.setLanguage(context, id, option)
+                                            language = option
+                                            languageMenu = false
+                                        })
+                                    }
+                                }
+                            }
+                        }
+                        if (installed && (recordedBranch != branch || recordedLanguage != language)) {
+                            TextButton(enabled = state.signedIn && !state.downloading && !state.gameActive,
+                                onClick = { SteamSession.install(id) }) {
+                                Text(uiStr(R.string.steam_store_apply_options))
+                            }
+                        }
+                    }
                     val common = pics.optJSONObject("common")
                     val developers = store.optJSONArray("developers")
                     val publishers = store.optJSONArray("publishers")

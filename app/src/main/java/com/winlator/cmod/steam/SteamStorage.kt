@@ -27,9 +27,36 @@ object SteamStorage {
         }
         return File(root, name).canonicalFile.also { require(it.parentFile == root.canonicalFile); check(it.mkdirs() || it.isDirectory) }
     }
-    fun record(info: JSONObject, dir: File): JSONObject = JSONObject(info.toString()).put("ludashiInstallPath", dir.canonicalPath).put("ludashiInstallRoot", dir.canonicalFile.parent)
+    fun record(info: JSONObject, dir: File, branch: String = "public", language: String = "english"): JSONObject =
+        JSONObject(info.toString()).put("ludashiInstallPath", dir.canonicalPath)
+            .put("ludashiInstallRoot", dir.canonicalFile.parent)
+            .put("ludashiInstallBranch", branch).put("ludashiInstallLanguage", language)
     fun directory(context: Context, info: JSONObject): File = info.optString("ludashiInstallPath").takeIf { it.isNotBlank() }?.let(::File)?.canonicalFile
         ?: File(context.filesDir, "steam-library/common/${SteamCatalog.installName(info)}").canonicalFile
     fun installationRoot(context: Context, info: JSONObject): File = info.optString("ludashiInstallRoot").takeIf { it.isNotBlank() }?.let(::File)?.canonicalFile
         ?: File(context.filesDir, "steam-library/common").canonicalFile
+    fun removePending(context: Context, id: Int, name: String) {
+        check(id > 0 && name.isNotBlank()) { "Invalid paused Steam download" }
+        val record = File(context.filesDir, "steam-library/$id.json")
+        check(!record.isFile) { "Installed games cannot be deleted as a paused download" }
+        val prefs = context.getSharedPreferences("steam-settings", 0)
+        val stored = prefs.getString("pending-root-$id", null) ?: error("No paused download directory recorded")
+        val root = File(stored).canonicalFile
+        val targetDir = File(root, name).canonicalFile
+        check(targetDir.parentFile == root && targetDir != root) { "Unsafe Steam download directory" }
+        check(!java.nio.file.Files.isSymbolicLink(File(root, name).toPath())) { "Unsafe download symlink" }
+        val installedRecords = File(context.filesDir, "steam-library").listFiles().orEmpty().filter {
+            it.isFile && it.extension == "json" && it.nameWithoutExtension.toIntOrNull() != null
+        }
+        check(installedRecords.none { file ->
+            runCatching { directory(context, JSONObject(file.readText())) == targetDir }.getOrDefault(false)
+        }) { "Another installed Steam game uses this directory" }
+        if (targetDir.exists()) {
+            java.nio.file.Files.walk(targetDir.toPath()).use { stream ->
+                stream.sorted(java.util.Comparator.reverseOrder()).forEach { java.nio.file.Files.delete(it) }
+            }
+        }
+        prefs.edit().remove("pending-root-$id").apply()
+    }
+
 }

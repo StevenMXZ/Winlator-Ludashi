@@ -70,7 +70,8 @@ import java.io.File
             }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(uiStr(R.string.steam_ui_games) to Icons.Outlined.SportsEsports, uiStr(R.string.steam_ui_downloads) to Icons.Outlined.Download, uiStr(R.string.steam_ui_installed) to Icons.Outlined.DownloadDone, uiStr(R.string.steam_ui_achievements) to Icons.Outlined.EmojiEvents, uiStr(R.string.steam_ui_demos) to Icons.Outlined.SportsEsports).forEachIndexed { index, (title, icon) ->
+            listOf(0 to (uiStr(R.string.steam_ui_games) to Icons.Outlined.SportsEsports), 4 to (uiStr(R.string.steam_ui_demos) to Icons.Outlined.SportsEsports), 1 to (uiStr(R.string.steam_ui_downloads) to Icons.Outlined.Download), 2 to (uiStr(R.string.steam_ui_installed) to Icons.Outlined.DownloadDone), 3 to (uiStr(R.string.steam_ui_achievements) to Icons.Outlined.EmojiEvents)).forEach { (index, entry) ->
+                val (title, icon) = entry
                 FilterChip(tab == index, onClick = { tab = index }, label = { Text(title) }, leadingIcon = { Icon(icon, null, Modifier.size(20.dp)) })
             }
         }
@@ -150,6 +151,8 @@ import java.io.File
 
 @Composable private fun SteamDownloadsScreen(state: SteamUiSnapshot, openGame: (Int) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
+    var confirmRemove by remember(state.id) { mutableStateOf(false) }
+    val installed = state.id > 0 && File(context.filesDir, "steam-library/${state.id}.json").isFile
     LazyColumn(modifier.fillMaxWidth(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text(uiStr(R.string.steam_ui_downloads), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
         if (state.id > 0) item {
@@ -157,20 +160,54 @@ import java.io.File
                 SteamArt("https://shared.steamstatic.com/store_item_assets/steam/apps/${state.id}/header.jpg", Modifier.fillMaxWidth().aspectRatio(460f / 215f))
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(state.name, style = MaterialTheme.typography.titleLarge)
-                    Text(if (state.downloading) uiStr(R.string.steam_ui_downloading) else if (File(context.filesDir, "steam-library/${state.id}.json").isFile) uiStr(R.string.steam_ui_installed_game) else uiStr(R.string.steam_ui_paused), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (state.downloading && state.total > 0) LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                    Text(if (state.downloading) uiStr(R.string.steam_ui_downloading) else if (installed) uiStr(R.string.steam_ui_installed_game) else uiStr(R.string.steam_ui_paused), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (state.downloading && state.total > 0)
+                        LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                     if (state.downloading) Text(downloadTimingText(state), style = MaterialTheme.typography.bodySmall)
                     Text("${state.done / 1048576} / ${state.total / 1048576} MB", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (state.downloading) OutlinedButton(onClick = { SteamSession.cancel() }) { Icon(Icons.Outlined.Pause, null); Text(uiStr(R.string.steam_ui_pause)) }
-                        else if (File(context.filesDir, "steam-library/${state.id}.json").isFile) Button(onClick = { openGame(state.id) }) { Text(uiStr(R.string.steam_ui_view_game)) }
-                        else Button(enabled = state.signedIn && !state.gameActive, onClick = { SteamSession.install(state.id) }) { Icon(Icons.Outlined.Download, null); Text(uiStr(R.string.steam_ui_resume)) }
+                        if (state.downloading) {
+                            OutlinedButton(onClick = { SteamSession.cancel() }) {
+                                Icon(Icons.Outlined.Pause, null)
+                                Text(uiStr(R.string.steam_ui_pause))
+                            }
+                        } else if (installed) {
+                            Button(onClick = { openGame(state.id) }) { Text(uiStr(R.string.steam_ui_view_game)) }
+                        } else {
+                            Button(enabled = state.signedIn && !state.gameActive, onClick = { SteamSession.install(state.id) }) {
+                                Icon(Icons.Outlined.Download, null)
+                                Text(uiStr(R.string.steam_ui_resume))
+                            }
+                            OutlinedButton(enabled = !state.gameActive, onClick = { confirmRemove = true }) {
+                                Icon(Icons.Outlined.DeleteOutline, null)
+                                Text(uiStr(R.string.steam_download_cancel_delete))
+                            }
+                        }
                     }
-                    if (state.status.startsWith("Download failed")) Text(steamStatusText(state.status), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    if (state.status.startsWith("Download failed"))
+                        Text(steamStatusText(state.status), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         } else item {
-            OutlinedCard { ListItem(headlineContent = { Text(uiStr(R.string.steam_ui_no_downloads)) }, supportingContent = { Text(uiStr(R.string.steam_ui_choose_download)) }, leadingContent = { Icon(Icons.Outlined.DownloadDone, null) }) }
+            OutlinedCard {
+                ListItem(headlineContent = { Text(uiStr(R.string.steam_ui_no_downloads)) },
+                    supportingContent = { Text(uiStr(R.string.steam_ui_choose_download)) },
+                    leadingContent = { Icon(Icons.Outlined.DownloadDone, null) })
+            }
+        }
+    }
+    if (confirmRemove && state.id > 0 && !installed && !state.downloading) {
+        com.winlator.cmod.ui.theme.ThemedDialog(onDismissRequest = { confirmRemove = false }) {
+            com.winlator.cmod.ui.theme.ThemedDialogTitle(uiStr(R.string.steam_download_cancel_delete))
+            Text(uiStr(R.string.steam_download_cancel_confirm), style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = { confirmRemove = false }) { Text(uiStr(R.string.steam_ui_cancel)) }
+                TextButton(onClick = {
+                    confirmRemove = false
+                    SteamSession.discardPaused(state.id)
+                }) { Text(uiStr(R.string.steam_download_cancel_delete)) }
+            }
         }
     }
 }

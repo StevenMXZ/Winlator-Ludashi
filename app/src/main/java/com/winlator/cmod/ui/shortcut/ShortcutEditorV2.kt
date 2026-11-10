@@ -630,7 +630,6 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item(category) {
-                        if (category == "General") com.winlator.cmod.steam.SteamGameOptions(shortcut)
                         ShortcutCategoryV2(
                             category, state, catalog, screenEntries, graphicsEntries, audioEntries,
                             wrapperEntries, localeEntries, soundFonts, gpuNames, fexPresets, boxPresets,
@@ -657,7 +656,6 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item(category) {
-                        if (category == "General") com.winlator.cmod.steam.SteamGameOptions(shortcut)
                         ShortcutCategoryV2(
                             category, state, catalog, screenEntries, graphicsEntries, audioEntries,
                             wrapperEntries, localeEntries, soundFonts, gpuNames, fexPresets, boxPresets,

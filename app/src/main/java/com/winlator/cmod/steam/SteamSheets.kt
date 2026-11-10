@@ -74,7 +74,8 @@ object SteamSheets {
         show(context) { dismiss ->
             val state = observeSteam()
             val apps = rememberSteamLibrary(context, state.library)
-            val item = remember(apps, id) { apps.find { app -> SteamLibrary.appId(app.shortcutPath) == id } }
+            val demos = rememberSteamLibrary(context, state.library, filterType = "demo")
+            val item = remember(apps, demos, id) { (apps + demos).find { app -> SteamLibrary.appId(app.shortcutPath) == id } }
             var favorite by remember { mutableStateOf(context.getSharedPreferences("steam-settings", 0).getBoolean("favorite-$id", false)) }
             Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },

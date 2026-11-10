@@ -14,6 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.BorderStroke
+import com.winlator.cmod.ui.theme.WinZShapes
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.text.style.TextOverflow
@@ -22,7 +25,7 @@ import java.text.DateFormat
 import java.util.Date
 
 /** Compact summary; detailed lists are lazy and only composed when requested. */
-@Composable fun SteamGameInfoPanel(id: Int) {
+@Composable fun SteamGameInfoPanel(id: Int, landscape: Boolean = false) {
     val context = LocalContext.current
     val state = observeSteam()
     val data = rememberSteamGameSnapshot(context, id)
@@ -38,20 +41,13 @@ import java.util.Date
             else if (!achievementsRequested) { achievementsRequested = true; SteamUserData.refreshAchievements(context, id) }
         }
     }
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { showInfo = true }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Outlined.Info, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp))
-                Text(uiStr(R.string.steam_ui_game_info), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            TextButton(onClick = { showAchievements = true }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Outlined.EmojiEvents, null, Modifier.size(20.dp)); Spacer(Modifier.width(6.dp))
-                Text(achievements?.let { "${it.count { a -> a.unlocked }} / ${it.size}" } ?: uiStr(R.string.steam_ui_achievements), maxLines = 1)
-            }
-        }
-        achievements?.takeIf { it.isNotEmpty() }?.let { list ->
-            LinearProgressIndicator(progress = { list.count { it.unlocked }.toFloat() / list.size }, modifier = Modifier.fillMaxWidth())
-        }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        SteamInfoAction(Icons.Outlined.Info, uiStr(R.string.steam_ui_game_info), landscape, Modifier.weight(1f)) { showInfo = true }
+        SteamInfoAction(
+            Icons.Outlined.EmojiEvents,
+            achievements?.let { "${it.count { a -> a.unlocked }} / ${it.size}" } ?: uiStr(R.string.steam_ui_achievements),
+            landscape, Modifier.weight(1f)
+        ) { showAchievements = true }
     }
     if (showInfo) AlertDialog(onDismissRequest = { showInfo = false }, title = { Text(uiStr(R.string.steam_ui_game_info)) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -97,6 +93,38 @@ import java.util.Date
                     }
                 }
                 TextButton(onClick = { showAchievements = false }, modifier = Modifier.align(Alignment.End)) { Text(uiStr(R.string.ui_close)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SteamInfoAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    landscape: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = if (landscape) 60.dp else 48.dp),
+        shape = WinZShapes.Medium,
+        color = if (landscape) Color.White.copy(alpha = .10f) else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (landscape) Color.White else MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, if (landscape) Color.White.copy(alpha = .16f) else MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        if (landscape) {
+            Column(Modifier.padding(horizontal = 3.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Icon(icon, null, Modifier.size(20.dp))
+                Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        } else {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }

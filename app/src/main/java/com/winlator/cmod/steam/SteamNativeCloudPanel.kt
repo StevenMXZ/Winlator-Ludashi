@@ -11,6 +11,8 @@ import androidx.compose.ui.unit.dp
 import com.winlator.cmod.container.Container
 import com.winlator.cmod.R
 import com.winlator.cmod.ui.uiStr
+import com.winlator.cmod.ui.theme.ThemedDialog
+import com.winlator.cmod.ui.theme.ThemedDialogTitle
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.Dispatchers
@@ -49,72 +51,49 @@ fun SteamNativeCloudPanel(id: Int, container: Container, close: () -> Unit, onBa
         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
     }
 
-    AlertDialog(
-        onDismissRequest = { if (!working) close() },
-        title = { Text(uiStr(R.string.steam_cloud_saves)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (direction == null) {
-                    OutlinedButton(onClick = { direction = SteamNativeCloud.Direction.Download }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Outlined.CloudDownload, null, Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(uiStr(R.string.steam_cloud_download_action))
+    ThemedDialog(onDismissRequest = { if (!working) close() }) {
+        ThemedDialogTitle(uiStr(R.string.steam_cloud_saves))
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (direction == null) {
+                OutlinedButton(onClick = { direction = SteamNativeCloud.Direction.Download }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Outlined.CloudDownload, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(uiStr(R.string.steam_cloud_download_action))
+                }
+                OutlinedButton(onClick = { direction = SteamNativeCloud.Direction.Upload }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Outlined.CloudUpload, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(uiStr(R.string.steam_cloud_upload_action))
+                }
+            } else {
+                Text(container.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (working) {
+                    if (total > 0) {
+                        LinearProgressIndicator(progress = { finished.toFloat() / total }, modifier = Modifier.fillMaxWidth())
+                        Text("$finished / $total")
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text(uiStr(R.string.steam_native_cloud_checking))
                     }
-                    OutlinedButton(onClick = { direction = SteamNativeCloud.Direction.Upload }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Outlined.CloudUpload, null, Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(uiStr(R.string.steam_cloud_upload_action))
-                    }
-                } else {
-                    Text(container.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (working) {
-                        if (total > 0) {
-                            LinearProgressIndicator(progress = { finished.toFloat() / total }, modifier = Modifier.fillMaxWidth())
-                            Text("$finished / $total")
-                        } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                            Text(uiStr(R.string.steam_native_cloud_checking))
-                        }
-                    } else if (result.isNotBlank()) {
-                        Text(uiStr(R.string.steam_cloud_transfer_done))
-                    } else if (error.isNotBlank()) {
-                        Text(error, color = MaterialTheme.colorScheme.error)
-                        if (direction == SteamNativeCloud.Direction.Download)
-                            Text(uiStr(R.string.steam_cloud_client_fallback), style = MaterialTheme.typography.bodySmall)
-                    } else if (plan != null) {
-                        Text(uiStr(R.string.steam_cloud_files_found, entries.size))
-                        Text(date?.let { uiStr(R.string.steam_cloud_save_date, it) } ?: uiStr(R.string.steam_cloud_date_unknown),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (entries.isEmpty() && direction == SteamNativeCloud.Direction.Download)
-                            Text(uiStr(R.string.steam_cloud_client_fallback), style = MaterialTheme.typography.bodySmall)
-                        else if (needsTransfer == 0) Text(uiStr(R.string.steam_cloud_already_updated), style = MaterialTheme.typography.bodySmall)
-                        else Text(uiStr(R.string.steam_cloud_pending_files, needsTransfer), style = MaterialTheme.typography.bodySmall)
-                    }
+                } else if (result.isNotBlank()) {
+                    Text(uiStr(R.string.steam_cloud_transfer_done))
+                } else if (error.isNotBlank()) {
+                    Text(error, color = MaterialTheme.colorScheme.error)
+                    if (direction == SteamNativeCloud.Direction.Download)
+                        Text(uiStr(R.string.steam_cloud_client_fallback), style = MaterialTheme.typography.bodySmall)
+                } else if (plan != null) {
+                    Text(uiStr(R.string.steam_cloud_files_found, entries.size))
+                    Text(date?.let { uiStr(R.string.steam_cloud_save_date, it) } ?: uiStr(R.string.steam_cloud_date_unknown),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (entries.isEmpty() && direction == SteamNativeCloud.Direction.Download)
+                        Text(uiStr(R.string.steam_cloud_client_fallback), style = MaterialTheme.typography.bodySmall)
+                    else if (needsTransfer == 0) Text(uiStr(R.string.steam_cloud_already_updated), style = MaterialTheme.typography.bodySmall)
+                    else Text(uiStr(R.string.steam_cloud_pending_files, needsTransfer), style = MaterialTheme.typography.bodySmall)
                 }
             }
-        },
-        confirmButton = {
-            if (direction != null && result.isBlank() && error.isBlank() && !working && needsTransfer > 0) {
-                TextButton(onClick = {
-                    working = true
-                    finished = 0
-                    total = 0
-                    scope.launch {
-                        val selected = direction!!
-                        val synced = withContext(Dispatchers.IO) {
-                            runCatching { SteamNativeCloud.synchronize(context, plan!!, selected) { done, count ->
-                                android.os.Handler(android.os.Looper.getMainLooper()).post { finished = done; total = count }
-                            } }
-                        }
-                        working = false
-                        synced.onSuccess { result = it }.onFailure { error = it.message.orEmpty() }
-                    }
-                }) {
-                    Text(uiStr(if (direction == SteamNativeCloud.Direction.Download) R.string.steam_cloud_apply_download else R.string.steam_cloud_confirm_upload))
-                }
-            }
-        },
-        dismissButton = {
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             if (direction == null) {
                 if (onBackup != null) TextButton(onClick = onBackup) { Text(uiStr(R.string.steam_cloud_backup)) }
                 TextButton(onClick = close) { Text(uiStr(R.string.ui_close)) }
@@ -122,7 +101,26 @@ fun SteamNativeCloudPanel(id: Int, container: Container, close: () -> Unit, onBa
                 TextButton(enabled = !working, onClick = { if (result.isNotBlank()) close() else direction = null }) {
                     Text(if (result.isNotBlank()) uiStr(R.string.ui_close) else uiStr(R.string.steam_ui_back))
                 }
+                if (result.isBlank() && error.isBlank() && !working && needsTransfer > 0) {
+                    TextButton(onClick = {
+                        working = true
+                        finished = 0
+                        total = 0
+                        scope.launch {
+                            val selected = direction!!
+                            val synced = withContext(Dispatchers.IO) {
+                                runCatching { SteamNativeCloud.synchronize(context, plan!!, selected) { done, count ->
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post { finished = done; total = count }
+                                } }
+                            }
+                            working = false
+                            synced.onSuccess { result = it }.onFailure { error = it.message.orEmpty() }
+                        }
+                    }) {
+                        Text(uiStr(if (direction == SteamNativeCloud.Direction.Download) R.string.steam_cloud_apply_download else R.string.steam_cloud_confirm_upload))
+                    }
+                }
             }
         }
-    )
+    }
 }

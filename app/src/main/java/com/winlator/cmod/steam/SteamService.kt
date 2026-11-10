@@ -322,7 +322,9 @@ object SteamSession {
         check(s.state() == 3) { "Sign in first" }
         val info = info(id)
         val name = SteamCatalog.installName(info)
-        val depots = SteamCatalog.depots(info)
+        val branch = SteamInstallOptions.branch(context, id)
+        val language = SteamInstallOptions.language(context, id)
+        val depots = SteamCatalog.depots(info, branch, language)
         val dir = SteamStorage.download(context, id, name)
         SteamGoldberg.restore(dir)
         SteamGoldberg.invalidate(dir)
@@ -332,7 +334,7 @@ object SteamSession {
         status = "Downloading $name…"
         try {
             s.downloadApp(id, depots.map { it.id }.toIntArray(), depots.map { it.manifest }.toLongArray(),
-                "public", dir.absolutePath, false, ca, SteamDownloadSettings.network(SteamDownloadSettings.tier(context)), object : LudashiDownloadListener {
+                branch, dir.absolutePath, false, ca, SteamDownloadSettings.network(SteamDownloadSettings.tier(context)), object : LudashiDownloadListener {
                     override fun onProgress(depotId: Int, depotDone: Long, depotTotal: Long, depotsDone: Int, depotsTotal: Int, verifying: Boolean) {
                         if (session !== s || !signedIn) return
                         downloadMeter?.update(depotId, depotDone, depotTotal, depotsDone, verifying, SystemClock.elapsedRealtime())
@@ -344,7 +346,7 @@ object SteamSession {
                         work {
                             if (success) {
                                 dir.walkTopDown().filter { it.isFile && it.name.endsWith(".ludashi-original") }.forEach { it.delete() }
-                                File(context.filesDir, "steam-library/$id.json").writeText(SteamStorage.record(info, dir).toString())
+                                File(context.filesDir, "steam-library/$id.json").writeText(SteamStorage.record(info, dir, branch, language).toString())
                                 main.post { SteamGames.changed() }
                             }
                             downloading = false
@@ -355,6 +357,19 @@ object SteamSession {
         } catch (e: Exception) { downloading = false; throw e }
     }
     fun cancel() = work { session?.cancelDownload() }
+    fun discardPaused(id: Int) = work {
+        check(!downloading && !gameActive) { "Pause the download and close the game first" }
+        check(downloadId == id && downloadName.isNotBlank()) { "No paused download to remove" }
+        val context = app ?: error("Steam is not connected")
+        SteamStorage.removePending(context, id, downloadName)
+        downloadId = 0
+        downloadName = ""
+        downloadDone = 0
+        downloadTotal = 0
+        downloadMeter = null
+        status = "Paused download removed"
+        main.post { SteamGames.changed() }
+    }
     /** All ordinary runtimes, including the container desktop, suspend app Steam work. */
     @JvmStatic fun pauseForCustomGame(context: Context): Boolean {
         if (app == null || closing || !SteamSettings.enabled(context) || gameActive) return false

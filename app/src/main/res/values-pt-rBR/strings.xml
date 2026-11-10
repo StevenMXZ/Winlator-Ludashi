@@ -658,4 +658,11 @@
     <string name="steam_store_cloud_setup">Instale o jogo e configure um container para transferir saves da nuvem.</string>
     <string name="steam_store_no_media">Nenhuma mídia disponível</string>
     <string name="steam_store_videos">Vídeos</string>
+    <string name="steam_store_game_size">Tamanho: %1$s</string>
+    <string name="steam_store_size_unknown">Indisponível</string>
+    <string name="steam_store_version">Versão</string>
+    <string name="steam_store_language">Idioma</string>
+    <string name="steam_store_apply_options">Baixar versão/idioma selecionados</string>
+    <string name="steam_download_cancel_delete">Cancelar e excluir</string>
+    <string name="steam_download_cancel_confirm">Excluir todos os arquivos parcialmente baixados deste jogo? Esta ação não pode ser desfeita.</string>
 </resources>
