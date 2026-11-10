@@ -1,7 +1,6 @@
 package com.winlator.cmod.ui.settings
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.Color
 import android.view.View
 import androidx.compose.foundation.BorderStroke
@@ -188,7 +187,7 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("environment-title") { SectionTitle("ENVIRONMENTS") }
             item("containers") {
                 NavigationRow(Icons.Outlined.Dns, "Containers", "Create and manage Windows environments") {
-                    context.startActivity(Intent(context, ContainersSettingsActivity::class.java))
+                    activity?.navigateToMainDestination(R.id.main_menu_containers)
                 }
             }
             item("components") {

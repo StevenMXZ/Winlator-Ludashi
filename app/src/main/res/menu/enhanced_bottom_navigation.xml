@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:id="@+id/bottom_nav_library" android:icon="@drawable/ui_nav_home" android:title="@string/library" />
-    <item android:id="@+id/bottom_nav_containers" android:icon="@drawable/ui_nav_grid" android:title="@string/containers" android:visible="false" />
+    <item android:id="@+id/bottom_nav_containers" android:icon="@drawable/ui_nav_grid" android:title="@string/containers" />
     <item android:id="@+id/bottom_nav_controls" android:icon="@drawable/ui_nav_controls" android:title="@string/input_controls" />
     <item android:id="@+id/bottom_nav_settings" android:icon="@drawable/ui_nav_settings" android:title="@string/settings" />
 </menu>

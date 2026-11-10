@@ -19,6 +19,16 @@ class ContainerCreateComposeFragment : Fragment() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        (activity as? com.winlator.cmod.MainActivity)?.setDetailMode(true)
+    }
+
+    override fun onPause() {
+        (activity as? com.winlator.cmod.MainActivity)?.setDetailMode(false)
+        super.onPause()
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,

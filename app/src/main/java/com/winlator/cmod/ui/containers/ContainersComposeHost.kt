@@ -125,6 +125,18 @@ private fun ContainersScreen(
             )
         }
 
+        if (!landscape) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = callbacks::onAdd) {
+                    Icon(Icons.Outlined.Add, "Add container")
+                }
+            }
+        }
+
         if (containers.isEmpty()) {
             Box(
                 modifier = Modifier
