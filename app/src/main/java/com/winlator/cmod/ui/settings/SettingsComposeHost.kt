@@ -320,6 +320,11 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("imagefs") { NavigationRow(Icons.Outlined.Refresh, stringResource(R.string.reinstall_imagefs), null, callbacks::onReinstallImageFs) }
 
             item("about-title") { SectionTitle("ABOUT") }
+            item("app-updates") {
+                NavigationRow(Icons.Outlined.Refresh, "App Updates", "Check for upstream updates") {
+                    activity?.let { com.winlator.cmod.core.UpstreamUpdates.show(it) }
+                }
+            }
             item("about") {
                 NavigationRow(Icons.Outlined.Info, "About", null) { activity?.showAboutDialog() }
             }

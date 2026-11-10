@@ -139,8 +139,8 @@ android {
         // We’re preserving Winlator’s request to keep targetSdkVersion at 28
         targetSdkVersion 28
 
-        versionCode 20
-        versionName "4.1"
+        versionCode 21
+        versionName "4.1-upstream.1"
 
         // External native build from Winlator
         externalNativeBuild {
@@ -167,6 +167,16 @@ android {
         freeCompilerArgs += ['-opt-in=androidx.compose.material3.ExperimentalMaterial3Api']
     }
 
+    signingConfigs {
+        upstream {
+            storeFile file(System.getenv("LUDASHI_KEYSTORE_PATH") ?: "missing-upstream-signing.p12")
+            storeType "PKCS12"
+            storePassword System.getenv("LUDASHI_STORE_PASSWORD") ?: ""
+            keyAlias "upstream"
+            keyPassword System.getenv("LUDASHI_STORE_PASSWORD") ?: ""
+        }
+    }
+
     // Keep Winlator’s buildTypes
     buildTypes {
         debug {
@@ -174,7 +184,7 @@ android {
         }
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.upstream
             crunchPngs false
         }
     }
