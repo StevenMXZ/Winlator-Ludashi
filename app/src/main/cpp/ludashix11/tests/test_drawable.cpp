@@ -41,6 +41,9 @@ int main(int argc,char**) {
     bool bad=false; try {d.CopyAreaFrom(d,-1,0,0,0,1,1);} catch(const BadMatchError&) {bad=true;} Check(bad);
     bad=false; try {d.CopyAreaFrom(d,30,22,0,0,2,2);} catch(const BadMatchError&) {bad=true;} Check(bad);
     bad=false; try {d.CopyAreaFrom(d,0,0,0,0,0,1);} catch(const BadMatchError&) {bad=true;} Check(bad);
+    auto snapshot=d.Pixels(); auto revision=d.Revision();
+    d.FillRect(100,100,1,1,42); d.FillRect(0,0,0,1,42); d.FillRect(-5,0,1,1,42);
+    Check(d.Pixels()==snapshot && d.Revision()==revision);
     // AHB source and destination retain the previous mapping/copy fallback.
     auto* ahb=new AHardwareBuffer; ahb->desc={31,23,1,5,0,32}; ahb->pixels.resize(32*23*4);
     {

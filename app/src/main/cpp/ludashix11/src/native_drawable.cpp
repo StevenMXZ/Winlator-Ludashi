@@ -93,6 +93,8 @@ void NativeDrawable::CopyAreaFrom(NativeDrawable& source, s16 sx, s16 sy, s16 dx
     }
 }
 void NativeDrawable::FillRect(s16 x, s16 y, u16 w, u16 h, u32 color) {
+    // Reject empty/clipped requests before COW, mapping or revision changes.
+    if (!w || !h || int(x) >= width || int(y) >= height || int(x) + w <= 0 || int(y) + h <= 0) return;
     Writable(); auto* dst = static_cast<u8*>(Map());
     for (int row = std::max(0, int(y)); row < std::min(int(height), int(y) + h); ++row) {
         auto* line = reinterpret_cast<u32*>(dst + size_t(row) * stride);

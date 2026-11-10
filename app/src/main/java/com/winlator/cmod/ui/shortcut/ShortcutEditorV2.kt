@@ -174,7 +174,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var screen by mutableStateOf(normalizeResolution(shortcut.getExtra("screenSize", container.getScreenSize())))
     var displayServer by mutableStateOf(
         if (shortcut.getExtra("displayServer", container.getExtra("displayServer", "java")) == "native")
-            "Ludashi X11 (Native Vulkan)" else "Java X11"
+            "X++" else "Java X11"
     )
     var renderer by mutableStateOf(if (shortcut.getUseDisplayX()) "DisplayX" else if (shortcut.getRendererNative()) "EGL" else "Vulkan")
     var presentMode by mutableStateOf(shortcut.getRendererPresentMode())
@@ -1039,9 +1039,9 @@ private fun ShortcutCategoryV2(
                 }
                 SettingsDivider()
                 SettingChoice(uiStr(R.string.ui_display_server), s.displayServer,
-                    listOf("Java X11", "Ludashi X11 (Native Vulkan)")) {
+                    listOf("Java X11", "X++")) {
                     s.displayServer = it
-                    s.extra("displayServer", if (it.startsWith("Ludashi")) "native" else "java")
+                    s.extra("displayServer", if (it == "X++") "native" else "java")
                 }
                 SettingsDivider()
                 SettingChoice(uiStr(R.string.ui_renderer_java_x11), s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
@@ -1287,8 +1287,6 @@ private fun ShortcutCategoryV2(
                 SettingToggle(uiStr(R.string.ui_enable_xinput), s.xinput, s.exclusive) { s.xinput = it; if (s.exclusive && it && s.dinput) s.dinput = false; s.saveInput() }
                 SettingsDivider()
                 SettingToggle(uiStr(R.string.ui_enable_dinput), s.dinput, s.exclusive) { s.dinput = it; if (s.exclusive && it && s.xinput) s.xinput = false; s.saveInput() }
-                SettingsDivider()
-                SettingToggle(uiStr(R.string.ui_disable_xinput), s.disableXInput) { s.disableXInput = it; s.extra("disableXinput", if (it) "1" else null) }
                 SettingsDivider()
                 SettingToggle(uiStr(R.string.ui_relative_mouse), s.relativeMouse) { s.relativeMouse = it; s.extra("enableRelativeMouse", if (it) "1" else null) }
                 SettingsDivider()

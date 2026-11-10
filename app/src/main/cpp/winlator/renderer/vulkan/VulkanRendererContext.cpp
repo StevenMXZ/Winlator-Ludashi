@@ -184,6 +184,7 @@ void VulkanRendererContext::loadDeviceDispatch() {
     LOAD_D2(CmdBindPipeline);
     LOAD_D2(CmdBindDescriptorSets);
     LOAD_D2(CmdDraw);
+    LOAD_D2(CmdExecuteCommands);
     LOAD_D2(CmdPushConstants);
     LOAD_D2(CmdSetViewport);
     LOAD_D2(CmdSetScissor);
@@ -925,6 +926,12 @@ void VulkanRendererContext::createCmdBufs() {
     ai.commandPool=cmdPool; ai.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY; ai.commandBufferCount=MAX_FRAMES_IN_FLIGHT;
     if (vk_.AllocateCommandBuffers(device,&ai,cmdBufs.data())!=VK_SUCCESS) throw std::runtime_error("cmdbuf");
 
+#ifdef LUDASHI_NATIVE_X11
+    ai.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+    if (vk_.AllocateCommandBuffers(device, &ai, nativeCursorCommands.data()) != VK_SUCCESS)
+        throw std::runtime_error("native cursor cmdbuf");
+    ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+#endif
     if (frameGenRequested && frameGenSurfaceSupported) {
         VkSemaphoreCreateInfo si{}; si.sType=VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         for (auto& semaphores : frameGenAcquireSems)
@@ -953,6 +960,10 @@ void VulkanRendererContext::cleanupSwapchain() {
 #ifdef LUDASHI_NATIVE_X11
     // All callers drain GPU work before destroying the swapchain.
     nativeCommands.Clear([&](VkCommandBuffer cb) { vk_.FreeCommandBuffers(device, cmdPool, 1, &cb); });
+    for (auto& cb : nativeCursorCommands) if (cb != VK_NULL_HANDLE) {
+        vk_.FreeCommandBuffers(device, cmdPool, 1, &cb); cb = VK_NULL_HANDLE;
+    }
+    nativeSceneCommand = VK_NULL_HANDLE;
     nativeGpuPending.fill(false);
 #endif
     for (auto& semaphores : frameGenAcquireSems)
@@ -2020,6 +2031,11 @@ void VulkanRendererContext::renderFrame() {
     });
     const bool cacheEligible = nativeCommandCacheEnabled && !useFrameGeneration && cacheLayers && cacheHasAHB &&
         cacheTexturesReady && !hasCurUpload && (filterMode == 0 || filterMode == 1) && postFXMode == 0 && stretchMode == 0;
+    // A secondary scene buffer keeps cursor motion out of the scene cache key.
+    // Hidden cursors keep the existing complete-primary replay fast path.
+    const bool splitCursor = cacheEligible && curVis && cursorImg != VK_NULL_HANDLE && cursorDS != VK_NULL_HANDLE;
+    nativeSceneCommand = VK_NULL_HANDLE;
+    nativeSceneReplay = false;
     NativeCommandKey commandKey;
     NativeCommandCache<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT>::Entry* cacheEntry = nullptr;
     if (cacheEligible) {
@@ -2039,29 +2055,40 @@ void VulkanRendererContext::renderFrame() {
         const auto queryPool = nativeTrace ? nativeGpuQueries : VK_NULL_HANDLE;
         commandKey.Add(queryPool);
         const bool drawsCursor = curVis && cursorImg != VK_NULL_HANDLE && cursorDS != VK_NULL_HANDLE;
-        commandKey.Add(drawsCursor);
-        if (drawsCursor) {
+        commandKey.Add(drawsCursor); commandKey.Add(splitCursor);
+        if (drawsCursor && !splitCursor) {
             commandKey.Add(cursorImg); commandKey.Add(cursorDS);
             commandKey.Add(ptrX); commandKey.Add(ptrY); commandKey.Add(curHotX); commandKey.Add(curHotY);
             commandKey.Add(curW); commandKey.Add(curH);
         }
         const auto cached = nativeCommands.Find(currentFrame, commandKey);
         if (cached != VK_NULL_HANDLE) {
-            selectedCommand = cached; reuseCommand = true;
+            if (splitCursor) { nativeSceneCommand = cached; nativeSceneReplay = true; }
+            else { selectedCommand = cached; reuseCommand = true; }
             if (nativeTrace) ++nativeMetrics.cacheHits;
         } else {
             cacheEntry = &nativeCommands.Replace(currentFrame);
+            // Vulkan command-buffer level is fixed at allocation. Eviction may
+            // reuse a slot previously occupied by the other cursor path.
+            if (cacheEntry->command != VK_NULL_HANDLE && cacheEntry->secondary != splitCursor) {
+                vk_.FreeCommandBuffers(device, cmdPool, 1, &cacheEntry->command);
+                cacheEntry->command = VK_NULL_HANDLE;
+            }
             if (cacheEntry->command == VK_NULL_HANDLE) {
+                cacheEntry->secondary = splitCursor;
                 VkCommandBufferAllocateInfo allocation{};
                 allocation.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-                allocation.commandPool = cmdPool; allocation.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+                allocation.commandPool = cmdPool; allocation.level = splitCursor ? VK_COMMAND_BUFFER_LEVEL_SECONDARY : VK_COMMAND_BUFFER_LEVEL_PRIMARY;
                 allocation.commandBufferCount = 1;
                 if (vk_.AllocateCommandBuffers(device, &allocation, &cacheEntry->command) != VK_SUCCESS) {
                     cacheEntry->command = VK_NULL_HANDLE;
                     cacheEntry = nullptr; // Allocation failure retains the general path.
                 }
             }
-            if (cacheEntry) selectedCommand = cacheEntry->command;
+            if (cacheEntry) {
+                if (splitCursor) nativeSceneCommand = cacheEntry->command;
+                else selectedCommand = cacheEntry->command;
+            }
             if (nativeTrace) ++nativeMetrics.cacheMisses;
         }
     } else if (nativeTrace) {

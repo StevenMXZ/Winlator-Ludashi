@@ -17,7 +17,8 @@ constexpr uint32_t MAX_FRAMES_IN_FLIGHT=2;
 constexpr int VK_NULL_HANDLE=0, VK_SUCCESS=0;
 enum {
     VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO=1, VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-    VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, VK_IMAGE_LAYOUT_UNDEFINED,
+    VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO, VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+    VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS, VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, VK_IMAGE_LAYOUT_UNDEFINED,
     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
     VK_IMAGE_ASPECT_COLOR_BIT, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
     VK_PIPELINE_BIND_POINT_GRAPHICS, VK_SUBPASS_CONTENTS_INLINE,
@@ -40,7 +41,8 @@ struct VkBufferImageCopy {
     struct { uint32_t aspectMask, mipLevel, baseArrayLayer, layerCount; } imageSubresource{};
     struct { uint32_t width,height,depth; } imageExtent{};
 };
-struct VkCommandBufferBeginInfo { int sType{}; };
+struct VkCommandBufferInheritanceInfo { int sType{}; uint64_t renderPass{}, framebuffer{}; };
+struct VkCommandBufferBeginInfo { int sType{}, flags{}; const VkCommandBufferInheritanceInfo* pInheritanceInfo{}; };
 union VkClearValue { struct { float f[4]; } color; };
 struct VkRenderPassBeginInfo {
     int sType{}; uint64_t renderPass{}, framebuffer{}; VkRect2D renderArea{};
@@ -53,6 +55,8 @@ struct RecordingDispatch {
     std::vector<int> alpha;
     int BeginCommandBuffer(VkCommandBuffer, const VkCommandBufferBeginInfo*) { return VK_SUCCESS; }
     int EndCommandBuffer(VkCommandBuffer) { return VK_SUCCESS; }
+    void ResetCommandBuffer(...) {}
+    void CmdExecuteCommands(...) {}
     void CmdPipelineBarrier(...) {}
     void CmdCopyBufferToImage(...) {}
     void CmdBeginRenderPass(VkCommandBuffer, const VkRenderPassBeginInfo* info, int) { pass=info->renderPass; }
@@ -91,6 +95,8 @@ public:
     bool nativeDiagnosticsEnabled{};
     bool swapRB{};
     NativeVulkanMetrics nativeMetrics;
+    VkCommandBuffer nativeSceneCommand{}; bool nativeSceneReplay{};
+    std::array<VkCommandBuffer,2> nativeCursorCommands{90,91};
     void getPreRotationCosSin(float& c, float& s) { c=1; s=0; }
     void recordCmdBuf(VkCommandBuffer, uint32_t, const std::vector<DrawEntry>&,
         std::vector<VkImageMemoryBarrier>&, std::vector<VkImageMemoryBarrier>&, std::vector<VkImageMemoryBarrier>&,

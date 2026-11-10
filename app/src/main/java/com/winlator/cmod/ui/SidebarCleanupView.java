@@ -165,6 +165,9 @@ public class SidebarCleanupView extends View implements SharedPreferences.OnShar
                     "Battery Temp", WinlatorHUD.SHOW_BATTERY_TEMP,
                     "Charge State", WinlatorHUD.SHOW_CHARGE_STATE);
 
+            metrics.addView(createHudMetricCheckBox("Frametimes", WinlatorHUD.SHOW_FRAME_GRAPH),
+                    new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+
             SharedPreferences hudPrefs = getContext().getSharedPreferences(
                     WinlatorHUD.PREFS, Context.MODE_PRIVATE);
             Switch dualCell = new Switch(getContext());

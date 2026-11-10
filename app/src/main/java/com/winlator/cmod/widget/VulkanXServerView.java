@@ -15,6 +15,7 @@ import androidx.annotation.NonNull;
 import com.winlator.cmod.R;
 import com.winlator.cmod.lsfg.LosslessScaling;
 import com.winlator.cmod.renderer.GPUImage;
+import com.winlator.cmod.renderer.MagnifierPan;
 import com.winlator.cmod.xserver.Bitmask;
 import com.winlator.cmod.xserver.Cursor;
 import com.winlator.cmod.xserver.Drawable;
@@ -48,6 +49,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     private boolean fullscreen = false;
     private float magnifierZoom = 1.0f;
+    private final MagnifierPan magnifierPan = new MagnifierPan();
     private boolean screenOffsetYRelativeToCursor = false;
     public int surfaceWidth;
     public int surfaceHeight;
@@ -306,39 +308,28 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     private void updateTransform() {
         if (nativeHandle == 0) return;
+        // Zoom is a render-only scene transform. Do not resize the Surface,
+        // call RandR, or change the resolution seen by the game.
         final float zoom = magnifierZoom;
-        final float ptrX = xServer.pointer.getX();
-        final float ptrY = xServer.pointer.getY();
+        final float ptrX = xServer.pointer.getX(), ptrY = xServer.pointer.getY();
+        final int screenW = xServer.screenInfo.width, screenH = xServer.screenInfo.height;
+        magnifierPan.update(ptrX, ptrY, screenW, screenH, zoom);
 
-        final float ox, oy, sx, sy;
-        if (fullscreen) {
-            viewTransformation.update(surfaceWidth, surfaceHeight,
-                xServer.screenInfo.width, xServer.screenInfo.height);
-            if (zoom != 1.0f) {
-                ox = viewTransformation.sceneOffsetX + ptrX * viewTransformation.sceneScaleX * (1f - zoom);
-                oy = viewTransformation.sceneOffsetY + ptrY * viewTransformation.sceneScaleY * (1f - zoom);
-                sx = viewTransformation.sceneScaleX * zoom;
-                sy = viewTransformation.sceneScaleY * zoom;
-            } else {
-                ox = 0f; oy = 0f; sx = 1f; sy = 1f;
-            }
-        } else {
-            float py = 0;
-            if (screenOffsetYRelativeToCursor) {
-                short halfH = (short)(xServer.screenInfo.height / 2);
-                py = Math.max(0, Math.min(ptrY - halfH / 2.0f, halfH));
-            }
-            ox = viewTransformation.sceneOffsetX + ptrX * viewTransformation.sceneScaleX * (1f - zoom);
-            oy = viewTransformation.sceneOffsetY - py + ptrY * viewTransformation.sceneScaleY * (1f - zoom);
-            sx = viewTransformation.sceneScaleX * zoom;
-            sy = viewTransformation.sceneScaleY * zoom;
+        final float baseScaleX = fullscreen ? 1f : viewTransformation.sceneScaleX;
+        final float baseScaleY = fullscreen ? 1f : viewTransformation.sceneScaleY;
+        final float baseX = fullscreen ? 0f : viewTransformation.sceneOffsetX;
+        final float baseY = fullscreen ? 0f : viewTransformation.sceneOffsetY;
+        float offsetY = baseY - magnifierPan.panY() * baseScaleY;
+        if (screenOffsetYRelativeToCursor && zoom <= 1f && !fullscreen) {
+            final float halfH = screenH * .5f;
+            offsetY -= Math.max(0f, Math.min(ptrY - halfH * .5f, halfH));
         }
-
-        final boolean needScissor = !(fullscreen && zoom == 1.0f);
-        nativeSetTransformAndScissor(nativeHandle, ox, oy, sx, sy,
-            needScissor,
+        nativeSetTransformAndScissor(nativeHandle,
+            baseX - magnifierPan.panX() * baseScaleX, offsetY,
+            baseScaleX * zoom, baseScaleY * zoom,
+            !fullscreen,
             viewTransformation.viewOffsetX, viewTransformation.viewOffsetY,
-            viewTransformation.viewWidth,   viewTransformation.viewHeight);
+            viewTransformation.viewWidth, viewTransformation.viewHeight);
     }
 
     private void sendCursorToNative(Cursor cursor) {
@@ -827,8 +818,12 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     public boolean isScreenOffsetYRelativeToCursor() { return screenOffsetYRelativeToCursor; }
     @Override
     public void setMagnifierZoom(float zoom) {
-        magnifierZoom = zoom;
-        synchronized (lock) { updateTransform(); }
+        synchronized (lock) {
+            final float bounded = Math.max(1f, Math.min(3f, zoom));
+            if (magnifierZoom != bounded) magnifierPan.reset();
+            magnifierZoom = bounded;
+            updateTransform();
+        }
     }
     @Override
     public float getMagnifierZoom() { return magnifierZoom; }

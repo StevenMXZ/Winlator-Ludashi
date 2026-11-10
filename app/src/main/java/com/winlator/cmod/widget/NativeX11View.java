@@ -25,7 +25,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     private long handle;
     private boolean fullscreen, cursorVisible, destroyed;
     private int fpsLimit;
-    private float zoom = 1f;
+    private volatile float zoom = 1f;
     private int filterMode, postFXMode, stretchMode;
     private float sharpness = .5f;
     private boolean frameGenRequested, frameGenEnabled, paused;
@@ -62,6 +62,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     };
     private Runnable readyCallback;
     private boolean ready;
+    private boolean started;
     private final boolean highRefreshRate;
     private final DisplayManager displayManager;
     private boolean displayListenerRegistered, diagnosticsEnabled;
@@ -95,12 +96,12 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
                     if (window != 0) {
                         if (changed || !hudRenderer.equals(sample[2]) || !hudGpu.equals(sample[3])) {
                             if (hudMode == 2 && modernHud != null) {
-                                modernHud.onRendererDetected(sample[2]);
+                                modernHud.onRendererDetected(sample[2].isEmpty() ? ((com.winlator.cmod.XServerDisplayActivity)getContext()).getHudGraphicsFallback() : sample[2]);
                                 if (!sample[3].isEmpty()) modernHud.setGpuName(sample[3]);
                             }
                             if (hudMode == 1 && classicHud != null) {
                                 classicHud.setVisibility(VISIBLE);
-                                classicHud.setRenderer(sample[2].isEmpty() ? "Vulkan" : sample[2]);
+                                classicHud.setRenderer(sample[2].isEmpty() ? ((com.winlator.cmod.XServerDisplayActivity)getContext()).getHudGraphicsFallback() : sample[2]);
                                 if (!sample[3].isEmpty()) classicHud.setGpuName(sample[3]);
                             }
                         }
@@ -131,7 +132,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
                             android.widget.Toast.LENGTH_LONG).show();
                     return;
                 }
-                if (nativeHasContent(handle)) {
+                if (started) {
                     ready = true;
                     if (readyCallback != null) readyCallback.run();
                     return;
@@ -195,6 +196,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         if (parent != null && !parent.isDirectory() && !parent.mkdirs())
             throw new IllegalStateException("Cannot create native X11 socket directory");
         nativeStart(handle, socket, shm);
+        started = true;
         post(startupCheck);
     }
     private synchronized void updateOptions() {
@@ -301,7 +303,10 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     @Override public void setCursorVisible(boolean value) { cursorVisible = value; updateOptions(); }
     @Override public void setFpsLimit(int value) { fpsLimit = Math.max(0, value); updateOptions(); }
     @Override public int getFpsLimit() { return fpsLimit; }
-    @Override public void setMagnifierZoom(float value) { zoom = value; }
+    @Override public synchronized void setMagnifierZoom(float value) {
+        zoom = Float.isFinite(value) ? Math.max(1f, Math.min(3f, value)) : 1f;
+        if (handle != 0) nativeMagnifierZoom(handle, zoom);
+    }
     @Override public float getMagnifierZoom() { return zoom; }
     @Override public void setScreenOffsetYRelativeToCursor(boolean value) {}
     @Override public synchronized void setUnviewableWMClasses(String... values) {
@@ -410,6 +415,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     private static native void nativeSurface(long handle, Surface surface);
     private static native void nativeInput(long handle, int kind, int a, int b);
     private static native void nativeOptions(long handle, boolean fullscreen, boolean cursor, int fps, float refresh);
+    private static native void nativeMagnifierZoom(long handle, float zoom);
     private static native void nativeRefreshRates(long handle, int[] rates);
     private static native void nativeDiagnostics(long handle, boolean enabled, boolean commandCacheEnabled);
     private static native void nativeUnviewableWMClasses(long handle, String[] values);
@@ -418,5 +424,3 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     private static native long nativeFocusHandle(long handle);
     private static native boolean nativeHasWindow(long handle, long hwnd);
 }
-
-

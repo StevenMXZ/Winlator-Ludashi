@@ -54,6 +54,7 @@ public class WinlatorHUD extends View {
     public static final int SHOW_CPU_TEMP = 1 << 8;
     public static final int SHOW_BATTERY_TEMP = 1 << 9;
     public static final int SHOW_CHARGE_STATE = 1 << 10;
+    public static final int SHOW_FRAME_GRAPH = 1 << 14;
 
     public static final int SHOW_GPU = SHOW_GPU_USAGE;
     public static final int SHOW_CPU = SHOW_CPU_USAGE;
@@ -182,6 +183,9 @@ public class WinlatorHUD extends View {
     private final AtomicInteger frameAccum = new AtomicInteger(0);
     private long lastFpsNs = 0;
     private float snapFps = 0;
+    private String generatedFpsText = "";
+    private final Paint pGenerated = new Paint(TEXT_FLAGS);
+    private final HudFrametimeGraph frametimeGraph = new HudFrametimeGraph();
     private VulkanRendererControls frameGenerationSource = null;
     private long lastGeneratedFrames = 0;
     private boolean generatedCounterPrimed = false;
@@ -338,6 +342,7 @@ public class WinlatorHUD extends View {
                     return bypass ? "DisplayX+" : "DisplayX";
                 }
 
+                if (view instanceof NativeX11View) return activity.getHudGraphicsFallback();
                 if (view instanceof XServerView) return "EGL";
                 if (view instanceof VulkanXServerView) return "Vulkan";
             }
@@ -732,14 +737,16 @@ public class WinlatorHUD extends View {
 
         int frames = frameAccum.getAndSet(0);
         long generated = sampleGeneratedFrames();
-        snapFps = (frames + generated) * 1_000_000_000f / dt;
+        snapFps = frames * 1_000_000_000f / dt;
+        generatedFpsText = frameGenerationActive ? " -> " + Math.round((frames + generated) * 1_000_000_000f / dt) : "";
+        if ((showMask & SHOW_FRAME_GRAPH) != 0) frametimeGraph.record(snapFps);
         lastFpsNs = now;
 
-        String value = String.format(Locale.US, "%.0f", snapFps);
-        if (!value.equals(strFps)) {
-            strFps = value;
-            wDynFps = pVal.measureText(strFps);
-            if (wDynFps > wValFps) requestRelayout();
+        strFps = Integer.toString(Math.max(0, Math.round(snapFps)));
+        float width = pVal.measureText(strFps + generatedFpsText);
+        if (width != wDynFps) {
+            wDynFps = width;
+            requestRelayout();
         }
     }
 
@@ -756,6 +763,9 @@ public class WinlatorHUD extends View {
 
             if (vertical) drawVertical(canvas);
             else drawHorizontal(canvas);
+            if ((showMask & SHOW_FRAME_GRAPH) != 0)
+                frametimeGraph.draw(canvas, PAD, getHeight() - TS * 2f - PAD,
+                        getWidth() - PAD * 2f, TS * 2f, TS);
         } catch (Exception ignored) {}
     }
 
@@ -765,7 +775,7 @@ public class WinlatorHUD extends View {
         float baseline = PAD + TS;
         float contentWidth = Math.min(getWidth(), measureHorizontalContent());
 
-        bgRect.set(0, 0, contentWidth, rowH);
+        bgRect.set(0, 0, contentWidth, getHeight());
         canvas.drawRoundRect(bgRect, CORNER, CORNER, pBg);
 
         boolean hasGroup = false;
@@ -851,7 +861,7 @@ public class WinlatorHUD extends View {
             if (hasGroup) x += drawSep(canvas, x, baseline);
             canvas.drawText("FPS ", x, baseline, pFps);
             x += wLabelFps;
-            canvas.drawText(strFps, x, baseline, frameGenerationActive ? pFps : pVal);
+            drawFps(canvas, x, baseline);
         }
     }
 
@@ -927,9 +937,15 @@ public class WinlatorHUD extends View {
 
         if ((showMask & SHOW_FPS) != 0) {
             canvas.drawText("FPS ", PAD, y + TS, pFps);
-            canvas.drawText(strFps, PAD + wLabelFps, y + TS,
-                    frameGenerationActive ? pFps : pVal);
+            drawFps(canvas, PAD + wLabelFps, y + TS);
         }
+    }
+
+    private void drawFps(Canvas canvas, float x, float y) {
+        canvas.drawText(strFps, x, y, pVal);
+        pGenerated.set(pVal);
+        pGenerated.setColor(Color.rgb(176, 255, 176));
+        canvas.drawText(generatedFpsText, x + pVal.measureText(strFps), y, pGenerated);
     }
 
     private float drawSep(Canvas canvas, float x, float baseline) {
@@ -1130,6 +1146,7 @@ public class WinlatorHUD extends View {
         float lineH = TS + PAD * 2;
         float width = vertical ? measureVerticalReserved() : measureHorizontalReserved();
         float height = vertical ? (countVerticalRows() * lineH + PAD) : lineH;
+        if ((showMask & SHOW_FRAME_GRAPH) != 0) height += TS * 2f + PAD;
         setMeasuredDimension((int) Math.ceil(width), (int) Math.ceil(height));
     }
 
@@ -1578,7 +1595,7 @@ public class WinlatorHUD extends View {
         boolean active = source != null && source.isFrameGenerationEnabled();
         if (active != frameGenerationActive) {
             frameGenerationActive = active;
-            pFps.setColor(active ? C_FPS_FG : C_FPS);
+            pFps.setColor(C_FPS);
             generatedCounterPrimed = false;
         }
 
@@ -1603,6 +1620,8 @@ public class WinlatorHUD extends View {
     private void resetFpsTracking() {
         frameAccum.set(0);
         snapFps = 0;
+        generatedFpsText = "";
+        frametimeGraph.clear();
         lastFpsNs = 0;
         lastGeneratedFrames = 0;
         generatedCounterPrimed = false;
@@ -1629,4 +1648,3 @@ public class WinlatorHUD extends View {
         }
     }
 }
-

@@ -1022,13 +1022,42 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     public boolean isExclusiveInputBusy() { return exclusiveInputBusy; }
     public boolean canChangeExclusiveInput() { return winHandler != null && winHandler.isSessionReady() && !exclusiveInputBusy; }
+    public boolean isSidebarXInputEnabled() {
+        return winHandler != null && (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_XINPUT) != 0;
+    }
+    public boolean isSidebarDInputEnabled() {
+        return winHandler != null && (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_DINPUT) != 0;
+    }
 
     public void changeExclusiveInput(boolean enabled, Runnable refreshed) {
         if (!canChangeExclusiveInput() || enabled == isExclusiveInputEnabled()) return;
-        boolean previous = isExclusiveInputEnabled();
-        boolean dinput = (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_DINPUT) != 0;
-        // cmd/regedit can activate a console. Restore the original Wine HWND, not a
-        // guessed executable (launchers and games may be different processes).
+        boolean xinput = isSidebarXInputEnabled(), dinput = isSidebarDInputEnabled();
+        if (!enabled) {
+            xinput = true;
+            dinput = true;
+        } else if (xinput && dinput) {
+            dinput = false;
+        }
+        applySidebarJoystickSettings(xinput, dinput, enabled, refreshed);
+    }
+
+    public void changeSidebarInputApis(boolean xinput, boolean dinput, Runnable refreshed) {
+        if (!canChangeExclusiveInput() || !isExclusiveInputEnabled() || (xinput && dinput)) return;
+        if (xinput == isSidebarXInputEnabled() && dinput == isSidebarDInputEnabled()) return;
+        applySidebarJoystickSettings(xinput, dinput, true, refreshed);
+    }
+
+    private void applySidebarJoystickSettings(boolean xinput, boolean dinput, boolean exclusive, Runnable refreshed) {
+        if (!canChangeExclusiveInput()) return;
+        final boolean previousExclusive = isExclusiveInputEnabled();
+        final boolean previousDinput = isSidebarDInputEnabled();
+        final byte previousType = winHandler.getInputType();
+        final byte nextType = (byte)((previousType &
+                ~(WinHandler.FLAG_INPUT_TYPE_XINPUT | WinHandler.FLAG_INPUT_TYPE_DINPUT)) |
+                (xinput ? WinHandler.FLAG_INPUT_TYPE_XINPUT : 0) |
+                (dinput ? WinHandler.FLAG_INPUT_TYPE_DINPUT : 0));
+
+        // Keep the focus of the original Wine HWND when regedit opens a console.
         Window focused = xServer.windowManager.getFocusedWindow();
         while (focused != null && focused.getHandle() == 0) focused = focused.getParent();
         final Window focusTarget = focused;
@@ -1040,13 +1069,27 @@ public class XServerDisplayActivity extends AppCompatActivity {
         exclusiveInputBusy = true;
         refreshed.run();
         winHandler.holdGamepadsNeutral();
-        com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC, dinput, enabled, ok -> {
+
+        com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC, dinput, exclusive, ok -> {
             if (isFinishing() || isDestroyed()) return;
+            if (ok) {
+                // Set the transport mode before reconnecting devices, so the new API is used.
+                winHandler.setInputType(nextType);
+                winHandler.setXInputDisabled(!xinput);
+            }
             Runnable finish = () -> winHandler.reconnectGamepads(() -> {
                 if (isFinishing() || isDestroyed()) return;
                 if (ok) {
-                    if (shortcut != null) { shortcut.putExtra("exclusiveXInput", enabled ? "1" : "0"); shortcut.saveData(); }
-                    else { container.setExclusiveXInput(enabled); container.saveData(); }
+                    if (shortcut != null) {
+                        shortcut.putExtra("exclusiveXInput", exclusive ? "1" : "0");
+                        shortcut.putExtra("inputType", String.valueOf(nextType & 0xff));
+                        shortcut.putExtra("disableXinput", xinput ? null : "1");
+                        shortcut.saveData();
+                    } else {
+                        container.setExclusiveXInput(exclusive);
+                        container.setInputType(nextType & 0xff);
+                        container.saveData();
+                    }
                 }
                 exclusiveInputBusy = false;
                 if (nativeFocus != null && nativeFocus.hasWindowHandle(focusHandle)) {
@@ -1057,11 +1100,17 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     winHandler.bringToFront("", focusHandle);
                 }
                 refreshed.run();
-                android.widget.Toast.makeText(this, ok ? "Exclusive Input applied. Some games may need a restart."
-                        : "Could not apply Exclusive Input. Previous setting restored.", android.widget.Toast.LENGTH_LONG).show();
+                android.widget.Toast.makeText(this,
+                        ok ? "Controller input updated. Some games may need a restart."
+                           : "Could not apply controller input. Previous settings restored.",
+                        android.widget.Toast.LENGTH_LONG).show();
             });
             if (ok) finish.run();
-            else com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC, dinput, previous, ignored -> finish.run());
+            else com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC,
+                    previousDinput, previousExclusive, ignored -> {
+                        winHandler.setInputType(previousType);
+                        finish.run();
+                    });
         });
     }
 
@@ -1708,6 +1757,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                         });
                         magnifierView.setZoomValue(renderer.getMagnifierZoom());
                         magnifierView.setHideButtonCallback(() -> {
+                            renderer.setMagnifierZoom(1.0f);
                             flContainer.removeView(magnifierView);
                             magnifierView = null;
                         });
@@ -1721,19 +1771,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
         View btItemSoftStretch = findViewById(R.id.BTItemSoftStretch);
         if (btItemSoftStretch != null) {
             btItemSoftStretch.setOnClickListener(v -> {
-                if (xServerView != null) {
-                    softStretchEnabled = !softStretchEnabled;
-                    XServerRendererView rendererRef = xServerView;
-
-                    if (softStretchEnabled && !rendererRef.isFullscreen()) {
-                        rendererRef.toggleFullscreen();
-                        if (touchpadView != null) touchpadView.toggleFullscreen();
-                    }
-                    if (rendererRef instanceof VulkanRendererControls) {
-                        ((VulkanRendererControls) rendererRef).setStretchMode(softStretchEnabled ? 1 : 0);
-                    }
-                    btItemSoftStretch.setSelected(softStretchEnabled);
-                }
+                if (isSidebarSoftStretchSupported())
+                    setSidebarDisplayMode(softStretchEnabled ? 1 : 2);
                 drawerLayout.closeDrawers();
             });
         }
@@ -1826,10 +1865,33 @@ public class XServerDisplayActivity extends AppCompatActivity {
         return xServerView != null && xServerView.isFullscreen();
     }
 
+    public boolean isSidebarSoftStretchSupported() {
+        // The 4.2 Native X11 renderer gained the same controls as Java Vulkan.
+        return xServerView instanceof VulkanRendererControls;
+    }
+
+    public int getSidebarDisplayMode() {
+        return softStretchEnabled && isSidebarSoftStretchSupported() ? 2 : isSidebarFullscreenStretched() ? 1 : 0;
+    }
+
     public void setSidebarFullscreenStretched(boolean stretch) {
-        if (xServerView == null || xServerView.isFullscreen() == stretch) return;
-        xServerView.toggleFullscreen();
-        if (touchpadView != null) touchpadView.toggleFullscreen();
+        setSidebarDisplayMode(stretch ? 1 : 0);
+    }
+
+    public void setSidebarDisplayMode(int mode) {
+        if (xServerView == null || mode < 0 || mode > 2
+                || (mode == 2 && !isSidebarSoftStretchSupported())) return;
+        boolean newSoft = mode == 2;
+        if (xServerView instanceof VulkanRendererControls)
+            ((VulkanRendererControls) xServerView).setStretchMode(newSoft ? 1 : 0);
+        softStretchEnabled = newSoft;
+        boolean fullscreen = mode != 0;
+        if (xServerView.isFullscreen() != fullscreen) {
+            xServerView.toggleFullscreen();
+            if (touchpadView != null) touchpadView.toggleFullscreen();
+        }
+        View softButton = findViewById(R.id.BTItemSoftStretch);
+        if (softButton != null) softButton.setSelected(newSoft);
     }
 
     private int activeSidebarItemId = R.id.BTItemFPS;
@@ -2824,6 +2886,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         inputControlsView.invalidate();
         winHandler.sendGamepadState();
+    }
+
+    public String getHudGraphicsFallback() {
+        return "freedreno".equalsIgnoreCase(graphicsDriver) ? "freedreno" : "Vulkan";
     }
 
     private String getSelectedOpenGLDriver() {

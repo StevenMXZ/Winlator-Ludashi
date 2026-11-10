@@ -13,6 +13,31 @@
 #include <cerrno>
 
 namespace xorg {
+XClient::BufferImport::~BufferImport() {
+    if (worker.joinable()) {
+        if (!done.load(std::memory_order_acquire)) shutdown(transfer.Handle(), SHUT_RDWR);
+        worker.join();
+    }
+    if (buffer) AHardwareBuffer_release(buffer);
+}
+void XClient::FinishDRI3Import() {
+    auto import = std::move(pendingImport);
+    import->worker.join();
+    try {
+        if (!import->buffer) throw BadMatchError();
+        if (GetResource(import->pixmap)) throw BadIdChoiceError(import->pixmap);
+        auto p = std::make_shared<Pixmap>(server.GetScreen(), import->pixmap,
+                                        import->width, import->height, import->buffer);
+        AddResource(p);
+        auto& screen = static_cast<NativeScreen&>(server.GetScreen());
+        if (screen.DiagnosticsEnabled()) screen.RecordDri3Import();
+    } catch (const XRequestError& e) {
+        xError error{};
+        error.type = X_Error; error.errorCode = e.code; error.sequenceNumber = import->sequence;
+        error.resourceID = e.data; error.majorCode = import->opcode; error.minorCode = import->minor;
+        WriteImmediately(&error, sizeof(error));
+    }
+}
 void XClient::ProcDRI3() {
     auto* req = GetRequestData<xReq>();
     switch (req->data) {
@@ -60,41 +85,35 @@ void XClient::ProcDRI3() {
                      drawable, pixmap, width, height, static_cast<int>(depth));
             throw BadMatchError();
         }
-        // The Winlator DRI3 AHB sender waits for this one-byte readiness signal
-        // before sending the native handle. Match GPUImage_nativeHardwareBufferFromSocket.
-        const u8 ready = 1;
-        ssize_t sent;
-        do {
-            sent = send(transfer.Handle(), &ready, sizeof(ready), MSG_NOSIGNAL);
-        } while (sent < 0 && errno == EINTR);
-        if (sent != sizeof(ready)) {
-            if (static_cast<NativeScreen&>(server.GetScreen()).DiagnosticsEnabled())
-                LOGE("DRI3 AHB handshake failed: pixmap={} errno={}", pixmap, errno);
-            throw BadMatchError();
-        }
-        AHardwareBuffer* ahb{};
-        const int receiveResult = AHardwareBuffer_recvHandleFromUnixSocket(transfer.Handle(), &ahb);
-        if (receiveResult != 0 || !ahb) {
-            if (static_cast<NativeScreen&>(server.GetScreen()).DiagnosticsEnabled())
-                LOGE("DRI3 AHB receive failed: pixmap={} result={}", pixmap, receiveResult);
-            throw BadMatchError();
-        }
-        auto& diagScreen = static_cast<NativeScreen&>(server.GetScreen());
-        if (diagScreen.DiagnosticsEnabled()) diagScreen.RecordDri3Import();
-        static unsigned reportedImports = 0;
-        if (diagScreen.DiagnosticsEnabled() && reportedImports++ < 8) {
-            AHardwareBuffer_Desc desc{};
-            AHardwareBuffer_describe(ahb, &desc);
-            LOGI("DRI3 AHB pixmap={} drawable={} request={}x{} depth={} allocated={}x{} stride={} format={}",
-                 pixmap, drawable, width, height, static_cast<int>(depth),
-                 desc.width, desc.height, desc.stride, desc.format);
-        }
-        try {
-            // NativeDrawable takes the received AHB reference; no CPU mapping or copy.
-            auto p = std::make_shared<Pixmap>(server.GetScreen(), pixmap, width, height, ahb);
-            AHardwareBuffer_release(ahb); ahb = nullptr;
-            AddResource(p);
-        } catch (...) { if (ahb) AHardwareBuffer_release(ahb); throw; }
+        // Only this client's request stream is suspended. Transport I/O must
+        // not hold XServer::Lock or stall input and unrelated X11 clients.
+        auto import = std::make_unique<BufferImport>();
+        import->transfer.Reset(transfer.Release());
+        import->pixmap = pixmap; import->width = width; import->height = height;
+        import->sequence = sequence; import->opcode = req->reqType; import->minor = req->data;
+        auto* work = import.get();
+        work->worker = std::thread([work, server = &server] {
+            // A broken producer must not retain a worker indefinitely. Client
+            // destruction also shuts down the socket before joining this thread.
+            timeval timeout{5, 0};
+            setsockopt(work->transfer.Handle(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+            setsockopt(work->transfer.Handle(), SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+            const u8 ready = 1;
+            ssize_t sent;
+            do { sent = send(work->transfer.Handle(), &ready, 1, MSG_NOSIGNAL); }
+            while (sent < 0 && errno == EINTR);
+            int received = -1;
+            try {
+                if (sent == 1) received = AHardwareBuffer_recvHandleFromUnixSocket(work->transfer.Handle(), &work->buffer);
+            } catch (...) { /* Report transport/allocation failure on the X11 thread. */ }
+            if (received != 0) {
+                if (work->buffer) AHardwareBuffer_release(work->buffer);
+                work->buffer = nullptr;
+            }
+            work->done.store(true, std::memory_order_release);
+            server->NotifyScreen();
+        });
+        pendingImport = std::move(import);
         return;
     }
     default: throw BadRequestError();

@@ -17,23 +17,29 @@ fixture = r'''
 #include <stdexcept>
 #include <cassert>
 #include <iostream>
+#include <unordered_map>
 using VkCommandBuffer = uint64_t;
 constexpr uint64_t VK_NULL_HANDLE=0;
 constexpr int MAX_FRAMES_IN_FLIGHT=2, VK_SUCCESS=0;
-constexpr int VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO=1, VK_COMMAND_BUFFER_LEVEL_PRIMARY=0;
+constexpr int VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO=1, VK_COMMAND_BUFFER_LEVEL_PRIMARY=0, VK_COMMAND_BUFFER_LEVEL_SECONDARY=1;
 struct VkCommandBufferAllocateInfo { int sType{}; uint64_t commandPool{}; int level{}; int commandBufferCount{}; };
 struct Fixture {
     struct Dispatch {
         uint64_t next{100}; int resets{}, allocations{}; bool fail{};
-        int AllocateCommandBuffers(int,const VkCommandBufferAllocateInfo*,uint64_t* out) {
-            ++allocations; *out=fail ? 0 : next++; return fail ? -1 : 0;
+        std::unordered_map<uint64_t,bool> kinds;
+        int AllocateCommandBuffers(int,const VkCommandBufferAllocateInfo* info,uint64_t* out) {
+            ++allocations; *out=fail ? 0 : next++;
+            if (!fail) kinds[*out] = info->level == VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+            return fail ? -1 : 0;
         }
+        void FreeCommandBuffers(int,uint64_t,int,const uint64_t* command) { kinds.erase(*command); }
         void ResetCommandBuffer(uint64_t,int) { ++resets; }
     } vk_;
     struct Draw { uint64_t img{20}, ds{30}, upload{}; int x{},y{},w{1280},h{720}; bool isAHB{true},needsTransition{}; };
     std::vector<Draw> frameDraws{Draw{}};
     NativeCommandCache<uint64_t,2> nativeCommands;
-    uint64_t nativeTextureEpoch{}, nativeGpuQueries{};
+    uint64_t nativeTextureEpoch{}, nativeGpuQueries{}, nativeSceneCommand{};
+    bool nativeSceneReplay{};
     uint64_t pipeline{40},opaquePipeline{50},renderPass{60},nativeNoClearPass{70},cmdPool{80};
     uint64_t cmdBufs[2]{1,2}, cursorImg{},cursorDS{},curUpload{};
     bool nativeCommandCacheEnabled{true};
@@ -47,9 +53,11 @@ struct Fixture {
     NativeVulkanMetrics nativeMetrics;
     using NativeClock=NativeVulkanMetrics::Clock;
     NativeClock::time_point nativeRecordStart=NativeClock::now();
-    int recordings{};
-    template<class... Args> void recordCmdBuf(Args&&...) {
-        ++recordings; if (throwRecord) throw std::runtime_error("record failed");
+    int recordings{}, sceneRecordings{};
+    template<class... Args> void recordCmdBuf(uint64_t command, Args&&...) {
+        if (nativeSceneCommand) assert(vk_.kinds.at(nativeSceneCommand));
+        else if (command>2) assert(!vk_.kinds.at(command));
+        ++recordings; if (nativeSceneCommand && !nativeSceneReplay) ++sceneRecordings; if (throwRecord) throw std::runtime_error("record failed");
     }
     uint64_t Select() {
 '''
@@ -78,9 +86,18 @@ int main() {
     f.frameDraws[0].isAHB=false; general(); f.frameDraws[0].isAHB=true;
     f.hasCurUpload=true; general(); f.hasCurUpload=false;
     f.curVis=true; f.cursorImg=1; f.cursorDS=2;
-    auto stillCursor=f.Select(); auto nr=f.recordings;
-    assert(f.Select()==stillCursor && f.recordings==nr);
-    ++f.ptrX; assert(f.Select()!=stillCursor && f.recordings==nr+1);
+    assert(f.Select()==f.cmdBufs[1]);
+    auto scene=f.nativeSceneCommand; auto sceneRecords=f.sceneRecordings;
+    assert(scene && !f.nativeSceneReplay);
+    for (int x=0;x<100;++x) {
+        f.ptrX=x; f.ptrY=x*2;
+        assert(f.Select()==f.cmdBufs[1]);
+        assert(f.nativeSceneCommand==scene && f.nativeSceneReplay && f.sceneRecordings==sceneRecords);
+    }
+    ++f.frameDraws[0].x; f.Select();
+    assert(!f.nativeSceneReplay && f.sceneRecordings==sceneRecords+1);
+    --f.frameDraws[0].x;
+    auto nr=f.recordings;
     f.curVis=false;
     auto background = f.frameDraws[0]; background.isAHB=false; background.img=70; background.ds=80;
     f.frameDraws.push_back(background);
@@ -108,6 +125,10 @@ int main() {
     f.nativeCommands.Clear([](auto){}); f.vk_.fail=true;
     general(); f.vk_.fail=false;
     // Bounded eviction keeps valid handles, and teardown releases each once.
+    for(int x=0;x<40;++x) {
+        f.curVis=x%2; f.frameDraws[0].x=200+x; f.Select();
+    }
+    f.curVis=false;
     for(int x=0;x<40;++x) { f.frameDraws[0].x=x; f.Select(); }
     int released=0; f.nativeCommands.Clear([&](auto){++released;}); assert(released==12);
     f.nativeCommands.Clear([&](auto){++released;}); assert(released==12);

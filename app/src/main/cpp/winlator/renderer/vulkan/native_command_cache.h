@@ -23,7 +23,7 @@ struct NativeCommandKey {
 template<class Handle, size_t Slots, size_t Capacity = 12>
 class NativeCommandCache {
 public:
-    struct Entry { NativeCommandKey key; Handle command{}; bool valid{}; };
+    struct Entry { NativeCommandKey key; Handle command{}; bool valid{}, secondary{}; };
     Handle Find(size_t slot, const NativeCommandKey& key) const {
         for (const auto& e : entries.at(slot))
             if (e.valid && e.key == key) return e.command;

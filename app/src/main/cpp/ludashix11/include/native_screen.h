@@ -86,7 +86,7 @@ public:
     // Surface changes may block once; never drain the GPU on the Present hot path.
     virtual size_t Drain() = 0;
     virtual NativeAHBMetrics TakeAHBMetrics() { return {}; }
-    virtual void Options(bool fullscreen, bool cursor, int fps, float refresh) = 0;
+    virtual void Options(bool fullscreen, bool cursor, int fps, float refresh, float zoom) = 0;
     virtual void VisualOptions(const NativeVisualOptions&) {}
     virtual NativeVisualState VisualState() const { return {}; }
 };
@@ -102,6 +102,15 @@ public:
     void UpdateCursor(Drawable*, s16, s16) override;
     void PostInvalidate() override;
     void DrawableChanged(Drawable* drawable);
+    // Serialize CPU writes with snapshot selection. Pending scenes do not need
+    // an immutable copy; frames already selected for the GPU still do.
+    template<class Write> void MutateDrawable(Drawable* drawable, const Write& write) {
+        // Borrow the callback for this synchronous call instead of allocating
+        // a std::function for drawing requests with several captured arguments.
+        MutateDrawable(drawable, &write, [](const void* callback) {
+            (*static_cast<const Write*>(callback))();
+        });
+    }
     void WaitIdle() override;
     void SetUpScalerEnabled(bool) override {}
     void SetPostProcessingEnabled(bool) override {}
@@ -117,6 +126,7 @@ public:
     bool FenceTriggered(u32 id) const;
     void FenceSignaled();
     void SetOptions(bool fullscreen, bool cursor, int fps, float refresh);
+    void SetMagnifierZoom(float zoom);
     u64 SetVisualOptions(NativeVisualOptions options);
     std::array<u64, 3> VisualState();
     u64 MSC() const;
@@ -155,6 +165,7 @@ public:
     u32 HudWindow() const { return hudWindow; }
     u64 HudFrames() const { return hudFrames; }
 private:
+    void MutateDrawable(Drawable*, const void*, void (*)(const void*));
     bool hudEnabled{};
     u32 hudWindow{};
     u64 hudFrames{};
@@ -198,6 +209,7 @@ private:
     size_t gpuPending{};
     bool fullscreen{}, cursorVisible{true};
     int fps{};
+    float magnifierZoom{1.f};
     std::atomic<int> producerLimit{0};
     std::atomic<float> refresh{60};
     std::vector<u16> randrRates{60};

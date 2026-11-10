@@ -3,6 +3,10 @@
 #include <list>
 #include <unordered_map>
 #include <vector>
+#include <thread>
+#include <atomic>
+#include <android/hardware_buffer.h>
+#include "base/fd.h"
 #include <X11/Xproto.h>
 #include "base/log.h"
 #include "core/xresource.h"
@@ -27,7 +31,7 @@ public:
 
     void HandleRequest();
     void FlushOutput();
-    bool IsWaiting() const { return !await_fences.empty(); }
+    bool IsWaiting() const { return pendingImport || !await_fences.empty(); }
     bool HasPendingRequests() const { return requestsPending; }
     bool IsInputSuspended() const { return inputSuspended; }
     void SendPacket(const void* data, size_t size) { WriteImmediately(data, size); }
@@ -70,6 +74,18 @@ private:
     void ProcComposite();
     void ProcRender();
     void ProcDRI3();
+    void FinishDRI3Import();
+    struct BufferImport {
+        base::ScopedFD transfer;
+        std::thread worker;
+        std::atomic<bool> done{false};
+        AHardwareBuffer* buffer{};
+        u32 pixmap{};
+        u16 width{}, height{}, sequence{};
+        u8 opcode{}, minor{};
+        ~BufferImport();
+    };
+    std::unique_ptr<BufferImport> pendingImport;
     void ProcPresent();
     void ProcSync();
     void ProcRandR();

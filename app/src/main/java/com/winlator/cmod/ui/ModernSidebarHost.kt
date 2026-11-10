@@ -153,10 +153,10 @@ private fun Sidebar(state: ModernSidebarController) {
                         if (panel == R.id.LLSubGraphics)
                             RuntimeStatusCard(state.activity.sidebarRuntimeStatusRows)
                         if (panel == R.id.LLSubScreen) FullscreenModeSelector(state)
-                        if (panel == R.id.LLSubInput) ExclusiveInputRow(state)
                         if (source is ViewGroup)
                             LegacyFields(source, revision, true, state::refresh,
-                                stringResource(section.label))
+                                stringResource(section.label),
+                                if (panel == R.id.LLSubInput) state else null)
                     }
                 }
             }
@@ -176,6 +176,31 @@ private fun ExclusiveInputRow(state: ModernSidebarController) {
             }
             Switch(activity.isExclusiveInputEnabled, { activity.changeExclusiveInput(it, state::refresh) },
                 enabled = activity.canChangeExclusiveInput())
+        }
+    }
+}
+
+@Composable
+private fun InputApiRow(state: ModernSidebarController) {
+    val activity = state.activity
+    @Suppress("UNUSED_VARIABLE") val revision = state.revision
+    val canEdit = activity.canChangeExclusiveInput() && activity.isExclusiveInputEnabled
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(uiStr(R.string.ui_enable_xinput), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Switch(activity.isSidebarXInputEnabled, { enabled ->
+                    state.activity.changeSidebarInputApis(enabled, if (enabled) false else activity.isSidebarDInputEnabled, state::refresh)
+                }, enabled = canEdit)
+            }
+        }
+        Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(uiStr(R.string.ui_enable_dinput), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Switch(activity.isSidebarDInputEnabled, { enabled ->
+                    state.activity.changeSidebarInputApis(if (enabled) false else activity.isSidebarXInputEnabled, enabled, state::refresh)
+                }, enabled = canEdit)
+            }
         }
     }
 }
@@ -223,7 +248,8 @@ private fun labelOf(view: View): String {
 }
 
 @Composable
-private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refresh: () -> Unit, heading: String) {
+private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refresh: () -> Unit, heading: String,
+                         sidebar: ModernSidebarController? = null) {
     // Accessing revision re-reads the existing bindings after an action, without reinitializing
     // the controls or triggering their listeners during composition.
     @Suppress("UNUSED_VARIABLE") val snapshot = revision
@@ -233,8 +259,10 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
         if (view is TextView && view.id == View.NO_ID &&
             listOf(heading, uiStr(R.string.ui_rendering), uiStr(R.string.ui_display_and_effects), uiStr(R.string.sidebar_controls), "HUD")
                 .any { view.text.toString().trim().equals(it, ignoreCase = true) }) continue
-        if (view.id == R.id.BTItemToggleFullscreen) continue // represented by the Fit/Stretch selector
+        if (view.id == R.id.BTItemToggleFullscreen || view.id == R.id.BTItemSoftStretch) continue
+        // Both fullscreen actions are represented by the three-way display-mode selector.
         when {
+            view.tag == "winz-hud-options-v2" && view is ViewGroup -> HudCheckboxGrid(view, revision, refresh)
             view.tag is FpsLimiterControl -> NativeBlock(view.tag as View, active)
             view is FpsLimiterControl -> NativeBlock(view, active)
             view is CompoundButton -> {
@@ -291,24 +319,36 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
                 if (label.isNotBlank()) OutlinedButton({ view.performClick(); refresh() }, Modifier.fillMaxWidth(), shape = WinZShapes.Medium, enabled = view.isEnabled) { Text(label) }
             }
             view is TextView -> if (view.text.isNotBlank()) Text(view.text.toString(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            view is ViewGroup -> LegacyFields(view, revision, active, refresh, heading)
+            view is ViewGroup -> LegacyFields(view, revision, active, refresh, heading, sidebar)
+        }
+        if (view.id == R.id.SWEnableTouchscreenHaptics && sidebar != null) {
+            ExclusiveInputRow(sidebar)
+            InputApiRow(sidebar)
         }
     }
 }
 
-// Ludashi Plus uses explicit, selected fullscreen modes. Bind the presentation
-// to Ludashi's supported Fit/Stretch actions; keep Soft Stretch and the other controls.
+// Keep all display modes in one selector; native X++ currently supports Fit and Stretch.
 @Composable
 private fun FullscreenModeSelector(state: ModernSidebarController) {
-    val stretched = state.activity.isSidebarFullscreenStretched
+    val mode = state.activity.sidebarDisplayMode
+    val entries = listOf(
+        0 to uiStr(R.string.sidebar_fit),
+        1 to uiStr(R.string.sidebar_stretch),
+        2 to uiStr(R.string.sidebar_soft_stretch)
+    )
     Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
         Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(uiStr(R.string.ui_display_mode), style = MaterialTheme.typography.labelLarge)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(false to uiStr(R.string.sidebar_fit), true to uiStr(R.string.sidebar_stretch)).forEach { (stretch, label) ->
-                    FilterChip(selected = stretched == stretch,
-                        onClick = { state.activity.setSidebarFullscreenStretched(stretch); state.refresh() },
-                        label = { Text(label) }, modifier = Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                entries.forEach { (selectedMode, label) ->
+                    FilterChip(
+                        selected = mode == selectedMode,
+                        onClick = { state.activity.setSidebarDisplayMode(selectedMode); state.refresh() },
+                        enabled = selectedMode != 2 || state.activity.isSidebarSoftStretchSupported,
+                        label = { Text(label, maxLines = 1, style = MaterialTheme.typography.labelSmall) },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -330,6 +370,43 @@ private fun RuntimeStatusCard(rows: Array<out Array<out String>>) {
                             "warning" -> MaterialTheme.colorScheme.tertiary
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         })
+                }
+            }
+        }
+    }
+}
+
+/** Keep the original two-column metric checkboxes instead of converting them to switches. */
+@Composable
+private fun HudCheckboxGrid(group: ViewGroup, revision: Int, refresh: () -> Unit) {
+    @Suppress("UNUSED_VARIABLE") val snapshot = revision
+    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            for (i in 0 until group.childCount) {
+                val row = group.getChildAt(i)
+                if (row is android.widget.Switch) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(row.text.toString(), Modifier.weight(1f))
+                        Switch(row.isChecked, { row.isChecked = it; refresh() })
+                    }
+                } else {
+                    val fields = if (row is ViewGroup)
+                        (0 until row.childCount).map { row.getChildAt(it) }
+                    else listOf(row)
+                    Row(Modifier.fillMaxWidth()) {
+                        fields.filterIsInstance<android.widget.CheckBox>().forEach { field ->
+                            Row(Modifier.weight(1f).heightIn(min = 56.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(field.isChecked, { field.isChecked = it; refresh() },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = MaterialTheme.colorScheme.onSurface,
+                                        checkmarkColor = MaterialTheme.colorScheme.surface))
+                                Text(field.text.toString(), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
                 }
             }
         }

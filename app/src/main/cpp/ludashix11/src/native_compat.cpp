@@ -59,9 +59,10 @@ void XClient::ProcCompat() {
             return;
         }
         if (!gc) throw BadGCError(r->gc);
-        static_cast<NativeDrawable*>(target)->CopyAreaFrom(*static_cast<NativeDrawable*>(source),
-                r->srcX, r->srcY, r->dstX, r->dstY, r->width, r->height);
-        static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(target);
+        static_cast<NativeScreen&>(server.GetScreen()).MutateDrawable(target, [&] {
+            static_cast<NativeDrawable*>(target)->CopyAreaFrom(*static_cast<NativeDrawable*>(source),
+                    r->srcX, r->srcY, r->dstX, r->dstY, r->width, r->height);
+        });
         if (gc->GetAttribute(GCGraphicsExposures)) {
             xEvent event{}; event.u.u.type = NoExpose; event.u.noExposure.drawable = r->dstDrawable;
             event.u.noExposure.majorEvent = X_CopyArea; SendEvent(event);
@@ -72,9 +73,11 @@ void XClient::ProcCompat() {
         CHECK_REQUEST_SIZE_STRICT(xClearAreaReq); const auto* r = GetRequestData<xClearAreaReq>();
         auto* w = GetResourceAs<Window>(r->window); if (!w) throw BadWindowError(r->window);
         auto* d = w->GetDrawable(); if (!d) return;
-        d->FillRect(r->x, r->y, r->width ? r->width : w->GetWidth() - r->x,
+        static_cast<NativeScreen&>(server.GetScreen()).MutateDrawable(d, [&] {
+            d->FillRect(r->x, r->y, r->width ? r->width : w->GetWidth() - r->x,
                     r->height ? r->height : w->GetHeight() - r->y, w->GetAttributes().back_pixel);
-        if (r->exposures) w->MakeExposure(); static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(d); return;
+        });
+        if (r->exposures) w->MakeExposure(); return;
     }
     case X_QueryKeymap: {
         xQueryKeymapReply r{}; r.length = 2; send(r); return;

@@ -72,6 +72,10 @@ extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeOptions)(JNIEnv*, jclass, jlong
     auto server = session(handle); if (!server) return;
     static_cast<xorg::NativeScreen&>(server->GetScreen()).SetOptions(fullscreen, cursor, fps, refresh);
 }
+extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeMagnifierZoom)(JNIEnv*, jclass, jlong handle, jfloat zoom) {
+    auto server = session(handle); if (!server) return;
+    static_cast<xorg::NativeScreen&>(server->GetScreen()).SetMagnifierZoom(zoom);
+}
 extern "C" JNIEXPORT jstring JNICALL JNI_NAME(nativeError)(JNIEnv* env, jclass, jlong handle) {
     auto server = session(handle); if (!server) return env->NewStringUTF("");
     auto message = static_cast<xorg::NativeScreen&>(server->GetScreen()).LastError();

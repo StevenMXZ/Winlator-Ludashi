@@ -55,6 +55,16 @@ int main() {
     Check(context.vk_.pass==13,"frame generation must retain its own render pass");
     context.nativeDiagnosticsEnabled=true; record();
     Check(context.nativeMetrics.opaque==(native?1u:0u) && context.nativeMetrics.noClear==(native?1u:0u),"native diagnostics counters");
+#ifdef LUDASHI_NATIVE_X11
+    context.nativeSceneCommand=80;
+    context.nativeSceneReplay=false;
+    record(true);
+    Check(context.vk_.drawPipelines==std::vector<uint64_t>{4,3},"secondary scene and blended cursor recording");
+    context.nativeSceneReplay=true;
+    record(true);
+    Check(context.vk_.drawPipelines==std::vector<uint64_t>{3},"replayed scene records only cursor");
+    Check(context.vk_.alpha==std::vector<int>{1},"moving cursor retains alpha on scene replay");
+#endif
     Check(!NativeCoversOutput(-1,-1,INFINITY,1) && !NativeCoversOutput(-1,-1,NAN,1),"invalid coverage must fall back");
     std::cout << "PASS: " << (native?"native":"Java") << " production command recorder: opacity, fullscreen/letterbox/scissor, cursor alpha, overlays, effects and driver fallbacks\n";
 }

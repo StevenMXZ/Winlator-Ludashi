@@ -348,9 +348,10 @@ void XClient::ProcShmRequest() {
             u64(r->offset) + u64(r->totalWidth) * r->totalHeight * 4 > entry.size ||
             u32(r->srcX) + r->srcWidth > r->totalWidth || u32(r->srcY) + r->srcHeight > r->totalHeight)
             throw BadMatchError();
-        d->WritePixels(static_cast<const u8*>(entry.addr) + r->offset, r->srcX, r->srcY,
-                       r->dstX, r->dstY, r->srcWidth, r->srcHeight, r->totalWidth);
-        static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(d);
+        static_cast<NativeScreen&>(server.GetScreen()).MutateDrawable(d, [&] {
+            d->WritePixels(static_cast<const u8*>(entry.addr) + r->offset, r->srcX, r->srcY,
+                           r->dstX, r->dstY, r->srcWidth, r->srcHeight, r->totalWidth);
+        });
         static_cast<NativeScreen&>(server.GetScreen()).HudFrame(r->drawable);
         if (r->sendEvent) {
             xShmCompletionEvent event{};
@@ -973,15 +974,16 @@ void XClient::ProcPolyFillRectangle() {
     }
     const u32 count = (request_size - sizeof(xPolyFillRectangleReq)) / sizeof(xRectangle);
     const xRectangle* rectangles = reinterpret_cast<xRectangle*>(req + 1);
-    for (u32 i = 0; i < count; i++) {
-        const u32 background = gc->GetForeground() | 0xff000000;
-        drawable->FillRect(rectangles[i].x,
-                           rectangles[i].y,
-                           rectangles[i].width,
-                           rectangles[i].height,
-                           background);
-    }
-    static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(drawable);
+    static_cast<NativeScreen&>(server.GetScreen()).MutateDrawable(drawable, [&] {
+        for (u32 i = 0; i < count; i++) {
+            const u32 background = gc->GetForeground() | 0xff000000;
+            drawable->FillRect(rectangles[i].x,
+                               rectangles[i].y,
+                               rectangles[i].width,
+                               rectangles[i].height,
+                               background);
+        }
+    });
 }
 
 void XClient::ProcPolyLine() {
@@ -997,8 +999,9 @@ void XClient::ProcPolyLine() {
     }
     const auto points = reinterpret_cast<const Point*>(req + 1);
     const u32 count = (request_size - sizeof(xPolyLineReq)) / sizeof(xPoint);
-    drawable->DrawLines(points, count, gc->GetForeground() | 0xff000000, gc->GetLineWidth());
-    static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(drawable);
+    static_cast<NativeScreen&>(server.GetScreen()).MutateDrawable(drawable, [&] {
+        drawable->DrawLines(points, count, gc->GetForeground() | 0xff000000, gc->GetLineWidth());
+    });
 }
 
 void XClient::ProcPolySegment() {
@@ -1014,9 +1017,10 @@ void XClient::ProcPolySegment() {
     }
     const auto segments = reinterpret_cast<const PolySegment*>(req + 1);
     const u32 count = (request_size - sizeof(xPolySegmentReq)) / sizeof(xSegment);
-    drawable->DrawPolySegments(
-            segments, count, gc->GetForeground() | 0xff000000, gc->GetLineWidth());
-    static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(drawable);
+    static_cast<NativeScreen&>(server.GetScreen()).MutateDrawable(drawable, [&] {
+        drawable->DrawPolySegments(
+                segments, count, gc->GetForeground() | 0xff000000, gc->GetLineWidth());
+    });
 }
 
 void XClient::ProcPutImage() {
@@ -1050,24 +1054,25 @@ void XClient::ProcPutImage() {
     if (req->format == XYBitmap || req->format == XYPixmap) {
         depth = drawable->GetDepth();
     }
-    if (req->format == ZPixmap || req->format == XYBitmap || req->format == XYPixmap) {
-        if (depth == 32 || depth == 24) {
-            ASSERT(req->width * req->height * 4 <= data_len);
-            drawable->WritePixels(
-                    data, 0, 0, req->dstX, req->dstY, req->width, req->height, req->width);
-        } else if (depth == 1) {
-            if (size_t((req->width + 31) / 32) * 4 * req->height > data_len) throw BadLengthError();
-            drawable->WriteBinaryPixels(data, req->width, req->height,
-                    req->format == XYBitmap ? gc->GetForeground() : 1,
-                    req->format == XYBitmap ? gc->GetBackground() : 0);
+    static_cast<NativeScreen&>(server.GetScreen()).MutateDrawable(drawable, [&] {
+        if (req->format == ZPixmap || req->format == XYBitmap || req->format == XYPixmap) {
+            if (depth == 32 || depth == 24) {
+                ASSERT(req->width * req->height * 4 <= data_len);
+                drawable->WritePixels(
+                        data, 0, 0, req->dstX, req->dstY, req->width, req->height, req->width);
+            } else if (depth == 1) {
+                if (size_t((req->width + 31) / 32) * 4 * req->height > data_len) throw BadLengthError();
+                drawable->WriteBinaryPixels(data, req->width, req->height,
+                        req->format == XYBitmap ? gc->GetForeground() : 1,
+                        req->format == XYBitmap ? gc->GetBackground() : 0);
+            } else {
+                throw BadMatchError();
+            }
         } else {
             throw BadMatchError();
         }
-    } else {
-        throw BadMatchError();
-    }
+    });
     static_cast<NativeScreen&>(server.GetScreen()).HudFrame(req->drawable);
-    static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(drawable);
 }
 
 void XClient::ProcGetImage() {

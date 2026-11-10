@@ -44,6 +44,7 @@ public class FrameRating extends FrameLayout implements Runnable {
     private long lastGeneratedFrames = 0;
     private boolean generatedCounterPrimed = false;
     private volatile boolean frameGenerationActive = false;
+    private volatile float outputFPS;
 
     private String lastKnownRenderer = null;
 
@@ -156,7 +157,8 @@ public class FrameRating extends FrameLayout implements Runnable {
         if (time >= lastTime + 500) {
             long elapsed = time - lastTime;
             long generated = sampleGeneratedFrames();
-            lastFPS = ((float)((frameCount + generated) * 1000) / elapsed);
+            lastFPS = frameCount * 1000f / elapsed;
+            outputFPS = (frameCount + generated) * 1000f / elapsed;
             post(this);
             lastTime = time;
             frameCount = 0;
@@ -168,18 +170,25 @@ public class FrameRating extends FrameLayout implements Runnable {
     public void run() {
         if (!userEnabled) return;
         if (getVisibility() == GONE) setVisibility(View.VISIBLE);
-        tvFPS.setTextColor(frameGenerationActive ? C_FPS_FG : defaultFpsColor);
-        tvFPS.setText(String.format(Locale.ENGLISH, "%.1f", lastFPS));
+        tvFPS.setTextColor(defaultFpsColor);
+        String base = String.format(Locale.ENGLISH, "%.1f", lastFPS);
+        android.text.SpannableString text = new android.text.SpannableString(base +
+                (frameGenerationActive ? String.format(Locale.ENGLISH, " -> %.1f", outputFPS) : ""));
+        if (frameGenerationActive) text.setSpan(new android.text.style.ForegroundColorSpan(
+                android.graphics.Color.rgb(176, 255, 176)), base.length(), text.length(),
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        tvFPS.setText(text);
         tvRAM.setText(getAvailableRAM() + " GB Used / " + totalRAM + " Total");
     }
 
     public void updateNativeFrames(long frames, long elapsedMs) {
         if (!userEnabled || elapsedMs <= 0) return;
-        frameGenerationActive = false;
         nativeFrameCount += frames;
         nativeElapsedMs += elapsedMs;
         if (nativeElapsedMs < 500) return;
+        long generated = sampleGeneratedFrames();
         lastFPS = nativeFrameCount * 1000f / nativeElapsedMs;
+        outputFPS = (nativeFrameCount + generated) * 1000f / nativeElapsedMs;
         nativeFrameCount = nativeElapsedMs = 0;
         run();
     }

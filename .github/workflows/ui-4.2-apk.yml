@@ -5,14 +5,20 @@ on:
   push:
     branches:
       - feature/4.2-ui-cleanup-artwork
+      - feature/4.2-merge-xpp-final
+      - ludashi-4.2
       - feature/4.2-shortcut-presets
+      - feature/4.2-hud-trio-mangohud
+      - feature/4.2-modern-hud-presets
+      - feature/4.2-ludashi-hud-style-toggle
+      - feature/4.2-ludashi-hud-unified
 
 permissions:
   contents: write
 
 concurrency:
   group: ludashi-4.2-ui-apk-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   android-apk:
@@ -65,6 +71,12 @@ jobs:
           LUDASHI_STORE_PASSWORD: ${{ secrets.LUDASHI_STORE_PASSWORD }}
         run: bash app/src/main/scripts/prepare-upstream-signing.sh
 
+      - name: Test live input API switching and focus preservation
+        run: python3 app/src/main/scripts/test_live_exclusive_focus.py
+
+      - name: Validate Java and native X++ magnifier pan
+        run: python3 app/src/main/scripts/test_magnifier_pan.py
+
       - name: Run Android unit tests and assemble signed APK
         run: |
           set -euo pipefail
@@ -74,10 +86,19 @@ jobs:
           test -s "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
 
-      - name: Upload signed test APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: winlator-ludashi-4.2-ui-test-apk
-          path: app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
-          retention-days: 14
+      - name: Publish signed APK in a private test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" = true
+          apk="app/build/outputs/apk/release/app-release.apk"
+          test -s "$apk"
+          tag="ludashi-4.2-xpp-${{ github.run_number }}-r${{ github.run_attempt }}"
+          gh release create "$tag" \
+            "$apk#winlator-ludashi-4.2-xpp.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Ludashi 4.2 X++ integration #${{ github.run_number }}" \
+            --notes 'Signed integration APK including Native X11 HUD/performance improvements and X++ zoom, controls and UI refinements.' \
+            --prerelease

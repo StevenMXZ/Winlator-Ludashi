@@ -250,10 +250,28 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
         nativeMetrics.noClear += rpi.renderPass == nativeNoClearPass;
     }
 #endif
+#ifdef LUDASHI_NATIVE_X11
+    const VkCommandBuffer primary = cb;
+    const bool splitCursor = nativeSceneCommand != VK_NULL_HANDLE;
+    auto beginSecondary = [&](VkCommandBuffer secondary) {
+        vk_.ResetCommandBuffer(secondary, 0);
+        VkCommandBufferInheritanceInfo inheritance{};
+        inheritance.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+        inheritance.renderPass = rpi.renderPass;
+        inheritance.framebuffer = rpi.framebuffer;
+        VkCommandBufferBeginInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        info.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+        info.pInheritanceInfo = &inheritance;
+        if (vk_.BeginCommandBuffer(secondary, &info) != VK_SUCCESS)
+            throw std::runtime_error("begin native secondary");
+    };
+    vk_.CmdBeginRenderPass(cb, &rpi, splitCursor ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
+#else
     vk_.CmdBeginRenderPass(cb, &rpi, VK_SUBPASS_CONTENTS_INLINE);
+#endif
 
     VkViewport viewport{0, 0, (float)swapchainExt.width, (float)swapchainExt.height, 0, 1};
-    vk_.CmdSetViewport(cb, 0, 1, &viewport);
 
     int32_t scX = std::max(0, scissorRect.offset.x);
     int32_t scY = std::max(0, scissorRect.offset.y);
@@ -261,11 +279,16 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
     uint32_t maxH = swapchainExt.height > (uint32_t)scY ? swapchainExt.height - (uint32_t)scY : 0u;
     VkRect2D scissor{{scX, scY},
         {std::min(scissorRect.extent.width, maxW), std::min(scissorRect.extent.height, maxH)}};
-    vk_.CmdSetScissor(cb, 0, 1, &scissor);
 
     float rotCosR, rotSinR;
     getPreRotationCosSin(rotCosR, rotSinR);
 
+#ifdef LUDASHI_NATIVE_X11
+    if (!splitCursor || !nativeSceneReplay) {
+        if (splitCursor) { cb = nativeSceneCommand; beginSecondary(cb); }
+#endif
+    vk_.CmdSetViewport(cb, 0, 1, &viewport);
+    vk_.CmdSetScissor(cb, 0, 1, &scissor);
     vk_.CmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline);
 
     for (auto& d : draws) {
@@ -365,7 +388,23 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
         vk_.CmdDraw(cb, 4, 1, 0, 0);
     }
 
+#ifdef LUDASHI_NATIVE_X11
+        if (splitCursor && vk_.EndCommandBuffer(cb) != VK_SUCCESS)
+            throw std::runtime_error("end native scene secondary");
+    }
+    if (splitCursor) {
+        cb = primary;
+        vk_.CmdExecuteCommands(cb, 1, &nativeSceneCommand);
+    }
+#endif
     if (cursorDrawn) {
+#ifdef LUDASHI_NATIVE_X11
+        if (splitCursor) {
+            cb = nativeCursorCommands[currentFrame]; beginSecondary(cb);
+            vk_.CmdSetViewport(cb, 0, 1, &viewport);
+            vk_.CmdSetScissor(cb, 0, 1, &scissor);
+        }
+#endif
         vk_.CmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vk_.CmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeLayout,
                                   0, 1, &cursorDS, 0, nullptr);
@@ -385,6 +424,14 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
         vk_.CmdDraw(cb, 4, 1, 0, 0);
     }
 
+#ifdef LUDASHI_NATIVE_X11
+    if (splitCursor && cursorDrawn) {
+        if (vk_.EndCommandBuffer(cb) != VK_SUCCESS)
+            throw std::runtime_error("end native cursor secondary");
+        cb = primary;
+        vk_.CmdExecuteCommands(cb, 1, &nativeCursorCommands[currentFrame]);
+    }
+#endif
     vk_.CmdEndRenderPass(cb);
 
     if (useFrameGeneration) {

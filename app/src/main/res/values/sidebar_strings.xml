@@ -31,7 +31,7 @@
   <string name="sidebar_automatic_display">"Automatic (display)"</string>
   <string name="sidebar_adaptive_1_d_fps">"Adaptive %1$d FPS"</string>
   <string name="sidebar_preset_saved">"Preset saved"</string>
-  <string name="sidebar_native_x11_vulkan">"Native X11 (Vulkan)"</string>
+  <string name="sidebar_native_x11_vulkan">"X++"</string>
   <string name="sidebar_starting">"Starting"</string>
   <string name="sidebar_1_s_active">"%1$s active"</string>
   <string name="sidebar_upscaler">"Upscaler"</string>

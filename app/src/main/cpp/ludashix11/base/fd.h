@@ -19,6 +19,7 @@ public:
     ScopedFD& operator=(int new_fd);
 
     int Handle() const { return fd; }
+    int Release() { int result = fd; fd = -1; return result; }
 
     bool IsValid() { return fd >= 0; }
 

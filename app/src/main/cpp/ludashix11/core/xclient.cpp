@@ -25,6 +25,8 @@ XClient::XClient(XServer& server, int fd) : server(server), socket_fd(fd), input
 }
 
 XClient::~XClient() {
+    // Cancel transport I/O and join before the client/server can disappear.
+    pendingImport.reset();
     server.SelectRawInput(this, false);
     is_dead = true;
     if (!await_fences.empty()) server.RemoveSyncWaiter();
@@ -41,6 +43,7 @@ XClient::~XClient() {
 }
 
 void XClient::HandleRequest() {
+    if (pendingImport && pendingImport->done.load(std::memory_order_acquire)) FinishDRI3Import();
     // Bound each turn under XServer::Lock. BufferedInputStream may already own
     // the next request, so explicitly reschedule it even without socket EPOLLIN.
     requestsPending = false;
@@ -223,6 +226,7 @@ void XClient::CheckResourceID(const u32 id) const {
 void XClient::ConsumeRequestBuffer() { request_size = 0; }
 
 bool XClient::ReadRequestBuffer() {
+    if (pendingImport) return false;
     if (!await_fences.empty()) {
         auto& screen = static_cast<NativeScreen&>(server.GetScreen());
         bool any = std::ranges::any_of(await_fences, [&](u32 id) { return screen.FenceTriggered(id); });

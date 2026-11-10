@@ -611,6 +611,32 @@
                             android:src="@drawable/icon_settings"
                             app:tint="#0066FF" />
                     </LinearLayout>
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:orientation="vertical"
+                        android:background="@drawable/sidebar_card"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:paddingTop="12dp"
+                        android:paddingBottom="12dp">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/sidebar_touch_controls_opacity"
+                        android:tag="i18n/sidebar_touch_controls_opacity"
+                            android:textColor="#0055ff"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+                        <com.winlator.cmod.widget.SeekBar
+                            android:id="@+id/SBControlsOpacity"
+                            android:layout_width="match_parent"
+                            android:layout_height="30dp"
+                            app:maxValue="100"
+                            app:minValue="10"
+                            app:step="1" />
+                    </LinearLayout>
                     <Switch
                         android:id="@+id/SWShowTouchscreenControls"
                         android:layout_width="match_parent"
@@ -636,32 +662,6 @@
                     android:tag="i18n/enable_touchscreen_haptics"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
-                </LinearLayout>
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:orientation="vertical"
-                    android:background="@drawable/sidebar_card"
-                    android:paddingStart="14dp"
-                    android:paddingEnd="14dp"
-                    android:paddingTop="12dp"
-                    android:paddingBottom="12dp">
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/sidebar_touch_controls_opacity"
-                    android:tag="i18n/sidebar_touch_controls_opacity"
-                        android:textColor="#0055ff"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
-                    <com.winlator.cmod.widget.SeekBar
-                        android:id="@+id/SBControlsOpacity"
-                        android:layout_width="match_parent"
-                        android:layout_height="30dp"
-                        app:maxValue="100"
-                        app:minValue="10"
-                        app:step="1" />
                 </LinearLayout>
                 <LinearLayout
                     android:id="@+id/BTSubKeyboard"

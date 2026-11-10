@@ -26,7 +26,7 @@ public:
     }
     ~HostRenderer() override { if (surface) ANativeWindow_release(surface); }
     void Surface(ANativeWindow* w) override { if (surface) ANativeWindow_release(surface); surface = w; }
-    void Options(bool, bool, int, float) override {}
+    void Options(bool, bool, int, float, float) override {}
     bool ReadyToDraw() const override { std::lock_guard lock(pendingMutex); return pending.size() < 2; }
     size_t PollCompleted(size_t maxReady) override {
         std::lock_guard lock(pendingMutex);
@@ -130,6 +130,47 @@ int main(int argc, char** argv) {
     if (argc != 2 && argc != 3) return 2;
     signal(SIGTERM, [](int) { quit = 1; }); signal(SIGINT, [](int) { quit = 1; });
     xorg::XServer server(nullptr, xorg::ScreenInfo(1280, 720, 4));
+    if (std::string(argv[1]) == "--pending-cow") {
+        int sockets[2]; if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) return 2;
+        xorg::XClient client(server, sockets[0]);
+        auto& wm = server.GetWindowManager();
+        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
+        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 1280, 720,
+                                      0, InputOutput, 24, 0, nullptr);
+        wm.MapWindow(&client, window.get());
+        screen.WaitIdle();
+        auto* image = static_cast<xorg::NativeDrawable*>(window->GetDrawable());
+        int exclusiveWrites = 0;
+        for (int n = 0; n < 64; ++n) {
+            screen.MutateDrawable(image, [&] {
+                // A selected frame may still legitimately own an old snapshot.
+                // When none does, removing the pending reference must make this
+                // storage writable without a full drawable copy.
+                const bool exclusive = image->Pixels().use_count() == 2;
+                const auto* original = image->Pixels()->data();
+                image->FillRect(0, 0, 1, 1, 0xff123456);
+                if (exclusive) {
+                    if (image->Pixels()->data() != original) std::abort();
+                    ++exclusiveWrites;
+                }
+            });
+        }
+        if (!exclusiveWrites) return 3;
+        screen.WaitIdle();
+        auto retained = image->Pixels();
+        screen.MutateDrawable(image, [&] { image->FillRect(0, 0, 1, 1, 0xffabcdef); });
+        u32 old{}, next{};
+        memcpy(&old, retained->data(), 4); memcpy(&next, image->Pixels()->data(), 4);
+        if (old != 0xff123456 || next != 0xffabcdef) return 4;
+        // Failed writes must restore a usable pending snapshot too.
+        try { screen.MutateDrawable(image, [] { throw std::runtime_error("test"); }); }
+        catch (const std::runtime_error&) {}
+        screen.MutateDrawable(image, [&] { image->FillRect(1, 0, 1, 1, 0xff334455); });
+        screen.WaitIdle();
+        close(sockets[1]);
+        std::cout << "PASS: pending CPU snapshot avoids COW; retained frame remains immutable; failed write restores snapshot\n";
+        return 0;
+    }
     if (std::string(argv[1]) == "--cursor-hud") {
         auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
         xorg::Pixmap source(screen, 101, 3, 1, u8(1)), mask(screen, 102, 3, 1, u8(1));
@@ -256,6 +297,8 @@ int main(int argc, char** argv) {
         static_cast<xorg::NativeScreen&>(server.GetScreen()).SetDiagnostics(std::string(diagnostics) == "1");
     if (const char* limit = std::getenv("LUDASHI_HOST_FPS_LIMIT"))
         static_cast<xorg::NativeScreen&>(server.GetScreen()).SetOptions(false, true, std::atoi(limit), 60.f);
+    if (std::getenv("LUDASHI_HOST_CURSOR_HIDDEN"))
+        static_cast<xorg::NativeScreen&>(server.GetScreen()).SetOptions(false, false, 0, 60.f);
     server.StartTest(std::stoi(argv[1]), argc == 3 ? std::stoi(argv[2]) : -1);
     std::cout << "ready" << std::endl;
     const bool inputTest = std::getenv("LUDASHI_HOST_INPUT") != nullptr;
@@ -274,6 +317,7 @@ int main(int argc, char** argv) {
             else if (command == "anchor") mouse.AnchorTo(a, b);
             else if (command == "button") mouse.SetButton(a, b != 0);
             else if (command == "raw") mouse.SetRawInputEnabled(a != 0);
+            else if (command == "cursor") static_cast<xorg::NativeScreen&>(server.GetScreen()).SetOptions(false, a != 0, 0, 60.f);
         }
         std::cout << "input" << std::endl;
     }

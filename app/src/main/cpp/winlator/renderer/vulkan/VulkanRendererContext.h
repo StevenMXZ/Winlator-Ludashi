@@ -84,6 +84,7 @@ struct VkTable {
     PFN_vkCmdBindPipeline CmdBindPipeline;
     PFN_vkCmdBindDescriptorSets CmdBindDescriptorSets;
     PFN_vkCmdDraw CmdDraw;
+    PFN_vkCmdExecuteCommands CmdExecuteCommands;
     PFN_vkCmdPushConstants CmdPushConstants;
     PFN_vkCmdSetViewport CmdSetViewport;
     PFN_vkCmdSetScissor CmdSetScissor;
@@ -218,6 +219,9 @@ public:
     float nativeTimestampPeriod{};
     std::array<bool, MAX_FRAMES_IN_FLIGHT> nativeGpuPending{};
     NativeCommandCache<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> nativeCommands;
+    VkCommandBuffer nativeSceneCommand = VK_NULL_HANDLE;
+    bool nativeSceneReplay{};
+    std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> nativeCursorCommands{};
     uint64_t nativeTextureEpoch{};
 #endif
     void removeWindow(int64_t id);

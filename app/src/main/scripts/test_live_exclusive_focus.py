@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
 """Exercise the production live toggle with asynchronous Wine/reconnect test doubles."""
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
 root = Path(__file__).resolve().parents[4]
 source = (root / "app/src/main/java/com/winlator/cmod/XServerDisplayActivity.java").read_text()
-start = source.index("    public void changeExclusiveInput(")
-opening = source.index("{", start)
-depth = 1
-end = opening + 1
-while depth:
-    depth += (source[end] == "{") - (source[end] == "}")
-    end += 1
-method = source[start:end]
+def extract_method(name):
+    declaration = re.search(
+        r"(?m)^    (?:public|private) void " + re.escape(name) + r"\(", source
+    )
+    if declaration is None:
+        raise AssertionError(f"Missing live controller method: {name}")
+    start = declaration.start()
+    opening = source.index("{", declaration.end())
+    depth = 1
+    end = opening + 1
+    while depth:
+        depth += (source[end] == "{") - (source[end] == "}")
+        end += 1
+    return source[start:end]
+
+method = "\n".join(extract_method(name) for name in (
+    "changeExclusiveInput", "changeSidebarInputApis", "applySidebarJoystickSettings"
+))
 
 harness = r'''
 package com.winlator.cmod.winhandler;
@@ -32,22 +43,30 @@ public class FocusHarness {
     }
     static class Server { Manager windowManager = new Manager(); }
     static class Container {
-        boolean exclusive = true; File getRootDir() { return new File("."); }
-        void setExclusiveXInput(boolean value) { exclusive=value; } void saveData() {}
+        boolean exclusive = true; int inputType = 4; File getRootDir() { return new File("."); }
+        void setExclusiveXInput(boolean value) { exclusive=value; }
+        void setInputType(int value) { inputType=value; } void saveData() {}
     }
     static class Shortcut { void putExtra(String key,String value) {} void saveData() {} }
     public static class WinHandler {
-        static final int FLAG_INPUT_TYPE_DINPUT = 2;
+        static final byte FLAG_INPUT_TYPE_XINPUT = 4, FLAG_INPUT_TYPE_DINPUT = 8;
+        byte inputType = 4; boolean xinputDisabled;
         long activated; int activationCount; Runnable reconnect;
-        int getInputType() { return 3; } void holdGamepadsNeutral() {}
+        byte getInputType() { return inputType; }
+        void setInputType(byte value) { inputType=value; }
+        void setXInputDisabled(boolean value) { xinputDisabled=value; }
+        void holdGamepadsNeutral() {}
         void reconnectGamepads(Runnable callback) { reconnect=callback; }
         void bringToFront(String name,long handle) { activated=handle; activationCount++; }
         void finishReconnect() { Runnable done=reconnect; reconnect=null; done.run(); }
     }
     Server xServer=new Server(); WinHandler winHandler=new WinHandler(); Container container=new Container();
+    Object xServerView;
     Shortcut shortcut; boolean exclusiveInputBusy, destroyed;
     boolean canChangeExclusiveInput() { return !exclusiveInputBusy; }
     boolean isExclusiveInputEnabled() { return container.exclusive; }
+    boolean isSidebarXInputEnabled() { return (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_XINPUT) != 0; }
+    boolean isSidebarDInputEnabled() { return (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_DINPUT) != 0; }
     boolean isFinishing() { return destroyed; } boolean isDestroyed() { return destroyed; }
 ''' + method + r'''
     static FocusHarness game() {
@@ -69,6 +88,7 @@ public class FocusHarness {
         check(h.winHandler.activationCount==0);
         h.winHandler.finishReconnect();
         check(h.winHandler.activated==42 && !h.container.exclusive && !h.exclusiveInputBusy);
+        check(h.winHandler.inputType==12 && h.container.inputType==12);
 
         h=game(); h.changeExclusiveInput(false,()->{}); applyResult(false);
         check(LiveJoystickSettings.callbacks.size()==1); // Restore previous registry policy first.
@@ -88,7 +108,14 @@ public class FocusHarness {
         h=game(); h.xServer.windowManager.focused=new Window(0,0,null);
         h.changeExclusiveInput(false,()->{}); applyResult(true); h.winHandler.finishReconnect();
         check(h.winHandler.activationCount==0);
-        System.out.println("Live Exclusive Input: success, rollback, original HWND and closed/reused windows passed");
+        h=game(); h.changeSidebarInputApis(false, true, ()->{});
+        // Exclusive mode allows switching from XInput to DInput without losing focus.
+        applyResult(true); h.winHandler.finishReconnect();
+        check(h.winHandler.inputType==8 && h.container.inputType==8 && h.winHandler.activated==42);
+        h=game(); h.changeSidebarInputApis(false, true, ()->{});
+        applyResult(false); applyResult(true); h.winHandler.finishReconnect();
+        check(h.winHandler.inputType==4 && h.container.inputType==4 && h.container.exclusive);
+        System.out.println("Live controller input: XInput/DInput, focus, rollback and closed/reused windows passed");
     }
 }
 '''
@@ -111,9 +138,16 @@ public class Toast {
  public void show() {}
 }
 '''
+native_view = '''package com.winlator.cmod.widget;
+public class NativeX11View {
+ public long getFocusedWindowHandle() { return 42; }
+ public boolean hasWindowHandle(long h) { return h==42; }
+}
+'''
 with tempfile.TemporaryDirectory() as work:
     files = []
-    for name, content in {"FocusHarness.java": harness, "LiveJoystickSettings.java": helper, "Toast.java": toast}.items():
+    for name, content in {"FocusHarness.java": harness, "LiveJoystickSettings.java": helper, "Toast.java": toast,
+                          "NativeX11View.java": native_view}.items():
         p = Path(work) / name
         p.write_text(content)
         files.append(str(p))

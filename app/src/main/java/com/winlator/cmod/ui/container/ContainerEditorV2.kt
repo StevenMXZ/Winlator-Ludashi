@@ -168,7 +168,7 @@ private class ContainerEditorStateV2(
     var drives by mutableStateOf(editing?.drives ?: Container.DEFAULT_DRIVES)
 
     var displayServer by mutableStateOf(
-        if (editing?.getExtra("displayServer", "java") == "native") "Ludashi X11 (Native Vulkan)"
+        if (editing?.getExtra("displayServer", "java") == "native") "X++"
         else "Java X11"
     )
     var renderer by mutableStateOf(
@@ -467,7 +467,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.setSyncCpuTopology(state.syncCpu)
         container.setGraphicsDriver(state.graphicsDriver)
         container.setGraphicsDriverConfig(state.graphicsConfig)
-        container.putExtra("displayServer", if (state.displayServer.startsWith("Ludashi")) "native" else "java")
+        container.putExtra("displayServer", if (state.displayServer == "X++") "native" else "java")
         container.setRendererNative(state.renderer == "EGL")
         container.setRendererPresentMode(state.rendererPresentMode)
         container.setRendererDriverId(state.rendererDriver)
@@ -569,7 +569,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                     .put("softwareDecoding", if (state.softwareDecoding) "1" else "0")
                     .put("hudMode", state.hudMode.toString())
                     .put("mouseWarpOverride", state.mouseWarp)
-                    .put("displayServer", if (state.displayServer.startsWith("Ludashi")) "native" else "java")
+                    .put("displayServer", if (state.displayServer == "X++") "native" else "java")
                     .put("useDisplayX", if (state.renderer == "DisplayX") "1" else "0")
                     .put("surfaceFormat", state.surfaceFormat)
                     .put("trueDisplayX", if (state.trueDisplayX) "1" else "0")
@@ -833,7 +833,7 @@ private fun ContainerCategoryV2(
                 }
                 SettingsDivider()
                 SettingChoice(uiStr(R.string.ui_display_server), s.displayServer,
-                    listOf("Java X11", "Ludashi X11 (Native Vulkan)")) { s.displayServer = it }
+                    listOf("Java X11", "X++")) { s.displayServer = it }
                 if (s.displayServer == "Java X11") {
                     SettingsDivider()
                     SettingChoice(uiStr(R.string.ui_renderer), s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
@@ -896,9 +896,6 @@ private fun ContainerCategoryV2(
                     }
                 }
                 } else {
-                    Text(uiStr(R.string.ui_native_x11_protocol_with_the_ludashi_vulkan_renderer),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     SettingsDivider()
                     val filters = listOf(
                         "Bilinear", "Nearest neighbor", "Snapdragon Super Resolution",

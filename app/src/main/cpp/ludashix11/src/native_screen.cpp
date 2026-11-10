@@ -43,6 +43,16 @@ void NativeScreen::SetOptions(bool fs, bool visible, int limit, float rate) {
     // Wake X11 to release deferred IDLEs when the limiter is switched off.
     server.NotifyScreen();
 }
+void NativeScreen::SetMagnifierZoom(float value) {
+    if (!std::isfinite(value)) value = 1.f;
+    value = std::clamp(value, 1.f, 3.f);
+    std::lock_guard lock(state);
+    if (magnifierZoom == value) return;
+    magnifierZoom = value;
+    optionsDirty = true;
+    dirty = true;
+    cv.notify_one();
+}
 void NativeScreen::UpdateCursor(Drawable* d, s16 x, s16 y) {
     // Core calls under the server lock. Snapshot the CPU cursor, never borrow it.
     auto* image = static_cast<NativeDrawable*>(d);
@@ -62,6 +72,9 @@ void NativeScreen::UpdateCursor(Drawable* d, s16 x, s16 y) {
             latest.cursor = cursor;
             latest.cursorPixels = cursor ? cursor->Pixels() : nullptr;
             latest.cursorX = x; latest.cursorY = y;
+            // Keep input and the next visible snapshot current, without waking
+            // the compositor solely for an invisible pointer.
+            if (!cursorVisible) return;
             // One pending scene needs one wake, even during a burst of input.
             // Retirement separately wakes the worker when a GPU slot becomes free.
             if (!std::exchange(dirty, true)) cv.notify_one();
@@ -167,6 +180,26 @@ void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
     // Hiding a window's own content must not hide its mapped children: Wine
     // game windows can be parented beneath the filtered Explorer desktop.
     for (auto* child : w->GetChildren()) Collect(child, frame, viewable);
+}
+void NativeScreen::MutateDrawable(Drawable* drawable, const void* callback, void (*write)(const void*)) {
+    auto* image = static_cast<NativeDrawable*>(drawable);
+    const u64 before = image->Revision();
+    {
+        std::unique_lock lock(state);
+        for (auto& entry : latest.entries)
+            if (entry.drawable.get() == image) entry.pixels.reset();
+        // Restore a valid snapshot even if validation/allocation throws.
+        auto restore = [&] {
+            for (auto& entry : latest.entries) if (entry.drawable.get() == image) {
+                entry.pixels = image->Pixels();
+                entry.revision = image->Revision();
+            }
+        };
+        try { write(callback); }
+        catch (...) { restore(); throw; }
+        restore();
+    }
+    if (image->Revision() != before) DrawableChanged(drawable);
 }
 void NativeScreen::DrawableChanged(Drawable* drawable) {
     // Called under XServer::Lock: pixels changed, but geometry/visibility did not.
@@ -550,6 +583,13 @@ void NativeScreen::Worker() {
     // Draw owns context changes. A separate worker retires previously published
     // submissions while Draw may be blocked in acquire/present for another slot.
     std::deque<NativeFrame> inFlight;
+    std::vector<NativeFrame> recycled;
+    recycled.reserve(4);
+    auto clearFrame = [](NativeFrame& frame) {
+        frame.entries.clear(); frame.requests.clear();
+        frame.cursor.reset(); frame.cursorPixels.reset();
+        frame.diagnosticSubmit = {}; frame.diagnosticSelected = {};
+    };
     std::mutex completionMutex;
     std::condition_variable retirementCv;
     bool retirementStop{};
@@ -581,6 +621,9 @@ void NativeScreen::Worker() {
             }
             // Destroy retained resources here, outside both the scene state
             // lock and the X11 request lock. No protocol event depends on this.
+            clearFrame(retired);
+            std::lock_guard lock(state);
+            if (recycled.size() < 4) recycled.push_back(std::move(retired));
         }
     };
     std::thread retirement([&] {
@@ -665,7 +708,7 @@ void NativeScreen::Worker() {
         bool changeSurface{}, changeOptions{}, changeVisual{}, fs{}, visible{}, nextHasSurface{};
         NativeVisualOptions nextVisual;
         u64 nextVisualRevision{};
-        int limit{}; float rate{};
+        int limit{}; float rate{}, zoom{};
         {
             std::unique_lock lock(state);
             if (!dirty) continue;
@@ -675,6 +718,7 @@ void NativeScreen::Worker() {
                 // slot is busy. A newer Present can replace it in the meantime.
                 continue;
             }
+            if (!recycled.empty()) { frame = std::move(recycled.back()); recycled.pop_back(); }
             frame.entries = latest.entries;
             frame.requests.swap(latest.requests);
             frame.cursor = latest.cursor;
@@ -688,6 +732,7 @@ void NativeScreen::Worker() {
             changeVisual = std::exchange(visualDirty, false) || changeSurface;
             if (changeVisual) { nextVisual = visualOptions; nextVisualRevision = visualRevision; }
             fs = fullscreen; visible = cursorVisible; limit = fps; rate = refresh;
+            zoom = magnifierZoom;
         }
         bool submitted = false;
         const bool trace = DiagnosticsEnabled();
@@ -706,7 +751,7 @@ void NativeScreen::Worker() {
                 renderer->Surface(nextSurface); nextSurface = nullptr;
                 hasSurface = nextHasSurface;
             }
-            if (changeOptions) renderer->Options(fs, visible, limit, rate);
+            if (changeOptions) renderer->Options(fs, visible, limit, rate, zoom);
             if (changeVisual) {
                 // Settings can replace samplers, swapchain images and fences.
                 // Retire registered frames before invalidating those handles.
@@ -754,6 +799,11 @@ void NativeScreen::Worker() {
             cv.notify_all();
         }
         if (submitted) retirementCv.notify_one();
+        if (!submitted) {
+            clearFrame(frame);
+            std::lock_guard lock(state);
+            if (recycled.size() < 4) recycled.push_back(std::move(frame));
+        }
         // Failed/surface-less frames are released by this worker outside locks.
         // GPU retirement wakes only the scene worker, never the X11 socket loop.
         if (trace) {

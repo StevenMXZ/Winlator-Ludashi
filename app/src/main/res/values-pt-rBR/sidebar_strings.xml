@@ -31,7 +31,7 @@
   <string name="sidebar_automatic_display">"Automático (tela)"</string>
   <string name="sidebar_adaptive_1_d_fps">"Adaptativo: %1$d FPS"</string>
   <string name="sidebar_preset_saved">"Predefinição salva"</string>
-  <string name="sidebar_native_x11_vulkan">"X11 nativo (Vulkan)"</string>
+  <string name="sidebar_native_x11_vulkan">"X++"</string>
   <string name="sidebar_starting">"Iniciando"</string>
   <string name="sidebar_1_s_active">"%1$s ativo"</string>
   <string name="sidebar_upscaler">"Escalonador"</string>

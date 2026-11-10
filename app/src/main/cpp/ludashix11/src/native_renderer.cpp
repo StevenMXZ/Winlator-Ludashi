@@ -1,5 +1,6 @@
 #include "native_screen.h"
 #include "VulkanRendererContext.h"
+#include "native_magnifier.h"
 
 
 
@@ -27,12 +28,14 @@ public:
         context->onSurfaceResized(ANativeWindow_getWidth(context->window), ANativeWindow_getHeight(context->window));
         UpdateTransform();
     }
-    void Options(bool fs, bool visible, int, float rate) override {
+    void Options(bool fs, bool visible, int, float rate, float newZoom) override {
         fullscreen = fs; cursor = visible; refresh = rate;
+        if (zoom != newZoom) magnifierPan.Reset();
+        zoom = newZoom;
         if (context) {
             context->setCursorVisible(visible);
-            // Do not force a 60 Hz surface frame-rate vote. Android controls
-            // the panel mode; this compositor must remain free to present faster.
+            // Keep all zoom inside the existing Vulkan scene; no surface resize
+            // or virtual RandR mode switch is needed.
             UpdateTransform();
         }
     }
@@ -217,13 +220,27 @@ private:
         }
         context->setCursorVisible(cursor && bool(frame.cursor));
         context->updatePointerPosition(frame.cursorX, frame.cursorY);
+        if (zoom > 1.f && (frame.cursorX != lastCursorX || frame.cursorY != lastCursorY)) {
+            lastCursorX = frame.cursorX;
+            lastCursorY = frame.cursorY;
+            UpdateTransform();
+        } else {
+            lastCursorX = frame.cursorX;
+            lastCursorY = frame.cursorY;
+        }
     }
     void UpdateTransform() {
-        if (!context) return;
-        float aspect = std::min(float(context->surfaceWidth) / width, float(context->surfaceHeight) / height);
-        float sx = fullscreen ? 1.f : width * aspect / context->surfaceWidth;
-        float sy = fullscreen ? 1.f : height * aspect / context->surfaceHeight;
-        context->setTransform(width * (1.f - sx) * .5f, height * (1.f - sy) * .5f, sx, sy);
+        if (!context || context->surfaceWidth <= 0 || context->surfaceHeight <= 0) return;
+        const float aspect = std::min(float(context->surfaceWidth) / width,
+                                      float(context->surfaceHeight) / height);
+        const float baseSx = fullscreen ? 1.f : width * aspect / context->surfaceWidth;
+        const float baseSy = fullscreen ? 1.f : height * aspect / context->surfaceHeight;
+        const float baseX = width * (1.f - baseSx) * .5f;
+        const float baseY = height * (1.f - baseSy) * .5f;
+        magnifierPan.Update(lastCursorX, lastCursorY, width, height, zoom);
+        context->setTransform(baseX - magnifierPan.x * baseSx,
+                              baseY - magnifierPan.y * baseSy,
+                              baseSx * zoom, baseSy * zoom);
     }
     // The completion worker reads only immutable submission handles, never
     // mutable context state. ReadyToDraw prevents resetting a tracked slot;
@@ -240,7 +257,9 @@ private:
     int width, height;
     const bool validation;
     bool fullscreen{}, cursor{true};
-    float refresh{60};
+    float refresh{60}, zoom{1.f};
+    int lastCursorX{}, lastCursorY{};
+    NativeMagnifierPan magnifierPan{};
     u64 cursorID{};
     NativeAHBMetrics ahbMetrics{};
     u32 importLogCount{};

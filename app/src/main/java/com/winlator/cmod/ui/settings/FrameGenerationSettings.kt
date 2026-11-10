@@ -120,29 +120,16 @@ fun FrameGenerationSettings(
         }
 
         SettingsDivider()
-        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
-            Text(
-                if (cacheStatus == LosslessScaling.STATUS_OK) {
-                    uiStr(R.string.ui_lossless_dll_ready_1_s, LosslessScaling.variantName(LosslessScaling.getVariant(context, true)))
-                } else {
-                    losslessStatusText(cacheStatus)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                uiStr(R.string.ui_import_lossless_dll_from_your_own_copy_of_lossless_scaling_a_vers),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    enabled = !importing,
-                    onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-msdownload", "*/*")) },
-                ) { Text(if (importing) uiStr(R.string.ui_importing) else uiStr(R.string.ui_import_lossless_dll)) }
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (cacheStatus == LosslessScaling.STATUS_OK) {
+                Text(uiStr(R.string.ui_lsfg_ready), color = MaterialTheme.colorScheme.primary)
+            } else Button(
+                enabled = !importing,
+                onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-msdownload", "*/*")) },
+            ) { Text(if (importing) uiStr(R.string.ui_importing) else uiStr(R.string.ui_import_lossless_dll)) }
         }
     }
 }
