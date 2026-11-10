@@ -17,7 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class WineInfo implements Parcelable {
-    public static final WineInfo MAIN_WINE_VERSION = new WineInfo("proton", "9.0", "arm64ec");
+    public static final WineInfo MAIN_WINE_VERSION = new WineInfo("proton", "11.0", "7", "arm64ec", null);
     private static final Pattern pattern = Pattern.compile("^(wine|proton)\\-([0-9\\.]+)\\-?([0-9\\.]+)?\\-(x86|x86_64|arm64ec)$");
     public final String version;
     public final String type;
@@ -121,7 +121,7 @@ public class WineInfo implements Parcelable {
 
         Log.d("WineInfo", "Creating WineInfo from identifier " + identifier);
 
-        if (identifier.equals(MAIN_WINE_VERSION.identifier())) return new WineInfo(MAIN_WINE_VERSION.type, MAIN_WINE_VERSION.version, MAIN_WINE_VERSION.arch, imageFs.getRootDir().getPath() + "/opt/" + MAIN_WINE_VERSION.identifier());
+        if (identifier.equals(MAIN_WINE_VERSION.identifier())) return new WineInfo(MAIN_WINE_VERSION.type, MAIN_WINE_VERSION.version, MAIN_WINE_VERSION.subversion, MAIN_WINE_VERSION.arch, imageFs.getRootDir().getPath() + "/opt/" + MAIN_WINE_VERSION.identifier());
 
         ContentProfile wineProfile = contentsManager.getProfileByEntryName(identifier);
 
@@ -148,7 +148,7 @@ public class WineInfo implements Parcelable {
 
             return new WineInfo(matcher.group(1), matcher.group(2), matcher.group(3), matcher.group(4), path);
         }
-        else return new WineInfo(MAIN_WINE_VERSION.type, MAIN_WINE_VERSION.version, MAIN_WINE_VERSION.arch, imageFs.getRootDir().getPath() + "/opt/" + MAIN_WINE_VERSION.identifier());
+        else return new WineInfo(MAIN_WINE_VERSION.type, MAIN_WINE_VERSION.version, MAIN_WINE_VERSION.subversion, MAIN_WINE_VERSION.arch, imageFs.getRootDir().getPath() + "/opt/" + MAIN_WINE_VERSION.identifier());
     }
 
     public static boolean isMainWineVersion(String wineVersion) {

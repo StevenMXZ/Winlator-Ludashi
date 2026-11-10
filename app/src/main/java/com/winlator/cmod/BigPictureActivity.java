@@ -6,7 +6,6 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -353,12 +352,12 @@ public class BigPictureActivity extends AppCompatActivity {
 
         Button disableBgMusicButton = findViewById(R.id.disableBgMusicButton);
 
-        boolean isBgMusicEnabled = preferences.getBoolean("bg_music_enabled", true);
+        boolean isBgMusicEnabled = preferences.getBoolean("bg_music_enabled", false);
 
         updateBgMusicButtonText(disableBgMusicButton, isBgMusicEnabled);
 
         disableBgMusicButton.setOnClickListener(v -> {
-            boolean currentBgMusicState = preferences.getBoolean("bg_music_enabled", true);
+            boolean currentBgMusicState = preferences.getBoolean("bg_music_enabled", false);
             boolean newBgMusicState = !currentBgMusicState;
 
             SharedPreferences.Editor editor = preferences.edit();
@@ -402,7 +401,7 @@ public class BigPictureActivity extends AppCompatActivity {
 
             playDefaultMp3FromAssets();
 
-            Toast.makeText(this, "MP3 reset to default", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "No bundled music; select an MP3 to play music.", Toast.LENGTH_SHORT).show();
         });
 
 
@@ -1339,7 +1338,7 @@ public class BigPictureActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean isBgMusicEnabled = preferences.getBoolean("bg_music_enabled", true);
+        boolean isBgMusicEnabled = preferences.getBoolean("bg_music_enabled", false);
         String musicSource = preferences.getString("music_source", "mp3"); // Default to "mp3"
         String selectedMp3Path = preferences.getString("selected_mp3_path", null); // Use the file path instead of URI
 
@@ -1388,25 +1387,12 @@ public class BigPictureActivity extends AppCompatActivity {
     }
 
     private void playDefaultMp3FromAssets() {
+        // No bundled MP3. Keep Big Picture silent until custom music is chosen.
         if (mediaPlayer != null) {
-            mediaPlayer.release();  // Release any existing player
-        }
-
-        mediaPlayer = new MediaPlayer();
-        try {
-            AssetFileDescriptor afd = getAssets().openFd("default_music.mp3"); // Ensure the MP3 file is named "default_music.mp3" in assets
-            mediaPlayer.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
-            mediaPlayer.setLooping(true); // Loop the music
-            mediaPlayer.prepare();
-            mediaPlayer.start();
-            afd.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+            mediaPlayer.release();
+            mediaPlayer = null;
         }
     }
-
-
-
 
 
     private void stopBackgroundMusic() {

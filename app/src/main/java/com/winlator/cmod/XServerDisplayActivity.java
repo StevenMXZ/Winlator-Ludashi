@@ -1103,6 +1103,24 @@ public class XServerDisplayActivity extends AppCompatActivity {
         String dxwrapper = this.dxwrapper;
 
         if (dxwrapper.contains("dxvk")) {
+            // These optional DXVK variants are no longer bundled with the APK.
+            // Keep user-installed versions working, but migrate legacy selections at launch
+            // to their bundled base version instead of attempting extraction of a missing asset.
+            String selectedDXVK = dxwrapperConfig.get("version");
+            String bundledFallback = null;
+            if ("1.10.3-arm64ec-async".equals(selectedDXVK) || "1.11.1-sarek".equals(selectedDXVK)) {
+                bundledFallback = "1.10.3";
+            } else if ("2.3.1-arm64ec-gplasync".equals(selectedDXVK)) {
+                bundledFallback = "2.3.1";
+            }
+            if (bundledFallback != null
+                    && contentsManager.getProfileByEntryName("dxvk-" + selectedDXVK) == null) {
+                Log.w(TAG, "DXVK " + selectedDXVK + " is no longer bundled; using " + bundledFallback);
+                dxwrapperConfig.put("version", bundledFallback);
+                // An old async-specific selection must not leave async-specific switches enabled.
+                dxwrapperConfig.put("async", "0");
+                dxwrapperConfig.put("asyncCache", "0");
+            }
             String dxvkWrapper = "dxvk-" + dxwrapperConfig.get("version");
             String vkd3dWrapper = "vkd3d-" + dxwrapperConfig.get("vkd3dVersion");
             String ddrawrapper = dxwrapperConfig.get("ddrawrapper");

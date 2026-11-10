@@ -94,7 +94,6 @@ data class SettingsModel(
     val soundFonts: List<SettingChoice>,
     val winlatorPath: String,
     val shortcutPath: String,
-    val bigPicture: Boolean,
     val cursorSpeedPercent: Int,
     val cursorLock: Boolean,
     val xInput: Boolean,
@@ -113,8 +112,6 @@ data class SettingsModel(
     val wineDebugChannels: String,
     val winlatorLogs: Boolean,
     val box64Logs: Boolean,
-    val customApiKeyEnabled: Boolean,
-    val customApiKey: String,
     val contentsUrl: String,
     val wineDebugOptions: List<String>
 )
@@ -130,7 +127,6 @@ interface SettingsCallbacks {
     fun onChooseShortcutPath()
     fun onBooleanChanged(key: String, value: Boolean)
     fun onCursorSpeedChanged(percent: Int)
-    fun onCustomApiKeyChanged(value: String)
     fun onContentsUrlChanged(value: String)
     fun onWineDebugChannelsChanged(value: String)
     fun onReinstallImageFs()
@@ -255,18 +251,6 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
                         callbacks.onBooleanChanged("animated_artwork", it)
                     }
                 }
-            }
-
-            item("big-picture-title") { SectionTitle("BIG PICTURE MODE") }
-            item("big-picture") {
-                GroupCard {
-                    ToggleRow("Enable Big Picture Mode on App Launch", model.bigPicture) { callbacks.onBooleanChanged("enable_big_picture_mode", it) }
-                    GroupDivider()
-                    ToggleRow("Set SteamGrid API Key? (Cover Art)", model.customApiKeyEnabled) { callbacks.onBooleanChanged("enable_custom_api_key", it) }
-                }
-            }
-            if (model.customApiKeyEnabled) {
-                item("api-key") { EditableValueCard("SteamGridDB API Key", model.customApiKey, callbacks::onCustomApiKeyChanged) }
             }
 
             item("xserver-title") { SectionTitle(stringResource(R.string.xserver)) }

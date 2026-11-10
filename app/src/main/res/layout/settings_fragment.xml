@@ -364,69 +364,6 @@
             </FrameLayout>
 
 
-            <!-- Big Picture Mode -->
-
-            <FrameLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
-
-                <LinearLayout style="@style/FieldSet">
-
-                    <!-- SteamGridDB API Key Section -->
-                    <CheckBox
-                        android:id="@+id/CBEnableBigPictureMode"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Enable Big Picture Mode on App Launch" />
-
-                    <FrameLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content">
-
-                        <LinearLayout style="@style/FieldSet">
-
-                            <LinearLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal">
-
-                                <CheckBox
-                                    android:id="@+id/CBEnableCustomApiKey"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="Set SteamGrid API Key? (Cover Art)" />
-
-                                <ImageView
-                                    android:id="@+id/BTHelpApiKey"
-                                    style="@style/HelpButton"
-                                    android:contentDescription="@string/help_steamgrid"
-                                    android:src="@drawable/icon_help" />
-                            </LinearLayout>
-
-                            <EditText
-                                android:id="@+id/ETCustomApiKey"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="8dp"
-                                android:hint="Enter your API Key here"
-                                android:visibility="gone" />
-                        </LinearLayout>
-
-                        <TextView
-                            android:id="@+id/TVCustomApiKey"
-                            style="@style/FieldSetLabel"
-                            android:text="SteamGridDB API Key" />
-                    </FrameLayout>
-
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/TVBigPictureMode"
-                    style="@style/FieldSetLabel"
-                    android:text="Big Picture Mode" />
-            </FrameLayout>
-
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content">

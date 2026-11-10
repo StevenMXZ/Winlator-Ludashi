@@ -45,12 +45,12 @@ tasks.register("downloadImageFS") {
 
 tasks.register("downloadProton") {
     def assetDir = new File(project.rootDir, ["app","src","main","assets"].join(File.separator))
-    File protonARM64EC = new File(assetDir, "proton-9.0-arm64ec.tar.zst")
-    File staleProtonARM64EC = new File(assetDir, "proton-10.0-5-arm64ec.tar.zst")
-    // The release .wcp is a Zstandard tar archive; keep the bundled asset name used by ImageFsInstaller.
-    String protonURL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/pnew2/proton-wine-9.0-arm64ec.wcp"
-    String protonSHA256 = "0bf76071c02730defae8ac56ee768ddae38ba93aee16b7d10dcdc72ebe961ccb"
-    long protonSize = 117648823L
+    File protonARM64EC = new File(assetDir, "proton-11.0-7-arm64ec.tar.zst")
+    File staleProtonARM64EC = new File(assetDir, "proton-9.0-arm64ec.tar.zst")
+    // The .wcp release is a Zstandard tar archive. Keep the bundled name aligned with wine_entries.
+    String protonURL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/pnew2/proton-wine-11.0-7-arm64ec.wcp"
+    String protonSHA256 = "1ef0bb9efceb2278933b3fa2bfd374999b0d9a7c74045b67b9af8a9b5260f734"
+    long protonSize = 112607135L
 
     def fileSHA256 = { File file ->
         MessageDigest digest = MessageDigest.getInstance("SHA-256")
@@ -64,13 +64,15 @@ tasks.register("downloadProton") {
 
     doLast {
         if (staleProtonARM64EC.exists()) staleProtonARM64EC.delete()
+        File staleProton10 = new File(assetDir, "proton-10.0-5-arm64ec.tar.zst")
+        if (staleProton10.exists()) staleProton10.delete()
 
         boolean valid = protonARM64EC.isFile()
                 && protonARM64EC.length() == protonSize
                 && fileSHA256(protonARM64EC).equalsIgnoreCase(protonSHA256)
         if (!valid) {
             if (protonARM64EC.exists()) protonARM64EC.delete()
-            println("Proton 9 ARM64EC was not present or failed validation, downloading...\n")
+            println("Proton 11 ARM64EC was not present or failed validation, downloading...\n")
             new URL(protonURL).withInputStream { input ->
                 protonARM64EC.withOutputStream { output -> output << input }
             }
@@ -79,7 +81,7 @@ tasks.register("downloadProton") {
                     && fileSHA256(protonARM64EC).equalsIgnoreCase(protonSHA256)
             if (!valid) {
                 protonARM64EC.delete()
-                throw new GradleException("Downloaded Proton 9 ARM64EC archive failed size/SHA-256 validation")
+                throw new GradleException("Downloaded Proton 11 ARM64EC archive failed size/SHA-256 validation")
             }
         }
     }
@@ -88,7 +90,7 @@ tasks.register("downloadProton") {
 tasks.register("prepareKotlinBuildScriptModel"){}
 tasks.register("downloadComponentTools") {
     def nativeTools = layout.buildDirectory.dir("generated/component-tools/arm64-v8a")
-    def manifestFile = rootProject.file("scripts/component-tools.json")
+    def manifestFile = rootProject.file("app/src/main/scripts/component-tools.json")
     outputs.dir(nativeTools)
     inputs.file(manifestFile)
     doLast {

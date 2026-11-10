@@ -277,6 +277,16 @@ public class DXVKConfigDialog extends ContentDialog {
     private void setDXVKSpinner(Spinner sDXVKVersion, KeyValueSet config, ContentsManager contentsManager, boolean isARM64EC) {
         String selectedVersion = config.get("vkd3dVersion");
         String currentDXVKVersion = config.get("version");
+        // Preserve installed custom DXVK packages, but present the bundled fallback
+        // for older configurations whose optional bundled archive was removed.
+        if (!dxvkVersions.contains(currentDXVKVersion)) {
+            if ("1.11.1-sarek".equals(currentDXVKVersion)
+                    || "1.10.3-arm64ec-async".equals(currentDXVKVersion)) {
+                currentDXVKVersion = "1.10.3";
+            } else if ("2.3.1-arm64ec-gplasync".equals(currentDXVKVersion)) {
+                currentDXVKVersion = "2.3.1";
+            }
+        }
         if (!selectedVersion.equals("None")) {
             ArrayList<String> versions = new ArrayList<>();
 

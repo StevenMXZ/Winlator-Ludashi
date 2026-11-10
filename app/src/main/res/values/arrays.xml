@@ -23,7 +23,6 @@
     </string-array>
     <string-array name="wrapper_graphics_driver_version_entries">
         <item>System</item>
-        <item>v863</item>
         <item>turnip26.2.0</item>
     </string-array>
     <string-array name="audio_driver_entries">
@@ -47,11 +46,8 @@
         <item>None</item>
     </string-array>
     <string-array name="dxvk_version_entries">
-        <item>1.11.1-sarek</item>
-        <item>1.10.3-arm64ec-async</item>
         <item>1.10.3</item>
         <item>2.3.1</item>
-        <item>2.3.1-arm64ec-gplasync</item>
     </string-array>
     <string-array name="dxvk_max_device_memory_entries">
         <item>0 (Default)</item>
@@ -311,7 +307,7 @@
         <item>Box64</item>
     </string-array>
     <string-array name="wine_entries">
-        <item>proton-9.0-arm64ec</item>
+        <item>proton-11.0-7-arm64ec</item>
     </string-array>
     <string-array name="vkbasalt_sharpness_entries">
         <item>None</item>

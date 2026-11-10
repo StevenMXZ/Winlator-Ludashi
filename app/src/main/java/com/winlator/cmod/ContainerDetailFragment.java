@@ -64,6 +64,7 @@ import com.winlator.cmod.core.PreloaderDialog;
 import com.winlator.cmod.core.ProtonPackageManager;
 import com.winlator.cmod.core.StringUtils;
 import com.winlator.cmod.core.WineInfo;
+import com.winlator.cmod.core.WineRuntimeGuard;
 import com.winlator.cmod.core.WineRegistryEditor;
 import com.winlator.cmod.core.WineThemeManager;
 import com.winlator.cmod.fexcore.FEXCoreManager;
@@ -1342,8 +1343,18 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
         wineVersionAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item_amoled);
         sWineVersion.setAdapter(wineVersionAdapter);
         sWineVersion.setPopupBackgroundResource(R.drawable.dialog_background_dark_blue);
-        if (isEditMode())
+        if (isEditMode()) {
             AppUtils.setSpinnerSelectionFromValue(sWineVersion, container.getWineVersion());
+        } else if (!WineRuntimeGuard.isBundledMainInstalled(context)) {
+            // Existing users may have Proton 9 installed but not yet Proton 11.
+            // Prefer an installed runtime instead of a new default whose files are missing.
+            for (String identifier : ProtonPackageManager.getInstalledIdentifiers(context)) {
+                if (!WineInfo.MAIN_WINE_VERSION.identifier().equals(identifier)) {
+                    AppUtils.setSpinnerSelectionFromValue(sWineVersion, identifier);
+                    break;
+                }
+            }
+        }
     }
 
     private void showWineVersionDownloadPopup(View anchor, Spinner sWineVersion, Runnable refreshAction) {

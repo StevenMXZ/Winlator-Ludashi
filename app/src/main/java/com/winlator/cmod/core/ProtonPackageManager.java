@@ -22,7 +22,7 @@ import okhttp3.ResponseBody;
 
 public abstract class ProtonPackageManager {
     private static final String TAG = "ProtonPackageManager";
-    public static final String DEFAULT_IDENTIFIER = "proton-9.0-arm64ec";
+    public static final String DEFAULT_IDENTIFIER = "proton-11.0-7-arm64ec";
     private static final String RELEASE_BASE_URL = "https://github.com/Other-backup/winlator-imagefs/releases/download/protons-zst-latest/";
     private static final String RELEASE_NEW_BASE_URL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/c/";
     private static final String RELEASE_D_BASE_URL = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/d/";
