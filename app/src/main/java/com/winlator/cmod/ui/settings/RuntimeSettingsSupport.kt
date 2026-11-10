@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.settings
 
+import com.winlator.cmod.ui.uiOptionLabel
+import com.winlator.cmod.ui.uiStr
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -384,18 +386,18 @@ internal fun normalizeResolution(value: String): String =
     value.replace(Regex("\\s*\\(.*\\)$"), "").trim()
 
 private fun settingDisplayLabel(value: String): String =
-    if (value == "Lanczos 2 (16-tap)") "Lanczos 2" else value
+    if (value == "Lanczos 2 (16-tap)") "Lanczos 2" else uiOptionLabel(value)
 
 private fun settingFieldLabel(label: String): String = when (label) {
-    "Graphics Driver" -> "OpenGL Driver"
-    "Driver Version" -> "Vulkan Driver"
+    uiStr(R.string.graphics_driver) -> uiStr(R.string.ui_opengl_driver)
+    uiStr(R.string.ui_driver_version) -> uiStr(R.string.ui_vulkan_driver)
     else -> label
 }
 
 private fun settingChoiceEntries(label: String, entries: List<String>): List<String> =
-    if (label == "Graphics Driver") listOf("Zink", "Freedreno") else entries
+    if (label == uiStr(R.string.graphics_driver)) listOf("Zink", "Freedreno") else entries
 private fun settingChoiceSelected(label: String, selected: String): String =
-    if (label == "Graphics Driver" && selected.equals("wrapper", ignoreCase = true)) "Zink" else selected
+    if (label == uiStr(R.string.graphics_driver) && selected.equals("wrapper", ignoreCase = true)) "Zink" else selected
 
 @Composable
 internal fun SettingsCard(content: @Composable () -> Unit) {
@@ -435,14 +437,14 @@ private fun WallpaperPreview() {
         if (bitmap != null) {
             Image(
                 bitmap = bitmap.asImageBitmap(),
-                contentDescription = "Wallpaper preview",
+                contentDescription = uiStr(R.string.ui_wallpaper_preview),
                 modifier = Modifier.fillMaxWidth().height(132.dp).clip(RoundedCornerShape(12.dp)),
                 contentScale = ContentScale.Crop
             )
         } else {
             Image(
                 painter = painterResource(R.drawable.wallpaper),
-                contentDescription = "Wallpaper preview",
+                contentDescription = uiStr(R.string.ui_wallpaper_preview),
                 modifier = Modifier.fillMaxWidth().height(132.dp).clip(RoundedCornerShape(12.dp)),
                 contentScale = ContentScale.Crop
             )
@@ -502,7 +504,7 @@ internal fun SettingChoice(
                 }
             }
         }
-        if (label == "Desktop Background" && selected.equals("Image", ignoreCase = true)) {
+        if (label == uiStr(R.string.ui_desktop_background) && selected.equals("Image", ignoreCase = true)) {
             WallpaperPreview()
         }
     }
@@ -541,7 +543,7 @@ internal fun SettingWineRuntimeChoice(
                 Column(Modifier.weight(1f)) {
                     Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
-                        selectedOption?.label ?: selectedId.ifBlank { "Choose a version" },
+                        selectedOption?.label ?: selectedId.ifBlank { uiStr(R.string.ui_choose_a_version) },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -563,7 +565,7 @@ internal fun SettingWineRuntimeChoice(
                         Column {
                             Text(option.label, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (option.installed) 1f else .52f))
                             Text(
-                                if (option.installed) option.type else if (busy) "${option.type} • Downloading…" else "${option.type} • Download",
+                                if (option.installed) option.type else if (busy) uiStr(R.string.ui_1_s_downloading, option.type) else uiStr(R.string.ui_1_s_download, option.type),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -606,7 +608,7 @@ internal fun SettingInstallChoice(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(selected.ifBlank { "Choose a version" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Text(selected.ifBlank { uiStr(R.string.ui_choose_a_version) }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
                 }
                 Icon(Icons.Outlined.KeyboardArrowDown, null)
             }
@@ -623,7 +625,7 @@ internal fun SettingInstallChoice(
                     text = {
                         Column {
                             Text(value, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (available) 1f else .52f))
-                            if (!available) Text(if (busy) "Downloading…" else "Download", style = MaterialTheme.typography.labelSmall)
+                            if (!available) Text(if (busy) uiStr(R.string.ui_downloading) else uiStr(R.string.ui_download_2), style = MaterialTheme.typography.labelSmall)
                         }
                     },
                     trailingIcon = {
@@ -685,7 +687,7 @@ internal fun SettingDriverChoice(
                     text = {
                         Column {
                             Text(option.label, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (option.installed) 1f else .52f))
-                            if (!option.installed) Text(if (busy) "Downloading…" else "Download", style = MaterialTheme.typography.labelSmall)
+                            if (!option.installed) Text(if (busy) uiStr(R.string.ui_downloading) else uiStr(R.string.ui_download_2), style = MaterialTheme.typography.labelSmall)
                         }
                     },
                     trailingIcon = {
@@ -761,7 +763,7 @@ internal fun CpuSelectorRow(
                     border = BorderStroke(1.dp, if (selected[index]) Color.White else MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Text(
-                        "CPU$index",
+                        uiStr(R.string.ui_cpu_1_s, index),
                         modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
                         color = if (selected[index]) Color.Black else MaterialTheme.colorScheme.onSurface,
                         fontWeight = if (selected[index]) FontWeight.SemiBold else FontWeight.Normal

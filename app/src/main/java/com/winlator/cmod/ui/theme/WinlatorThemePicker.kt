@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.theme
 
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -152,7 +154,7 @@ fun WinlatorThemePreferenceCard(modifier: Modifier = Modifier) {
             }
             Spacer(Modifier.width(11.dp))
             Column(Modifier.weight(1f)) {
-                Text("Theme", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                Text(uiStr(R.string.theme), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
                 Text(current.displayName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -174,9 +176,9 @@ fun WinlatorThemePreferenceCard(modifier: Modifier = Modifier) {
                     .padding(horizontal = 18.dp)
                     .padding(bottom = 24.dp)
             ) {
-                Text("Appearance", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+                Text(uiStr(R.string.ui_text_41def7a0febe), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Choose the Winlator theme. Changes are applied immediately.",
+                    uiStr(R.string.ui_choose_the_winlator_theme_changes_are_applied_immediately),
                     modifier = Modifier.padding(top = 4.dp, bottom = 14.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

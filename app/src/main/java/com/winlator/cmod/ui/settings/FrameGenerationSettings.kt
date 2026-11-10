@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.settings
 
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,7 +56,7 @@ fun FrameGenerationSettings(
         cacheStatus = LosslessScaling.getStatus(context, true)
         if (status == LosslessScaling.STATUS_OK) {
             val variant = LosslessScaling.variantName(LosslessScaling.getVariant(context, true))
-            Toast.makeText(context, "LSFG shaders imported ($variant)${if (source.isBlank()) "" else " from $source"}.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, if (source.isBlank()) uiStr(R.string.ui_lsfg_shaders_imported_1_s, variant) else uiStr(R.string.ui_lsfg_shaders_imported_1_s_from_2_s, variant, source), Toast.LENGTH_LONG).show()
             if (enableAfterImport) onEnabledChanged(true)
             enableAfterImport = false
         } else {
@@ -76,7 +78,7 @@ fun FrameGenerationSettings(
     }
 
     SettingsCard {
-        SettingToggle("Enable LSFG frame generation", enabled) { requested ->
+        SettingToggle(uiStr(R.string.ui_enable_lsfg_frame_generation), enabled) { requested ->
             if (!requested) {
                 enableAfterImport = false
                 onEnabledChanged(false)
@@ -99,20 +101,20 @@ fun FrameGenerationSettings(
                 144 to "Adaptive 144 FPS",
                 165 to "Adaptive 165 FPS",
             )
-            SettingChoice("Generation mode", targetLabels[targetRate] ?: "Fixed multiplier", targetLabels.values.toList()) { selected ->
+            SettingChoice(uiStr(R.string.ui_generation_mode), targetLabels[targetRate] ?: "Fixed multiplier", targetLabels.values.toList()) { selected ->
                 onTargetRateChanged(targetLabels.entries.firstOrNull { it.value == selected }?.key ?: 0)
             }
             if (targetRate == 0) {
                 SettingsDivider()
                 val multiplierLabel = "${multiplier.coerceIn(2, 4)}x"
-                SettingChoice("Multiplier", multiplierLabel, listOf("2x", "3x", "4x")) {
+                SettingChoice(uiStr(R.string.ui_multiplier), multiplierLabel, listOf("2x", "3x", "4x")) {
                     onMultiplierChanged(it.removeSuffix("x").toIntOrNull()?.coerceIn(2, 4) ?: 2)
                 }
             }
             SettingsDivider()
             val qualityLabels = linkedMapOf(40 to "Ultra Performance", 50 to "Performance", 70 to "Balanced", 100 to "Quality")
             val nearestQuality = qualityLabels.keys.minByOrNull { kotlin.math.abs(it - flowScale) } ?: 70
-            SettingChoice("Quality preset", qualityLabels[nearestQuality] ?: "Balanced", qualityLabels.values.toList()) { selected ->
+            SettingChoice(uiStr(R.string.ui_quality_preset), qualityLabels[nearestQuality] ?: "Balanced", qualityLabels.values.toList()) { selected ->
                 onFlowScaleChanged(qualityLabels.entries.firstOrNull { it.value == selected }?.key ?: 70)
             }
         }
@@ -121,14 +123,14 @@ fun FrameGenerationSettings(
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
             Text(
                 if (cacheStatus == LosslessScaling.STATUS_OK) {
-                    "Lossless.dll ready · ${LosslessScaling.variantName(LosslessScaling.getVariant(context, true))}"
+                    uiStr(R.string.ui_lossless_dll_ready_1_s, LosslessScaling.variantName(LosslessScaling.getVariant(context, true)))
                 } else {
                     losslessStatusText(cacheStatus)
                 },
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                "Import Lossless.dll from your own copy of Lossless Scaling. A version containing SPIR-V shaders is required.",
+                uiStr(R.string.ui_import_lossless_dll_from_your_own_copy_of_lossless_scaling_a_vers),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -139,18 +141,18 @@ fun FrameGenerationSettings(
                 Button(
                     enabled = !importing,
                     onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-msdownload", "*/*")) },
-                ) { Text(if (importing) "Importing…" else "Import Lossless.dll") }
+                ) { Text(if (importing) uiStr(R.string.ui_importing) else uiStr(R.string.ui_import_lossless_dll)) }
             }
         }
     }
 }
 
 private fun losslessStatusText(status: Int): String = when (status) {
-    LosslessScaling.STATUS_OK -> "Lossless.dll ready"
-    LosslessScaling.STATUS_UNREADABLE_FILE -> "The selected file could not be read."
-    LosslessScaling.STATUS_NOT_PORTABLE_EXECUTABLE -> "The selected file is not a valid Lossless.dll."
-    LosslessScaling.STATUS_MISSING_SHADERS -> "This Lossless.dll does not contain the required SPIR-V shaders. Import a compatible version."
-    LosslessScaling.STATUS_INVALID_SHADERS -> "The selected DLL contains invalid SPIR-V shaders."
-    LosslessScaling.STATUS_CACHE_UNUSABLE -> "The LSFG shader cache could not be created."
-    else -> "Lossless.dll has not been imported."
+    LosslessScaling.STATUS_OK -> uiStr(R.string.ui_lossless_dll_ready)
+    LosslessScaling.STATUS_UNREADABLE_FILE -> uiStr(R.string.ui_the_selected_file_could_not_be_read)
+    LosslessScaling.STATUS_NOT_PORTABLE_EXECUTABLE -> uiStr(R.string.ui_the_selected_file_is_not_a_valid_lossless_dll)
+    LosslessScaling.STATUS_MISSING_SHADERS -> uiStr(R.string.ui_this_lossless_dll_does_not_contain_the_required_spir_v_shaders_im)
+    LosslessScaling.STATUS_INVALID_SHADERS -> uiStr(R.string.ui_the_selected_dll_contains_invalid_spir_v_shaders)
+    LosslessScaling.STATUS_CACHE_UNUSABLE -> uiStr(R.string.ui_the_lsfg_shader_cache_could_not_be_created)
+    else -> uiStr(R.string.ui_lossless_dll_has_not_been_imported)
 }

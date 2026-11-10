@@ -1,0 +1,33 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources><string-array name="binding_type_entries">
+        <item>Keyboard</item>
+        <item>Mouse</item>
+        <item>Gamepad</item>
+    </string-array>
+    <string-array name="button_options">
+        <item>A</item>
+        <item>B</item>
+        <item>X</item>
+        <item>Y</item>
+        <item>R1 (Right Bumper)</item>
+        <item>R2 (Right Trigger)</item>
+        <item>L1 (Left Bumper)</item>
+        <item>L2 (Left Trigger)</item>
+        <item>Start</item>
+        <item>Select</item>
+        <item>R3 (Right Stick Button)</item>
+        <item>L3 (Left Stick Button)</item>
+    </string-array>
+    <string-array name="touchscreenInputModesEntries">
+        <item>Trackpad</item>
+        <item>Simulated touchscreen</item>
+        <item>Direct touch</item>
+    </string-array>
+    <string-array name="transformCapturedPointerEntries">
+        <item>No</item>
+        <item>Clockwise</item>
+        <item>Counter clockwise</item>
+        <item>Upside down</item>
+        <item>Automatic (for touchpad)</item>
+    </string-array>
+    </resources>

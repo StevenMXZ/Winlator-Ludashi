@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.containers
 
+import com.winlator.cmod.ui.uiStr
 import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
@@ -128,9 +129,9 @@ private fun ContainersScreen(
             LandscapeMainNavigation(
                 activity = activity,
                 selected = R.id.main_menu_containers,
-                title = "Containers",
+                title = uiStr(R.string.containers),
                 actionIcon = Icons.Outlined.Add,
-                actionDescription = "Add container",
+                actionDescription = uiStr(R.string.ui_add_container),
                 onAction = callbacks::onAdd
             )
         }
@@ -155,10 +156,10 @@ private fun ContainersScreen(
                         }
                     }
                     Spacer(Modifier.height(14.dp))
-                    Text("No containers yet", style = MaterialTheme.typography.titleLarge)
+                    Text(uiStr(R.string.ui_no_containers_yet), style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Create a container to prepare your first Windows environment.",
+                        uiStr(R.string.ui_create_a_container_to_prepare_your_first_windows_environment),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -261,7 +262,7 @@ private fun ContainerCard(
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.PlayArrow, "Run", modifier = Modifier.size(27.dp))
+                        Icon(Icons.Outlined.PlayArrow, uiStr(R.string.run), modifier = Modifier.size(27.dp))
                     }
                 }
             }
@@ -276,15 +277,15 @@ private fun ContainerCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (compact) {
-                    IconButton(onClick = { callbacks.onEdit(container.id) }) { Icon(Icons.Outlined.Edit, "Edit") }
-                    IconButton(onClick = { callbacks.onDuplicate(container.id) }) { Icon(Icons.Outlined.ContentCopy, "Duplicate") }
-                    IconButton(onClick = { callbacks.onRemove(container.id) }) { Icon(Icons.Outlined.DeleteOutline, "Remove") }
+                    IconButton(onClick = { callbacks.onEdit(container.id) }) { Icon(Icons.Outlined.Edit, uiStr(R.string.edit)) }
+                    IconButton(onClick = { callbacks.onDuplicate(container.id) }) { Icon(Icons.Outlined.ContentCopy, uiStr(R.string.duplicate)) }
+                    IconButton(onClick = { callbacks.onRemove(container.id) }) { Icon(Icons.Outlined.DeleteOutline, uiStr(R.string.remove)) }
                 } else {
-                    ContainerAction(Icons.Outlined.Edit, "Edit") { callbacks.onEdit(container.id) }
-                    ContainerAction(Icons.Outlined.ContentCopy, "Duplicate") { callbacks.onDuplicate(container.id) }
-                    ContainerAction(Icons.Outlined.DeleteOutline, "Remove") { callbacks.onRemove(container.id) }
+                    ContainerAction(Icons.Outlined.Edit, uiStr(R.string.edit)) { callbacks.onEdit(container.id) }
+                    ContainerAction(Icons.Outlined.ContentCopy, uiStr(R.string.duplicate)) { callbacks.onDuplicate(container.id) }
+                    ContainerAction(Icons.Outlined.DeleteOutline, uiStr(R.string.remove)) { callbacks.onRemove(container.id) }
                 }
-                IconButton(onClick = { callbacks.onStorage(container.id) }) { Icon(Icons.Outlined.Storage, "Storage usage") }
+                IconButton(onClick = { callbacks.onStorage(container.id) }) { Icon(Icons.Outlined.Storage, uiStr(R.string.ui_storage_usage)) }
             }
         }
     }
@@ -312,4 +313,3 @@ private fun ContainerAction(
         }
     }
 }
-

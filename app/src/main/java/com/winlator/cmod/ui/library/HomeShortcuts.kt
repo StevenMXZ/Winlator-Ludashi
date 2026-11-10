@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.library
 
+import com.winlator.cmod.ui.uiStr
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -101,7 +102,7 @@ object HomeShortcuts {
             )
             manager.updateShortcuts(listOf(info))
         } catch (e: Exception) {
-            android.util.Log.w("HomeShortcuts", "Could not update the pinned shortcut", e)
+            android.util.Log.w("HomeShortcuts", uiStr(R.string.ui_could_not_update_the_pinned_shortcut), e)
         }
     }
 

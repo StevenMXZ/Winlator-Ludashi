@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.theme
 
+import com.winlator.cmod.ui.uiOptionLabel
+import com.winlator.cmod.ui.uiStr
 import android.R as AndroidR
 import android.app.Activity
 import android.content.Context
@@ -17,10 +19,12 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.compose.ui.text.TextStyle
@@ -40,15 +44,18 @@ import com.winlator.cmod.R
 
 enum class WinlatorThemeType(
     val id: String,
-    val displayName: String,
-    val description: String
+    private val nameKey: String,
+    private val descriptionId: Int
 ) {
-    WHITE("white", "White", "Bright surfaces with dark text"),
-    BLACK("black", "Black", "Balanced dark theme · Default"),
-    AMOLED("amoled", "AMOLED", "Pure black background for OLED displays"),
-    BLUE("blue", "Blue", "Dark interface with cool blue accents"),
-    RED("red", "Red", "Dark interface with warm red accents"),
-    PURPLE("purple", "Purple", "Dark interface with rich purple accents");
+    WHITE("white", "White", R.string.ui_bright_surfaces_with_dark_text),
+    BLACK("black", "Black", R.string.ui_balanced_dark_theme_default),
+    AMOLED("amoled", "AMOLED", R.string.ui_pure_black_background_for_oled_displays),
+    BLUE("blue", "Blue", R.string.ui_dark_interface_with_cool_blue_accents),
+    RED("red", "Red", R.string.ui_dark_interface_with_warm_red_accents),
+    PURPLE("purple", "Purple", R.string.ui_dark_interface_with_rich_purple_accents);
+
+    val displayName: String get() = uiOptionLabel(nameKey)
+    val description: String get() = uiStr(descriptionId)
 
     companion object {
         fun fromId(id: String?): WinlatorThemeType = values().firstOrNull { it.id == id } ?: BLACK
@@ -201,7 +208,7 @@ fun WinlatorTheme(content: @Composable () -> Unit) {
             color = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground
         ) {
-            content()
+            key(LocalConfiguration.current.locales.toLanguageTags()) { content() }
         }
     }
 }
@@ -319,4 +326,3 @@ tailrec fun Context.findActivity(): Activity? = when (this) {
     is ContextWrapper -> baseContext.findActivity()
     else -> null
 }
-

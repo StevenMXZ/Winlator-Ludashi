@@ -84,7 +84,7 @@ public class ContainersFragment extends Fragment {
                 manager.duplicateContainerAsync(container, () -> {
                     if (!isAdded()) return;
                     refreshContainers();
-                    Toast.makeText(requireContext(), "Container duplicated", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(requireContext(), com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_container_duplicated), Toast.LENGTH_SHORT).show();
                 });
             }
 
@@ -94,14 +94,14 @@ public class ContainersFragment extends Fragment {
                 Container container = manager.getContainerById(containerId);
                 if (container == null) return;
                 new AlertDialog.Builder(requireContext())
-                        .setTitle("Remove container?")
-                        .setMessage(container.getName() + " and its files will be deleted.")
+                        .setTitle(com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_remove_container))
+                        .setMessage(container.getName() + com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_and_its_files_will_be_deleted))
                         .setNegativeButton(android.R.string.cancel, null)
-                        .setPositiveButton("Remove", (dialog, which) ->
+                        .setPositiveButton(com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.remove), (dialog, which) ->
                                 manager.removeContainerAsync(container, () -> {
                                     if (!isAdded()) return;
                                     refreshContainers();
-                                    Toast.makeText(requireContext(), "Container removed", Toast.LENGTH_SHORT).show();
+                                    Toast.makeText(requireContext(), com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_container_removed), Toast.LENGTH_SHORT).show();
                                 }))
                         .show();
             }
@@ -160,4 +160,3 @@ public class ContainersFragment extends Fragment {
         composeHost.submitList(items);
     }
 }
-

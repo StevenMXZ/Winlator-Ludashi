@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.container
 
+import com.winlator.cmod.ui.uiOptionLabel
+import com.winlator.cmod.ui.uiStr
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,29 +84,29 @@ internal fun ContainerWrapperInline(containerId: Int, callbacks: ContainerInline
     }
 
     VCPanel {
-        Text("DirectX wrapper", Modifier.padding(horizontal = 12.dp, vertical = 9.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        VCChoice("DX Wrapper", wrapper, wrapperEntries) { wrapper = it }
+        Text(uiStr(R.string.ui_directx_wrapper), Modifier.padding(horizontal = 12.dp, vertical = 9.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        VCChoice(uiStr(R.string.dxwrapper), wrapper, wrapperEntries) { wrapper = it }
         VCDivider()
         if (StringUtils.parseIdentifier(wrapper).contains("dxvk", true)) {
-            VCDownloadChoice("DXVK Version", dxvkVersion, dxvk, installedDxvk, "DXVK", callbacks) { dxvkVersion = it }
+            VCDownloadChoice(uiStr(R.string.dxvk_version), dxvkVersion, dxvk, installedDxvk, "DXVK", callbacks) { dxvkVersion = it }
             VCDivider()
-            VCDownloadChoice("VKD3D Version", vkd3dVersion, vkd3d, installedVkd3d, "VKD3D", callbacks) { vkd3dVersion = it }
+            VCDownloadChoice(uiStr(R.string.vkd3d_version), vkd3dVersion, vkd3d, installedVkd3d, "VKD3D", callbacks) { vkd3dVersion = it }
             VCDivider()
-            VCChoice("VKD3D Feature Level", vkd3dLevel, arrayOf("12_0", "12_1", "12_2", "11_1", "11_0", "10_1", "10_0", "9_3", "9_2", "9_1")) { vkd3dLevel = it }
-            VCField("Frame Rate Limit", frameRate) { frameRate = it.filter(Char::isDigit).take(4) }
-            VCToggle("Max Frame Latency", maxLatency) { maxLatency = it }
-            VCToggle("Async shaders", asyncShaders) { asyncShaders = it }
-            VCToggle("Async shader cache", asyncCache) { asyncCache = it }
-            VCChoice("DDraw Wrapper", ddraw, arrayOf("wined3d", "cnc-ddraw")) { ddraw = it }
+            VCChoice(uiStr(R.string.vkd3d_feature_level), vkd3dLevel, arrayOf("12_0", "12_1", "12_2", "11_1", "11_0", "10_1", "10_0", "9_3", "9_2", "9_1")) { vkd3dLevel = it }
+            VCField(uiStr(R.string.ui_frame_rate_limit), frameRate) { frameRate = it.filter(Char::isDigit).take(4) }
+            VCToggle(uiStr(R.string.ui_max_frame_latency), maxLatency) { maxLatency = it }
+            VCToggle(uiStr(R.string.ui_async_shaders), asyncShaders) { asyncShaders = it }
+            VCToggle(uiStr(R.string.ui_async_shader_cache), asyncCache) { asyncCache = it }
+            VCChoice(uiStr(R.string.ddraw_wrapper), ddraw, arrayOf("wined3d", "cnc-ddraw")) { ddraw = it }
         } else {
-            VCToggle("CSMT", csmt) { csmt = it }
-            VCToggle("Strict Shader Math", strictMath) { strictMath = it }
-            VCChoice("Offscreen Rendering", offscreen, arrayOf("fbo", "backbuffer")) { offscreen = it }
-            VCChoice("WineD3D Renderer", wineRenderer, arrayOf("gl", "vulkan", "gdi")) { wineRenderer = it }
-            VCField("Video Memory (MB)", videoMemory) { videoMemory = it.filter(Char::isDigit).take(6) }
+            VCToggle(uiStr(R.string.ui_csmt), csmt) { csmt = it }
+            VCToggle(uiStr(R.string.strict_shader_math), strictMath) { strictMath = it }
+            VCChoice(uiStr(R.string.ui_offscreen_rendering), offscreen, arrayOf("fbo", "backbuffer")) { offscreen = it }
+            VCChoice(uiStr(R.string.ui_wined3d_renderer), wineRenderer, arrayOf("gl", "vulkan", "gdi")) { wineRenderer = it }
+            VCField(uiStr(R.string.ui_video_memory_mb), videoMemory) { videoMemory = it.filter(Char::isDigit).take(6) }
         }
         OutlinedButton(onClick = callbacks::onManageComponents, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp)) {
-            Text("Manage installed versions")
+            Text(uiStr(R.string.ui_manage_installed_versions))
         }
         VCSave {
             val parsedWrapper = StringUtils.parseIdentifier(wrapper)
@@ -161,30 +163,30 @@ internal fun ContainerCompatibilityInline(containerId: Int, callbacks: Container
 
     VCPanel {
         if (arm64) {
-            VCReadOnly("64-bit Emulator", "FEXCore")
+            VCReadOnly(uiStr(R.string.ui_64_bit_emulator), "FEXCore")
             VCDivider()
-            VCChoice("32-bit Emulator", emulator32, arrayOf("FEXCore", "WOWBox64")) { emulator32 = it }
+            VCChoice(uiStr(R.string.ui_32_bit_emulator), emulator32, arrayOf("FEXCore", "WOWBox64")) { emulator32 = it }
             VCDivider()
-            VCDownloadChoice("FEXCore Version", fexVersion, fexVersions, installedFex, "FEXCore", callbacks) { fexVersion = it }
+            VCDownloadChoice(uiStr(R.string.fexcore_version), fexVersion, fexVersions, installedFex, "FEXCore", callbacks) { fexVersion = it }
             VCDivider()
-            VCPresetChoice("FEXCore Preset", fexPreset, fexPresets.map { it.name }.toTypedArray(), fexPresets.map { it.id }.toTypedArray()) { fexPreset = it }
+            VCPresetChoice(uiStr(R.string.fexcore_preset), fexPreset, fexPresets.map { it.name }.toTypedArray(), fexPresets.map { it.id }.toTypedArray()) { fexPreset = it }
             if (emulator32 == "WOWBox64") {
                 VCDivider()
-                VCDownloadChoice("WOWBox64 Version", boxVersion, boxVersions, installedBox, "WOWBox64", callbacks) { boxVersion = it }
+                VCDownloadChoice(uiStr(R.string.ui_wowbox64_version), boxVersion, boxVersions, installedBox, "WOWBox64", callbacks) { boxVersion = it }
                 VCDivider()
                 VCPresetChoice("Box64 Preset", boxPreset, boxPresets.map { it.name }.toTypedArray(), boxPresets.map { it.id }.toTypedArray()) { boxPreset = it }
             }
         } else {
-            VCReadOnly("64-bit Emulator", "Box64")
+            VCReadOnly(uiStr(R.string.ui_64_bit_emulator), "Box64")
             VCDivider()
-            VCReadOnly("32-bit Emulator", "Box64")
+            VCReadOnly(uiStr(R.string.ui_32_bit_emulator), "Box64")
             VCDivider()
-            VCDownloadChoice("Box64 Version", boxVersion, boxVersions, installedBox, "Box64", callbacks) { boxVersion = it }
+            VCDownloadChoice(uiStr(R.string.box64_version), boxVersion, boxVersions, installedBox, "Box64", callbacks) { boxVersion = it }
             VCDivider()
             VCPresetChoice("Box64 Preset", boxPreset, boxPresets.map { it.name }.toTypedArray(), boxPresets.map { it.id }.toTypedArray()) { boxPreset = it }
         }
         OutlinedButton(onClick = callbacks::onManageComponents, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp)) {
-            Text("Manage installed versions")
+            Text(uiStr(R.string.ui_manage_installed_versions))
         }
         VCSave {
             container.setEmulator(if (arm64 && emulator32 == "FEXCore") "FEXCore" else "Box64")
@@ -224,7 +226,7 @@ private fun VCChoice(label: String, selected: String, entries: Array<String>, on
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(selected, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(uiOptionLabel(selected), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Icon(Icons.Outlined.KeyboardArrowDown, null)
             }
@@ -232,7 +234,7 @@ private fun VCChoice(label: String, selected: String, entries: Array<String>, on
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             entries.forEach { value ->
                 DropdownMenuItem(
-                    text = { Text(value) },
+                    text = { Text(uiOptionLabel(value)) },
                     trailingIcon = { if (value.equals(selected, true)) Icon(Icons.Outlined.Check, null) },
                     onClick = { open = false; onSelected(value) }
                 )
@@ -249,7 +251,7 @@ private fun VCDownloadChoice(label: String, selected: String, entries: Array<Str
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(selected, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                    Text(uiOptionLabel(selected), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
                 }
                 Icon(Icons.Outlined.KeyboardArrowDown, null)
             }
@@ -260,8 +262,8 @@ private fun VCDownloadChoice(label: String, selected: String, entries: Array<Str
                 DropdownMenuItem(
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(value, Modifier.weight(1f))
-                            if (!ready) Text("Download", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(uiOptionLabel(value), Modifier.weight(1f))
+                            if (!ready) Text(uiStr(R.string.ui_download_2), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
                     onClick = { open = false; if (ready) onSelected(value) else callbacks.onInstallComponent(type, value) }
@@ -303,7 +305,7 @@ private fun VCToggle(label: String, checked: Boolean, onChange: (Boolean) -> Uni
 @Composable
 private fun VCSave(onClick: () -> Unit) {
     Button(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Text("Save", fontWeight = FontWeight.SemiBold)
+        Text(uiStr(R.string.save), fontWeight = FontWeight.SemiBold)
     }
 }
 

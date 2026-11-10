@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.onboarding
 
+import com.winlator.cmod.ui.uiOptionLabel
 import com.winlator.cmod.R
 import com.winlator.cmod.ui.uiStr
 import androidx.compose.foundation.BorderStroke
@@ -470,7 +471,7 @@ private fun CategorySelector(
                 contentColor = if (selected == it) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 border = BorderStroke(1.dp, hairlineColor())
             ) {
-                Text(it, Modifier.padding(horizontal = 13.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge)
+                Text(uiOptionLabel(it), Modifier.padding(horizontal = 13.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge)
             }
         }
     }

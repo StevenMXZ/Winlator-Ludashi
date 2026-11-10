@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.onboarding
 
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,7 +48,7 @@ internal fun ClassicCoreStatusCard(readyState: State<Boolean>, progressState: St
             }
             Spacer(Modifier.size(14.dp))
             Text(
-                if (ready) "Winlator core is ready" else "Preparing Winlator core in the background",
+                if (ready) uiStr(R.string.ui_winlator_core_is_ready) else uiStr(R.string.ui_preparing_winlator_core_in_the_background),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

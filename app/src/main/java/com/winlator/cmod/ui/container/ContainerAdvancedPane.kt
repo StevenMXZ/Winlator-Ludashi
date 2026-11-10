@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.container
 
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
@@ -70,7 +72,7 @@ internal fun ContainerAdvancedPane(containerId: Int) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SettingsCard { SettingChoice("Advanced", page, pages) { page = it } }
+        SettingsCard { SettingChoice(uiStr(R.string.advanced), page, pages) { page = it } }
         when (page) {
             "Environment" -> EnvironmentVariablesEditor(environment, onChanged = {
                 environment = it
@@ -101,13 +103,13 @@ internal fun ContainerAdvancedPane(containerId: Int) {
                     "Essential (Load only essential services)",
                     "Aggressive (Stop services on startup)"
                 )
-                SettingChoice("Startup Selection", startupEntries[startup], startupEntries) { value ->
+                SettingChoice(uiStr(R.string.startup_selection), startupEntries[startup], startupEntries) { value ->
                     startup = startupEntries.indexOf(value).coerceAtLeast(0)
                     container.setStartupSelection(startup.toByte())
                     container.saveData()
                 }
                 SettingsDivider()
-                SettingToggle("Exclusive Input", exclusive) { enabled ->
+                SettingToggle(uiStr(R.string.ui_exclusive_input), exclusive) { enabled ->
                     exclusive = enabled
                     if (!enabled) {
                         xinput = true
@@ -118,13 +120,13 @@ internal fun ContainerAdvancedPane(containerId: Int) {
                     saveInput()
                 }
                 SettingsDivider()
-                SettingToggle("Enable XInput", xinput, exclusive) { enabled ->
+                SettingToggle(uiStr(R.string.ui_enable_xinput), xinput, exclusive) { enabled ->
                     xinput = enabled
                     if (exclusive && enabled && dinput) dinput = false
                     saveInput()
                 }
                 SettingsDivider()
-                SettingToggle("Enable DInput", dinput, exclusive) { enabled ->
+                SettingToggle(uiStr(R.string.ui_enable_dinput), dinput, exclusive) { enabled ->
                     dinput = enabled
                     if (exclusive && enabled && xinput) xinput = false
                     saveInput()
@@ -132,17 +134,17 @@ internal fun ContainerAdvancedPane(containerId: Int) {
             }
 
             else -> SettingsCard {
-                SettingToggle("Sync CPU Topology", syncCpu) {
+                SettingToggle(uiStr(R.string.ui_sync_cpu_topology), syncCpu) {
                     syncCpu = it
                     saveCpu()
                 }
                 SettingsDivider()
-                CpuSelectorRow("Processor Affinity", cpu64) { index, checked ->
+                CpuSelectorRow(uiStr(R.string.processor_affinity), cpu64) { index, checked ->
                     cpu64[index] = checked
                     saveCpu()
                 }
                 SettingsDivider()
-                CpuSelectorRow("Processor Affinity (32-bit apps)", cpu32) { index, checked ->
+                CpuSelectorRow(uiStr(R.string.processor_affinity_32_bit_apps), cpu32) { index, checked ->
                     cpu32[index] = checked
                     saveCpu()
                 }

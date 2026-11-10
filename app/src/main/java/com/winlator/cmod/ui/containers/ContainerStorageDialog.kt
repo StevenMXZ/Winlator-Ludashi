@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.containers
 
+import com.winlator.cmod.R
 import android.text.format.Formatter
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
@@ -69,7 +70,7 @@ object ContainerStorageDialog {
                             }
                             Spacer(Modifier.height(16.dp))
                             OutlinedButton({ dismiss(activity) }, Modifier.align(Alignment.End)) {
-                                Text(activity.getString(com.winlator.cmod.R.string.ui_close))
+                                Text(activity.getString(R.string.ui_close))
                             }
                         }
                     }

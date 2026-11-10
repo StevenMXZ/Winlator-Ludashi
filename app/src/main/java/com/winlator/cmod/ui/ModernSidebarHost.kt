@@ -170,8 +170,8 @@ private fun ExclusiveInputRow(state: ModernSidebarController) {
     Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Exclusive Input", style = MaterialTheme.typography.bodyMedium)
-                if (activity.isExclusiveInputBusy) Text("Applying…", style = MaterialTheme.typography.bodySmall)
+                Text(uiStr(R.string.ui_exclusive_input), style = MaterialTheme.typography.bodyMedium)
+                if (activity.isExclusiveInputBusy) Text(uiStr(R.string.ui_applying), style = MaterialTheme.typography.bodySmall)
             }
             Switch(activity.isExclusiveInputEnabled, { activity.changeExclusiveInput(it, state::refresh) },
                 enabled = activity.canChangeExclusiveInput())
@@ -230,7 +230,7 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
         val view = group.getChildAt(i)
         if (view.visibility != View.VISIBLE) continue
         if (view is TextView && view.id == View.NO_ID &&
-            listOf(heading, "Rendering", "Display and Effects", "Controls", "HUD")
+            listOf(heading, "Rendering", uiStr(R.string.ui_display_and_effects), "Controls", "HUD")
                 .any { view.text.toString().trim().equals(it, ignoreCase = true) }) continue
         if (view.id == R.id.BTItemToggleFullscreen) continue // represented by the Fit/Stretch selector
         when {
@@ -302,7 +302,7 @@ private fun FullscreenModeSelector(state: ModernSidebarController) {
     val stretched = state.activity.isSidebarFullscreenStretched
     Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
         Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Display mode", style = MaterialTheme.typography.labelLarge)
+            Text(uiStr(R.string.ui_display_mode), style = MaterialTheme.typography.labelLarge)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(false to "Fit", true to "Stretch").forEach { (stretch, label) ->
                     FilterChip(selected = stretched == stretch,
@@ -319,7 +319,7 @@ private fun RuntimeStatusCard(rows: Array<out Array<out String>>) {
     Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant,
         border = BorderStroke(1.dp, hairlineColor())) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text("Runtime Status", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(uiStr(R.string.ui_runtime_status), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             rows.forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(row[0], Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)

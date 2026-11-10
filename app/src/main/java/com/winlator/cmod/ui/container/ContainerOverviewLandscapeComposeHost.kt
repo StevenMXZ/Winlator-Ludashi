@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.container
 
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -90,7 +92,7 @@ private fun LandscapeContainerOverview(model: ContainerOverviewModel, callbacks:
                         .padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()).height(48.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
-                ) { Text("Launch Environment", fontWeight = FontWeight.SemiBold) }
+                ) { Text(uiStr(R.string.launch_environment), fontWeight = FontWeight.SemiBold) }
             }
         }
     ) { padding ->
@@ -105,7 +107,7 @@ private fun LandscapeContainerOverview(model: ContainerOverviewModel, callbacks:
             ) {
                 Column(Modifier.fillMaxSize().padding(12.dp)) {
                     Text(model.containerName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("Wine ${model.wineVersion}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(uiStr(R.string.ui_wine_1_s, model.wineVersion), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(12.dp))
                     sections.forEach { item -> LandscapeSectionRow(item, selected == item.id) { selected = item.id } }
                 }

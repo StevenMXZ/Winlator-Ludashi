@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui
 
+import com.winlator.cmod.R
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.winlator.cmod.MainActivity
@@ -14,7 +15,7 @@ object FileManagerLandscapeNavHost {
                 LandscapeMainNavigation(
                     activity = activity,
                     selected = 0,
-                    title = "File Manager"
+                    title = uiStr(R.string.ui_file_manager)
                 )
             }
         }

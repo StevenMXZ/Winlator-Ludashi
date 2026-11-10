@@ -242,7 +242,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     private void createNotifcationChannel() {
         String name = "Winlator";
-        String description = "Winlator XServer Messages";
+        String description = com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_winlator_xserver_messages);
         int importance = NotificationManager.IMPORTANCE_HIGH;
         NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance);
         channel.setDescription(description);
@@ -3536,6 +3536,3 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
 }
-
-
-

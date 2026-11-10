@@ -234,7 +234,7 @@ dependencies {
     debugImplementation 'androidx.compose.ui:ui-tooling'
 
     // Winlator’s dependencies
-    implementation 'androidx.appcompat:appcompat:1.4.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.preference:preference:1.2.1'
     implementation 'com.google.android.material:material:1.4.0'
     implementation 'com.github.luben:zstd-jni:1.5.2-3@aar'

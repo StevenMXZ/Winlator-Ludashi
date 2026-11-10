@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.settings
 
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -11,5 +13,5 @@ internal fun DDrawWrapperChoice(selected: String, onSelected: (String) -> Unit) 
     val entries = remember(context) {
         D7VKManager.getWrapperEntries(context).associateWith(D7VKManager::getWrapperLabel)
     }
-    SettingMappedChoice("DDraw Wrapper", selected, entries, onSelected)
+    SettingMappedChoice(uiStr(R.string.ddraw_wrapper), selected, entries, onSelected)
 }

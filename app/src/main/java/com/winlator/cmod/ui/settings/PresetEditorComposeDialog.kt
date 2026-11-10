@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.settings
 
+import com.winlator.cmod.ui.uiStr
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
@@ -144,7 +145,7 @@ private fun PresetEditorScreen(
             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
                 Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    if (readOnly) "Bundled preset · read only" else "Edit the preset name and environment variables",
+                    if (readOnly) uiStr(R.string.ui_bundled_preset_read_only) else uiStr(R.string.ui_edit_the_preset_name_and_environment_variables),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
@@ -154,11 +155,11 @@ private fun PresetEditorScreen(
                     onValueChange = { name = it },
                     enabled = !readOnly,
                     singleLine = true,
-                    label = { Text("Preset") },
+                    label = { Text(uiStr(R.string.preset)) },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "Environment variables",
+                    uiStr(R.string.ui_environment_variables),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 18.dp, bottom = 7.dp)
@@ -195,7 +196,7 @@ private fun PresetEditorScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                    TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text(uiStr(R.string.cancel)) }
                     Button(
                         onClick = {
                             val cleanName = name.trim().replace(Regex("[,|]+"), "")
@@ -203,7 +204,7 @@ private fun PresetEditorScreen(
                         },
                         enabled = !readOnly && name.isNotBlank(),
                         modifier = Modifier.weight(1f)
-                    ) { Text("Save") }
+                    ) { Text(uiStr(R.string.save)) }
                 }
             }
         }
@@ -256,7 +257,7 @@ private fun PresetEditorScreen(
         AlertDialog(
             onDismissRequest = { helpText = null },
             confirmButton = {
-                TextButton(onClick = { helpText = null }) { Text("OK") }
+                TextButton(onClick = { helpText = null }) { Text(uiStr(R.string.ok)) }
             },
             text = { Text(message) }
         )
@@ -286,7 +287,7 @@ private fun PresetVariableRow(
                 IconButton(onClick = onHelp, modifier = Modifier.size(36.dp)) {
                     Icon(
                         Icons.Outlined.HelpOutline,
-                        contentDescription = "Help",
+                        contentDescription = uiStr(R.string.ui_help),
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )

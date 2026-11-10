@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.onboarding
 
+import com.winlator.cmod.ui.uiStr
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -51,7 +52,7 @@ internal fun ClassicWinlatorWelcome(
             )
             Spacer(Modifier.height(22.dp))
             Text(
-                "Welcome to Winlator",
+                uiStr(R.string.ui_welcome_to_winlator),
                 style = MaterialTheme.typography.displaySmall.copy(fontSize = 28.sp),
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
@@ -59,22 +60,22 @@ internal fun ClassicWinlatorWelcome(
             )
             Spacer(Modifier.height(7.dp))
             Text(
-                "Your lightweight PC emulator for Android.",
+                uiStr(R.string.ui_your_lightweight_pc_emulator_for_android),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(26.dp))
             ClassicWelcomeCard(
                 Icons.Outlined.Apps,
-                "Get started",
-                "Choose components",
+                uiStr(R.string.ui_get_started),
+                uiStr(R.string.ui_choose_components),
                 start
             )
             Spacer(Modifier.height(12.dp))
             ClassicWelcomeCard(
                 Icons.Outlined.SkipNext,
-                "Skip",
-                "Use the components bundled with Winlator and configure everything later.",
+                uiStr(R.string.ui_skip),
+                uiStr(R.string.ui_use_the_components_bundled_with_winlator_and_configure_everything),
                 skip
             )
             Spacer(Modifier.height(12.dp))

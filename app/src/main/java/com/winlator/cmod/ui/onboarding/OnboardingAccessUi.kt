@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.onboarding
 
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,7 +34,7 @@ internal fun OnboardingAccessScreen(back: () -> Unit, next: () -> Unit) {
             Icon(Icons.Outlined.Security, null, modifier = Modifier.size(52.dp))
             Spacer(Modifier.height(14.dp))
             Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text("Winlator needs storage and notification access to manage games and keep sessions running.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(uiStr(R.string.ui_winlator_needs_storage_and_notification_access_to_manage_games_an), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(20.dp))
             Button(onClick = next, modifier = Modifier.fillMaxWidth().height(50.dp)) {
                 Icon(Icons.Outlined.NotificationsNone, null)
@@ -40,7 +42,7 @@ internal fun OnboardingAccessScreen(back: () -> Unit, next: () -> Unit) {
                 Text(action)
             }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = back, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Back") }
+            OutlinedButton(onClick = back, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(uiStr(R.string.ui_back)) }
         }
     }
 }

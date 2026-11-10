@@ -27,6 +27,8 @@
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
     <application
+        android:name="com.winlator.cmod.WinlatorApplication"
+        android:localeConfig="@xml/locales_config"
         android:label="Winlator Ludashi"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -38,6 +40,13 @@
         android:hardwareAccelerated="true"
         android:supportsRtl="true"
         tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
+
+        <service
+            android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
+            android:enabled="false"
+            android:exported="false">
+            <meta-data android:name="autoStoreLocales" android:value="true" />
+        </service>
 
         <service
             android:name="com.winlator.cmod.services.NotificationService"
@@ -101,7 +110,7 @@
             android:launchMode="singleTask"
             android:supportsPictureInPicture="true"
             android:screenOrientation="sensorLandscape"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|density|navigation"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|density|navigation|locale|layoutDirection"
             android:exported="true" />
 
         <activity
@@ -111,7 +120,7 @@
             android:resizeableActivity="false"
             android:screenOrientation="landscape"
             android:process=":vr_process"
-            android:configChanges="density|orientation|screenSize|keyboard|keyboardHidden|uiMode"
+            android:configChanges="density|orientation|screenSize|keyboard|keyboardHidden|uiMode|locale|layoutDirection"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

@@ -93,7 +93,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
     private void createNotificationChannel() {
         String name = "Winlator";
-        String description = "Winlator XServer Messages";
+        String description = com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_winlator_xserver_messages);
         int importance = NotificationManager.IMPORTANCE_LOW;
         NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance);
         channel.setDescription(description);
@@ -243,14 +243,14 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
     private void showAllFilesAccessDialog() {
         new AlertDialog.Builder(this)
-                .setTitle("All Files Access Required")
-                .setMessage("In order to grant access to additional storage devices such as USB storage device, the All Files Access permission must be granted. Press Okay to grant All Files Access in your Android Settings.")
-                .setPositiveButton("Okay", (dialog, which) -> {
+                .setTitle(com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_all_files_access_required))
+                .setMessage(com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_in_order_to_grant_access_to_additional_storage_devices_such_as_us))
+                .setPositiveButton(com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_okay), (dialog, which) -> {
                     Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
                     intent.setData(Uri.parse("package:" + getPackageName()));
                     startActivity(intent);
                 })
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton(com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.cancel), null)
                 .show();
     }
 
@@ -524,7 +524,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
             String creditsAndThirdPartyAppsHTML = String.join("<br />",
                     "Winlator Ludashi by StevenMX, pipetto-crypto (<a href=\"https://github.com/StevenMXZ/Winlator-Ludashi\">Fork</a>, <a href=\"https://github.com/Pipetto-crypto/winlator\">Fork</a>)",
-                    "Big Picture Mode Music by",
+                    com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_big_picture_mode_music_by),
                     "Dale Melvin Blevens III (Fumer)",
                     "---",
                     "Termux Package(<a href=\"https://github.com/termux/termux-packages\">github.com/termux/termux-package</a>)",
@@ -587,4 +587,3 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         }
     }
 }
-

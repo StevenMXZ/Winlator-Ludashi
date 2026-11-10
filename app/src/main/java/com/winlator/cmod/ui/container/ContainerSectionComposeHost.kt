@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.container
 
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -371,7 +373,7 @@ private fun ContainerSectionScreen(
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
-                    Text("Save", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(uiStr(R.string.save), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -400,22 +402,22 @@ private fun ContainerSectionScreen(
                         1 -> {
                             ChoiceSetting(
                                 Icons.Outlined.DesktopWindows,
-                                "Display Server",
+                                uiStr(R.string.ui_display_server),
                                 displayServer,
                                 arrayOf("Java X11", "Ludashi X11 (Native Vulkan)")
                             ) { displayServer = it }
                             GroupDivider()
                             ChoiceSetting(
                                 Icons.Outlined.DesktopWindows,
-                                "Renderer (Java X11)",
+                                uiStr(R.string.ui_renderer_java_x11),
                                 renderer,
                                 rendererEntries
                             ) { renderer = it }
                             GroupDivider()
                             ActionSetting(
                                 Icons.Outlined.Tune,
-                                "Renderer options",
-                                "Present mode, driver, filter and color channels",
+                                uiStr(R.string.ui_renderer_options),
+                                uiStr(R.string.ui_present_mode_driver_filter_and_color_channels),
                                 expanded = rendererOptionsExpanded
                             ) { rendererOptionsExpanded = !rendererOptionsExpanded }
                             if (rendererOptionsExpanded) {
@@ -434,7 +436,7 @@ private fun ContainerSectionScreen(
                                 )
                             }
                             GroupDivider()
-                            ChoiceSetting(Icons.Outlined.Memory, "Screen Size", screen, screenEntries) { screen = it }
+                            ChoiceSetting(Icons.Outlined.Memory, uiStr(R.string.screen_size), screen, screenEntries) { screen = it }
                             if (screen.equals("Custom", true)) {
                                 CustomResolutionFields(
                                     width = customWidth,
@@ -446,15 +448,15 @@ private fun ContainerSectionScreen(
                             GroupDivider()
                             ChoiceSetting(
                                 Icons.Outlined.DesktopWindows,
-                                "Graphics Driver",
+                                uiStr(R.string.graphics_driver),
                                 graphics,
                                 graphicsEntries
                             ) { graphics = it }
                             GroupDivider()
                             ActionSetting(
                                 Icons.Outlined.Tune,
-                                "Graphics driver options",
-                                "Driver version, Vulkan, resource and BCN settings",
+                                uiStr(R.string.ui_graphics_driver_options),
+                                uiStr(R.string.ui_driver_version_vulkan_resource_and_bcn_settings),
                                 expanded = graphicsOptionsExpanded
                             ) { graphicsOptionsExpanded = !graphicsOptionsExpanded }
                             if (graphicsOptionsExpanded) {
@@ -484,19 +486,19 @@ private fun ContainerSectionScreen(
                             }
                         }
                         2 -> {
-                            ChoiceSetting(Icons.Outlined.VolumeUp, "Audio Driver", audio, audioEntries) { audio = it }
+                            ChoiceSetting(Icons.Outlined.VolumeUp, uiStr(R.string.audio_driver), audio, audioEntries) { audio = it }
                             GroupDivider()
-                            InfoText("Alsa-Oboe offers direct audio output. PulseAudio-GN is available for compatibility.")
+                            InfoText(uiStr(R.string.ui_alsa_oboe_offers_direct_audio_output_pulseaudio_gn_is_available_f))
                         }
                         else -> {
-                            ChoiceSetting(Icons.Outlined.VerifiedUser, "DX Wrapper", wrapper, wrapperEntries) {
+                            ChoiceSetting(Icons.Outlined.VerifiedUser, uiStr(R.string.dxwrapper), wrapper, wrapperEntries) {
                                 wrapper = it
                             }
                             GroupDivider()
                             ActionSetting(
                                 Icons.Outlined.Tune,
-                                "Wrapper options",
-                                "DXVK / VKD3D versions and wrapper configuration",
+                                uiStr(R.string.ui_wrapper_options),
+                                uiStr(R.string.ui_dxvk_vkd3d_versions_and_wrapper_configuration),
                                 expanded = wrapperOptionsExpanded
                             ) { wrapperOptionsExpanded = !wrapperOptionsExpanded }
                             if (wrapperOptionsExpanded) {
@@ -539,21 +541,21 @@ private fun ContainerSectionScreen(
                             GroupDivider()
                             ReadOnlySetting(
                                 icon = Icons.Outlined.Memory,
-                                label = "64-bit Emulator",
+                                label = uiStr(R.string.ui_64_bit_emulator),
                                 value = if (arm64EcWine) "FEXCore" else "Box64"
                             )
                             GroupDivider()
                             if (arm64EcWine) {
                                 ChoiceSetting(
                                     Icons.Outlined.Memory,
-                                    "32-bit Emulator",
+                                    uiStr(R.string.ui_32_bit_emulator),
                                     if (emulator.equals("FEXCore", true)) "FEXCore" else "WOWBox64",
                                     arrayOf("FEXCore", "WOWBox64")
                                 ) { emulator = if (it.equals("WOWBox64", true)) "Box64" else "FEXCore" }
                             } else {
                                 ReadOnlySetting(
                                     icon = Icons.Outlined.Memory,
-                                    label = "32-bit Emulator",
+                                    label = uiStr(R.string.ui_32_bit_emulator),
                                     value = "Box64"
                                 )
                             }
@@ -561,7 +563,7 @@ private fun ContainerSectionScreen(
                                 GroupDivider()
                                 ChoiceSetting(
                                     Icons.Outlined.Memory,
-                                    "FEXCore Version",
+                                    uiStr(R.string.fexcore_version),
                                     fexcoreVersion,
                                     fexcoreVersionEntries,
                                     installedEntries = installedFexcoreVersionEntries,
@@ -570,7 +572,7 @@ private fun ContainerSectionScreen(
                                 GroupDivider()
                                 IdChoiceSetting(
                                     icon = Icons.Outlined.Tune,
-                                    label = "FEXCore Preset",
+                                    label = uiStr(R.string.fexcore_preset),
                                     selectedId = fexcorePreset,
                                     entries = fexcorePresetEntries,
                                     ids = fexcorePresetIds,
@@ -581,7 +583,7 @@ private fun ContainerSectionScreen(
                                 GroupDivider()
                                 ChoiceSetting(
                                     Icons.Outlined.Memory,
-                                    if (arm64EcWine) "WOWBox64 Version" else "Box64 Version",
+                                    if (arm64EcWine) uiStr(R.string.ui_wowbox64_version) else uiStr(R.string.box64_version),
                                     box64Version,
                                     box64VersionEntries,
                                     installedEntries = installedBox64VersionEntries,
@@ -592,7 +594,7 @@ private fun ContainerSectionScreen(
                                 GroupDivider()
                                 IdChoiceSetting(
                                     icon = Icons.Outlined.Tune,
-                                    label = "Box64 Preset",
+                                    label = uiStr(R.string.box64_preset),
                                     selectedId = box64Preset,
                                     entries = box64PresetEntries,
                                     ids = box64PresetIds,
@@ -721,7 +723,7 @@ private fun ChoiceSetting(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
                 )
                 Text(
-                    "Choose an option",
+                    uiStr(R.string.ui_choose_an_option),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 8.dp).padding(bottom = 10.dp)
@@ -751,7 +753,7 @@ private fun ChoiceSetting(
                                     Icon(Icons.Outlined.Check, null)
                                 } else if (!installed) {
                                     Text(
-                                        "Download",
+                                        uiStr(R.string.ui_download_2),
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -834,14 +836,14 @@ private fun RendererOptionsPanel(
         Column(Modifier.padding(vertical = 4.dp)) {
             if (!nativeRenderer) {
                 InlineChoice(
-                    label = "Present Mode",
+                    label = uiStr(R.string.ui_present_mode),
                     selected = presentEntries[presentIds.indexOf(presentMode).coerceAtLeast(0)],
                     entries = presentEntries
                 ) { value -> onPresentMode(presentIds[presentEntries.indexOf(value)]) }
                 ThinDivider()
                 val selectedDriver = driverIds.indexOf(driverId).takeIf { it >= 0 } ?: 0
                 InlineChoice(
-                    label = "Renderer Driver",
+                    label = uiStr(R.string.ui_renderer_driver),
                     selected = driverEntries.getOrElse(selectedDriver) { "System" },
                     entries = driverEntries
                 ) { value ->
@@ -851,7 +853,7 @@ private fun RendererOptionsPanel(
                 ThinDivider()
             }
             InlineChoice(
-                label = "Texture Filter",
+                label = uiStr(R.string.ui_texture_filter),
                 selected = filterEntries.getOrElse(filterMode) { filterEntries[0] },
                 entries = filterEntries
             ) { value -> onFilterMode(filterEntries.indexOf(value).coerceAtLeast(0)) }
@@ -860,7 +862,7 @@ private fun RendererOptionsPanel(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Swap red/blue channels", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Text(uiStr(R.string.ui_swap_red_blue_channels), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Switch(checked = swapRB, onCheckedChange = onSwapRB)
             }
         }
@@ -900,7 +902,7 @@ private fun GraphicsDriverOptionsPanel(
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             ChoiceSetting(
                 icon = Icons.Outlined.DesktopWindows,
-                label = "Driver Version",
+                label = uiStr(R.string.ui_driver_version),
                 selected = version,
                 entries = versionEntries,
                 showIcon = false,
@@ -909,21 +911,21 @@ private fun GraphicsDriverOptionsPanel(
                 onSelected = onVersion
             )
             ThinDivider()
-            InlineChoice("Vulkan Version", vulkanVersion, arrayOf("1.1", "1.2", "1.3"), onVulkanVersion)
+            InlineChoice(uiStr(R.string.graphics_driver_vulkan_version), vulkanVersion, arrayOf("1.1", "1.2", "1.3"), onVulkanVersion)
             ThinDivider()
-            InlineChoice("Present Mode", presentMode, arrayOf("mailbox", "fifo", "immediate", "relaxed"), onPresentMode)
+            InlineChoice(uiStr(R.string.ui_present_mode), presentMode, arrayOf("mailbox", "fifo", "immediate", "relaxed"), onPresentMode)
             ThinDivider()
-            InlineChoice("Resource Type", resourceType, arrayOf("auto", "buffer", "image"), onResourceType)
+            InlineChoice(uiStr(R.string.ui_resource_type), resourceType, arrayOf("auto", "buffer", "image"), onResourceType)
             ThinDivider()
-            InlineChoice("BCN Emulation", bcnEmulation, arrayOf("none", "partial", "full", "auto"), onBcnEmulation)
+            InlineChoice(uiStr(R.string.ui_bcn_emulation), bcnEmulation, arrayOf("none", "partial", "full", "auto"), onBcnEmulation)
             ThinDivider()
-            InlineChoice("BCN Emulation Type", bcnEmulationType, arrayOf("software", "compute"), onBcnEmulationType)
+            InlineChoice(uiStr(R.string.ui_bcn_emulation_type), bcnEmulationType, arrayOf("software", "compute"), onBcnEmulationType)
             ThinDivider()
-            ToggleSetting("BCN Emulation Cache", bcnEmulationCache, onBcnEmulationCache)
+            ToggleSetting(uiStr(R.string.ui_bcn_emulation_cache), bcnEmulationCache, onBcnEmulationCache)
             ThinDivider()
-            ToggleSetting("Sync Frame", syncFrame, onSyncFrame)
+            ToggleSetting(uiStr(R.string.ui_sync_frame), syncFrame, onSyncFrame)
             ThinDivider()
-            ToggleSetting("Disable Present Wait", disablePresentWait, onDisablePresentWait)
+            ToggleSetting(uiStr(R.string.ui_disable_present_wait), disablePresentWait, onDisablePresentWait)
         }
     }
 }
@@ -974,7 +976,7 @@ private fun WrapperOptionsPanel(
             if (dxvk) {
                 ChoiceSetting(
                     icon = Icons.Outlined.Memory,
-                    label = "DXVK Version",
+                    label = uiStr(R.string.dxvk_version),
                     selected = dxvkVersion.ifBlank { dxvkEntries.firstOrNull().orEmpty() },
                     entries = dxvkEntries,
                     showIcon = false,
@@ -984,7 +986,7 @@ private fun WrapperOptionsPanel(
                 )
                 ChoiceSetting(
                     icon = Icons.Outlined.Memory,
-                    label = "VKD3D Version",
+                    label = uiStr(R.string.vkd3d_version),
                     selected = vkd3dVersion.ifBlank { vkd3dEntries.firstOrNull().orEmpty() },
                     entries = vkd3dEntries,
                     showIcon = false,
@@ -993,43 +995,43 @@ private fun WrapperOptionsPanel(
                     onSelected = onVkd3dVersion
                 )
                 InlineChoice(
-                    label = "VKD3D Feature Level",
+                    label = uiStr(R.string.vkd3d_feature_level),
                     selected = vkd3dLevel,
                     entries = arrayOf("12_0", "12_1", "12_2", "11_1", "11_0", "10_1", "10_0", "9_3", "9_2", "9_1"),
                     onSelected = onVkd3dLevel
                 )
                 CompactTextField(
-                    label = "Frame Rate Limit",
+                    label = uiStr(R.string.ui_frame_rate_limit),
                     value = frameRate,
                     onValueChange = onFrameRate,
                     numeric = true
                 )
-                ToggleSetting("Max Frame Latency", maxFrameLatency, onMaxFrameLatency)
-                ToggleSetting("Async shaders", async, onAsync)
-                ToggleSetting("Async shader cache", asyncCache, onAsyncCache)
+                ToggleSetting(uiStr(R.string.ui_max_frame_latency), maxFrameLatency, onMaxFrameLatency)
+                ToggleSetting(uiStr(R.string.ui_async_shaders), async, onAsync)
+                ToggleSetting(uiStr(R.string.ui_async_shader_cache), asyncCache, onAsyncCache)
                 InlineChoice(
-                    label = "DDraw Wrapper",
+                    label = uiStr(R.string.ddraw_wrapper),
                     selected = ddrawWrapper,
                     entries = arrayOf("wined3d", "cnc-ddraw"),
                     onSelected = onDdrawWrapper
                 )
             } else {
-                ToggleSetting("CSMT", csmt, onCsmt)
-                ToggleSetting("Strict Shader Math", strictShaderMath, onStrictShaderMath)
+                ToggleSetting(uiStr(R.string.ui_csmt), csmt, onCsmt)
+                ToggleSetting(uiStr(R.string.strict_shader_math), strictShaderMath, onStrictShaderMath)
                 InlineChoice(
-                    label = "Offscreen Rendering",
+                    label = uiStr(R.string.ui_offscreen_rendering),
                     selected = offscreenMode,
                     entries = arrayOf("fbo", "backbuffer"),
                     onSelected = onOffscreenMode
                 )
                 InlineChoice(
-                    label = "WineD3D Renderer",
+                    label = uiStr(R.string.ui_wined3d_renderer),
                     selected = wineRenderer,
                     entries = arrayOf("gl", "vulkan", "gdi"),
                     onSelected = onWineRenderer
                 )
                 CompactTextField(
-                    label = "Video Memory (MB)",
+                    label = uiStr(R.string.ui_video_memory_mb),
                     value = videoMemory,
                     onValueChange = onVideoMemory,
                     numeric = true
@@ -1049,9 +1051,9 @@ private fun WrapperOptionsPanel(
                     Icon(Icons.Outlined.Memory, null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Manage installed versions", style = MaterialTheme.typography.titleSmall)
+                        Text(uiStr(R.string.ui_manage_installed_versions), style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "Install or remove DXVK, VKD3D and emulator components",
+                            uiStr(R.string.ui_install_or_remove_dxvk_vkd3d_and_emulator_components),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1109,7 +1111,7 @@ private fun CustomResolutionFields(
             value = width,
             onValueChange = onWidth,
             modifier = Modifier.weight(1f),
-            label = { Text("Width") },
+            label = { Text(uiStr(R.string.width)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             shape = RoundedCornerShape(10.dp)
@@ -1118,7 +1120,7 @@ private fun CustomResolutionFields(
             value = height,
             onValueChange = onHeight,
             modifier = Modifier.weight(1f),
-            label = { Text("Height") },
+            label = { Text(uiStr(R.string.height)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             shape = RoundedCornerShape(10.dp)
@@ -1209,4 +1211,3 @@ private fun mergeSemicolonConfig(data: String, updates: Map<String, String>): St
     updates.forEach { (key, value) -> values[key] = value }
     return values.entries.joinToString(";") { (key, value) -> "$key=$value" }
 }
-

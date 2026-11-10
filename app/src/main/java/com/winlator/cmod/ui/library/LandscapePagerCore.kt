@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.library
 
+import com.winlator.cmod.ui.uiStr
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
@@ -175,14 +176,14 @@ internal fun LandscapePagerCore(
                             color = Color.White.copy(.20f),
                             contentColor = Color.White,
                             border = BorderStroke(1.dp, Color.White.copy(.22f))
-                        ) { Text("View details", Modifier.padding(horizontal = 21.dp, vertical = 11.dp)) }
+                        ) { Text(uiStr(R.string.ui_view_details), Modifier.padding(horizontal = 21.dp, vertical = 11.dp)) }
                         Surface(
                             onClick = { callbacks.onRun(item.shortcutPath) },
                             modifier = Modifier.size(44.dp),
                             shape = CircleShape,
                             color = Color.Black.copy(.62f),
                             contentColor = Color.White
-                        ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PlayArrow, "Play") } }
+                        ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PlayArrow, uiStr(R.string.play)) } }
                         footerActions(item)
                     }
                 }
@@ -205,4 +206,3 @@ private fun PagerImage(path: String?, fallback: Bitmap?, modifier: Modifier) {
     if (image != null) Image(image!!.asImageBitmap(), null, modifier, contentScale = ContentScale.Crop)
     else Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant))
 }
-

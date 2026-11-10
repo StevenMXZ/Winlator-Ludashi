@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_language">App language</string>
+    <string name="app_language_system">Follow system language</string>
+    <string name="app_language_english" translatable="false">English</string>
+    <string name="app_language_pt_br" translatable="false">Português (Brasil)</string>
+</resources>

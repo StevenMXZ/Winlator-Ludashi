@@ -915,7 +915,7 @@ public class OnboardingActivity extends AppCompatActivity {
         WineInfo wineInfo = WineInfo.fromIdentifier(this, contentsManager, runtime);
         if (wineInfo.path == null || wineInfo.path.isEmpty()) {
             finishing = false;
-            Toast.makeText(this, "The selected Wine/Proton layer is no longer installed.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_the_selected_wine_proton_layer_is_no_longer_installed), Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -944,14 +944,14 @@ public class OnboardingActivity extends AppCompatActivity {
             manager.createContainerAsync(data, contentsManager, created -> {
                 if (created == null) {
                     finishing = false;
-                    Toast.makeText(this, "Unable to create the first container.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_unable_to_create_the_first_container), Toast.LENGTH_LONG).show();
                 } else {
                     enterMainApp();
                 }
             });
         } catch (Exception error) {
             finishing = false;
-            Toast.makeText(this, "Unable to prepare the first container.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_unable_to_prepare_the_first_container), Toast.LENGTH_LONG).show();
         }
     }
 

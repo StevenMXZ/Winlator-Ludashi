@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.library
 
+import com.winlator.cmod.ui.uiStr
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -54,9 +55,9 @@ internal fun LibraryRootWithoutEmptyDescription(
             Modifier.padding(vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            EmptyFilterChip("All", true)
-            EmptyFilterChip("Favorites", false)
-            EmptyFilterChip("Recent", false)
+            EmptyFilterChip(uiStr(R.string.all), true)
+            EmptyFilterChip(uiStr(R.string.ui_favorites), false)
+            EmptyFilterChip(uiStr(R.string.ui_recent), false)
         }
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Surface(
@@ -81,7 +82,7 @@ internal fun LibraryRootWithoutEmptyDescription(
                     }
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        "Add games",
+                        uiStr(R.string.ui_add_games),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold
                     )

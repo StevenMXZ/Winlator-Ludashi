@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.onboarding
 
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,12 +48,12 @@ internal fun OnboardingThemeScreen(
         ) {
             Column(Modifier.weight(0.8f)) {
                 Text(
-                    "Choose your theme",
+                    uiStr(R.string.ui_choose_your_theme),
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "Pick the look you prefer. You can change it later in Settings.",
+                    uiStr(R.string.ui_pick_the_look_you_prefer_you_can_change_it_later_in_settings),
                     modifier = Modifier.padding(top = 8.dp),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -81,12 +83,12 @@ internal fun OnboardingThemeScreen(
         Spacer(Modifier.height(8.dp))
         Column(Modifier.widthIn(max = 620.dp)) {
             Text(
-                "Choose your theme",
+                uiStr(R.string.ui_choose_your_theme),
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                "Pick the look you prefer. You can change it later in Settings.",
+                uiStr(R.string.ui_pick_the_look_you_prefer_you_can_change_it_later_in_settings),
                 modifier = Modifier.padding(top = 7.dp, bottom = 22.dp),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -111,11 +113,11 @@ private fun ThemeNavigationButtons(
     ) {
         if (onBack != null) {
             OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f)) {
-                Text("Back")
+                Text(uiStr(R.string.ui_back))
             }
         }
         Button(onClick = onContinue, modifier = Modifier.weight(1f)) {
-            Text("Continue")
+            Text(uiStr(R.string._continue))
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.inputcontrols
 
+import com.winlator.cmod.ui.uiStr
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -160,7 +161,7 @@ private fun Editor(profile: ControlsProfile, canvas: InputControlsView, callback
             shadowElevation = 8.dp
         ) {
             Row(Modifier.width((LocalConfiguration.current.screenWidthDp - 16).coerceAtMost(460).dp).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.DragIndicator, "Move toolbar", Modifier.size(28.dp).pointerInput(screenWidth, screenHeight, toolbarWidth) {
+                Icon(Icons.Outlined.DragIndicator, uiStr(R.string.ui_move_toolbar), Modifier.size(28.dp).pointerInput(screenWidth, screenHeight, toolbarWidth) {
                     detectDragGestures { change, delta ->
                         change.consume()
                         val maxX = ((screenWidth - toolbarWidth) / 2).coerceAtLeast(0f)
@@ -174,15 +175,15 @@ private fun Editor(profile: ControlsProfile, canvas: InputControlsView, callback
                 }
                 IconButton(onClick = { history.begin(); canvas.addElement(); history.commit(); localRevision++ }) { Icon(Icons.Outlined.Add, stringResource(R.string.add)) }
                 IconButton(onClick = { history.begin(); canvas.removeElement(); selected = null; history.commit(); localRevision++ }) { Icon(Icons.Outlined.Delete, stringResource(R.string.remove)) }
-                IconButton(onClick = { history.duplicate(); localRevision++ }) { Icon(Icons.Outlined.ContentCopy, "Duplicate") }
-                IconButton(onClick = { history.undo(); selected = null; localRevision++ }, enabled = history.canUndo) { Icon(Icons.AutoMirrored.Outlined.Undo, "Undo") }
+                IconButton(onClick = { history.duplicate(); localRevision++ }) { Icon(Icons.Outlined.ContentCopy, uiStr(R.string.duplicate)) }
+                IconButton(onClick = { history.undo(); selected = null; localRevision++ }, enabled = history.canUndo) { Icon(Icons.AutoMirrored.Outlined.Undo, uiStr(R.string.ui_undo)) }
                 IconButton(onClick = { history.begin(); selected = canvas.selectedElement }) { Icon(Icons.Outlined.Settings, stringResource(R.string.settings)) }
-                IconButton(onClick = { history.begin(); colors = true }) { Icon(Icons.Outlined.Palette, "Scheme color") }
+                IconButton(onClick = { history.begin(); colors = true }) { Icon(Icons.Outlined.Palette, uiStr(R.string.ui_text_630932a2805e)) }
             }
         }
         if (colors) {
-            EditorPanel("Scheme Color", { profile.save(); colors = false }) {
-                Text("Applies to every control that doesn't have its own custom color", style = MaterialTheme.typography.bodySmall)
+            EditorPanel(uiStr(R.string.ui_scheme_color), { profile.save(); colors = false }) {
+                Text(uiStr(R.string.ui_applies_to_every_control_that_doesn_t_have_its_own_custom_color), style = MaterialTheme.typography.bodySmall)
                 ColorGrid(profile.themeColor) { color -> profile.themeColor = color; touchRevision() }
                 HexColorField(profile.themeColor) { profile.themeColor = it; touchRevision() }
             }
@@ -217,7 +218,7 @@ private fun BoxScope.EditorPanel(title: String, onDismiss: () -> Unit, alignment
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                OutlinedButton(onClick = onDismiss) { Text("Save") }
+                OutlinedButton(onClick = onDismiss) { Text(uiStr(R.string.save)) }
             }
             Column(
                 modifier = Modifier.fillMaxWidth()
@@ -312,7 +313,7 @@ private fun ElementFields(
     if (type == ControlElement.Type.STICK || type == ControlElement.Type.DYNAMIC_STICK) {
         var deadZone by remember(element) { mutableStateOf(element.deadZone) }
         Column {
-            Text("Dead zone: ${(deadZone * 100).roundToInt()}%")
+            Text(uiStr(R.string.ui_dead_zone_1_s, (deadZone * 100).roundToInt()))
             Slider(
                 value = deadZone,
                 onValueChange = {
@@ -325,15 +326,15 @@ private fun ElementFields(
         }
     }
     if (type == ControlElement.Type.DYNAMIC_STICK) {
-        RatioSlider("Touch area width", element.areaWidthRatio, 0.15f, 1f,
+        RatioSlider(uiStr(R.string.ui_touch_area_width), element.areaWidthRatio, 0.15f, 1f,
             { element.areaWidthRatio = it; canvas.invalidate() }, save)
-        RatioSlider("Touch area height", element.areaHeightRatio, 0.15f, 1f,
+        RatioSlider(uiStr(R.string.ui_touch_area_height), element.areaHeightRatio, 0.15f, 1f,
             { element.areaHeightRatio = it; canvas.invalidate() }, save)
-        RatioSlider("Stick radius", element.stickRadiusRatio, 0.05f, 0.3f,
+        RatioSlider(uiStr(R.string.ui_stick_radius), element.stickRadiusRatio, 0.05f, 0.3f,
             { element.stickRadiusRatio = it; canvas.invalidate() }, save)
     }
-    Percent("Opacity", element.opacity, 1, { element.opacity = it; canvas.invalidate() }, save)
-    Text("Theme Color", style = MaterialTheme.typography.labelMedium)
+    Percent(uiStr(R.string.ui_opacity), element.opacity, 1, { element.opacity = it; canvas.invalidate() }, save)
+    Text(uiStr(R.string.ui_theme_color), style = MaterialTheme.typography.labelMedium)
     ColorGrid(element.customColor) { element.customColor = it; save() }
     HexColorField(element.customColor) { element.customColor = it; save() }
     if (type == ControlElement.Type.BUTTON) {
@@ -356,7 +357,7 @@ private fun ElementFields(
         Choice(stringResource(R.string.range), element.range, ControlElement.Range.values().toList(), { it.name.replace('_', ' ') }) {
             if (it != element.range) { element.range = it; save() }
         }
-        Choice(stringResource(R.string.orientation), element.orientation.toInt(), listOf(0, 1), { if (it == 0) "Horizontal" else "Vertical" }) {
+        Choice(stringResource(R.string.orientation), element.orientation.toInt(), listOf(0, 1), { if (it == 0) uiStr(R.string.horizontal) else uiStr(R.string.vertical) }) {
             if (it != element.orientation.toInt()) { element.orientation = it.toByte(); save() }
         }
         Choice(stringResource(R.string.columns), element.bindingCount, (3..8).toList(), { it.toString() }) {
@@ -373,7 +374,7 @@ private fun ElementFields(
         key(type, index) { BindingField(stringResource(label), element, index, save) }
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Move mouse cursor while dragging", modifier = Modifier.weight(1f))
+        Text(uiStr(R.string.ui_move_mouse_cursor_while_dragging), modifier = Modifier.weight(1f))
         Switch(checked = element.isMouseMoveMode, onCheckedChange = { element.isMouseMoveMode = it; save() })
     }
 }
@@ -412,10 +413,10 @@ private fun BindingField(label: String, element: ControlElement, index: Int, sav
     Text(label, style = MaterialTheme.typography.labelMedium)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.weight(1f)) {
-            Choice("Input", family, listOf(0, 1, 2), { listOf("Keyboard", "Mouse", "Gamepad")[it] }) { family = it }
+            Choice(uiStr(R.string.ui_input), family, listOf(0, 1, 2), { listOf("Keyboard", "Mouse", "Gamepad")[it] }) { family = it }
         }
         Box(Modifier.weight(1f)) {
-            Choice("Binding", current, options, { it.toString() }) {
+            Choice(uiStr(R.string.binding), current, options, { it.toString() }) {
                 if (it != element.getBindingAt(index)) { element.setBindingAt(index, it); save() }
             }
         }
@@ -465,9 +466,9 @@ private fun IconGallery(
     val context = androidx.compose.ui.platform.LocalContext.current
     val icons = remember(context, revision) { loadIcons(context) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = { callbacks.onBrowseIcon(element, -1) }) { Text("Browse…") }
+        OutlinedButton(onClick = { callbacks.onBrowseIcon(element, -1) }) { Text(uiStr(R.string.ui_browse)) }
         if (element.customIconPath != null) {
-            OutlinedButton(onClick = { element.customIconPath = null; canvas.invalidateIconCache(); save() }) { Text("Remove") }
+            OutlinedButton(onClick = { element.customIconPath = null; canvas.invalidateIconCache(); save() }) { Text(uiStr(R.string.remove)) }
         }
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -495,7 +496,7 @@ private fun IconGallery(
             ) {
                 Image(
                     bitmap = option.bitmap,
-                    contentDescription = "Icon ${option.path ?: option.id}",
+                    contentDescription = uiStr(R.string.ui_icon_1_s, option.path ?: option.id),
                     modifier = Modifier.padding(4.dp),
                     colorFilter = if (option.path == null) ColorFilter.tint(Color(0xff2184ff)) else null
                 )
@@ -513,5 +514,5 @@ private fun HexColorField(color: Int, onChange: (Int) -> Unit) {
         value = clean
         if (clean.isEmpty()) onChange(0)
         else if (clean.length == 6 && clean.all { it in "0123456789abcdefABCDEF" }) onChange((0xff000000L or clean.toLong(16)).toInt())
-    }, label = { Text("Color #RRGGBB") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    }, label = { Text(uiStr(R.string.ui_color_rrggbb)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
 }

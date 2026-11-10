@@ -1,5 +1,8 @@
 package com.winlator.cmod.ui.settings
 
+import com.winlator.cmod.ui.uiOptionLabel
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -95,8 +98,8 @@ private data class DriverReport(
 ) {
     fun get(section: String): List<Capability> = sections[section].orEmpty()
     fun export(): String = buildString {
-        appendLine("Labs - Graphics Information")
-        appendLine("Selected driver: " + driver)
+        appendLine(uiStr(R.string.ui_labs_graphics_information))
+        appendLine(uiStr(R.string.ui_text_64aff31ebf10) + driver)
         error?.let { appendLine("Error: " + it) }
         get("warning").forEach { appendLine("Warning: " + it.value) }
         listOf("overview", "feature", "extension", "limit", "format").forEach { section ->
@@ -128,20 +131,20 @@ private fun queryDriver(context: Context, driver: String): DriverReport {
             }
         }
     } catch (e: Exception) {
-        error = e.message ?: "Vulkan probe failed"
+        error = e.message ?: uiStr(R.string.ui_vulkan_probe_failed)
     } catch (e: LinkageError) {
-        error = e.message ?: "Native probe unavailable"
+        error = e.message ?: uiStr(R.string.ui_native_probe_unavailable)
     }
     return DriverReport(driver, rows,
         error ?: if (rows.isEmpty())
-            "The driver returned no Vulkan capabilities. It may have failed to initialize or provide the required Vulkan functions."
+            uiStr(R.string.ui_the_driver_returned_no_vulkan_capabilities_it_may_have_failed_to_)
         else null)
 }
 
 private fun copyReport(context: Context, report: DriverReport) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("Labs report", report.export()))
-    Toast.makeText(context, "Driver report copied", Toast.LENGTH_SHORT).show()
+    clipboard.setPrimaryClip(ClipData.newPlainText(uiStr(R.string.ui_labs_report), report.export()))
+    Toast.makeText(context, uiStr(R.string.ui_driver_report_copied), Toast.LENGTH_SHORT).show()
 }
 
 @Composable
@@ -189,14 +192,14 @@ private fun LabsScreen(onExit: () -> Unit) {
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = ::back) { Icon(Icons.Outlined.ArrowBack, "Back") }
+            IconButton(onClick = ::back) { Icon(Icons.Outlined.ArrowBack, uiStr(R.string.ui_back)) }
             Column(Modifier.weight(1f)) {
                 Text(
-                    when (page) { 1 -> "Graphics Information"; 2 -> "Compare Drivers"; else -> "Labs" },
+                    when (page) { 1 -> uiStr(R.string.ui_graphics_information); 2 -> uiStr(R.string.ui_compare_drivers); else -> uiStr(R.string.ui_labs) },
                     style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    if (page == 0) "Experimental tools and diagnostics" else "Labs",
+                    if (page == 0) uiStr(R.string.ui_experimental_tools_and_diagnostics) else uiStr(R.string.ui_labs),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -206,11 +209,11 @@ private fun LabsScreen(onExit: () -> Unit) {
                     reports.remove(driver)
                     reports.remove(otherDriver)
                     refresh++
-                }) { Icon(Icons.Outlined.Refresh, "Refresh driver information") }
+                }) { Icon(Icons.Outlined.Refresh, uiStr(R.string.ui_refresh_driver_information)) }
             }
             if (page == 1 && first != null) {
                 IconButton(onClick = { copyReport(context, first!!) }) {
-                    Icon(Icons.Outlined.ContentCopy, "Copy report")
+                    Icon(Icons.Outlined.ContentCopy, uiStr(R.string.ui_copy_report))
                 }
             }
         }
@@ -221,21 +224,21 @@ private fun LabsScreen(onExit: () -> Unit) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                item { Title("GRAPHICS & DRIVERS") }
+                item { Title(uiStr(R.string.ui_graphics_drivers)) }
                 item {
                     LabsCard {
-                        LabsLink("Graphics Information", "GPU, Vulkan features, extensions, limits and formats") { page = 1 }
+                        LabsLink(uiStr(R.string.ui_graphics_information), uiStr(R.string.ui_gpu_vulkan_features_extensions_limits_and_formats)) { page = 1 }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        LabsLink("Compare Drivers", "Compare capabilities of two installed drivers") { page = 2 }
+                        LabsLink(uiStr(R.string.ui_compare_drivers), uiStr(R.string.ui_compare_capabilities_of_two_installed_drivers)) { page = 2 }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        LabsLink("GPU Tests", "Validate and benchmark compatible Vulkan drivers") {
+                        LabsLink(uiStr(R.string.ui_gpu_tests), uiStr(R.string.ui_validate_and_benchmark_compatible_vulkan_drivers)) {
                             context.startActivity(Intent(context, GpuTestsActivity::class.java))
                         }
                     }
                 }
             }
             1 -> {
-                DriverPicker("Selected driver", driver, drivers) { driver = it }
+                DriverPicker(uiStr(R.string.ui_selected_driver), driver, drivers) { driver = it }
                 ScrollableTabRow(
                     selectedTabIndex = tab,
                     edgePadding = 8.dp,
@@ -262,14 +265,14 @@ private fun LabsScreen(onExit: () -> Unit) {
                             }
                         }
                         if (tab == 4) {
-                            Text("Support for sampled textures using optimal tiling",
+                            Text(uiStr(R.string.ui_support_for_sampled_textures_using_optimal_tiling),
                                 modifier = Modifier.padding(start = 16.dp, top = 6.dp, end = 16.dp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall)
                         }
                         OutlinedTextField(
                             value = filter, onValueChange = { filter = it },
-                            label = { Text("Search " + tabs[tab].lowercase()) },
+                            label = { Text(uiStr(R.string.ui_search) + tabs[tab].lowercase()) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                         )
@@ -279,7 +282,7 @@ private fun LabsScreen(onExit: () -> Unit) {
                             verticalArrangement = Arrangement.spacedBy(7.dp)
                         ) {
                             item {
-                                Text(visible.size.toString() + " of " + source.size + " entries",
+                                Text(visible.size.toString() + uiStr(R.string.ui_of) + source.size + uiStr(R.string.ui_entries),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     style = MaterialTheme.typography.labelSmall)
                             }
@@ -313,7 +316,7 @@ private fun DriverPicker(title: String, current: String, drivers: List<String>, 
             TextButton(onClick = { opened = true }) { Text(current + " ▾") }
             DropdownMenu(expanded = opened, onDismissRequest = { opened = false }) {
                 drivers.forEach { name ->
-                    DropdownMenuItem(text = { Text(name) }, onClick = {
+                    DropdownMenuItem(text = { Text(uiOptionLabel(name)) }, onClick = {
                         opened = false
                         select(name)
                     })
@@ -381,11 +384,11 @@ private fun ErrorCard(message: String) {
     Column(Modifier.padding(16.dp)) {
         LabsCard {
             Column(Modifier.padding(16.dp)) {
-                Text("Driver query failed",
+                Text(uiStr(R.string.ui_driver_query_failed),
                     fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
                 Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium)
-                Text("Try the System driver or inspect the installed driver's package and Vulkan dependencies.",
+                Text(uiStr(R.string.ui_try_the_system_driver_or_inspect_the_installed_driver_s_package_a),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall)
             }
@@ -418,7 +421,7 @@ private fun Overview(report: DriverReport) {
     val context = LocalContext.current
     val details = report.get("overview") + listOf(
         Capability("Driver", report.driver),
-        Capability("Source", if (report.driver == "System") "Android System" else "Custom (AdrenoTools)")
+        Capability("Source", if (report.driver == "System") uiStr(R.string.ui_android_system) else "Custom (AdrenoTools)")
     )
     val features = report.get("feature").associate { it.key to it.value }
     val extensions = report.get("extension").map { it.key }.toSet()
@@ -435,7 +438,7 @@ private fun Overview(report: DriverReport) {
         item {
             LabsCard {
                 Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Current Driver", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(uiStr(R.string.ui_current_driver), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     details.forEach {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         Row(Modifier.fillMaxWidth()) {
@@ -450,32 +453,32 @@ private fun Overview(report: DriverReport) {
         item {
             LabsCard {
                 Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Driver Summary", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    SummaryRow("Features", report.get("feature").count { it.value == "Supported" }.toString() +
+                    Text(uiStr(R.string.ui_driver_summary), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    SummaryRow(uiStr(R.string.ui_features), report.get("feature").count { it.value == "Supported" }.toString() +
                         " / " + report.get("feature").size + " supported")
-                    SummaryRow("Extensions", report.get("extension").size.toString() + " available")
-                    SummaryRow("Limits", report.get("limit").size.toString() + " queried")
-                    SummaryRow("Formats", report.get("format").count { it.value == "Supported" }.toString() +
-                        " / " + report.get("format").size + " sampled textures supported")
+                    SummaryRow(uiStr(R.string.ui_extensions), report.get("extension").size.toString() + " available")
+                    SummaryRow(uiStr(R.string.ui_limits), report.get("limit").size.toString() + " queried")
+                    SummaryRow(uiStr(R.string.ui_formats), report.get("format").count { it.value == "Supported" }.toString() +
+                        " / " + report.get("format").size + uiStr(R.string.ui_sampled_textures_supported))
                 }
             }
         }
         item {
             LabsCard {
                 Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Compatibility Checks", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(uiStr(R.string.ui_compatibility_checks), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     listOf("storageBuffer16BitAccess", "descriptorIndexing",
                         "timelineSemaphore", "dynamicRendering").forEach {
-                        SummaryRow(it, features[it] ?: "Not queried")
+                        SummaryRow(it, features[it] ?: uiStr(R.string.ui_not_queried))
                     }
                     SummaryRow("VK_KHR_swapchain",
-                        if ("VK_KHR_swapchain" in extensions) "Available" else "Not reported")
+                        if ("VK_KHR_swapchain" in extensions) "Available" else uiStr(R.string.ui_not_reported))
                 }
             }
         }
         item {
-            LabsNote("This page shows driver capabilities, not features enabled by a running game. " +
-                "Compatibility checks do not guarantee DXVK or VKD3D support.")
+            LabsNote(uiStr(R.string.ui_this_page_shows_driver_capabilities_not_features_enabled_by_a_run) +
+                uiStr(R.string.ui_compatibility_checks_do_not_guarantee_dxvk_or_vkd3d_support))
         }
         item {
             Surface(
@@ -487,7 +490,7 @@ private fun Overview(report: DriverReport) {
                 Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.ContentCopy, null)
                     Spacer(Modifier.width(12.dp))
-                    Text("Copy Driver Report", fontWeight = FontWeight.SemiBold)
+                    Text(uiStr(R.string.ui_copy_driver_report), fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -536,8 +539,8 @@ private fun CompareDrivers(
             .map { key ->
                 Triple(
                     (if (selected == 0) section.uppercase() + " • " else "") + key,
-                    aMap[key] ?: "Not reported",
-                    bMap[key] ?: "Not reported"
+                    aMap[key] ?: uiStr(R.string.ui_not_reported),
+                    bMap[key] ?: uiStr(R.string.ui_not_reported)
                 )
             }
     }.filter { item ->
@@ -561,9 +564,9 @@ private fun CompareDrivers(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Column {
-                    DriverPicker("Driver A", selectedA, drivers, onA)
+                    DriverPicker(uiStr(R.string.ui_driver_a), selectedA, drivers, onA)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    DriverPicker("Driver B", selectedB, drivers, onB)
+                    DriverPicker(uiStr(R.string.ui_driver_b), selectedB, drivers, onB)
                 }
             }
         }
@@ -603,25 +606,25 @@ private fun CompareDrivers(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = query, onValueChange = { query = it },
-                        label = { Text("Search comparison") },
+                        label = { Text(uiStr(R.string.ui_search_comparison)) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
                     if (selected != 0) {
                         FilterChip(selected = differencesOnly,
                             onClick = { differencesOnly = !differencesOnly },
-                            label = { Text("Changed") })
+                            label = { Text(uiStr(R.string.ui_changed)) })
                     }
                 }
             }
             item("count") {
                 Text(
-                    entries.size.toString() + if (selected == 0 || differencesOnly) " differences" else " entries",
+                    entries.size.toString() + if (selected == 0 || differencesOnly) uiStr(R.string.ui_differences) else uiStr(R.string.ui_entries),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (entries.isEmpty()) item("empty") { LabsNote("No differences found for the current filter.") }
+            if (entries.isEmpty()) item("empty") { LabsNote(uiStr(R.string.ui_no_differences_found_for_the_current_filter)) }
             items(entries, key = { it.first }) { entry ->
                 CompareValueRow(entry.first, entry.second, entry.third)
             }
@@ -641,7 +644,7 @@ private fun LabsCardComparisonSummary(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Summary", fontWeight = FontWeight.SemiBold,
+            Text(uiStr(R.string.ui_summary), fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.titleMedium)
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 DriverSummaryLine("A", a)
@@ -673,7 +676,7 @@ private fun DriverSummaryLine(label: String, report: DriverReport) {
             Text(report.driver, style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold, maxLines = 1,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text("Vk $apiVersion • $extensions ext",
+            Text(uiStr(R.string.ui_vk_1_s_2_s_ext, apiVersion, extensions),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -710,7 +713,7 @@ private fun CompareValueRow(name: String, valueA: String, valueB: String) {
 @Composable
 private fun CompareSide(label: String, value: String, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text("Driver " + label, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Text(uiStr(R.string.ui_text_cda0c22ca700) + label, color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelSmall)
         Text(value, style = MaterialTheme.typography.bodyMedium,
             color = when (value) {

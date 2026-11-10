@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.container
 
+import com.winlator.cmod.ui.uiStr
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -137,7 +138,7 @@ internal fun ContainerRuntimePane(
         scope.launch {
             val installed = installRuntimeComponent(context, type, version)
             installing = installing - key
-            if (installed == null) Toast.makeText(context, "Unable to install $version", Toast.LENGTH_SHORT).show()
+            if (installed == null) Toast.makeText(context, uiStr(R.string.ui_unable_to_install_1_s, version), Toast.LENGTH_SHORT).show()
             else { done(installed); revision++ }
         }
     }
@@ -148,14 +149,14 @@ internal fun ContainerRuntimePane(
         scope.launch {
             val installed = installAdrenoDriver(context, option)
             installing = installing - key
-            if (installed == null) Toast.makeText(context, "Unable to install ${option.label}", Toast.LENGTH_SHORT).show()
+            if (installed == null) Toast.makeText(context, uiStr(R.string.ui_unable_to_install_1_s, option.label), Toast.LENGTH_SHORT).show()
             else { driverVersion = installed; saveGraphics("version", installed); revision++ }
         }
     }
 
     when (section) {
         ContainerOverviewComposeHost.SECTION_AUDIO -> SettingsCard {
-            SettingChoice("Audio Driver", audioEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(audio, true) } ?: audio, audioEntries) {
+            SettingChoice(uiStr(R.string.audio_driver), audioEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(audio, true) } ?: audio, audioEntries) {
                 audio = StringUtils.parseIdentifier(it)
                 container.setAudioDriver(audio)
                 container.saveData()
@@ -164,7 +165,7 @@ internal fun ContainerRuntimePane(
 
         ContainerOverviewComposeHost.SECTION_VIDEO -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsCard {
-                SettingChoice("Display Server", displayServer,
+                SettingChoice(uiStr(R.string.ui_display_server), displayServer,
                     listOf("Java X11", "Ludashi X11 (Native Vulkan)")) {
                     displayServer = it
                     container.putExtra("displayServer", if (it.startsWith("Ludashi")) "native" else "java")
@@ -172,41 +173,41 @@ internal fun ContainerRuntimePane(
                 }
                 if (displayServer == "Java X11") {
                 SettingsDivider()
-                SettingChoice("Renderer", renderer, listOf("Vulkan", "EGL")) {
+                SettingChoice(uiStr(R.string.ui_renderer), renderer, listOf("Vulkan", "EGL")) {
                     renderer = it; container.setRendererNative(it == "EGL"); container.saveData()
                 }
                 SettingsDivider()
-                SettingChoice("Present Mode", presentMode, listOf("mailbox", "fifo")) {
+                SettingChoice(uiStr(R.string.ui_present_mode), presentMode, listOf("mailbox", "fifo")) {
                     presentMode = it; container.setRendererPresentMode(it); container.saveData()
                 }
                 catalog?.let { c ->
                     SettingsDivider()
-                    SettingMappedChoice("Renderer Driver", rendererDriverId, c.rendererDrivers) {
+                    SettingMappedChoice(uiStr(R.string.ui_renderer_driver), rendererDriverId, c.rendererDrivers) {
                         rendererDriverId = it; container.setRendererDriverId(it); container.saveData()
                     }
                 }
                 SettingsDivider()
                 val filters = if (renderer == "EGL") listOf("Bilinear", "Nearest neighbor") else listOf("Bilinear", "Nearest neighbor", "Snapdragon Super Resolution", "AMD FidelityFX Super Resolution")
-                SettingChoice("Texture Filter", filters.getOrElse(filterMode) { filters.first() }, filters) {
+                SettingChoice(uiStr(R.string.ui_texture_filter), filters.getOrElse(filterMode) { filters.first() }, filters) {
                     filterMode = filters.indexOf(it).coerceAtLeast(0); container.setRendererFilterMode(filterMode); container.saveData()
                 }
                 SettingsDivider()
-                SettingToggle("Swap red/blue channels", swapRB) { swapRB = it; container.setRendererSwapRB(it); container.saveData() }
+                SettingToggle(uiStr(R.string.ui_swap_red_blue_channels), swapRB) { swapRB = it; container.setRendererSwapRB(it); container.saveData() }
                 } else {
-                    Text("Native X11 protocol with the Ludashi Vulkan renderer.",
+                    Text(uiStr(R.string.ui_native_x11_protocol_with_the_ludashi_vulkan_renderer),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             SettingsCard {
-                SettingChoice("Screen Size", screenChoice, screenEntries) {
+                SettingChoice(uiStr(R.string.screen_size), screenChoice, screenEntries) {
                     screenChoice = it
                     if (!it.equals("Custom", true)) {
                         screen = normalizeResolution(it); container.setScreenSize(screen); container.saveData()
                     }
                 }
                 if (screenChoice.equals("Custom", true)) {
-                    SettingsDivider(); SettingText("Custom resolution", screen) {
+                    SettingsDivider(); SettingText(uiStr(R.string.ui_custom_resolution), screen) {
                         screen = it
                         if (Regex("\\d{2,5}x\\d{2,5}", RegexOption.IGNORE_CASE).matches(it.trim())) {
                             container.setScreenSize(normalizeResolution(it)); container.saveData()
@@ -215,72 +216,71 @@ internal fun ContainerRuntimePane(
                 }
             }
             SettingsCard {
-                SettingChoice("Graphics Driver", graphics, graphicsEntries) {
+                SettingChoice(uiStr(R.string.graphics_driver), graphics, graphicsEntries) {
                     graphics = it; container.setGraphicsDriver(StringUtils.parseIdentifier(it)); container.saveData()
                 }
                 catalog?.let { c ->
-                    SettingsDivider(); SettingDriverChoice("Driver Version", driverVersion, c.drivers, installing, ::installDriver) {
+                    SettingsDivider(); SettingDriverChoice(uiStr(R.string.ui_driver_version), driverVersion, c.drivers, installing, ::installDriver) {
                         driverVersion = it; saveGraphics("version", it)
                     }
                 }
-                SettingsDivider(); SettingChoice("Vulkan Version", vulkanVersion, listOf("1.1", "1.2", "1.3")) { vulkanVersion = it; saveGraphics("vulkanVersion", it) }
-                SettingsDivider(); SettingChoice("Max Device Memory", maxDeviceMemory, listOf("0", "512", "1024", "2048", "4096", "8192", "12288", "16384")) { maxDeviceMemory = it; saveGraphics("maxDeviceMemory", it) }
-                SettingsDivider(); SettingChoice("Driver Present Mode", graphicsPresentMode, listOf("mailbox", "fifo", "immediate", "relaxed")) { graphicsPresentMode = it; saveGraphics("presentMode", it) }
-                SettingsDivider(); SettingToggle("Sync Frame", syncFrame) { syncFrame = it; saveGraphics("syncFrame", if (it) "1" else "0") }
-                SettingsDivider(); SettingToggle("Disable Present Wait", disablePresentWait) { disablePresentWait = it; saveGraphics("disablePresentWait", if (it) "1" else "0") }
-                SettingsDivider(); SettingChoice("Resource Type", resourceType, listOf("auto", "dmabuf", "ahb", "opaque")) { resourceType = it; saveGraphics("resourceType", it) }
-                SettingsDivider(); SettingChoice("BCN Emulation", bcnEmulation, listOf("none", "partial", "full", "auto")) { bcnEmulation = it; saveGraphics("bcnEmulation", it) }
-                SettingsDivider(); SettingChoice("BCN Emulation Type", bcnType, listOf("software", "compute")) { bcnType = it; saveGraphics("bcnEmulationType", it) }
-                SettingsDivider(); SettingToggle("BCN Emulation Cache", bcnCache) { bcnCache = it; saveGraphics("bcnEmulationCache", if (it) "1" else "0") }
-                SettingsDivider(); SettingText("GPU Name", gpuName) { gpuName = it; saveGraphics("gpuName", it) }
-                SettingsDivider(); SettingText("Blacklisted Extensions", blacklistedExtensions, 2) { blacklistedExtensions = it; saveGraphics("blacklistedExtensions", it.replace(" ", "")) }
+                SettingsDivider(); SettingChoice(uiStr(R.string.graphics_driver_vulkan_version), vulkanVersion, listOf("1.1", "1.2", "1.3")) { vulkanVersion = it; saveGraphics("vulkanVersion", it) }
+                SettingsDivider(); SettingChoice(uiStr(R.string.max_device_memory), maxDeviceMemory, listOf("0", "512", "1024", "2048", "4096", "8192", "12288", "16384")) { maxDeviceMemory = it; saveGraphics("maxDeviceMemory", it) }
+                SettingsDivider(); SettingChoice(uiStr(R.string.ui_driver_present_mode), graphicsPresentMode, listOf("mailbox", "fifo", "immediate", "relaxed")) { graphicsPresentMode = it; saveGraphics("presentMode", it) }
+                SettingsDivider(); SettingToggle(uiStr(R.string.ui_sync_frame), syncFrame) { syncFrame = it; saveGraphics("syncFrame", if (it) "1" else "0") }
+                SettingsDivider(); SettingToggle(uiStr(R.string.ui_disable_present_wait), disablePresentWait) { disablePresentWait = it; saveGraphics("disablePresentWait", if (it) "1" else "0") }
+                SettingsDivider(); SettingChoice(uiStr(R.string.ui_resource_type), resourceType, listOf("auto", "dmabuf", "ahb", "opaque")) { resourceType = it; saveGraphics("resourceType", it) }
+                SettingsDivider(); SettingChoice(uiStr(R.string.ui_bcn_emulation), bcnEmulation, listOf("none", "partial", "full", "auto")) { bcnEmulation = it; saveGraphics("bcnEmulation", it) }
+                SettingsDivider(); SettingChoice(uiStr(R.string.ui_bcn_emulation_type), bcnType, listOf("software", "compute")) { bcnType = it; saveGraphics("bcnEmulationType", it) }
+                SettingsDivider(); SettingToggle(uiStr(R.string.ui_bcn_emulation_cache), bcnCache) { bcnCache = it; saveGraphics("bcnEmulationCache", if (it) "1" else "0") }
+                SettingsDivider(); SettingText(uiStr(R.string.gpu_name), gpuName) { gpuName = it; saveGraphics("gpuName", it) }
+                SettingsDivider(); SettingText(uiStr(R.string.ui_blacklisted_extensions), blacklistedExtensions, 2) { blacklistedExtensions = it; saveGraphics("blacklistedExtensions", it.replace(" ", "")) }
             }
         }
 
         ContainerOverviewComposeHost.SECTION_COMPATIBILITY -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsCard {
                 val shownWrapper = wrapperEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(wrapper, true) } ?: wrapper
-                SettingChoice("DX Wrapper", shownWrapper, wrapperEntries) { wrapper = StringUtils.parseIdentifier(it); container.setDXWrapper(wrapper); container.saveData() }
+                SettingChoice(uiStr(R.string.dxwrapper), shownWrapper, wrapperEntries) { wrapper = StringUtils.parseIdentifier(it); container.setDXWrapper(wrapper); container.saveData() }
                 if (wrapper.contains("dxvk", true)) {
                     catalog?.let { c ->
-                        SettingsDivider(); SettingInstallChoice("DXVK Version", dxvkVersion, c.dxvk, installing, "DXVK", { v -> installRuntime("DXVK", v) { dxvkVersion = it; saveWrapper("version", it) } }) { dxvkVersion = it; saveWrapper("version", it) }
-                        SettingsDivider(); SettingInstallChoice("VKD3D Version", vkd3dVersion, c.vkd3d, installing, "VKD3D", { v -> installRuntime("VKD3D", v) { vkd3dVersion = it; saveWrapper("vkd3dVersion", it) } }) { vkd3dVersion = it; saveWrapper("vkd3dVersion", it) }
+                        SettingsDivider(); SettingInstallChoice(uiStr(R.string.dxvk_version), dxvkVersion, c.dxvk, installing, "DXVK", { v -> installRuntime("DXVK", v) { dxvkVersion = it; saveWrapper("version", it) } }) { dxvkVersion = it; saveWrapper("version", it) }
+                        SettingsDivider(); SettingInstallChoice(uiStr(R.string.vkd3d_version), vkd3dVersion, c.vkd3d, installing, "VKD3D", { v -> installRuntime("VKD3D", v) { vkd3dVersion = it; saveWrapper("vkd3dVersion", it) } }) { vkd3dVersion = it; saveWrapper("vkd3dVersion", it) }
                     }
-                    SettingsDivider(); SettingChoice("VKD3D Feature Level", vkd3dLevel, listOf("12_0", "12_1", "12_2")) { vkd3dLevel = it; saveWrapper("vkd3dLevel", it) }
-                    SettingsDivider(); SettingText("Frame Rate", frameRate) { frameRate = it.filter(Char::isDigit).take(4); saveWrapper("framerate", frameRate.ifBlank { "0" }) }
-                    SettingsDivider(); SettingToggle("Max Frame Latency", maxFrameLatency) { maxFrameLatency = it; saveWrapper("maxFrameLatency", if (it) "1" else "0") }
-                    SettingsDivider(); SettingToggle("Async", async) { async = it; saveWrapper("async", if (it) "1" else "0") }
-                    SettingsDivider(); SettingToggle("Async Cache", asyncCache) { asyncCache = it; saveWrapper("asyncCache", if (it) "1" else "0") }
-                    SettingsDivider(); SettingChoice("DDraw Wrapper", ddrawWrapper, listOf("wined3d", "cnc-ddraw", "dd7to9", "none")) { ddrawWrapper = it; saveWrapper("ddrawrapper", it) }
+                    SettingsDivider(); SettingChoice(uiStr(R.string.vkd3d_feature_level), vkd3dLevel, listOf("12_0", "12_1", "12_2")) { vkd3dLevel = it; saveWrapper("vkd3dLevel", it) }
+                    SettingsDivider(); SettingText(uiStr(R.string.frame_rate), frameRate) { frameRate = it.filter(Char::isDigit).take(4); saveWrapper("framerate", frameRate.ifBlank { "0" }) }
+                    SettingsDivider(); SettingToggle(uiStr(R.string.ui_max_frame_latency), maxFrameLatency) { maxFrameLatency = it; saveWrapper("maxFrameLatency", if (it) "1" else "0") }
+                    SettingsDivider(); SettingToggle(uiStr(R.string.ui_async), async) { async = it; saveWrapper("async", if (it) "1" else "0") }
+                    SettingsDivider(); SettingToggle(uiStr(R.string.ui_async_cache), asyncCache) { asyncCache = it; saveWrapper("asyncCache", if (it) "1" else "0") }
+                    SettingsDivider(); SettingChoice(uiStr(R.string.ddraw_wrapper), ddrawWrapper, listOf("wined3d", "cnc-ddraw", "dd7to9", "none")) { ddrawWrapper = it; saveWrapper("ddrawrapper", it) }
                 } else {
-                    SettingsDivider(); SettingToggle("CSMT", csmt) { csmt = it; saveWrapper("csmt", if (it) "3" else "0") }
-                    SettingsDivider(); SettingToggle("Strict Shader Math", strictShaderMath) { strictShaderMath = it; saveWrapper("strict_shader_math", if (it) "1" else "0") }
-                    SettingsDivider(); SettingChoice("Offscreen Rendering Mode", offscreenMode, listOf("fbo", "backbuffer")) { offscreenMode = it; saveWrapper("OffscreenRenderingMode", it) }
-                    SettingsDivider(); SettingChoice("Wine Renderer", wineRenderer, listOf("vulkan", "gl")) { wineRenderer = it; saveWrapper("renderer", it) }
-                    SettingsDivider(); SettingText("Video Memory", videoMemory) { videoMemory = it.filter(Char::isDigit).take(6); saveWrapper("videoMemorySize", videoMemory) }
+                    SettingsDivider(); SettingToggle(uiStr(R.string.ui_csmt), csmt) { csmt = it; saveWrapper("csmt", if (it) "3" else "0") }
+                    SettingsDivider(); SettingToggle(uiStr(R.string.strict_shader_math), strictShaderMath) { strictShaderMath = it; saveWrapper("strict_shader_math", if (it) "1" else "0") }
+                    SettingsDivider(); SettingChoice(uiStr(R.string.offscreen_rendering_mode), offscreenMode, listOf("fbo", "backbuffer")) { offscreenMode = it; saveWrapper("OffscreenRenderingMode", it) }
+                    SettingsDivider(); SettingChoice(uiStr(R.string.ui_wine_renderer), wineRenderer, listOf("vulkan", "gl")) { wineRenderer = it; saveWrapper("renderer", it) }
+                    SettingsDivider(); SettingText(uiStr(R.string.ui_video_memory), videoMemory) { videoMemory = it.filter(Char::isDigit).take(6); saveWrapper("videoMemorySize", videoMemory) }
                 }
             }
             SettingsCard {
-                Text("Runtime", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+                Text(uiStr(R.string.ui_runtime), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
                 SettingsDivider()
                 if (arm64) {
-                    SettingChoice("32-bit Emulator", emulator, listOf("FEXCore", "WOWBox64")) {
+                    SettingChoice(uiStr(R.string.ui_32_bit_emulator), emulator, listOf("FEXCore", "WOWBox64")) {
                         emulator = it; container.setEmulator(if (it == "FEXCore") "FEXCore" else "Box64"); container.saveData()
                     }
                     catalog?.let { c ->
-                        SettingsDivider(); SettingInstallChoice("FEXCore Version", fexVersion, c.fex, installing, "FEXCore", { v -> installRuntime("FEXCore", v) { fexVersion = it; container.setFEXCoreVersion(it); container.saveData() } }) { fexVersion = it; container.setFEXCoreVersion(it); container.saveData() }
+                        SettingsDivider(); SettingInstallChoice(uiStr(R.string.fexcore_version), fexVersion, c.fex, installing, "FEXCore", { v -> installRuntime("FEXCore", v) { fexVersion = it; container.setFEXCoreVersion(it); container.saveData() } }) { fexVersion = it; container.setFEXCoreVersion(it); container.saveData() }
                     }
-                    SettingsDivider(); SettingMappedChoice("FEXCore Preset", fexPreset, fexPresets) { fexPreset = it; container.setFEXCorePreset(it); container.saveData() }
+                    SettingsDivider(); SettingMappedChoice(uiStr(R.string.fexcore_preset), fexPreset, fexPresets) { fexPreset = it; container.setFEXCorePreset(it); container.saveData() }
                 }
                 if (!arm64 || emulator == "WOWBox64") {
                     catalog?.let { c ->
                         val versions = if (arm64) c.wow else c.box; val type = if (arm64) "WOWBox64" else "Box64"
-                        SettingsDivider(); SettingInstallChoice("$type Version", boxVersion, versions, installing, type, { v -> installRuntime(type, v) { boxVersion = it; container.setBox64Version(it); container.saveData() } }) { boxVersion = it; container.setBox64Version(it); container.saveData() }
+                        SettingsDivider(); SettingInstallChoice(uiStr(R.string.ui_1_s_version, type), boxVersion, versions, installing, type, { v -> installRuntime(type, v) { boxVersion = it; container.setBox64Version(it); container.saveData() } }) { boxVersion = it; container.setBox64Version(it); container.saveData() }
                     }
-                    SettingsDivider(); SettingMappedChoice("Box64 Preset", boxPreset, boxPresets) { boxPreset = it; container.setBox64Preset(it); container.saveData() }
+                    SettingsDivider(); SettingMappedChoice(uiStr(R.string.box64_preset), boxPreset, boxPresets) { boxPreset = it; container.setBox64Preset(it); container.saveData() }
                 }
             }
         }
     }
 }
-

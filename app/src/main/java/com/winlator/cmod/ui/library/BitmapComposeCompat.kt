@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.library
 
+import com.winlator.cmod.ui.uiStr
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
@@ -137,7 +138,7 @@ internal fun LibraryRoot(
                 }
             },
             footerActions = { item ->
-                IconButton(onClick = { menu = item }) { Icon(Icons.Outlined.MoreVert, "More options", tint = Color.White) }
+                IconButton(onClick = { menu = item }) { Icon(Icons.Outlined.MoreVert, uiStr(R.string.ui_more_options), tint = Color.White) }
             }
         )
         menu?.let { LibraryItemMenuCompat(it, cb) { menu = null } }
@@ -163,7 +164,7 @@ internal fun LibraryRoot(
             if (query.isNotBlank() || (filter != LibraryFilter.All && items.isNotEmpty())) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        if (query.isNotBlank()) "No games match your search" else "No games in this section",
+                        if (query.isNotBlank()) uiStr(R.string.ui_no_games_match_your_search) else uiStr(R.string.ui_no_games_in_this_section),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -188,7 +189,7 @@ internal fun LibraryRoot(
                                 Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Add, null, modifier = Modifier.size(34.dp)) }
                             }
                             Spacer(Modifier.height(16.dp))
-                            Text("Add games", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            Text(uiStr(R.string.ui_add_games), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -218,7 +219,7 @@ private fun LibraryLandscapeHeader(
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "Library",
+            uiStr(R.string.library),
             color = if (onArtwork) Color.White else MaterialTheme.colorScheme.onBackground,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Medium
@@ -250,15 +251,15 @@ private fun LibraryOrientationMenu(activity: MainActivity?) {
     Box {
         LibraryTopIcon(Icons.Outlined.MoreVert, false) { expanded = true }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            OrientationToggleMenuItem("Lock screen orientation", orientationState.first) {
+            OrientationToggleMenuItem(uiStr(R.string.ui_lock_screen_orientation), orientationState.first) {
                 activity?.toggleOrientationLock()
                 orientationRevision++
             }
-            OrientationToggleMenuItem("Vertical mode", orientationState.second) {
+            OrientationToggleMenuItem(uiStr(R.string.ui_vertical_mode), orientationState.second) {
                 activity?.toggleVerticalMode()
                 orientationRevision++
             }
-            OrientationToggleMenuItem("Horizontal mode", orientationState.third) {
+            OrientationToggleMenuItem(uiStr(R.string.ui_horizontal_mode), orientationState.third) {
                 activity?.toggleHorizontalMode()
                 orientationRevision++
             }
@@ -405,14 +406,14 @@ private fun PlayCompat(item: LibraryItem, cb: LibraryCallbacks, overlay: Boolean
         shape = CircleShape,
         color = if (overlay) Color.Black.copy(.72f) else MaterialTheme.colorScheme.surfaceVariant,
         contentColor = if (overlay) Color.White else MaterialTheme.colorScheme.onSurface
-    ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PlayArrow, "Play") } }
+    ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PlayArrow, uiStr(R.string.play)) } }
 }
 
 @Composable
 private fun MenuButtonCompat(item: LibraryItem, cb: LibraryCallbacks, light: Boolean) {
     var open by remember { mutableStateOf(false) }
     IconButton(onClick = { open = true }) {
-        Icon(Icons.Outlined.MoreVert, "More options", tint = if (light) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(Icons.Outlined.MoreVert, uiStr(R.string.ui_more_options), tint = if (light) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (open) LibraryItemMenuCompat(item, cb) { open = false }
 }
@@ -550,4 +551,3 @@ private fun LibraryActionTileCompat(
         }
     }
 }
-

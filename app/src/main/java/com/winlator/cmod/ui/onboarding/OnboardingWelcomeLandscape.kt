@@ -1,5 +1,6 @@
 package com.winlator.cmod.ui.onboarding
 
+import com.winlator.cmod.ui.uiStr
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -41,14 +42,14 @@ internal fun ClassicWelcomeLandscape(
             Column(Modifier.weight(.9f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Image(painterResource(R.drawable.winlator_mark_exact), "Winlator", Modifier.size(132.dp))
                 Spacer(Modifier.height(14.dp))
-                Text("Welcome to Winlator", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                Text("Your lightweight PC emulator for Android.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                Text(uiStr(R.string.ui_welcome_to_winlator), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                Text(uiStr(R.string.ui_your_lightweight_pc_emulator_for_android), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             }
             Spacer(Modifier.width(36.dp))
             Column(Modifier.weight(1f)) {
-                ClassicWelcomeCard(Icons.Outlined.Apps, "Get started", "Choose components", start)
+                ClassicWelcomeCard(Icons.Outlined.Apps, uiStr(R.string.ui_get_started), uiStr(R.string.ui_choose_components), start)
                 Spacer(Modifier.height(10.dp))
-                ClassicWelcomeCard(Icons.Outlined.SkipNext, "Skip", "Use the components bundled with Winlator and configure everything later.", skip)
+                ClassicWelcomeCard(Icons.Outlined.SkipNext, uiStr(R.string.ui_skip), uiStr(R.string.ui_use_the_components_bundled_with_winlator_and_configure_everything), skip)
                 Spacer(Modifier.height(10.dp))
                 ClassicCoreStatusCard(ready, progress, retry)
             }

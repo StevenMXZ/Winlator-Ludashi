@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string-array name="binding_type_entries">
+    <item>Teclado</item>
+    <item>Mouse</item>
+    <item>Controle</item>
+  </string-array>
+  <string-array name="button_options">
+    <item>A</item>
+    <item>B</item>
+    <item>X</item>
+    <item>Y</item>
+    <item>R1 (botão superior direito)</item>
+    <item>R2 (gatilho direito)</item>
+    <item>L1 (botão superior esquerdo)</item>
+    <item>L2 (gatilho esquerdo)</item>
+    <item>Start</item>
+    <item>Select</item>
+    <item>R3 (botão do analógico direito)</item>
+    <item>L3 (botão do analógico esquerdo)</item>
+  </string-array>
+  <string-array name="touchscreenInputModesEntries">
+    <item>Trackpad</item>
+    <item>Tela de toque simulada</item>
+    <item>Toque direto</item>
+  </string-array>
+  <string-array name="transformCapturedPointerEntries">
+    <item>Não</item>
+    <item>Sentido horário</item>
+    <item>Sentido anti-horário</item>
+    <item>De cabeça para baixo</item>
+    <item>Automático (para touchpad)</item>
+  </string-array>
+</resources>

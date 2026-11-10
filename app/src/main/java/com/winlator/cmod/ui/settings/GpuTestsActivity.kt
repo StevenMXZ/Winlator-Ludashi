@@ -1,5 +1,8 @@
 package com.winlator.cmod.ui.settings
 
+import com.winlator.cmod.ui.uiOptionLabel
+import com.winlator.cmod.R
+import com.winlator.cmod.ui.uiStr
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -131,7 +134,7 @@ class GpuTestsActivity : AppCompatActivity() {
             .map { it.name }.sortedWith(String.CASE_INSENSITIVE_ORDER)).distinct()
     }
     private var driver by mutableStateOf("System")
-    private var status by mutableStateOf("Not yet checked")
+    private var status by mutableStateOf(uiStr(R.string.ui_not_yet_checked))
     private var running by mutableStateOf(false)
     private var ready by mutableStateOf(false)
     private var result by mutableStateOf<String?>(null)
@@ -160,18 +163,18 @@ class GpuTestsActivity : AppCompatActivity() {
                         value.startsWith("READY\t") -> {
                             val parts = value.split('\t')
                             ready = true
-                            status = "Ready · Vulkan " + parts.getOrElse(2) { "?" }
+                            status = uiStr(R.string.ui_ready_vulkan) + parts.getOrElse(2) { "?" }
                         }
                         value.startsWith("SUITE3\t") -> {
                             ready = true
                             result = value
-                            status = "Completed · 3 tests"
+                            status = uiStr(R.string.ui_completed_3_tests)
                             saveResult(value)
                         }
                         else -> {
                             ready = false
                             result = null
-                            status = value.removePrefix("ERROR\t").ifEmpty { "Driver unavailable" }
+                            status = value.removePrefix("ERROR\t").ifEmpty { uiStr(R.string.ui_driver_unavailable) }
                         }
                     }
                 }
@@ -226,8 +229,8 @@ class GpuTestsActivity : AppCompatActivity() {
         if (checkOnly) previewPath = null
         if (checkOnly) {
             ready = false
-            status = "Checking Vulkan device compatibility…"
-        } else status = "Running 3 GPU tests…"
+            status = uiStr(R.string.ui_checking_vulkan_device_compatibility)
+        } else status = uiStr(R.string.ui_running_3_gpu_tests)
 
         val handler = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -242,26 +245,26 @@ class GpuTestsActivity : AppCompatActivity() {
                     message.replyTo = response
                     Messenger(service).send(message)
                 } catch (_: RemoteException) {
-                    fail(id, "Cannot contact GPU test worker")
+                    fail(id, uiStr(R.string.ui_cannot_contact_gpu_test_worker))
                 }
             }
             override fun onServiceDisconnected(name: ComponentName) {
-                if (id == requestId && running) fail(id, "GPU driver crashed or exited")
+                if (id == requestId && running) fail(id, uiStr(R.string.ui_gpu_driver_crashed_or_exited))
             }
             override fun onBindingDied(name: ComponentName) {
-                if (id == requestId && running) fail(id, "GPU test worker binding failed")
+                if (id == requestId && running) fail(id, uiStr(R.string.ui_gpu_test_worker_binding_failed))
             }
         }
         connection = handler
         if (!bindService(Intent(this, GpuTestWorkerService::class.java),
                 handler, Context.BIND_AUTO_CREATE)) {
-            fail(id, "Could not start GPU test worker")
+            fail(id, uiStr(R.string.ui_could_not_start_gpu_test_worker))
             return
         }
         timer.postDelayed({
             if (id == requestId && running) {
                 val pid = workerPid
-                fail(id, "Vulkan driver timed out")
+                fail(id, uiStr(R.string.ui_vulkan_driver_timed_out))
                 if (pid > 0 && pid != Process.myPid()) Process.killProcess(pid)
             }
         }, if (checkOnly) 12000L else 30000L)
@@ -314,11 +317,11 @@ private fun GpuTestScreen(
             Modifier.fillMaxWidth().padding(start = 8.dp, end = 15.dp, top = 10.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, "Back") }
+            IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, uiStr(R.string.ui_back)) }
             Column {
-                Text("GPU Tests", style = MaterialTheme.typography.titleLarge,
+                Text(uiStr(R.string.ui_gpu_tests), style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold)
-                Text("Labs", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Text(uiStr(R.string.ui_labs), color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall)
             }
         }
@@ -332,18 +335,18 @@ private fun GpuTestScreen(
                 GpuTestCard {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Driver", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            Text(uiStr(R.string.ui_driver), color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.labelSmall)
-                            Text(selected, fontWeight = FontWeight.SemiBold,
+                            Text(uiOptionLabel(selected), fontWeight = FontWeight.SemiBold,
                                 style = MaterialTheme.typography.bodyLarge)
                         }
                         androidx.compose.foundation.layout.Box {
                             TextButton(onClick = { expanded = true }, enabled = !busy) {
-                                Text("Change ▾")
+                                Text(uiStr(R.string.ui_text_d6554ee6d657))
                             }
                             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                                 drivers.forEach { name ->
-                                    DropdownMenuItem(text = { Text(name) }, onClick = {
+                                    DropdownMenuItem(text = { Text(uiOptionLabel(name)) }, onClick = {
                                         expanded = false
                                         onSelect(name)
                                     })
@@ -358,11 +361,11 @@ private fun GpuTestScreen(
                         Text(status, modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (!ready && !busy) TextButton(onClick = onRetry) { Text("Retry") }
+                        if (!ready && !busy) TextButton(onClick = onRetry) { Text(uiStr(R.string.ui_retry)) }
                     }
                     Button(onClick = onRun, enabled = ready && !busy,
                         modifier = Modifier.fillMaxWidth()) {
-                        Text(if (busy) "Running…" else "Run Benchmark")
+                        Text(if (busy) uiStr(R.string.ui_running) else uiStr(R.string.ui_run_benchmark))
                     }
                 }
             }
@@ -370,9 +373,9 @@ private fun GpuTestScreen(
             item("preview-results") {
                 GpuTestCard {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("3D Cube", style = MaterialTheme.typography.titleMedium,
+                        Text(uiStr(R.string.ui_3d_cube), style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Text("Vulkan · 640²", style = MaterialTheme.typography.labelSmall,
+                        Text(uiStr(R.string.ui_vulkan_640), style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Surface(
@@ -381,19 +384,19 @@ private fun GpuTestScreen(
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         if (preview != null) {
-                            Image(bitmap = preview, contentDescription = "Vulkan-rendered 3D cube",
+                            Image(bitmap = preview, contentDescription = uiStr(R.string.ui_vulkan_rendered_3d_cube),
                                 modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                         } else {
                             androidx.compose.foundation.layout.Box(Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center) {
-                                Text(if (busy) "Rendering…" else "Run the benchmark to see the cube",
+                                Text(if (busy) uiStr(R.string.ui_text_f388457ec89b) else uiStr(R.string.ui_run_the_benchmark_to_see_the_cube),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                     Text(
-                        "Experimental benchmark. Results may not reflect actual performance in Wine games.",
+                        uiStr(R.string.ui_experimental_benchmark_results_may_not_reflect_actual_performance),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -411,13 +414,13 @@ private fun GpuTestScreen(
             }
 
             item("saved-title") {
-                Text("Saved results", style = MaterialTheme.typography.titleMedium,
+                Text(uiStr(R.string.ui_saved_results), style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(top = 4.dp))
             }
             if (latest.isEmpty()) {
                 item("empty") {
-                    Text("No saved tests.", style = MaterialTheme.typography.bodySmall,
+                    Text(uiStr(R.string.ui_no_saved_tests), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -436,7 +439,7 @@ private fun GpuTestScreen(
             if (history.size > latest.size) {
                 item("history-toggle") {
                     TextButton(onClick = { older = !older }) {
-                        Text(if (older) "Hide older runs" else "Older runs")
+                        Text(if (older) uiStr(R.string.ui_hide_older_runs) else uiStr(R.string.ui_older_runs))
                     }
                 }
                 if (older) {
@@ -453,7 +456,7 @@ private fun GpuTestScreen(
                             }
                             Text(record.median.joinToString(" / ") {
                                 String.format(Locale.US, "%.0f", 1000.0 / it)
-                            } + " FPS", style = MaterialTheme.typography.bodySmall)
+                            } + uiStr(R.string.ui_fps), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -465,7 +468,7 @@ private fun GpuTestScreen(
 @Composable
 private fun GpuFpsValue(name: String, gpuMs: Double?, modifier: Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(name, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Text(uiOptionLabel(name), color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelSmall)
         val fps = gpuMs?.takeIf { it.isFinite() && it > 0.0 }?.let { 1000.0 / it }
         Text(fps?.let { String.format(Locale.US, "%.1f", it) } ?: "—",
