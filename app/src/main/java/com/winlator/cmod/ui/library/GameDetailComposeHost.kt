@@ -250,20 +250,22 @@ private fun savesLabel(): String = if (LocalSteamDetail.current && LocalSteamMod
 private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit, chooseExecutable: () -> Unit) {
     val steam = LocalSteamDetail.current
     val mode = LocalSteamMode.current
+    val modeProgress = LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamLaunch.modeStatus(it) }
+    val modeBusy = modeProgress?.busy == true
     var expanded by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Button(click, enabled = LocalSteamReady.current, modifier = Modifier.weight(1f).heightIn(min = if (steam) 44.dp else 52.dp), shape = WinZShapes.Medium) {
+        Button(click, enabled = LocalSteamReady.current && !modeBusy, modifier = Modifier.weight(1f).heightIn(min = if (steam) 44.dp else 52.dp), shape = WinZShapes.Medium) {
             Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp))
             Text(if (!LocalSteamReady.current) stringResource(R.string.steam_ui_configure_first)
                 else if (steam) stringResource(if (mode == "RealSteam") R.string.steam_ui_client else R.string.steam_ui_offline)
                 else stringResource(R.string.ui_play), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (steam) IconButton(onClick = chooseExecutable, modifier = Modifier.size(40.dp)) {
+        if (steam) IconButton(onClick = chooseExecutable, enabled = !modeBusy, modifier = Modifier.size(40.dp)) {
             Icon(Icons.Outlined.FolderOpen, stringResource(R.string.steam_ui_choose_exe), Modifier.size(20.dp))
         }
         if (steam) Box {
-            FilledTonalIconButton(onClick = { expanded = true }, enabled = !com.winlator.cmod.steam.SteamSession.gameActive) {
+            FilledTonalIconButton(onClick = { expanded = true }, enabled = !com.winlator.cmod.steam.SteamSession.gameActive && !modeBusy) {
                 Icon(Icons.Outlined.ArrowDropDown, stringResource(R.string.steam_ui_launch))
             }
             DropdownMenu(expanded, { expanded = false }) {
@@ -273,6 +275,21 @@ private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit, chooseEx
                 }
             }
         }
+    }
+    if (modeProgress != null && modeBusy) {
+        if (modeProgress.total > 0) LinearProgressIndicator(
+            progress = { (modeProgress.done.toFloat() / modeProgress.total).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth()
+        ) else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Text(when (modeProgress.stage) {
+            "download" -> stringResource(R.string.steam_mode_downloading)
+            "verify" -> stringResource(R.string.steam_mode_verifying)
+            "extract" -> stringResource(R.string.steam_mode_extracting)
+            "client" -> stringResource(R.string.steam_mode_client)
+            else -> stringResource(R.string.steam_mode_preparing)
+        }, style = MaterialTheme.typography.labelSmall)
+    } else if (modeProgress?.error?.isNotBlank() == true) {
+        Text(modeProgress.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     }
     }
 }

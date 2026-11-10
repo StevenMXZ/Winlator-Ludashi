@@ -733,6 +733,17 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="steam_cloud_files_found">%1$d cloud save files</string>
     <string name="steam_cloud_save_date">Save date: %1$s</string>
     <string name="steam_cloud_date_unknown">Save date unavailable</string>
+    <string name="steam_cloud_remote_label">Cloud save</string>
+    <string name="steam_cloud_local_label">Local save</string>
+    <string name="steam_cloud_no_remote">No cloud save found</string>
+    <string name="steam_cloud_no_local">No local save found</string>
+    <string name="steam_cloud_last_saved">Last saved: %1$s</string>
+    <string name="steam_cloud_retry">Retry</string>
+    <string name="steam_mode_downloading">Downloading offline component…</string>
+    <string name="steam_mode_verifying">Verifying offline component…</string>
+    <string name="steam_mode_extracting">Extracting offline component…</string>
+    <string name="steam_mode_preparing">Preparing offline mode…</string>
+    <string name="steam_mode_client">Preparing Steam Client…</string>
     <string name="steam_cloud_client_fallback">If the cloud save cannot be downloaded, launch the game using Steam Client to retrieve it.</string>
     <string name="steam_cloud_pending_files">%1$d files to transfer</string>
     <string name="steam_cloud_already_updated">Saves are already up to date</string>

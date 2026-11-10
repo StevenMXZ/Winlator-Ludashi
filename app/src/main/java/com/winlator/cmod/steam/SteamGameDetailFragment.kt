@@ -42,7 +42,7 @@ class SteamGameDetailFragment : Fragment() {
                 if (shortcut == null || !SteamGames.configured(context, appId)) { setupPlay(true); return }
                 if (!SteamSettings.enabled(context) || (SteamSettings.mode(context, appId) == "RealSteam" && SteamCredentials.load(context) == null)) { notice(uiStr(R.string.steam_ui_enable_signin)); return }
                 if (SteamNativeCloud.busy) { notice(uiStr(R.string.steam_native_cloud_busy)); return }
-                if (preparing || SteamSession.gameActive) return
+                if (preparing || SteamSession.gameActive || SteamLaunch.modeStatus(appId)?.busy == true) return
                 preparing = true
                 viewLifecycleOwner.lifecycleScope.launch {
                     val result = withContext(Dispatchers.IO) { runCatching {
@@ -57,13 +57,21 @@ class SteamGameDetailFragment : Fragment() {
             }
             override fun onSteamExecutable() { setupPlay(false) }
             override fun onSteamMode(mode: String) {
-                if (preparing || SteamSession.gameActive) return
-                SteamSettings.setMode(context, appId, mode)
-                SteamGames.changed()
+                if (preparing || SteamSession.gameActive || SteamLaunch.modeStatus(appId)?.busy == true) return
+                val shortcut = SteamGames.shortcut(context, appId)
+                if (shortcut?.getExtra("steamConfigured") != "1") {
+                    SteamSettings.setMode(context, appId, mode)
+                    SteamGames.changed()
+                    return
+                }
+                if (shortcut.getExtra("steamLaunchMode") == mode && SteamSettings.mode(context, appId) == mode) return
+                SteamLaunch.switchMode(context.applicationContext, shortcut, mode) { error ->
+                    if (isAdded) notice(error)
+                }
             }
             override fun onConfigure() {
                 if (SteamSession.gameActive) { notice(uiStr(R.string.steam_ui_exit_configure)); return }
-                if (configuring) return
+                if (configuring || SteamLaunch.modeStatus(appId)?.busy == true) return
                 configuring = true
                 viewLifecycleOwner.lifecycleScope.launch {
                     val result = withContext(Dispatchers.IO) { runCatching {
@@ -102,6 +110,7 @@ class SteamGameDetailFragment : Fragment() {
                 if (SteamGames.configured(context, appId)) HomeShortcuts.pin(requireActivity(), shortcut) else notice(uiStr(R.string.steam_ui_configure_game_first))
             }
             override fun onRemove() {
+                if (SteamLaunch.modeStatus(appId)?.busy == true) return
                 com.winlator.cmod.ui.ConfirmActionDialog.show(this@SteamGameDetailFragment,
                     uiStr(R.string.steam_ui_uninstall), uiStr(R.string.steam_ui_uninstall_confirm, title), uiStr(R.string.steam_ui_uninstall),
                     Runnable {
@@ -116,7 +125,7 @@ class SteamGameDetailFragment : Fragment() {
         })
     }
     private fun setupPlay(play: Boolean) {
-        if (SteamSession.gameActive || preparing) return
+        if (SteamSession.gameActive || preparing || SteamLaunch.modeStatus(appId)?.busy == true) return
         val root = requireActivity().findViewById<android.view.ViewGroup>(android.R.id.content)
         if (root.findViewWithTag<View>("steam-play-setup") != null) return
         val view = androidx.compose.ui.platform.ComposeView(requireContext()).apply { tag = "steam-play-setup" }

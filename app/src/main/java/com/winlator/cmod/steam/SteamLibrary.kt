@@ -18,29 +18,37 @@ object SteamLibrary {
     private val images = Executors.newFixedThreadPool(2)
     private val requested = ConcurrentHashMap.newKeySet<String>()
     fun appId(path: String): Int? = path.removePrefix("steam://").takeIf { path.startsWith("steam://") }?.toIntOrNull()
-    fun items(context: Context, json: String, filterType: String = "game"): List<LibraryItem> = runCatching {
-        val apps = JSONObject(json).optJSONArray("owned_apps") ?: org.json.JSONArray()
-        val owned = (0 until apps.length()).map { apps.getJSONObject(it) }
-        val ownedIds = owned.map { it.getInt("id") }.toSet()
-        val records = File(context.filesDir, "steam-library").listFiles().orEmpty().filter { it.isFile && it.nameWithoutExtension.toIntOrNull() != null && it.extension == "json" }
-        val installedIds = records.map { it.nameWithoutExtension.toInt() }.toSet()
-        val artworkNames = File(context.cacheDir, "steam-art").list()?.toSet().orEmpty()
-        val installed = records.filter { it.nameWithoutExtension.toInt() !in ownedIds }.mapNotNull { file ->
-            runCatching { val info = JSONObject(file.readText()); JSONObject().put("id", file.nameWithoutExtension.toInt()).put("type", info.optJSONObject("common")?.optString("type").orEmpty().ifBlank { "game" })
-                .put("name", info.optJSONObject("common")?.optString("name").orEmpty().ifBlank { "Steam game" }) }.getOrNull()
+    fun items(context: Context, json: String, filterType: String = "game"): List<LibraryItem> {
+        val apps = runCatching { JSONObject(json).optJSONArray("owned_apps") }.getOrNull()
+        val owned = (0 until (apps?.length() ?: 0)).mapNotNull { index ->
+            apps?.optJSONObject(index)?.takeIf { it.optInt("id") > 0 }
         }
-        (owned + installed).distinctBy { it.getInt("id") }.filter {
-            it.optString("type").equals(filterType, true)
-        }.map { app ->
-            val id = app.getInt("id")
-            val installed = id in installedIds
-            LibraryItem("steam-$id", "steam://$id", app.optString("name").ifBlank { "App $id" },
-                if (installed) "Steam · Installed" else "Steam · Not installed",
+        val records = File(context.filesDir, "steam-library").listFiles().orEmpty().filter {
+            it.isFile && it.extension == "json" && it.nameWithoutExtension.toIntOrNull() != null
+        }
+        val installed = records.associate { file ->
+            val id = file.nameWithoutExtension.toInt()
+            val common = runCatching { JSONObject(file.readText()).optJSONObject("common") }.getOrNull()
+            id to JSONObject().put("id", id)
+                .put("type", common?.optString("type").orEmpty().ifBlank { "game" })
+                .put("name", common?.optString("name").orEmpty().ifBlank { "Steam game" })
+        }
+        val artworkNames = File(context.cacheDir, "steam-art").list()?.toSet().orEmpty()
+        val preferences = context.getSharedPreferences("steam-settings", 0)
+        return (owned + installed.values).distinctBy { it.optInt("id") }.mapNotNull { app ->
+            val id = app.optInt("id")
+            val local = installed[id]
+            val type = app.optString("type").trim().ifBlank { local?.optString("type").orEmpty() }
+                .ifBlank { if (local != null) "game" else "" }
+            if (!type.equals(filterType, true)) return@mapNotNull null
+            LibraryItem("steam-$id", "steam://$id",
+                app.optString("name").ifBlank { local?.optString("name").orEmpty() }.ifBlank { "App $id" },
+                if (local != null) "Steam · Installed" else "Steam · Not installed",
                 artwork(context, id, "cover").takeIf { "$id-cover.jpg" in artworkNames }?.path,
                 artwork(context, id, "banner").takeIf { "$id-banner.jpg" in artworkNames }?.path,
-                null, null, context.getSharedPreferences("steam-settings", 0).getBoolean("favorite-$id", false), 0L)
+                null, null, preferences.getBoolean("favorite-$id", false), 0L)
         }
-    }.getOrDefault(emptyList())
+    }
     private fun artwork(context: Context, id: Int, kind: String) = File(context.cacheDir, "steam-art/$id-$kind.jpg")
     fun requestArtwork(context: Context, path: String, kind: String) {
         val id = appId(path) ?: return

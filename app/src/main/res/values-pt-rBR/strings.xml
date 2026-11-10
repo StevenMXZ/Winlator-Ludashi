@@ -641,6 +641,17 @@
     <string name="steam_cloud_files_found">%1$d arquivos na nuvem</string>
     <string name="steam_cloud_save_date">Data do save: %1$s</string>
     <string name="steam_cloud_date_unknown">Data do save indisponível</string>
+    <string name="steam_cloud_remote_label">Save na nuvem</string>
+    <string name="steam_cloud_local_label">Save local</string>
+    <string name="steam_cloud_no_remote">Nenhum save na nuvem</string>
+    <string name="steam_cloud_no_local">Nenhum save local encontrado</string>
+    <string name="steam_cloud_last_saved">Último save: %1$s</string>
+    <string name="steam_cloud_retry">Tentar novamente</string>
+    <string name="steam_mode_downloading">Baixando componente offline…</string>
+    <string name="steam_mode_verifying">Verificando componente offline…</string>
+    <string name="steam_mode_extracting">Extraindo componente offline…</string>
+    <string name="steam_mode_preparing">Preparando modo offline…</string>
+    <string name="steam_mode_client">Preparando Steam Client…</string>
     <string name="steam_cloud_client_fallback">Se não for possível baixar o save da nuvem, abra o jogo pelo Steam Client para recuperá-lo.</string>
     <string name="steam_cloud_pending_files">%1$d arquivos para transferir</string>
     <string name="steam_cloud_already_updated">Saves já estão atualizados</string>

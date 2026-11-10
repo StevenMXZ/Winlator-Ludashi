@@ -21,6 +21,33 @@ class SteamLibraryTest {
         assertTrue(items.single().containerName.contains("Not installed"))
         assertNull(SteamLibrary.appId("/local/game.desktop"))
     }
+    @Test fun locallyInstalledGameSurvivesIncompleteSteamMetadataAndInvalidSnapshot() {
+        val context = RuntimeEnvironment.getApplication()
+        val marker = File(context.filesDir, "steam-library/789126.json")
+        marker.parentFile!!.mkdirs()
+        marker.writeText("""{"common":{"name":"Installed locally","type":"game"}}""")
+        try {
+            val incomplete = """{"owned_apps":[{"id":789126,"name":"","type":""}]}"""
+            val item = SteamLibrary.items(context, incomplete).single { it.id == "steam-789126" }
+            assertEquals("Installed locally", item.name)
+            assertEquals("Steam · Installed", item.containerName)
+            assertEquals("steam://789126", item.shortcutPath)
+            assertTrue(SteamLibrary.items(context, "{invalid").any { it.id == "steam-789126" })
+        } finally { marker.delete() }
+    }
+
+    @Test fun partialRemoteListCannotHideInstalledGames() {
+        val context = RuntimeEnvironment.getApplication()
+        val marker = File(context.filesDir, "steam-library/789127.json")
+        marker.parentFile!!.mkdirs()
+        marker.writeText("""{"common":{"name":"Keep me in All","type":"game"}}""")
+        try {
+            val partial = """{"owned_apps":[{"id":123456,"name":"Another game","type":""}]}"""
+            val list = SteamLibrary.items(context, partial)
+            assertTrue(list.any { it.id == "steam-789127" && it.containerName == "Steam · Installed" })
+            assertFalse(list.any { it.id == "steam-123456" })
+        } finally { marker.delete() }
+    }
     @Test fun completedDownloadAppearsInstalledInMainLibrary() {
         val context = RuntimeEnvironment.getApplication()
         val marker = File(context.filesDir, "steam-library/789125.json")

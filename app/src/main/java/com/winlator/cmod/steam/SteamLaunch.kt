@@ -9,16 +9,48 @@ import com.winlator.cmod.core.WineRegistryEditor
 import org.json.JSONObject
 import java.io.File
 import java.nio.file.Files
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.runtime.mutableStateMapOf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /** Adapts Ludashi's resident Steam launcher to Ludashi's existing Wine launch path. */
 object SteamLaunch {
     private const val ROOT = "C:\\Program Files (x86)\\Steam"
-    fun createShortcut(context: Context, container: Container, id: Int, info: JSONObject, exe: String): File {
+    data class ModeProgress(val stage: String = "prepare", val done: Long = 0, val total: Long = 0, val busy: Boolean = true, val error: String = "")
+    private val modeProgress = mutableStateMapOf<Int, ModeProgress>()
+    private val modeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val main = Handler(Looper.getMainLooper())
+    fun modeStatus(id: Int): ModeProgress? = modeProgress[id]
+    fun switchMode(context: Context, shortcut: Shortcut, mode: String, onFailure: (String) -> Unit = {}) {
+        val id = shortcut.getExtra("steamAppId").toInt()
+        if (modeStatus(id)?.busy == true) return
+        modeProgress[id] = ModeProgress()
+        modeScope.launch {
+            val changed = runCatching {
+                prepareConfigured(context.applicationContext, shortcut, mode) { stage, done, total ->
+                    main.post { if (modeProgress[id]?.busy == true) modeProgress[id] = ModeProgress(stage, done, total) }
+                }
+            }
+            main.post {
+                val failure = changed.exceptionOrNull()?.message
+                modeProgress[id] = ModeProgress(busy = false, error = failure.orEmpty())
+                SteamGames.changed()
+                if (failure != null) onFailure(failure)
+            }
+        }
+    }
+    @JvmOverloads fun createShortcut(context: Context, container: Container, id: Int, info: JSONObject, exe: String,
+                       progress: ((String, Long, Long) -> Unit)? = null): File {
         check(com.winlator.cmod.core.ContainerSessionGate.edit(container.id)) { "Exit the container before preparing Steam" }
-        try { return stageShortcut(context, container, id, info, exe) }
+        try { return stageShortcut(context, container, id, info, exe, progress) }
         finally { com.winlator.cmod.core.ContainerSessionGate.edited(container.id) }
     }
-    private fun stageShortcut(context: Context, container: Container, id: Int, info: JSONObject, exe: String): File {
+    private fun stageShortcut(context: Context, container: Container, id: Int, info: JSONObject, exe: String,
+                              progress: ((String, Long, Long) -> Unit)?): File {
         check(SteamSettings.enabled(context)) { "Steam is disabled" }
         require(id > 0)
         val installName = SteamCatalog.installName(info)
@@ -29,7 +61,7 @@ object SteamLaunch {
         check(!SteamSession.gameActive) { "Exit the running Steam game before changing launch mode" }
         SteamGoldberg.restore(game)
         if (mode != "RealSteam") {
-            if (mode == "Goldberg") SteamGoldberg.prepare(context, game, id)
+            if (mode == "Goldberg") SteamGoldberg.prepare(context, game, id, progress)
             val link = File(container.rootDir, ".wine/drive_c/LudashiGames/$id")
             link.parentFile?.mkdirs()
             if (!Files.exists(link.toPath())) Files.createSymbolicLink(link.toPath(), game.toPath())
@@ -44,6 +76,7 @@ object SteamLaunch {
         steam.mkdirs()
         val version = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime.toString()
         if (!stamp.isFile || stamp.readText() != version) {
+            progress?.invoke("client", 0L, 0L)
             check(TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, context,
                 "ludashisteam/bionic/valve-steam-x86_64.tzst", steam)) { "Steam client extraction failed" }
             for (name in listOf("steam.exe", "steamservice.exe", "steamservice.dll", "service_current_versions.vdf", "service_minimum_versions.vdf")) {
@@ -89,16 +122,32 @@ object SteamLaunch {
         return file
     }
     /** Rebuild the launch target when the Play selector changes the saved mode. */
-    fun prepareConfigured(context: Context, shortcut: Shortcut, mode: String): Shortcut {
+    @JvmOverloads fun prepareConfigured(context: Context, shortcut: Shortcut, mode: String,
+                          progress: ((String, Long, Long) -> Unit)? = null): Shortcut {
         val id = shortcut.getExtra("steamAppId").toInt()
         val exe = shortcut.getExtra("steamExecutable")
         check(exe.isNotBlank() && shortcut.getExtra("steamConfigured") == "1") { "Configure the game executable first" }
+        val previousMode = SteamSettings.mode(context, id)
+        val shortcutMode = shortcut.getExtra("steamLaunchMode", "RealSteam")
+        if (shortcutMode == mode) {
+            SteamSettings.setMode(context, id, mode)
+            return shortcut
+        }
         SteamSettings.setMode(context, id, mode)
-        if (shortcut.getExtra("steamLaunchMode") == mode) return shortcut
-        val file = createShortcut(context, shortcut.container, id, SteamGames.info(context, id), exe)
-        return Shortcut(shortcut.container, file).apply {
-            putExtra("steamExecutable", exe); putExtra("steamConfigured", "1"); saveData()
-            SteamGames.changed()
+        return try {
+            val file = createShortcut(context, shortcut.container, id, SteamGames.info(context, id), exe, progress)
+            Shortcut(shortcut.container, file).apply {
+                putExtra("steamExecutable", exe); putExtra("steamConfigured", "1"); saveData()
+                SteamGames.changed()
+            }
+        } catch (error: Exception) {
+            SteamSettings.setMode(context, id, previousMode)
+            runCatching {
+                val game = SteamGames.directory(context, id)
+                SteamGoldberg.restore(game)
+                if (shortcutMode == "Goldberg") SteamGoldberg.prepare(context, game, id)
+            }.onFailure { error.addSuppressed(it) }
+            throw error
         }
     }
     @JvmStatic fun canLaunch(context: Context, shortcut: Shortcut?): Boolean {

@@ -157,7 +157,16 @@ object LibraryComposeHost {
                             if (saved) context.startForegroundService(Intent(context, SteamService::class.java))
                         }
                         val steamItems = rememberSteamLibrary(context, steam.library, enabled)
-                        val merged = remember(items.value, steamItems) { items.value.filter { it.steamAppId == null } + steamItems }
+                        val merged = remember(items.value, steamItems) {
+                            val knownSteam = steamItems.mapNotNull { SteamLibrary.appId(it.shortcutPath) }.toSet()
+                            val local = items.value.filter { it.steamAppId == null || it.steamAppId !in knownSteam }
+                                .map { item ->
+                                    item.steamAppId?.let { id ->
+                                        item.copy(id = "steam-$id", shortcutPath = "steam://$id", containerName = "Steam · Installed")
+                                    } ?: item
+                                }.distinctBy { it.id }
+                            local + steamItems
+                        }
                         val combined = remember(context, callbacks) { object : LibraryCallbacks {
                             override fun onOpen(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onOpen(path) }
                             override fun onRun(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onRun(path) }

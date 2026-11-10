@@ -77,6 +77,30 @@ class SteamModesTest {
         } finally { SteamSession.endGame(context) }
         assertFalse(SteamSession.gameActive)
     }
+    @Test fun failedOfflinePreparationRestoresSelectedModeAndShortcut() {
+        val context = RuntimeEnvironment.getApplication()
+        SteamSettings.setEnabled(context, true)
+        val id = 99821
+        val game = File(context.filesDir, "steam-library/common/No Steam DLL").apply { mkdirs() }
+        File(game, "game.exe").writeText("game")
+        val info = JSONObject("""{"config":{"installdir":"No Steam DLL"}}""")
+        File(context.filesDir, "steam-library/$id.json").apply { parentFile!!.mkdirs(); writeText(info.toString()) }
+        val container = Container(id).apply { rootDir = File(context.filesDir, "no-dll-container").apply { mkdirs() } }
+        SteamSettings.setMode(context, id, "Raw")
+        val file = SteamLaunch.createShortcut(context, container, id, info, "game.exe")
+        val configured = Shortcut(container, file).apply {
+            putExtra("steamConfigured", "1")
+            putExtra("steamExecutable", "game.exe")
+            saveData()
+        }
+        assertThrows(IllegalStateException::class.java) {
+            SteamLaunch.prepareConfigured(context, configured, "Goldberg")
+        }
+        assertEquals("Raw", SteamSettings.mode(context, id))
+        assertEquals("Raw", Shortcut(container, file).getExtra("steamLaunchMode"))
+        assertEquals("game", File(game, "game.exe").readText())
+    }
+
     @Test fun nativeDownloadSignatureIncludesSeparateDecompressionBudget() {
         val method = com.winlator.cmod.feature.stores.steam.ludashisteam.LudashiSteamSession::class.java.declaredMethods.single { it.name == "nativeDownloadApp" }
         assertEquals(11, method.parameterTypes.size)

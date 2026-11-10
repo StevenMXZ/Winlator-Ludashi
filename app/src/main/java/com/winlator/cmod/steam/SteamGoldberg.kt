@@ -12,7 +12,7 @@ object SteamGoldberg {
     private const val downloadUrl = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/ludashi-goldberg-v1/goldberg.tzst"
     private const val expectedSha256 = "5b4cefb163cec0388411d13277a1ebf3bedeee462436e78717ce31fafdfdbb66"
 
-    @Synchronized fun ensureInstalled(context: Context) {
+    @JvmOverloads @Synchronized fun ensureInstalled(context: Context, progress: ((String, Long, Long) -> Unit)? = null) {
         if (File(root(context), "regular/x64/steam_api64.dll").isFile &&
             File(root(context), "regular/x86/steam_api.dll").isFile) return
         val archive = File(context.cacheDir, "goldberg-download.tzst")
@@ -21,9 +21,22 @@ object SteamGoldberg {
                 connectTimeout = 15000
                 readTimeout = 60000
             }
+            val expected = connection.contentLengthLong
+            var received = 0L
+            progress?.invoke("download", 0L, expected)
             connection.getInputStream().use { input ->
-                archive.outputStream().use { output -> input.copyTo(output) }
+                archive.outputStream().use { output ->
+                    val buffer = ByteArray(65536)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        received += count
+                        progress?.invoke("download", received, expected)
+                    }
+                }
             }
+            progress?.invoke("verify", 0L, 0L)
             val digest = MessageDigest.getInstance("SHA-256")
             archive.inputStream().use { input ->
                 val bytes = ByteArray(65536)
@@ -36,6 +49,7 @@ object SteamGoldberg {
             check(digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
                 .equals(expectedSha256, true)) { "The downloaded Goldberg component failed integrity verification." }
             root(context).mkdirs()
+            progress?.invoke("extract", 0L, 0L)
             check(TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, archive, root(context), null)) {
                 "Goldberg extraction failed."
             }
@@ -66,10 +80,11 @@ object SteamGoldberg {
             File(target.parentFile, target.name + ".ludashi-original").takeIf { it.isFile }?.copyTo(target, true)
         }
     }
-    fun prepare(context: Context, game: File, id: Int) {
-        ensureInstalled(context)
+    @JvmOverloads fun prepare(context: Context, game: File, id: Int, progress: ((String, Long, Long) -> Unit)? = null) {
         val dlls = apiDlls(game).filter { it.isFile }
         check(dlls.isNotEmpty()) { "No Steam API DLL found for regular Goldberg mode. Use SteamLudashi or Raw for this game." }
+        ensureInstalled(context, progress)
+        progress?.invoke("prepare", 0L, 0L)
         dlls.forEach { dll ->
             val backup = File(dll.parentFile, dll.name + ".ludashi-original")
             if (!backup.exists()) dll.copyTo(backup)
