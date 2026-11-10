@@ -131,7 +131,9 @@ void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
         auto i = direct.find(w->id);
         auto d = i == direct.end() ? std::static_pointer_cast<NativeDrawable>(w->SharedDrawable()) : i->second->drawable;
         const auto& rect = w->GetInRect();
-        frame.entries.push_back({d, i == direct.end() ? nullptr : i->second, d->Pixels(), d->Revision(), rect.left, rect.top, w->GetDepth() != 32});
+        // Vulkan window quads force useTexAlpha=0, including depth-32 images.
+        // Match that opacity when discarding fully covered layers.
+        frame.entries.push_back({d, i == direct.end() ? nullptr : i->second, d->Pixels(), d->Revision(), rect.left, rect.top, true});
         if (i != direct.end()) {
             frame.entries.back().x += i->second->x;
             frame.entries.back().y += i->second->y;

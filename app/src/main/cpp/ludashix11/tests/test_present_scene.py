@@ -12,7 +12,7 @@ import time
 from test_wire import Client
 
 
-def run(binary, filtered):
+def run(binary, filtered, depth=0):
     with tempfile.TemporaryDirectory(prefix="ludashi-present-scene-") as directory:
         channel, child = socket.socketpair()
         logpath = pathlib.Path(directory) / "server.log"
@@ -42,11 +42,11 @@ def run(binary, filtered):
                 c = Client(channel)
                 background, win = c.base | 1, c.base | 2
                 for window, x, y in ((background, 0, 0), (win, 10, 20)):
-                    c.send(1, payload=struct.pack("<IIhhHHHHII", window, c.root, x, y, 64, 64, 0, 1, 0, 0))
+                    c.send(1, depth if window == win else 0, payload=struct.pack("<IIhhHHHHII", window, c.root, x, y, 64, 64, 0, 1, 0, 0))
                     c.send(8, payload=struct.pack("<I", window))
                 p0, p1, large, small = (c.base | i for i in (3, 4, 5, 6))
                 for pixmap, width, height in ((p0, 64, 64), (p1, 64, 64), (large, 1280, 720), (small, 32, 32)):
-                    c.send(53, 24, struct.pack("<IIHH", pixmap, win, width, height))
+                    c.send(53, depth or 24, struct.pack("<IIHH", pixmap, win, width, height))
                 present = c.extension("Present")
                 c.send(present, 3, struct.pack("<III", c.base | 7, win, 6))
                 c.barrier()
@@ -178,3 +178,5 @@ def run(binary, filtered):
 if __name__ == "__main__":
     run(sys.argv[1], False)
     run(sys.argv[1], True)
+    run(sys.argv[1], False, 32)
+    run(sys.argv[1], True, 32)

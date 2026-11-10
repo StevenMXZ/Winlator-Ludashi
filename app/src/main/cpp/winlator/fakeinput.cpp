@@ -7,10 +7,13 @@
 #include <fstream>
 #include <algorithm>
 #include <mutex>
+#include <atomic>
+#include "fakeinput_wait.h"
 
 #include <fcntl.h>
 #include <dirent.h>
 #include <stdio.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <dlfcn.h>
@@ -30,13 +33,30 @@
 #include <sys/sysmacros.h>
 #include <linux/input.h>
 
-#define EXPORT __attribute__((visibility("default"))) extern "C"
+#define EXPORT extern "C" __attribute__((visibility("default")))
 
-std::unordered_map<int, const char *> controller_map;
-static bool initialized = false;
+static std::mutex controller_mutex;
+static std::atomic<size_t> controller_count{0};
+static std::unordered_map<int, std::shared_ptr<const std::string>> controller_map;
+static std::shared_ptr<const std::string> controller_event(int fd) {
+    std::lock_guard<std::mutex> lock(controller_mutex);
+    auto it = controller_map.find(fd);
+    return it == controller_map.end() ? nullptr : it->second;
+}
+static bool controller_tracked(int fd) {
+    if (!controller_count.load(std::memory_order_relaxed)) return false;
+    std::lock_guard<std::mutex> lock(controller_mutex);
+    return controller_map.find(fd) != controller_map.end();
+}
+static void controller_add(int fd, const char* name) {
+    if (fd < 0) return;
+    auto event = std::make_shared<const std::string>(name);
+    std::lock_guard<std::mutex> lock(controller_mutex);
+    controller_map[fd] = std::move(event);
+    controller_count.store(controller_map.size(), std::memory_order_relaxed);
+}
 static const char *hook_dir = nullptr;
 static bool vibration_enabled = true;
-volatile sig_atomic_t stop_flag = 0;
 
 static int (*my_open)(const char *, int, ...) = nullptr;
 static int (*my_openat)(int, const char *, int, ...) = nullptr;
@@ -65,17 +85,6 @@ namespace Logger {
 
 		std::cerr.flush();
 	}
-}
-
-void handle_sigint(int sig)  { 
-    stop_flag = 1;
-} 
-
-void setup_signal_handler() {
-    if (!initialized) {
-        signal(SIGINT, handle_sigint);
-        initialized = true;
-    }
 }
 
 static std::unordered_map<int, struct ff_effect> ff_effects;
@@ -177,7 +186,8 @@ EXPORT int open(const char *pathname, int flags, ...) {
 
 	if (isFromInput) {
 		Logger::log("Adding controller, fd %d event %s\n", fd, get_event(pathname));
-		controller_map[fd] = strdup(get_event(pathname));
+		controller_add(fd, get_event(pathname));
+        free((void*)pathname);
     }
 	    
 	return fd;
@@ -221,7 +231,8 @@ EXPORT int openat(int dirfd, const char *pathname, int flags, ...) {
 
     if (isFromInput) {
         Logger::log("Adding controller, fd %d event %s\n", fd, get_event(pathname));
-        controller_map[fd] = strdup(get_event(pathname));
+        controller_add(fd, get_event(pathname));
+        free((void*)pathname);
     }
 
     return fd;
@@ -260,9 +271,9 @@ EXPORT int fstat(int fd, struct stat *buf) {
 
     int ret = my_fstat(fd, buf);
 
-    auto controller = controller_map.find(fd);
-    if (controller != controller_map.end()) {
-    	buf->st_rdev = makedev(1, get_event_number(controller->second));
+    auto controller = controller_event(fd);
+    if (controller != nullptr) {
+        buf->st_rdev = makedev(1, get_event_number(controller->c_str()));
     }
 
     return ret;
@@ -305,14 +316,14 @@ EXPORT int ioctl(int fd, int op, ...) {
 	argp = va_arg(va, void *);
 	va_end(va);
 
-	auto controller = controller_map.find(fd);
-	if (controller == controller_map.end()) {
+	auto controller = controller_event(fd);
+	if (controller == nullptr) {
 		return syscall(SYS_ioctl, fd, op, argp);
 	}
 
 	int type = (op >> 8 & 0xFF);
 	int number = (op >> 0 & 0xFF);
-	const char *event = controller->second;
+	const char *event = controller->c_str();
 	int event_number = get_event_number(event);
 
     if (type == 0x45 && number == 0x1) {
@@ -476,59 +487,47 @@ EXPORT int ioctl(int fd, int op, ...) {
 }
 
 EXPORT int close(int fd) {
-	if (!my_close)
-		*(void **)&my_close = dlsym(RTLD_NEXT, "close");
-
-	auto controller = controller_map.find(fd);
-	if (controller != controller_map.end()) {
-	    Logger::log("Removing controller, fd %d event %s\n", controller->first, controller->second);
-	    free((void *)controller->second);
-		controller_map.erase(fd);
-	}
-
-	return my_close(fd);
+    if (!my_close) *(void **)&my_close = dlsym(RTLD_NEXT, "close");
+    {
+        std::lock_guard<std::mutex> lock(controller_mutex);
+        controller_map.erase(fd);
+        controller_count.store(controller_map.size(), std::memory_order_relaxed);
+    }
+    return my_close(fd);
 }
 
 EXPORT ssize_t read(int fd, void *buf, size_t count) {
-    auto controller = controller_map.find(fd);
-    
-    if (controller != controller_map.end()) {
-        ssize_t bytes_read = 0;
-        int flags = fcntl(fd, F_GETFL);
-        bool isNonBlock = flags & O_NONBLOCK;
-        bytes_read = syscall(SYS_read, fd, buf, count);
-        while(bytes_read == 0) {
-            struct stat statbuf;
-            if (!my_fstat) *(void **)&my_fstat = dlsym(RTLD_NEXT, "fstat");
-            if (my_fstat && my_fstat(fd, &statbuf) == 0 && statbuf.st_nlink == 0) {
-                errno = ENODEV;
-                return -1;
-            }
-            if (isNonBlock) {
-                break;
-            }
-            setup_signal_handler();
-            if (stop_flag) {
-            	bytes_read = -1;
-            	errno = EINTR;
-            	return bytes_read;
-            }
-            struct pollfd pfd;
-            pfd.fd = fd;
-            pfd.events = POLLIN;
-            if (poll(&pfd, 1, 1000) > 0) {
-                // If it's a disconnected pipe, poll returns immediately with POLLHUP.
-                // We fallback to usleep to prevent a 100% CPU busy-spin loop.
-                if (pfd.revents & POLLHUP) {
-                    usleep(1000); 
-                }
-            }
-            bytes_read = syscall(SYS_read, fd, buf, count);
-        }
-        
-    	return bytes_read;
+    if (!controller_tracked(fd)) return syscall(SYS_read, fd, buf, count);
+    return FakeInputWait::read(fd, buf, count, controller_tracked);
+}
+
+EXPORT int poll(struct pollfd* fds, nfds_t count, int timeout) {
+    static auto real_poll = reinterpret_cast<int(*)(pollfd*,nfds_t,int)>(dlsym(RTLD_NEXT, "poll"));
+    if (!controller_count.load(std::memory_order_relaxed) || !fds) return real_poll(fds, count, timeout);
+    if (count > 4096) {
+        struct rlimit limit{};
+        if (getrlimit(RLIMIT_NOFILE,&limit) == 0 && count > limit.rlim_cur)
+            return real_poll(fds,count,timeout);
     }
-    return syscall(SYS_read, fd, buf, count);
+    bool fake = false;
+    for (nfds_t i = 0; i < count; ++i) if (controller_tracked(fds[i].fd)) { fake = true; break; }
+    if (!fake) return real_poll(fds, count, timeout);
+    timespec wait{timeout / 1000, (timeout % 1000) * 1000000L};
+    return FakeInputWait::poll(fds, count, timeout < 0 ? nullptr : &wait, nullptr, controller_tracked);
+}
+
+EXPORT int ppoll(struct pollfd* fds, nfds_t count, const timespec* timeout, const sigset_t* mask) {
+    static auto real_ppoll = reinterpret_cast<int(*)(pollfd*,nfds_t,const timespec*,const sigset_t*)>(dlsym(RTLD_NEXT, "ppoll"));
+    if (!controller_count.load(std::memory_order_relaxed) || !fds) return real_ppoll(fds, count, timeout, mask);
+    if (count > 4096) {
+        struct rlimit limit{};
+        if (getrlimit(RLIMIT_NOFILE,&limit) == 0 && count > limit.rlim_cur)
+            return real_ppoll(fds,count,timeout,mask);
+    }
+    bool fake = false;
+    for (nfds_t i = 0; i < count; ++i) if (controller_tracked(fds[i].fd)) { fake = true; break; }
+    if (!fake) return real_ppoll(fds, count, timeout, mask);
+    return FakeInputWait::poll(fds, count, timeout, mask, controller_tracked);
 }
 
 static void check_ff_event(const struct input_event *ev, uint16_t slot) {
@@ -557,11 +556,11 @@ EXPORT ssize_t write(int fd, const void *buf, size_t count) {
   if (!my_write)
     *(void **)&my_write = dlsym(RTLD_NEXT, "write");
 
-  auto controller = controller_map.find(fd);
-  if (controller != controller_map.end()) {
+  auto controller = controller_event(fd);
+  if (controller != nullptr) {
     if (count == sizeof(struct input_event)) {
       const struct input_event *ev = (const struct input_event *)buf;
-      uint16_t slot = (uint16_t)get_event_number(controller->second);
+      uint16_t slot = (uint16_t)get_event_number(controller->c_str());
       check_ff_event(ev, slot);
       // EV_FF events are FF control commands sent by Wine to the fake device.
       // Writing them to the fake evdev file causes Wine to read them back as
@@ -575,9 +574,9 @@ EXPORT ssize_t write(int fd, const void *buf, size_t count) {
 }
 
 EXPORT ssize_t writev(int fd, const struct iovec *iov, int iovcnt) {
-  auto controller = controller_map.find(fd);
-  if (controller != controller_map.end()) {
-    uint16_t slot = (uint16_t)get_event_number(controller->second);
+  auto controller = controller_event(fd);
+  if (controller != nullptr) {
+    uint16_t slot = (uint16_t)get_event_number(controller->c_str());
     // Separate FF control events from regular input events.
     // FF events must not be written to the fake evdev file (see write() above).
     struct iovec filtered[iovcnt];

@@ -63,6 +63,12 @@ libc++_shared.so is part of the LLVM project (Apache-2.0 WITH LLVM-exception), r
 as built by the NDK r29 toolchain.
 
 ============================================================================
+ADDITIONAL ACKNOWLEDGEMENTS
+============================================================================
+
+GameSir: https://www.gamesir.com/
+
+============================================================================
 ORIGINAL FILE: License_7zip.txt
 ============================================================================
 
