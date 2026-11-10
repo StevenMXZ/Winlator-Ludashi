@@ -179,7 +179,8 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Rendering"
+                    android:text="@string/ui_rendering"
+                    android:tag="i18n/ui_rendering"
                     android:textColor="#FFFFFF"
                     android:textSize="24sp"
                     android:textStyle="bold" />
@@ -192,7 +193,8 @@
                     <TextView
                         android:layout_width="92dp"
                         android:layout_height="wrap_content"
-                        android:text="FPS Limiter"
+                        android:text="@string/sidebar_fps_limiter"
+                    android:tag="i18n/sidebar_fps_limiter"
                         android:textColor="#FFFFFF"
                         android:textSize="14sp"
                         android:textStyle="bold" />
@@ -217,7 +219,8 @@
                         android:id="@+id/SWEnableFrameGen"
                         android:layout_width="match_parent"
                         android:layout_height="56dp"
-                        android:text="LSFG Frame Generation"
+                        android:text="@string/sidebar_lsfg_frame_generation"
+                    android:tag="i18n/sidebar_lsfg_frame_generation"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                     <LinearLayout
@@ -230,7 +233,8 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Generation Mode"
+                            android:text="@string/sidebar_generation_mode"
+                    android:tag="i18n/sidebar_generation_mode"
                             android:textColor="#FFFFFF"
                             android:textSize="13sp"
                             android:textStyle="bold" />
@@ -249,7 +253,8 @@
                             <TextView
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="Multiplier"
+                                android:text="@string/ui_multiplier"
+                    android:tag="i18n/ui_multiplier"
                                 android:textColor="#FFFFFF"
                                 android:textSize="13sp"
                                 android:textStyle="bold" />
@@ -264,7 +269,8 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="10dp"
-                            android:text="Quality Preset"
+                            android:text="@string/sidebar_quality_preset"
+                    android:tag="i18n/sidebar_quality_preset"
                             android:textColor="#FFFFFF"
                             android:textSize="13sp"
                             android:textStyle="bold" />
@@ -288,7 +294,8 @@
                         android:id="@+id/SWEnableFSR"
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
-                        android:text="Super Resolution"
+                        android:text="@string/sidebar_super_resolution"
+                    android:tag="i18n/sidebar_super_resolution"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                     <LinearLayout
@@ -301,7 +308,8 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Upscaler Mode"
+                            android:text="@string/sidebar_upscaler_mode"
+                    android:tag="i18n/sidebar_upscaler_mode"
                             android:textColor="#0055ff"
                             android:textSize="13sp" />
                         <Spinner
@@ -315,7 +323,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="10dp"
-                        android:text="Sharpness"
+                        android:text="@string/ui_sharpness"
+                    android:tag="i18n/ui_sharpness"
                         android:textColor="#0055ff"
                         android:textSize="13sp" />
                     <com.winlator.cmod.widget.SeekBar
@@ -343,7 +352,8 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Post Effect"
+                            android:text="@string/sidebar_post_effect"
+                    android:tag="i18n/sidebar_post_effect"
                             android:textColor="#0055ff"
                             android:textSize="13sp" />
                         <Spinner
@@ -384,7 +394,8 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="10dp"
-                            android:text="Effect"
+                            android:text="@string/sidebar_effect"
+                    android:tag="i18n/sidebar_effect"
                             android:textColor="?attr/ingameSidebarOnSurfaceVariant"
                             android:textSize="12sp" />
 
@@ -407,7 +418,8 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="Strength"
+                                android:text="@string/sidebar_strength"
+                    android:tag="i18n/sidebar_strength"
                                 android:textColor="?attr/ingameSidebarOnSurfaceVariant"
                                 android:textSize="13sp" />
 
@@ -442,7 +454,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Save Preset"
+                        android:text="@string/sidebar_save_preset"
+                    android:tag="i18n/sidebar_save_preset"
                         android:textColor="#DDF6FF"
                         android:textSize="14sp"
                         android:textStyle="bold" />
@@ -463,7 +476,8 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Display and Effects"
+                    android:text="@string/ui_display_and_effects"
+                    android:tag="i18n/ui_display_and_effects"
                     android:textColor="#FFFFFF"
                     android:textSize="24sp"
                     android:textStyle="bold" />
@@ -481,7 +495,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Picture in Picture"
+                        android:text="@string/sidebar_picture_in_picture"
+                    android:tag="i18n/sidebar_picture_in_picture"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                 </LinearLayout>
@@ -499,7 +514,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Toggle Fullscreen"
+                        android:text="@string/toggle_fullscreen"
+                    android:tag="i18n/toggle_fullscreen"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                 </LinearLayout>
@@ -517,7 +533,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Magnifier"
+                        android:text="@string/magnifier"
+                    android:tag="i18n/magnifier"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                 </LinearLayout>
@@ -535,7 +552,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Soft Stretch"
+                        android:text="@string/sidebar_soft_stretch"
+                    android:tag="i18n/sidebar_soft_stretch"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                 </LinearLayout>
@@ -555,7 +573,8 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Controls"
+                    android:text="@string/sidebar_controls"
+                    android:tag="i18n/sidebar_controls"
                     android:textColor="#FFFFFF"
                     android:textSize="24sp"
                     android:textStyle="bold" />
@@ -598,6 +617,7 @@
                         android:layout_height="48dp"
                         android:layout_marginTop="8dp"
                         android:text="@string/show_touchscreen_controls"
+                    android:tag="i18n/show_touchscreen_controls"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                     <Switch
@@ -605,6 +625,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
                         android:text="@string/enable_touchscreen_timeout"
+                    android:tag="i18n/enable_touchscreen_timeout"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                     <Switch
@@ -612,6 +633,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
                         android:text="@string/enable_touchscreen_haptics"
+                    android:tag="i18n/enable_touchscreen_haptics"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                 </LinearLayout>
@@ -628,7 +650,8 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="Touch Controls Opacity"
+                        android:text="@string/sidebar_touch_controls_opacity"
+                    android:tag="i18n/sidebar_touch_controls_opacity"
                         android:textColor="#0055ff"
                         android:textSize="13sp"
                         android:textStyle="bold" />
@@ -654,7 +677,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Show Keyboard"
+                        android:text="@string/sidebar_show_keyboard"
+                    android:tag="i18n/sidebar_show_keyboard"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                 </LinearLayout>
@@ -672,7 +696,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Vibration"
+                        android:text="@string/vibration"
+                    android:tag="i18n/vibration"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                 </LinearLayout>
@@ -684,7 +709,8 @@
                     android:background="@drawable/sidebar_card"
                     android:paddingStart="14dp"
                     android:paddingEnd="14dp"
-                    android:text="Relative Mouse"
+                    android:text="@string/ui_relative_mouse"
+                    android:tag="i18n/ui_relative_mouse"
                     android:textColor="#FFFFFF"
                     android:textSize="15sp" />
                 <Switch
@@ -695,7 +721,8 @@
                     android:background="@drawable/sidebar_card"
                     android:paddingStart="14dp"
                     android:paddingEnd="14dp"
-                    android:text="Disable Mouse"
+                    android:text="@string/ui_disable_mouse"
+                    android:tag="i18n/ui_disable_mouse"
                     android:textColor="#FFFFFF"
                     android:textSize="15sp" />
             </LinearLayout>
@@ -726,7 +753,8 @@
                     android:background="@drawable/sidebar_card"
                     android:paddingStart="14dp"
                     android:paddingEnd="14dp"
-                    android:text="Enable HUD"
+                    android:text="@string/sidebar_enable_hud"
+                    android:tag="i18n/sidebar_enable_hud"
                     android:textColor="#FFFFFF"
                     android:textSize="15sp" />
                 <LinearLayout
@@ -743,7 +771,8 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Style"
+                        android:text="@string/sidebar_style"
+                    android:tag="i18n/sidebar_style"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                     <Spinner
@@ -768,7 +797,8 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="HUD Metrics"
+                        android:text="@string/sidebar_hud_metrics"
+                    android:tag="i18n/sidebar_hud_metrics"
                         android:textColor="#0055ff"
                         android:textSize="13sp"
                         android:textStyle="bold" />
@@ -832,7 +862,8 @@
                             android:layout_width="0dp"
                             android:layout_height="match_parent"
                             android:layout_weight="1"
-                            android:text="Batt/Temp"
+                            android:text="@string/sidebar_batt_temp"
+                    android:tag="i18n/sidebar_batt_temp"
                             android:textColor="#FFFFFF"
                             android:textSize="12sp" />
 
@@ -841,7 +872,8 @@
                             android:layout_width="0dp"
                             android:layout_height="match_parent"
                             android:layout_weight="1"
-                            android:text="Renderer"
+                            android:text="@string/ui_renderer"
+                    android:tag="i18n/ui_renderer"
                             android:textColor="#FFFFFF"
                             android:textSize="12sp" />
                     </LinearLayout>
@@ -867,7 +899,8 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="HUD Size"
+                        android:text="@string/sidebar_hud_size"
+                    android:tag="i18n/sidebar_hud_size"
                         android:textColor="#0055ff"
                         android:textSize="13sp"
                         android:textStyle="bold" />
@@ -882,7 +915,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:text="HUD Opacity"
+                        android:text="@string/sidebar_hud_opacity"
+                    android:tag="i18n/sidebar_hud_opacity"
                         android:textColor="#0055ff"
                         android:textSize="13sp"
                         android:textStyle="bold" />
@@ -906,7 +940,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Reset HUD"
+                        android:text="@string/sidebar_reset_hud"
+                    android:tag="i18n/sidebar_reset_hud"
                         android:textColor="#DDF6FF"
                         android:textSize="14sp"
                         android:textStyle="bold" />
@@ -933,7 +968,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Show Logs"
+                        android:text="@string/sidebar_show_logs"
+                    android:tag="i18n/sidebar_show_logs"
                         android:textColor="#DDF6FF"
                         android:textSize="14sp"
                         android:textStyle="bold" />
@@ -954,7 +990,8 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Task Manager"
+                    android:text="@string/task_manager"
+                    android:tag="i18n/task_manager"
                     android:textColor="#FFFFFF"
                     android:textSize="24sp"
                     android:textStyle="bold" />
@@ -1000,7 +1037,8 @@
                             android:id="@+id/TVMemoryTitle"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Memory"
+                            android:text="@string/memory"
+                    android:tag="i18n/memory"
                             android:textColor="#0055ff"
                             android:textSize="12sp"
                             android:textStyle="bold" />
@@ -1027,7 +1065,8 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Processes"
+                        android:text="@string/processes"
+                    android:tag="i18n/processes"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp"
                         android:textStyle="bold" />
@@ -1048,6 +1087,7 @@
                         android:layout_height="160dp"
                         android:gravity="center"
                         android:text="@string/no_items_to_display"
+                    android:tag="i18n/no_items_to_display"
                         android:textColor="#0055ff"
                         android:visibility="gone" />
                 </FrameLayout>
@@ -1063,7 +1103,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="+ New Task"
+                        android:text="@string/sidebar_new_task"
+                    android:tag="i18n/sidebar_new_task"
                         android:textColor="#DDF6FF"
                         android:textSize="14sp"
                         android:textStyle="bold" />
@@ -1078,5 +1119,3 @@
             android:visibility="gone" />
     </FrameLayout>
 </LinearLayout>
-
-

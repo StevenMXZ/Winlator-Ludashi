@@ -1,0 +1,45 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<resources>
+  <string name="sidebar_fps_limiter">"Limitador de FPS"</string>
+  <string name="sidebar_lsfg_frame_generation">"Geração de quadros LSFG"</string>
+  <string name="sidebar_generation_mode">"Modo de geração"</string>
+  <string name="sidebar_quality_preset">"Predefinição de qualidade"</string>
+  <string name="sidebar_super_resolution">"Super-resolução"</string>
+  <string name="sidebar_upscaler_mode">"Modo de ampliação"</string>
+  <string name="sidebar_post_effect">"Pós-processamento"</string>
+  <string name="sidebar_effect">"Efeito"</string>
+  <string name="sidebar_strength">"Intensidade"</string>
+  <string name="sidebar_save_preset">"Salvar predefinição"</string>
+  <string name="sidebar_picture_in_picture">"Imagem sobre imagem"</string>
+  <string name="sidebar_soft_stretch">"Esticamento suave"</string>
+  <string name="sidebar_controls">"Controles"</string>
+  <string name="sidebar_touch_controls_opacity">"Opacidade dos controles na tela"</string>
+  <string name="sidebar_show_keyboard">"Mostrar teclado"</string>
+  <string name="sidebar_enable_hud">"Ativar HUD"</string>
+  <string name="sidebar_style">"Estilo"</string>
+  <string name="sidebar_hud_metrics">"Métricas do HUD"</string>
+  <string name="sidebar_batt_temp">"Bateria/Temperatura"</string>
+  <string name="sidebar_hud_size">"Tamanho do HUD"</string>
+  <string name="sidebar_hud_opacity">"Opacidade do HUD"</string>
+  <string name="sidebar_reset_hud">"Redefinir HUD"</string>
+  <string name="sidebar_show_logs">"Mostrar logs"</string>
+  <string name="sidebar_new_task">"+ Nova tarefa"</string>
+  <string name="sidebar_fit">"Ajustar"</string>
+  <string name="sidebar_stretch">"Esticar"</string>
+  <string name="sidebar_fps_limit">"Limite de FPS"</string>
+  <string name="sidebar_enter_custom_fps">"Digite o FPS personalizado"</string>
+  <string name="sidebar_automatic_display">"Automático (tela)"</string>
+  <string name="sidebar_adaptive_1_d_fps">"Adaptativo: %1$d FPS"</string>
+  <string name="sidebar_preset_saved">"Predefinição salva"</string>
+  <string name="sidebar_native_x11_vulkan">"X11 nativo (Vulkan)"</string>
+  <string name="sidebar_starting">"Iniciando"</string>
+  <string name="sidebar_1_s_active">"%1$s ativo"</string>
+  <string name="sidebar_upscaler">"Escalonador"</string>
+  <string name="sidebar_unavailable">"Indisponível"</string>
+  <string name="sidebar_not_applicable">"Não se aplica"</string>
+  <string name="sidebar_active">"Ativo"</string>
+  <string name="sidebar_not_detected">"Não detectado"</string>
+  <string name="sidebar_off_1_s">"Desativado · %1$s"</string>
+  <string name="sidebar_off_dll_mode">"Desativado · modo DLL"</string>
+  <string name="sidebar_processes_1_d">"Processos: %1$d"</string>
+<string name="sidebar_adaptive_60_fps">"Adaptativo: 60 FPS"</string><string name="sidebar_adaptive_90_fps">"Adaptativo: 90 FPS"</string><string name="sidebar_adaptive_120_fps">"Adaptativo: 120 FPS"</string><string name="sidebar_adaptive_144_fps">"Adaptativo: 144 FPS"</string><string name="sidebar_adaptive_165_fps">"Adaptativo: 165 FPS"</string><string name="sidebar_disabled_profile">"-- Desativado --"</string></resources>

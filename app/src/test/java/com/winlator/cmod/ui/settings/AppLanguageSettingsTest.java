@@ -2,9 +2,12 @@ package com.winlator.cmod.ui.settings;
 
 import android.content.ComponentName;
 import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.Looper;
+import java.util.Locale;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.os.LocaleListCompat;
@@ -77,10 +80,21 @@ public class AppLanguageSettingsTest {
         assertEquals("Run", UiStrings.get(R.string.run));
     }
 
-    @Test public void followsBrazilianAndroidLocaleWithoutAnOverride() {
-        RuntimeEnvironment.setQualifiers("pt-rBR");
+    @Test @Config(qualifiers = "pt-rBR")
+    public void followsBrazilianAndroidLocaleWithoutAnOverride() {
         assertEquals("Executar", UiStrings.get(R.string.run));
         select("en");
+        assertEquals("Run", UiStrings.get(R.string.run));
+        select("");
+        assertEquals("Executar", UiStrings.get(R.string.run));
+    }
+
+    @Test public void textReadsKeepTheResolvedLanguageUntilAnExplicitRefresh() {
+        assertEquals("Run", UiStrings.get(R.string.run));
+        Resources system = Resources.getSystem();
+        Configuration changed = new Configuration(system.getConfiguration());
+        changed.setLocale(Locale.forLanguageTag("pt-BR"));
+        system.updateConfiguration(changed, system.getDisplayMetrics());
         assertEquals("Run", UiStrings.get(R.string.run));
         select("");
         assertEquals("Executar", UiStrings.get(R.string.run));
@@ -90,5 +104,10 @@ public class AppLanguageSettingsTest {
         select("pt-BR");
         assertEquals("Falha no backup: disk full", UiStrings.get(R.string.ui_backup_failed_1_s, "disk full"));
         assertEquals("Locais de saves detectados: 2.", UiStrings.get(R.string.ui_detected_1_s_save_location_2_s, 2));
+    }
+
+    @Test @Config(qualifiers = "de-rDE")
+    public void unsupportedAndroidLanguageFallsBackToEnglish() {
+        assertEquals("Run", UiStrings.get(R.string.run));
     }
 }

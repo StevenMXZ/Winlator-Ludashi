@@ -216,6 +216,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private String vkbasaltConfig = "";
     PreloaderDialog preloaderDialog = null;
     private Runnable configChangedCallback = null;
+    private android.os.LocaleList sidebarLocales;
     private boolean isPaused = false;
     private boolean isRelativeMouseMovement = false;
     private boolean isMouseDisabled = false;
@@ -253,6 +254,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
     @Override
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        if (sidebarLocales != null && !sidebarLocales.equals(newConfig.getLocales())) {
+            sidebarLocales = newConfig.getLocales();
+            com.winlator.cmod.ui.UiStrings.invalidate();
+            com.winlator.cmod.ui.SidebarLocalization.refresh(findViewById(R.id.IngameSidebarRoot));
+            if (modernSidebar != null) modernSidebar.onLocaleChanged();
+        }
         if (configChangedCallback != null) {
             configChangedCallback.run();
             configChangedCallback = null;
@@ -308,6 +315,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         AppUtils.keepScreenOn(this);
 
         setContentView(R.layout.xserver_display_activity);
+        sidebarLocales = getResources().getConfiguration().getLocales();
 
         preloaderDialog = new PreloaderDialog(this);
         preferences = PreferenceManager.getDefaultSharedPreferences(this);
@@ -1787,7 +1795,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     public String[][] getSidebarRuntimeStatusRows() {
         boolean displayX = xServer != null && xServer.isDisplayX();
         String renderer = xServerView instanceof com.winlator.cmod.widget.NativeX11View
-                ? "Native X11 (Vulkan)"
+                ? getString(R.string.sidebar_native_x11_vulkan)
                 : xServerView instanceof VulkanXServerView ? "Vulkan" : displayX ? "DisplayX" : "EGL";
         boolean trueDisplayX = shortcut != null ? shortcut.getTrueDisplayX() : container != null && container.getTrueDisplayX();
         Switch upscaler = findViewById(R.id.SWEnableFSR);
@@ -1801,12 +1809,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
         boolean detected = runtimeFexMode != com.winlator.cmod.core.RuntimeBackendProbe.FexMode.NA;
         boolean unixlibs = runtimeFexMode == com.winlator.cmod.core.RuntimeBackendProbe.FexMode.UNIXLIB;
         return new String[][] {
-                {"Renderer", xServerView == null ? "Starting" : renderer + " active", xServerView == null ? "off" : "active"},
-                {"DisplayX", !displayX ? "Off" : trueDisplayX ? "True DisplayX active" : "DRI3 active", displayX ? "active" : "off"},
-                {"Upscaler", !upscalerAvailable ? "Unavailable" : upscalerActive && mode != null ? mode.getSelectedItem() + " active" : "Off", upscalerActive ? "active" : "off"},
-                {"FEXCore", !arm64ec ? "Not applicable" : !fex ? "Off · " + emulator
-                        : (version == null ? "" : version + " ") + (detected ? "active" : "not detected"), fex ? detected ? "active" : "warning" : "off"},
-                {"Unixlibs", !fex ? "Not applicable" : unixlibs ? "Active" : detected ? "Off · DLL mode" : "Not detected", unixlibs ? "active" : fex && !detected ? "warning" : "off"}
+                {getString(R.string.ui_renderer), xServerView == null ? getString(R.string.sidebar_starting) : getString(R.string.sidebar_1_s_active, renderer), xServerView == null ? "off" : "active"},
+                {"DisplayX", !displayX ? getString(R.string.ui_off) : trueDisplayX ? getString(R.string.sidebar_1_s_active, "True DisplayX") : getString(R.string.sidebar_1_s_active, "DRI3"), displayX ? "active" : "off"},
+                {getString(R.string.sidebar_upscaler), !upscalerAvailable ? getString(R.string.sidebar_unavailable) : upscalerActive && mode != null ? getString(R.string.sidebar_1_s_active, mode.getSelectedItem()) : getString(R.string.ui_off), upscalerActive ? "active" : "off"},
+                {"FEXCore", !arm64ec ? getString(R.string.sidebar_not_applicable) : !fex ? getString(R.string.sidebar_off_1_s, emulator)
+                        : (version == null ? "" : version + " ") + (detected ? getString(R.string.sidebar_active) : getString(R.string.sidebar_not_detected)), fex ? detected ? "active" : "warning" : "off"},
+                {"Unixlibs", !fex ? getString(R.string.sidebar_not_applicable) : unixlibs ? getString(R.string.sidebar_active) : detected ? getString(R.string.sidebar_off_dll_mode) : getString(R.string.sidebar_not_detected), unixlibs ? "active" : fex && !detected ? "warning" : "off"}
         };
     }
 
@@ -1905,7 +1913,18 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private ArrayAdapter<String> createSidebarSpinnerAdapter(String[] items) {
+        return createSidebarSpinnerAdapter(items, null);
+    }
+
+    private ArrayAdapter<String> createSidebarSpinnerAdapter(String[] items, int[] labels) {
         return new ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, items) {
+            @Nullable
+            @Override
+            public String getItem(int position) {
+                return labels != null && labels[position] != 0
+                        ? getString(labels[position]) : super.getItem(position);
+            }
+
             @NonNull
             @Override
             public View getView(int position, @Nullable View convertView, @NonNull ViewGroup parent) {
@@ -1956,7 +1975,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         boolean isModern = currentMode == 2;
 
         if (spHudStyle != null) {
-            ArrayAdapter<String> styleAdapter = createSidebarSpinnerAdapter(new String[]{"Classic", "Modern"});
+            ArrayAdapter<String> styleAdapter = createSidebarSpinnerAdapter(new String[]{"Classic", "Modern"}, new int[]{R.string.ui_classic, R.string.ui_modern});
             styleAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spHudStyle.setAdapter(styleAdapter);
             spHudStyle.setSelection(isModern ? 1 : 0, false);
@@ -2162,22 +2181,22 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         final int[]    fpsValues = {0, 30, 60, 90, 120};
-        final String[] fpsLabels = {"Off", "30 FPS", "60 FPS", "90 FPS", "120 FPS"};
+        final String[] fpsLabels = {getString(R.string.ui_off), "30 FPS", "60 FPS", "90 FPS", "120 FPS"};
         final int[] frameGenTargetValues = {-1, 0, 60, 90, 120, 144, 165};
         final String[] frameGenModeLabels = {
-            "Automatic (display)", "Fixed multiplier", "Adaptive 60 FPS",
-            "Adaptive 90 FPS", "Adaptive 120 FPS", "Adaptive 144 FPS",
-            "Adaptive 165 FPS"
+            getString(R.string.sidebar_automatic_display), getString(R.string.ui_fixed_multiplier), getString(R.string.sidebar_adaptive_1_d_fps, 60),
+            getString(R.string.sidebar_adaptive_1_d_fps, 90), getString(R.string.sidebar_adaptive_1_d_fps, 120), getString(R.string.sidebar_adaptive_1_d_fps, 144),
+            getString(R.string.sidebar_adaptive_1_d_fps, 165)
         };
         final int[] frameGenMultiplierValues = {2, 3, 4};
         final String[] frameGenMultiplierLabels = {"2x", "3x", "4x"};
         final int[] frameGenQualityValues = {40, 50, 70, 100};
         final String[] frameGenQualityLabels = {
-            "Ultra Performance", "Performance", "Balanced", "Quality"
+            getString(R.string.ui_ultra_performance), getString(R.string.performance), getString(R.string.profile_balanced), getString(R.string.ui_quality)
         };
 
         if (spNativeFPS != null) {
-            ArrayAdapter<String> a = createSidebarSpinnerAdapter(fpsLabels);
+            ArrayAdapter<String> a = createSidebarSpinnerAdapter(fpsLabels, new int[]{R.string.ui_off, 0, 0, 0, 0});
             a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spNativeFPS.setAdapter(a);
             String savedFps = container != null ? container.getExtra("graphicsFpsPreset") : "";
@@ -2250,14 +2269,14 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     }
                 }
                 container.saveData();
-                Toast.makeText(this, "Preset saved", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.sidebar_preset_saved), Toast.LENGTH_SHORT).show();
             });
         }
 
         if (vkRenderer == null) return;
 
         if (spFrameGenMode != null) {
-            ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(frameGenModeLabels);
+            ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(frameGenModeLabels, new int[]{R.string.sidebar_automatic_display, R.string.ui_fixed_multiplier, R.string.sidebar_adaptive_60_fps, R.string.sidebar_adaptive_90_fps, R.string.sidebar_adaptive_120_fps, R.string.sidebar_adaptive_144_fps, R.string.sidebar_adaptive_165_fps});
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spFrameGenMode.setAdapter(adapter);
             int selected = 1;
@@ -2279,7 +2298,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             spFrameGenMultiplier.setSelection(multiplier - 2, false);
         }
         if (spFrameGenQuality != null) {
-            ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(frameGenQualityLabels);
+            ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(frameGenQualityLabels, new int[]{R.string.ui_ultra_performance, R.string.performance, R.string.profile_balanced, R.string.ui_quality});
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spFrameGenQuality.setAdapter(adapter);
             int flowScale = vkRenderer.getFrameGenerationFlowScale();
@@ -2389,9 +2408,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
         updateFrameGenVisibility.run();
 
-        final String[] upscalerLabels = {"SGSR", "FSR", "Lanczos 2", "Color Boost"};
+        final String[] upscalerLabels = {"SGSR", "FSR", "Lanczos 2", getString(R.string.ui_color_boost)};
         if (spUpscalerMode != null) {
-            ArrayAdapter<String> a = createSidebarSpinnerAdapter(upscalerLabels);
+            ArrayAdapter<String> a = createSidebarSpinnerAdapter(upscalerLabels, new int[]{0, 0, 0, R.string.ui_color_boost});
             a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spUpscalerMode.setAdapter(a);
             spUpscalerMode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -2438,9 +2457,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
             });
         }
 
-        final String[] pfxLabels = {"None", "DLS", "CRT", "HDR", "Natural"};
+        final String[] pfxLabels = {getString(R.string.none), "DLS", "CRT", "HDR", "Natural"};
         if (spPostFXMode != null) {
-            ArrayAdapter<String> a = createSidebarSpinnerAdapter(pfxLabels);
+            ArrayAdapter<String> a = createSidebarSpinnerAdapter(pfxLabels, new int[]{R.string.none, 0, 0, 0, 0});
             a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spPostFXMode.setAdapter(a);
 
@@ -2493,7 +2512,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 profileItems.add(profile.getName());
             }
 
-            ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(profileItems.toArray(new String[0]));
+            int[] profileLabels = new int[profileItems.size()];
+            profileLabels[0] = R.string.sidebar_disabled_profile;
+            ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(profileItems.toArray(new String[0]), profileLabels);
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spInputControlsProfile.setAdapter(adapter);
             spInputControlsProfile.setSelection(selectedPosition, false);

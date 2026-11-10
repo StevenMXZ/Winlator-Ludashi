@@ -1,0 +1,45 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<resources>
+  <string name="sidebar_fps_limiter">"FPS Limiter"</string>
+  <string name="sidebar_lsfg_frame_generation">"LSFG Frame Generation"</string>
+  <string name="sidebar_generation_mode">"Generation Mode"</string>
+  <string name="sidebar_quality_preset">"Quality Preset"</string>
+  <string name="sidebar_super_resolution">"Super Resolution"</string>
+  <string name="sidebar_upscaler_mode">"Upscaler Mode"</string>
+  <string name="sidebar_post_effect">"Post Effect"</string>
+  <string name="sidebar_effect">"Effect"</string>
+  <string name="sidebar_strength">"Strength"</string>
+  <string name="sidebar_save_preset">"Save Preset"</string>
+  <string name="sidebar_picture_in_picture">"Picture in Picture"</string>
+  <string name="sidebar_soft_stretch">"Soft Stretch"</string>
+  <string name="sidebar_controls">"Controls"</string>
+  <string name="sidebar_touch_controls_opacity">"Touch Controls Opacity"</string>
+  <string name="sidebar_show_keyboard">"Show Keyboard"</string>
+  <string name="sidebar_enable_hud">"Enable HUD"</string>
+  <string name="sidebar_style">"Style"</string>
+  <string name="sidebar_hud_metrics">"HUD Metrics"</string>
+  <string name="sidebar_batt_temp">"Batt/Temp"</string>
+  <string name="sidebar_hud_size">"HUD Size"</string>
+  <string name="sidebar_hud_opacity">"HUD Opacity"</string>
+  <string name="sidebar_reset_hud">"Reset HUD"</string>
+  <string name="sidebar_show_logs">"Show Logs"</string>
+  <string name="sidebar_new_task">"+ New Task"</string>
+  <string name="sidebar_fit">"Fit"</string>
+  <string name="sidebar_stretch">"Stretch"</string>
+  <string name="sidebar_fps_limit">"FPS Limit"</string>
+  <string name="sidebar_enter_custom_fps">"Enter custom FPS"</string>
+  <string name="sidebar_automatic_display">"Automatic (display)"</string>
+  <string name="sidebar_adaptive_1_d_fps">"Adaptive %1$d FPS"</string>
+  <string name="sidebar_preset_saved">"Preset saved"</string>
+  <string name="sidebar_native_x11_vulkan">"Native X11 (Vulkan)"</string>
+  <string name="sidebar_starting">"Starting"</string>
+  <string name="sidebar_1_s_active">"%1$s active"</string>
+  <string name="sidebar_upscaler">"Upscaler"</string>
+  <string name="sidebar_unavailable">"Unavailable"</string>
+  <string name="sidebar_not_applicable">"Not applicable"</string>
+  <string name="sidebar_active">"Active"</string>
+  <string name="sidebar_not_detected">"Not detected"</string>
+  <string name="sidebar_off_1_s">"Off · %1$s"</string>
+  <string name="sidebar_off_dll_mode">"Off · DLL mode"</string>
+  <string name="sidebar_processes_1_d">"Processes: %1$d"</string>
+<string name="sidebar_adaptive_60_fps">"Adaptive 60 FPS"</string><string name="sidebar_adaptive_90_fps">"Adaptive 90 FPS"</string><string name="sidebar_adaptive_120_fps">"Adaptive 120 FPS"</string><string name="sidebar_adaptive_144_fps">"Adaptive 144 FPS"</string><string name="sidebar_adaptive_165_fps">"Adaptive 165 FPS"</string><string name="sidebar_disabled_profile">"-- Disabled --"</string></resources>

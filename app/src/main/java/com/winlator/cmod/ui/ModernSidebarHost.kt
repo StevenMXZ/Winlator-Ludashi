@@ -75,6 +75,7 @@ class ModernSidebarController internal constructor(internal val activity: XServe
         refresh()
     }
     fun onRuntimeStatusChanged() { revision++ }
+    fun onLocaleChanged() { revision++ }
     fun onOpened(isPaused: Boolean) { paused = isPaused; select(selected); activity.requestSidebarRuntimeStatus() }
     internal fun pause() { activity.findViewById<View>(R.id.BTItemPause)?.performClick(); paused = !paused }
     internal fun exit() { activity.findViewById<View>(R.id.BTItemExit)?.performClick() }
@@ -230,7 +231,7 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
         val view = group.getChildAt(i)
         if (view.visibility != View.VISIBLE) continue
         if (view is TextView && view.id == View.NO_ID &&
-            listOf(heading, "Rendering", uiStr(R.string.ui_display_and_effects), "Controls", "HUD")
+            listOf(heading, uiStr(R.string.ui_rendering), uiStr(R.string.ui_display_and_effects), uiStr(R.string.sidebar_controls), "HUD")
                 .any { view.text.toString().trim().equals(it, ignoreCase = true) }) continue
         if (view.id == R.id.BTItemToggleFullscreen) continue // represented by the Fit/Stretch selector
         when {
@@ -304,7 +305,7 @@ private fun FullscreenModeSelector(state: ModernSidebarController) {
         Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(uiStr(R.string.ui_display_mode), style = MaterialTheme.typography.labelLarge)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(false to "Fit", true to "Stretch").forEach { (stretch, label) ->
+                listOf(false to uiStr(R.string.sidebar_fit), true to uiStr(R.string.sidebar_stretch)).forEach { (stretch, label) ->
                     FilterChip(selected = stretched == stretch,
                         onClick = { state.activity.setSidebarFullscreenStretched(stretch); state.refresh() },
                         label = { Text(label) }, modifier = Modifier.weight(1f))

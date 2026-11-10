@@ -41,6 +41,7 @@ public class FpsLimiterControl extends LinearLayout {
 
     private final SeekBar slider;
     private final TextView valueLabel;
+    private final TextView title;
     private final NumericEditText customValue;
 
     private boolean initializing = true;
@@ -72,8 +73,8 @@ public class FpsLimiterControl extends LinearLayout {
         valueRow.setGravity(Gravity.CENTER_VERTICAL);
         sliderGroup.addView(valueRow, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
-        TextView title = new TextView(context);
-        title.setText("FPS Limit");
+        title = new TextView(context);
+        title.setText(R.string.sidebar_fps_limit);
         title.setTextColor(onSurface);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
@@ -83,7 +84,7 @@ public class FpsLimiterControl extends LinearLayout {
         valueLabel.setTextColor(onSurfaceVariant);
         valueLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         valueLabel.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        // The limiter value is always Latin/numeric ("Off", "Custom", "60 FPS").
+        // FPS numbers retain Latin digits; mode labels follow the app language.
         // Keep its text direction LTR while the row itself still mirrors normally in RTL.
         valueLabel.setTextDirection(View.TEXT_DIRECTION_LTR);
         valueLabel.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_END);
@@ -104,7 +105,7 @@ public class FpsLimiterControl extends LinearLayout {
         customValue.setSingleLine(true);
         customValue.setInputType(InputType.TYPE_CLASS_NUMBER);
         customValue.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        customValue.setHint("Enter custom FPS");
+        customValue.setHint(R.string.sidebar_enter_custom_fps);
         customValue.setTextColor(onSurface);
         customValue.setHintTextColor(onSurfaceVariant);
         customValue.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
@@ -289,13 +290,19 @@ public class FpsLimiterControl extends LinearLayout {
         return custom > 0 ? custom : SLIDER_MAX_FPS;
     }
 
+    public void refreshLocale() {
+        title.setText(R.string.sidebar_fps_limit);
+        customValue.setHint(R.string.sidebar_enter_custom_fps);
+        updateLimitUi();
+    }
+
     private void updateLimitUi() {
         int position = slider.getProgress();
         boolean customMode = position >= CUSTOM_POSITION;
         customValue.setVisibility(customMode ? VISIBLE : GONE);
 
-        if (position <= 0) valueLabel.setText("Off");
-        else if (customMode) valueLabel.setText("Custom");
+        if (position <= 0) valueLabel.setText(R.string.ui_off);
+        else if (customMode) valueLabel.setText(R.string.profile_custom);
         else valueLabel.setText((position * STEP_FPS) + " FPS");
     }
 
