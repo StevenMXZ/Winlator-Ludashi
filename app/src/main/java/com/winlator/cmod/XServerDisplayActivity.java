@@ -231,7 +231,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private String shortcutName;
     private Handler handler;
     private Runnable savePlaytimeRunnable;
-    private static final long SAVE_INTERVAL_MS = 1000;
+    private static final long SAVE_INTERVAL_MS = 60000;
 
     private Handler timeoutHandler = new Handler(Looper.getMainLooper());
     private Runnable hideControlsRunnable;

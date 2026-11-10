@@ -394,8 +394,7 @@ class LudashiSteamSession : AutoCloseable {
                     "LudashiSteamSession",
                     "cloud upload short-circuit: blocks=0 for $filename — file already in cloud, treating as success"
                 )
-                nativeCloudCommitFileUpload(h, true, appId, fileShaHex, filename)
-                return true
+                return nativeCloudCommitFileUpload(h, true, appId, fileShaHex, filename)
             }
         } catch (e: Exception) {
             android.util.Log.w("LudashiSteamSession", "uploadCloudFile early-parse failed: $filename", e)

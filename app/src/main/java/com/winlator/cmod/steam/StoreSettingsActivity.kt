@@ -81,7 +81,7 @@ class StoreSettingsActivity : ImmersiveSteamActivity() {
                         }
                         OutlinedCard {
                             listOf("social" to R.string.steam_friends, "achievement-notifications" to R.string.steam_achievement_notifications, "achievement-sync" to R.string.steam_achievement_sync).forEach { (key, label) ->
-                                var checked by remember(key) { mutableStateOf(getSharedPreferences("steam-settings", 0).getBoolean(key, key != "achievement-sync")) }
+                                var checked by remember(key) { mutableStateOf(getSharedPreferences("steam-settings", 0).getBoolean(key, key == "achievement-notifications")) }
                                 ListItem(headlineContent = { Text(uiStr(label)) }, trailingContent = { Switch(checked, { value ->
                                     checked = value; getSharedPreferences("steam-settings", 0).edit().putBoolean(key, value).apply()
                                     if (key == "social") SteamSession.work { SteamSession.session?.setAutoPersonaOnline(value); SteamSession.session?.setPersonaState(if (value) 1 else 0); if (value) SteamSocial.appEvent(this@StoreSettingsActivity) }

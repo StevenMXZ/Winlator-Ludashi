@@ -623,4 +623,12 @@
     <string name="steam_achievement_notifications">Notificações de conquistas no jogo</string>
     <string name="steam_achievement_sync">Enviar conquistas offline para a Steam</string>
     <string name="steam_achievement_sync_help">As conquistas offline ficam locais até ativar o envio. A fila é enviada ao voltar online; falhas ou recusas mantêm os itens pendentes. Jogos online usam a API real da Steam.</string>
+    <string name="steam_play_setup">Iniciar jogo</string>
+    <string name="steam_cloud_sync_now">Sincronizar Steam Cloud agora</string>
+    <string name="steam_cloud_manual_help">A sincronização manual usa a sessão Steam nativa, sem iniciar Wine.</string>
+    <string name="steam_native_cloud_help">Sincronizar agora transfere os saves pela sessão Steam nativa do Android, sem Wine. As pastas de save são as do container Windows.</string>
+    <string name="steam_native_cloud_checking">Verificando Steam Cloud…</string>
+    <string name="steam_native_cloud_files">%1$d arquivos de save; %2$d conflitos.</string>
+    <string name="steam_native_cloud_done">Sincronização confirmada. Cópias locais anteriores: %1$s</string>
+    <string name="steam_native_cloud_busy">Aguarde a sincronização da Steam Cloud terminar.</string>
 </resources>

@@ -352,6 +352,7 @@ object SteamSession {
     fun cancel() = work { session?.cancelDownload() }
     @JvmStatic fun beginGame(context: Context) {
         check(SteamSettings.enabled(context)) { "Steam is disabled in Steam / Stores settings" }
+        check(!SteamNativeCloud.busy) { "Wait for Steam Cloud sync to finish" }
         check(!downloading && !gameActive) { "Pause the download and close any running Steam game first" }
         gameActive = true
         val ready = java.util.concurrent.CountDownLatch(1)

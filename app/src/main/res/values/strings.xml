@@ -715,4 +715,12 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="steam_achievement_notifications">In-game achievement notifications</string>
     <string name="steam_achievement_sync">Sync offline achievements to Steam</string>
     <string name="steam_achievement_sync_help">Offline unlocks stay local unless sync is enabled. Pending unlocks upload after returning online; failed or refused updates stay queued. Online games use the real Steam API.</string>
+    <string name="steam_play_setup">Game launch</string>
+    <string name="steam_cloud_sync_now">Sync Steam Cloud now</string>
+    <string name="steam_cloud_manual_help">Manual sync uses the native Steam session without Wine.</string>
+    <string name="steam_native_cloud_help">Sync now transfers saves through the native Android Steam session, without Wine. Existing Windows containers supply the save paths.</string>
+    <string name="steam_native_cloud_checking">Checking Steam Cloud…</string>
+    <string name="steam_native_cloud_files">%1$d save files; %2$d conflicts.</string>
+    <string name="steam_native_cloud_done">Sync confirmed. Previous local copies: %1$s</string>
+    <string name="steam_native_cloud_busy">Wait for Steam Cloud sync to finish.</string>
 </resources>

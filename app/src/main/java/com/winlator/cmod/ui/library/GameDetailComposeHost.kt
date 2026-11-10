@@ -45,7 +45,7 @@ interface GameDetailCallbacks {
     fun onHome()
 }
 
-interface SteamDetailCallbacks : GameDetailCallbacks { fun onSteamMode(mode: String) }
+interface SteamDetailCallbacks : GameDetailCallbacks { fun onSteamMode(mode: String); fun onSteamExecutable(); fun onSteamCloud() }
 
 // Layout and statistics adapted from teldommm/WinLite. Ludashi keeps its original
 // artwork selection/crop (including offline icons) and all six user-selected palettes.
@@ -75,6 +75,7 @@ object GameDetailComposeHost {
 private val LocalSteamInfoId = compositionLocalOf<Int?> { null }
 private val LocalSteamDetail = compositionLocalOf { false }
 private val LocalSteamReady = compositionLocalOf { true }
+private val LocalSteamExecutable = compositionLocalOf { "" }
 private val LocalSteamMode = compositionLocalOf { "RealSteam" }
 
 @Composable
@@ -122,8 +123,9 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
     }
     var favorite by remember(initialFavorite) { mutableStateOf(initialFavorite) }
     val toggle = { favorite = !favorite; callbacks.onFavorite(favorite) }
-    val configured = steamId == null || shortcut?.getExtra("steamConfigured") == "1"
-    androidx.compose.runtime.CompositionLocalProvider(LocalSteamInfoId provides steamId, LocalSteamDetail provides (steamId != null), LocalSteamReady provides configured, LocalSteamMode provides (steamId?.let { com.winlator.cmod.steam.SteamSettings.mode(context, it) } ?: "RealSteam")) {
+    val configured = true
+    val executable = shortcut?.getExtra("steamExecutable").orEmpty()
+    androidx.compose.runtime.CompositionLocalProvider(LocalSteamExecutable provides executable, LocalSteamInfoId provides steamId, LocalSteamDetail provides (steamId != null), LocalSteamReady provides configured, LocalSteamMode provides (steamId?.let { com.winlator.cmod.steam.SteamSettings.mode(context, it) } ?: "RealSteam")) {
     if (landscape) LandscapeDetail(title, subtitle, artwork, favorite, stats, callbacks, toggle)
     else PortraitDetail(title, subtitle, artwork, favorite, stats, callbacks, toggle)
     }
@@ -169,7 +171,7 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
             Surface(Modifier.align(Alignment.BottomEnd).padding(18.dp).width(panelWidth).heightIn(max = (maxHeight - 116.dp).coerceAtLeast(100.dp)),
                 shape = WinZShapes.ExtraLarge, color = Color.Black.copy(.48f), border = BorderStroke(1.dp, Color.White.copy(.18f))) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) })
+                    PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() }, { (callbacks as? SteamDetailCallbacks)?.onSteamCloud() })
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         LandscapeAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), Modifier.weight(1f), callbacks::onConfigure)
                         LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
@@ -199,7 +201,7 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
         }
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth())
-            PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) })
+            PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() }, { (callbacks as? SteamDetailCallbacks)?.onSteamCloud() })
             DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)
             DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
             DetailAction(Icons.Outlined.Backup, savesLabel(), callbacks::onSaves)
@@ -216,10 +218,11 @@ private fun savesLabel(): String = if (LocalSteamDetail.current && LocalSteamMod
     stringResource(R.string.steam_cloud_saves) else stringResource(R.string.ui_saves)
 
 @Composable
-private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit) {
+private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit, chooseExecutable: () -> Unit, syncCloud: () -> Unit) {
     val steam = LocalSteamDetail.current
     val mode = LocalSteamMode.current
     var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Button(click, enabled = LocalSteamReady.current, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = WinZShapes.Medium) {
             Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp))
@@ -238,6 +241,15 @@ private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit) {
                 }
             }
         }
+    }
+    if (steam) Row(verticalAlignment = Alignment.CenterVertically) {
+    TextButton(onClick = chooseExecutable, modifier = Modifier.weight(1f)) {
+        Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+        Text(LocalSteamExecutable.current.ifBlank { stringResource(R.string.steam_ui_choose_exe) }, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(Icons.Outlined.ArrowDropDown, null)
+    }
+    IconButton(onClick = syncCloud) { Icon(Icons.Outlined.CloudSync, stringResource(R.string.steam_cloud_sync_now)) }
+    }
     }
 }
 

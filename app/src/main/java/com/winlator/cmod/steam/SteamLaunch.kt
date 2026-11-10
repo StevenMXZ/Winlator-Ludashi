@@ -103,7 +103,7 @@ object SteamLaunch {
     }
     @JvmStatic fun canLaunch(context: Context, shortcut: Shortcut?): Boolean {
         if (shortcut?.getExtra("steamAppId")?.toIntOrNull() == null) return true
-        return shortcut.getExtra("steamConfigured") == "1" && shortcut.getExtra("steamLaunchMode", "RealSteam") == SteamSettings.mode(context, shortcut.getExtra("steamAppId").toInt()) && SteamSettings.enabled(context) && (shortcut.getExtra("steamLaunchMode", "RealSteam") != "RealSteam" || SteamCredentials.load(context) != null)
+        return shortcut.getExtra("steamConfigured") == "1" && !SteamNativeCloud.busy && shortcut.getExtra("steamLaunchMode", "RealSteam") == SteamSettings.mode(context, shortcut.getExtra("steamAppId").toInt()) && SteamSettings.enabled(context) && (shortcut.getExtra("steamLaunchMode", "RealSteam") != "RealSteam" || SteamCredentials.load(context) != null)
     }
     @JvmStatic fun apply(context: Context, shortcut: Shortcut?, env: EnvVars) {
         val id = shortcut?.getExtra("steamAppId")?.toIntOrNull() ?: return

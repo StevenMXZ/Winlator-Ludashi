@@ -40,7 +40,7 @@ class SteamFriendsActivity : ImmersiveSteamActivity() {
             if (selected == 0L) LazyColumn(Modifier.weight(1f)) {
                 if (friends.isEmpty()) item { Text(uiStr(R.string.steam_friends_empty), Modifier.padding(12.dp)) }
                 items(friends, key = { it.id }) { friend ->
-                    TextButton(onClick = { selected = friend.id }) { ListItem(headlineContent = { Text(friend.name) }, supportingContent = { Text(if (friend.app > 0) uiStr(R.string.steam_friend_ingame) else if (friend.state > 0) uiStr(R.string.steam_ui_connected) else uiStr(R.string.steam_ui_offline)) }) }
+                    TextButton(onClick = { selected = friend.id }) { ListItem(leadingContent = { SteamFriendAvatar(friend) }, headlineContent = { Text(friend.name) }, supportingContent = { Text(if (friend.app > 0) uiStr(R.string.steam_friend_ingame) else if (friend.state > 0) uiStr(R.string.steam_ui_connected) else uiStr(R.string.steam_ui_offline)) }) }
                 }
             } else {
                 val chat = messages[selected].orEmpty()
