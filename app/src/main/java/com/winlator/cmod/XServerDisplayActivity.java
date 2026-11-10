@@ -3089,6 +3089,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 String identifier = wincomponent[0];
                 boolean useNative = wincomponent[1].equals("1");
 
+                if (firstTimeBoot && com.winlator.cmod.components.ComponentUndo.keepsLegacyComponent(
+                        container.getRootDir(), wincomponentsJSONObject.getJSONArray(identifier))) continue;
+
                 if (useNative) {
                     TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this,
                             "wincomponents/" + identifier + ".tzst", windowsDir, onExtractFileListener);

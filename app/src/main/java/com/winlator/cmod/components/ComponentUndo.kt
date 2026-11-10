@@ -1,6 +1,5 @@
 package com.winlator.cmod.components
 
-import android.system.Os
 import android.util.Log
 import com.winlator.cmod.components.offline.OfflineTools
 import com.winlator.cmod.components.offline.PrefixPlacer
@@ -56,6 +55,19 @@ object ComponentUndo {
     fun tracks(root: File, name: String): Boolean =
         ComponentCatalog.byName.containsKey(name) || File(dirOf(root, name), JOURNAL).isFile || hasSession(root, name)
 
+    /** First-boot defaults must not overwrite a runtime installed before the first Wine launch. */
+    @JvmStatic fun keepsLegacyComponent(root: File, dlls: JSONArray): Boolean {
+        val names = (0 until dlls.length()).map { i ->
+            val name = dlls.getString(i).lowercase(Locale.ROOT)
+            if (name.endsWith(".exe") || name.endsWith(".dll")) name else "$name.dll"
+        }.toSet()
+        return all(root).any { journal ->
+            journal.optJSONObject("files")?.keys()?.asSequence()?.any { path ->
+                path.startsWith("drive_c/windows/", ignoreCase = true) && path.substringAfterLast('/').lowercase(Locale.ROOT) in names
+            } == true
+        }
+    }
+
     /** Starts (or picks back up) [name]'s journal in the container at [root]. [Journal.close] saves it. */
     fun open(root: File, name: String): Journal = Journal(root, name, snapshot = true)
 
@@ -63,7 +75,8 @@ object ComponentUndo {
         private val wine = File(root, ".wine")
         private val dir = dirOf(root, name)
         internal val json: JSONObject = read(dir)
-            ?: JSONObject().put("version", 1).put("name", name).put("seq", System.currentTimeMillis())
+            ?: JSONObject().put("version", 1).put("name", name).put("seq",
+                maxOf(System.currentTimeMillis(), (all(root).maxOfOrNull { it.optLong("seq") } ?: 0L) + 1L))
         // The registry as it was when the journal opened; compared with the files at close.
         private val before: RegState? = if (snapshot) RegState.read(wine) else null
         // The files written while open, whose size and time are noted at close.
@@ -118,7 +131,7 @@ object ComponentUndo {
             val copy = File(dir, "backup/$id")
             copy.parentFile?.mkdirs()
             try {
-                Os.link(target.absolutePath, copy.absolutePath)
+                Files.createLink(copy.toPath(), target.toPath())
             } catch (e: Exception) {
                 target.copyTo(copy, overwrite = true)
             }

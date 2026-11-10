@@ -88,10 +88,11 @@ tasks.register("downloadProton") {
 tasks.register("prepareKotlinBuildScriptModel"){}
 tasks.register("downloadComponentTools") {
     def nativeTools = layout.buildDirectory.dir("generated/component-tools/arm64-v8a")
+    def manifestFile = rootProject.file("scripts/component-tools.json")
     outputs.dir(nativeTools)
-    inputs.file(rootProject.file("scripts/component-tools.json"))
+    inputs.file(manifestFile)
     doLast {
-        def manifest = new groovy.json.JsonSlurper().parse(rootProject.file("scripts/component-tools.json"))
+        def manifest = new groovy.json.JsonSlurper().parse(manifestFile)
         File directory = nativeTools.get().asFile
         directory.mkdirs()
         manifest.each { name, expected ->
