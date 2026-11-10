@@ -899,9 +899,17 @@ private fun ContainerCategoryV2(
                     Text(uiStr(R.string.ui_native_x11_protocol_with_the_ludashi_vulkan_renderer),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    SettingsDivider()
+                    val filters = listOf(
+                        "Bilinear", "Nearest neighbor", "Snapdragon Super Resolution",
+                        "AMD FidelityFX Super Resolution", "Lanczos 2 (16-tap)", "Color Boost"
+                    )
+                    SettingChoice(uiStr(R.string.ui_texture_filter), filters.getOrElse(s.filterMode) { filters.first() }, filters) {
+                        s.filterMode = filters.indexOf(it).coerceAtLeast(0)
+                    }
                 }
             }
-            if (s.displayServer == "Java X11" && s.renderer == "Vulkan") {
+            if (s.displayServer != "Java X11" || s.renderer == "Vulkan") {
                 FrameGenerationSettings(
                     enabled = s.frameGenEnabled,
                     multiplier = s.frameGenMultiplier,

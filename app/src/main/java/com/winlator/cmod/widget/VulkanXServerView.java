@@ -39,7 +39,7 @@ import dalvik.annotation.optimization.FastNative;
 
 @SuppressLint("ViewConstructor")
 public class VulkanXServerView extends XServerRendererView implements SurfaceHolder.Callback,
-        WindowManager.OnWindowModificationListener, Pointer.OnPointerMotionListener {
+        WindowManager.OnWindowModificationListener, Pointer.OnPointerMotionListener, VulkanRendererControls {
 
     private long nativeHandle = 0;
     private final Object lock = new Object();
@@ -789,6 +789,9 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     public boolean isFrameGenerationEnabled() {
         return effectiveFrameGenEnabled;
+    }
+    public boolean isFrameGenerationRequested() {
+        synchronized (lock) { return pendingFrameGenEnabled; }
     }
 
     private boolean isFrameGenerationSource(Window window) {

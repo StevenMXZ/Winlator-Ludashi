@@ -77,6 +77,29 @@ extern "C" JNIEXPORT jstring JNICALL JNI_NAME(nativeError)(JNIEnv* env, jclass, 
     auto message = static_cast<xorg::NativeScreen&>(server->GetScreen()).LastError();
     return env->NewStringUTF(message.c_str());
 }
+extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeVisualOptions)(JNIEnv* env, jclass, jlong handle,
+        jint filter, jint postFX, jint stretch, jfloat sharpness, jboolean frameGen,
+        jstring cache, jint multiplier, jint targetRate, jint flowScale, jfloat refresh) {
+    auto server = session(handle); if (!server) return 0;
+    xorg::NativeVisualOptions options;
+    options.filter = filter; options.postFX = postFX; options.stretch = stretch; options.sharpness = sharpness;
+    options.frameGen = frameGen; options.multiplier = multiplier; options.targetRate = targetRate;
+    options.flowScale = flowScale; options.refresh = refresh;
+    if (cache) {
+        JavaString path(env, cache);
+        if (!path.text) return 0;
+        options.frameGenCache = path.text;
+    }
+    return static_cast<xorg::NativeScreen&>(server->GetScreen()).SetVisualOptions(std::move(options));
+}
+extern "C" JNIEXPORT jlongArray JNICALL JNI_NAME(nativeVisualState)(JNIEnv* env, jclass, jlong handle) {
+    auto server = session(handle); if (!server) return nullptr;
+    const auto state = static_cast<xorg::NativeScreen&>(server->GetScreen()).VisualState();
+    const jlong values[] = {jlong(state[0]), jlong(state[1]), jlong(state[2])};
+    auto result = env->NewLongArray(3);
+    if (result) env->SetLongArrayRegion(result, 0, 3, values);
+    return result;
+}
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeDiagnostics)(JNIEnv*, jclass, jlong handle, jboolean enabled, jboolean commandCacheEnabled) {
     auto server = session(handle); if (!server) return;
     auto& screen = static_cast<xorg::NativeScreen&>(server->GetScreen());

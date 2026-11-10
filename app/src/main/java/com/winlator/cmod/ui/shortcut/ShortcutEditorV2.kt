@@ -972,7 +972,7 @@ private fun ShortcutCategoryV2(
                     s.surfaceFormat = if (it == "BGRA") "bgra8" else "rgba8"
                     s.saveRenderer()
                 }
-                if (s.renderer == "DisplayX") {
+                if (s.displayServer == "Java X11" && s.renderer == "DisplayX") {
                     SettingsDivider()
                     SettingToggle(uiStr(R.string.ui_bypass_x11), s.trueDisplayX) {
                         s.trueDisplayX = it
@@ -999,7 +999,7 @@ private fun ShortcutCategoryV2(
                         s.saveRenderer()
                     }
                 } else {
-                    if (s.renderer != "EGL") {
+                    if (s.displayServer == "Java X11" && s.renderer != "EGL") {
                         SettingsDivider()
                         SettingChoice(uiStr(R.string.ui_present_mode), s.presentMode, listOf("mailbox", "fifo")) {
                             s.presentMode = it
@@ -1014,7 +1014,7 @@ private fun ShortcutCategoryV2(
                         }
                     }
                     SettingsDivider()
-                    val filters = if (s.renderer == "EGL") listOf("Bilinear", "Nearest neighbor")
+                    val filters = if (s.displayServer == "Java X11" && s.renderer == "EGL") listOf("Bilinear", "Nearest neighbor")
                     else listOf("Bilinear", "Nearest neighbor", "Snapdragon Super Resolution", "AMD FidelityFX Super Resolution", "Lanczos 2 (16-tap)", "Color Boost")
                     SettingChoice(uiStr(R.string.ui_texture_filter), filters.getOrElse(s.filterMode) { filters.first() }, filters) {
                         s.filterMode = filters.indexOf(it).coerceAtLeast(0)
@@ -1022,7 +1022,7 @@ private fun ShortcutCategoryV2(
                     }
                 }
             }
-            if (s.renderer == "Vulkan") {
+            if (s.displayServer != "Java X11" || s.renderer == "Vulkan") {
                 FrameGenerationSettings(
                     enabled = s.frameGenEnabled,
                     multiplier = s.frameGenMultiplier,

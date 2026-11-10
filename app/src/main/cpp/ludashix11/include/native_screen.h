@@ -43,6 +43,7 @@ struct NativeEntry {
 struct NativeFrame {
     bool diagnostics{};
     bool commandCacheEnabled{true};
+    u64 frameGenSourceFrames{};
     std::vector<NativeEntry> entries;
     std::vector<sp<PresentTicket>> requests;
     sp<NativeDrawable> cursor;
@@ -54,6 +55,19 @@ struct NativeFrame {
 struct NativeAHBMetrics {
     u64 vkImports{}, cacheHits{}, unchangedDrawables{}, cacheEntries{};
     u64 importNs{}, maxImportNs{};
+};
+struct NativeVisualOptions {
+    int filter{}, postFX{}, stretch{};
+    float sharpness{.5f};
+    bool frameGen{};
+    std::string frameGenCache;
+    int multiplier{2}, targetRate{-1}, flowScale{70};
+    float refresh{60.f};
+    bool operator==(const NativeVisualOptions&) const = default;
+};
+struct NativeVisualState {
+    bool ready{}, supported{}, enabled{};
+    u64 generatedFrames{};
 };
 using NativeFrameLatch = std::function<void(NativeFrame&)>;
 class NativeRenderer {
@@ -73,6 +87,8 @@ public:
     virtual size_t Drain() = 0;
     virtual NativeAHBMetrics TakeAHBMetrics() { return {}; }
     virtual void Options(bool fullscreen, bool cursor, int fps, float refresh) = 0;
+    virtual void VisualOptions(const NativeVisualOptions&) {}
+    virtual NativeVisualState VisualState() const { return {}; }
 };
 std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 width, u16 height, bool validation = false);
 
@@ -101,6 +117,8 @@ public:
     bool FenceTriggered(u32 id) const;
     void FenceSignaled();
     void SetOptions(bool fullscreen, bool cursor, int fps, float refresh);
+    u64 SetVisualOptions(NativeVisualOptions options);
+    std::array<u64, 3> VisualState();
     u64 MSC() const;
     float RefreshRate() const { return refresh; }
     // RandR is a virtual display contract, independent of compositor pacing.
@@ -171,6 +189,12 @@ private:
     std::mutex state;
     std::condition_variable cv;
     bool stop{}, dirty{}, surfaceDirty{}, optionsDirty{true}, drawing{}, sceneCurrent{};
+    bool visualDirty{};
+    NativeVisualOptions visualOptions;
+    NativeVisualState visualState;
+    u64 visualRevision{}, appliedVisualRevision{};
+    std::atomic<bool> frameGenRequested{false};
+    std::atomic<u64> frameGenSources{0};
     size_t gpuPending{};
     bool fullscreen{}, cursorVisible{true};
     int fps{};

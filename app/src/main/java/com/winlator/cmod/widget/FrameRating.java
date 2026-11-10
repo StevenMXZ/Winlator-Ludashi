@@ -40,7 +40,7 @@ public class FrameRating extends FrameLayout implements Runnable {
     private static final String KEY_VIS = "hud_vis";
     private final SharedPreferences prefs;
     private boolean userEnabled = false;
-    private VulkanXServerView frameGenerationSource = null;
+    private VulkanRendererControls frameGenerationSource = null;
     private long lastGeneratedFrames = 0;
     private boolean generatedCounterPrimed = false;
     private volatile boolean frameGenerationActive = false;
@@ -184,14 +184,14 @@ public class FrameRating extends FrameLayout implements Runnable {
         run();
     }
 
-    public void setFrameGenerationSource(VulkanXServerView source) {
+    public void setFrameGenerationSource(VulkanRendererControls source) {
         frameGenerationSource = source;
         generatedCounterPrimed = false;
         lastGeneratedFrames = 0;
     }
 
     private long sampleGeneratedFrames() {
-        VulkanXServerView source = frameGenerationSource;
+        VulkanRendererControls source = frameGenerationSource;
         boolean active = source != null && source.isFrameGenerationEnabled();
         frameGenerationActive = active;
         if (!active) {

@@ -104,6 +104,7 @@ import com.winlator.cmod.widget.TouchpadView;
 import com.winlator.cmod.widget.XServerRendererView;
 import com.winlator.cmod.widget.XServerView;
 import com.winlator.cmod.widget.VulkanXServerView;
+import com.winlator.cmod.widget.VulkanRendererControls;
 import com.winlator.cmod.winhandler.MouseEventFlags;
 import com.winlator.cmod.winhandler.TaskManagerSidebar;
 import com.winlator.cmod.winhandler.WinHandler;
@@ -1413,6 +1414,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
             String presentMode = shortcut != null ? shortcut.getRendererPresentMode()
                     : (container != null ? container.getRendererPresentMode() : "fifo");
             vkRenderer.setVkPresentMode(com.winlator.cmod.contentdialog.RendererOptionsDialog.toVkPresentMode(presentMode));
+        }
+        if (renderer instanceof VulkanRendererControls) {
+            VulkanRendererControls vkRenderer = (VulkanRendererControls) renderer;
             vkRenderer.setFilterMode(shortcut != null ? shortcut.getRendererFilterMode()
                     : (container != null ? container.getRendererFilterMode() : 0));
 
@@ -1725,8 +1729,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
                         rendererRef.toggleFullscreen();
                         if (touchpadView != null) touchpadView.toggleFullscreen();
                     }
-                    if (rendererRef instanceof VulkanXServerView) {
-                        ((VulkanXServerView) rendererRef).setStretchMode(softStretchEnabled ? 1 : 0);
+                    if (rendererRef instanceof VulkanRendererControls) {
+                        ((VulkanRendererControls) rendererRef).setStretchMode(softStretchEnabled ? 1 : 0);
                     }
                     btItemSoftStretch.setSelected(softStretchEnabled);
                 }
@@ -1800,7 +1804,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         boolean trueDisplayX = shortcut != null ? shortcut.getTrueDisplayX() : container != null && container.getTrueDisplayX();
         Switch upscaler = findViewById(R.id.SWEnableFSR);
         Spinner mode = findViewById(R.id.SPUpscalerMode);
-        boolean upscalerAvailable = xServerView instanceof VulkanXServerView || xServerView instanceof XServerView && !displayX;
+        boolean upscalerAvailable = xServerView instanceof VulkanRendererControls || xServerView instanceof XServerView && !displayX;
         boolean upscalerActive = upscalerAvailable && upscaler != null && upscaler.isChecked();
         boolean arm64ec = wineInfo != null && wineInfo.isArm64EC();
         boolean fex = arm64ec && "fexcore".equalsIgnoreCase(emulator);
@@ -2130,7 +2134,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private void setupSidebarGraphicsControls() {
-        final boolean isVulkanRenderer = xServerView instanceof VulkanXServerView;
+        final boolean isVulkanRenderer = xServerView instanceof VulkanRendererControls;
 
         View reshadePanel = findViewById(R.id.LLSubReshade);
         View postFxDivider = findViewById(R.id.VPostFXDivider);
@@ -2147,7 +2151,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         final XServerRendererView renderer = xServerView;
-        final VulkanXServerView  vkRenderer = renderer instanceof VulkanXServerView ? (VulkanXServerView) renderer : null;
+        final VulkanRendererControls vkRenderer = renderer instanceof VulkanRendererControls ? (VulkanRendererControls) renderer : null;
         final XServerView nativeRenderer = renderer instanceof XServerView ? (XServerView) renderer : null;
 
         Spinner spNativeFPS        = findViewById(R.id.SPNativeFPS);
@@ -2249,7 +2253,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     qualityPos = Math.max(0,
                         Math.min(frameGenQualityValues.length - 1, qualityPos));
                     String frameGenEnabledValue =
-                        vkRenderer.isFrameGenerationEnabled() ? "1" : "0";
+                        vkRenderer.isFrameGenerationRequested() ? "1" : "0";
                     String frameGenMultiplierValue =
                         String.valueOf(frameGenMultiplierValues[multiplierPos]);
                     String frameGenTargetValue =
@@ -2397,22 +2401,31 @@ public class XServerDisplayActivity extends AppCompatActivity {
             });
             vkRenderer.setOnFrameGenerationStateChangedListener(() -> {
                 updatingFrameGenSwitch[0] = true;
-                swEnableFrameGen.setChecked(vkRenderer.isFrameGenerationEnabled());
+                swEnableFrameGen.setChecked(vkRenderer.isFrameGenerationRequested());
                 updatingFrameGenSwitch[0] = false;
                 updateFrameGenVisibility.run();
                 if (modernSidebar != null) modernSidebar.onRuntimeStatusChanged();
             });
             updatingFrameGenSwitch[0] = true;
-            swEnableFrameGen.setChecked(vkRenderer.isFrameGenerationEnabled());
+            swEnableFrameGen.setChecked(vkRenderer.isFrameGenerationRequested());
             updatingFrameGenSwitch[0] = false;
         }
         updateFrameGenVisibility.run();
 
+        final int baseFilterMode = Math.min(1, shortcut != null ? shortcut.getRendererFilterMode()
+                : container != null ? container.getRendererFilterMode() : 0);
+        String savedFilter = container != null ? container.getExtra("graphicsFilterMode") : "";
+        int initialFilter = savedFilter.isEmpty()
+                ? (shortcut != null ? shortcut.getRendererFilterMode()
+                    : container != null ? container.getRendererFilterMode() : 0)
+                : safeParseInt(savedFilter);
+        boolean fsrOn = initialFilter >= 2 && initialFilter <= 5;
         final String[] upscalerLabels = {"SGSR", "FSR", "Lanczos 2", getString(R.string.ui_color_boost)};
         if (spUpscalerMode != null) {
             ArrayAdapter<String> a = createSidebarSpinnerAdapter(upscalerLabels, new int[]{0, 0, 0, R.string.ui_color_boost});
             a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spUpscalerMode.setAdapter(a);
+            spUpscalerMode.setSelection(fsrOn ? initialFilter - 2 : 0, false);
             spUpscalerMode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
                 @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
                     if (swEnableFSR != null && swEnableFSR.isChecked())
@@ -2431,15 +2444,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         Runnable updateSharpnessVis = () -> {
-            boolean fsrOn = swEnableFSR  != null && swEnableFSR.isChecked();
+            boolean upscalerChecked = swEnableFSR != null && swEnableFSR.isChecked();
             boolean dlsOn = spPostFXMode != null && spPostFXMode.getSelectedItemPosition() == 1;
-            int vis = (fsrOn || dlsOn) ? View.VISIBLE : View.GONE;
+            int vis = (upscalerChecked || dlsOn) ? View.VISIBLE : View.GONE;
             if (lblSharpnessHeader != null) lblSharpnessHeader.setVisibility(vis);
             if (sbSharpness        != null) sbSharpness.setVisibility(vis);
         };
 
-        String savedFilter = container != null ? container.getExtra("graphicsFilterMode") : "";
-        boolean fsrOn = !savedFilter.isEmpty() && Integer.parseInt(savedFilter) > 0;
         if (swEnableFSR != null) {
             swEnableFSR.setChecked(fsrOn);
             if (spUpscalerMode != null)
@@ -2452,7 +2463,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     spUpscalerMode.setVisibility(checked ? View.VISIBLE : View.GONE);
                 vkRenderer.setFilterMode(checked
                     ? (spUpscalerMode != null ? spUpscalerMode.getSelectedItemPosition() + 2 : 2)
-                    : (container != null ? container.getRendererFilterMode() : 0));
+                    : baseFilterMode);
                 updateSharpnessVis.run();
             });
         }

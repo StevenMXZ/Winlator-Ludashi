@@ -36,6 +36,21 @@ public:
             UpdateTransform();
         }
     }
+    void VisualOptions(const NativeVisualOptions& options) override {
+        if (!context) return;
+        context->setFilterMode(options.filter);
+        context->setPostFXMode(options.postFX);
+        context->setStretchMode(options.stretch);
+        context->setSharpness(options.sharpness);
+        const int target = options.targetRate == -1 ? int(std::round(options.refresh)) : options.targetRate;
+        context->configureFrameGeneration(options.frameGen && context->isFrameGenerationSupported(), options.frameGenCache.c_str(),
+            options.multiplier, target, options.flowScale, options.refresh);
+    }
+    NativeVisualState VisualState() const override {
+        if (!context || context->surfaceDetached.load()) return {};
+        return {true, context->isFrameGenerationSupported(), context->isFrameGenerationEnabled(),
+            context->getGeneratedFrameCount()};
+    }
     size_t PollCompleted(size_t maxReady) override {
         std::lock_guard lock(pendingMutex);
         return PollLocked(maxReady);
@@ -102,6 +117,8 @@ public:
         // Never enter renderFrame's slot wait while the prior submission is still
         // running. Let the producer continue and retain the last valid scene.
         if (!ReadyToDraw()) return false;
+        if (context->isFrameGenerationEnabled())
+            context->setFrameGenerationSourceCount(frame.frameGenSourceFrames);
         const uint32_t slot = context->currentFrame;
         struct Binding {
             LudashiRenderer* renderer;

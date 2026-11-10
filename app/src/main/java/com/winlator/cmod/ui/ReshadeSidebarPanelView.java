@@ -13,7 +13,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 
 import com.winlator.cmod.R;
-import com.winlator.cmod.widget.VulkanXServerView;
+import com.winlator.cmod.widget.VulkanRendererControls;
 
 public class ReshadeSidebarPanelView extends FrameLayout {
     private static final String[] EFFECTS = {
@@ -99,7 +99,7 @@ public class ReshadeSidebarPanelView extends FrameLayout {
                 public void onProgressChanged(android.widget.SeekBar seekBar, int progress, boolean fromUser) {
                     strength = progress / 100.0f;
                     updateStrengthLabel(progress);
-                    VulkanXServerView renderer = findVulkanRenderer(root);
+                    VulkanRendererControls renderer = findVulkanRenderer(root);
                     if (renderer != null && selectedEffect > 0) renderer.setSharpness(strength);
                 }
 
@@ -114,7 +114,7 @@ public class ReshadeSidebarPanelView extends FrameLayout {
     }
 
     private void applyEffect(View root) {
-        VulkanXServerView renderer = findVulkanRenderer(root);
+        VulkanRendererControls renderer = findVulkanRenderer(root);
         if (renderer == null) return;
 
         if (selectedEffect <= 0 || selectedEffect >= EFFECT_MODES.length) {
@@ -132,12 +132,12 @@ public class ReshadeSidebarPanelView extends FrameLayout {
         renderer.setPostFXMode(EFFECT_MODES[selectedEffect]);
     }
 
-    private VulkanXServerView findVulkanRenderer(View view) {
-        if (view instanceof VulkanXServerView) return (VulkanXServerView) view;
+    private VulkanRendererControls findVulkanRenderer(View view) {
+        if (view instanceof VulkanRendererControls) return (VulkanRendererControls) view;
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = 0; i < group.getChildCount(); i++) {
-                VulkanXServerView found = findVulkanRenderer(group.getChildAt(i));
+                VulkanRendererControls found = findVulkanRenderer(group.getChildAt(i));
                 if (found != null) return found;
             }
         }

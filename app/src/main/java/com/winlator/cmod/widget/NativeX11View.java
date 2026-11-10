@@ -17,14 +17,49 @@ import com.winlator.cmod.xserver.Window;
 import com.winlator.cmod.xserver.XServer;
 import java.io.File;
 import androidx.preference.PreferenceManager;
+import com.winlator.cmod.lsfg.LosslessScaling;
 
 /** Android surface and input adapter. X11 clients, resources, DRI3 and Present live in C++. */
 public final class NativeX11View extends XServerRendererView implements SurfaceHolder.Callback,
-        Pointer.OnPointerMotionListener, Keyboard.OnKeyboardListener {
+        Pointer.OnPointerMotionListener, Keyboard.OnKeyboardListener, VulkanRendererControls {
     private long handle;
     private boolean fullscreen, cursorVisible, destroyed;
     private int fpsLimit;
     private float zoom = 1f;
+    private int filterMode, postFXMode, stretchMode;
+    private float sharpness = .5f;
+    private boolean frameGenRequested, frameGenEnabled, paused;
+    private String frameGenCache;
+    private int frameGenMultiplier = 2, frameGenTargetRate = -1, frameGenFlowScale = 70;
+    private float frameGenRefresh = 60f;
+    private long visualRevision, generatedFrames;
+    private Runnable frameGenListener;
+    private final Runnable frameGenCheck = new Runnable() {
+        @Override public void run() {
+            synchronized (NativeX11View.this) {
+                if (destroyed || paused || handle == 0) return;
+                long[] state = nativeVisualState(handle);
+                boolean pending = state == null || state[0] < visualRevision || (state[1] & 1) == 0;
+                if (!pending) {
+                    boolean enabled = (state[1] & 4) != 0;
+                    generatedFrames = state[2];
+                    boolean rejected = frameGenRequested && !enabled;
+                    if (rejected) {
+                        frameGenRequested = false;
+                        applyVisualOptions();
+                        pending = true;
+                    }
+                    if (frameGenEnabled != enabled || rejected) {
+                        frameGenEnabled = enabled;
+                        notifyFrameGenerationStateChanged();
+                    }
+                }
+                // No status timer when FG is off. Enabled sessions also detect
+                // an engine fallback without a Java callback on every frame.
+                if (pending || frameGenRequested || frameGenEnabled) postDelayed(this, 100L);
+            }
+        }
+    };
     private Runnable readyCallback;
     private boolean ready;
     private final boolean highRefreshRate;
@@ -200,6 +235,10 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         for (int hz : rates) supported[index++] = hz;
         nativeRefreshRates(handle, supported);
         nativeOptions(handle, fullscreen, cursorVisible, fpsLimit, refresh);
+        if (frameGenRefresh != refresh) {
+            frameGenRefresh = refresh;
+            if (frameGenRequested) applyVisualOptions();
+        }
     }
     @Override public synchronized void surfaceCreated(SurfaceHolder holder) { updateOptions(); }
     @Override public synchronized void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
@@ -212,11 +251,17 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         if (handle != 0) nativeSurface(handle, null);
     }
     @Override public synchronized void onPause() {
+        paused = true;
         stopDisplayListener();
         removeCallbacks(hudCheck);
+        removeCallbacks(frameGenCheck);
         if (handle != 0) nativeHudEnabled(handle, false);
     }
-    @Override public void onResume() { startDisplayListener(); updateOptions(); setHudMode(hudMode); }
+    @Override public synchronized void onResume() {
+        paused = false;
+        startDisplayListener(); updateOptions(); setHudMode(hudMode);
+        if (frameGenRequested || frameGenEnabled) { removeCallbacks(frameGenCheck); post(frameGenCheck); }
+    }
     @Override public void onDestroy() { close(); }
     public synchronized void close() {
         if (destroyed) return;
@@ -224,6 +269,9 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         stopDisplayListener();
         removeCallbacks(startupCheck);
         removeCallbacks(hudCheck);
+        removeCallbacks(frameGenCheck);
+        frameGenListener = null;
+        frameGenEnabled = false;
         xServer.pointer.removeOnPointerMotionListener(this);
         xServer.keyboard.removeOnKeyboardListener(this);
         long old = handle; handle = 0;
@@ -273,10 +321,12 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     @Override public void setFrameRating(Object rating) {
         if (rating instanceof FrameRating) {
             classicHud = (FrameRating) rating;
+            classicHud.setFrameGenerationSource(this);
             classicHud.enableByUser();
             setHudMode(1);
         } else if (rating instanceof WinlatorHUD) {
             modernHud = (WinlatorHUD) rating;
+            modernHud.setFrameGenerationSource(this);
             setHudMode(2);
         }
     }
@@ -289,6 +339,69 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         nativeHudEnabled(handle, mode != 0);
         if (mode != 0) post(hudCheck);
     }
+    private void applyVisualOptions() {
+        if (handle == 0 || destroyed) return;
+        visualRevision = nativeVisualOptions(handle, filterMode, postFXMode, stretchMode, sharpness,
+                frameGenRequested, frameGenCache, frameGenMultiplier, frameGenTargetRate,
+                frameGenFlowScale, frameGenRefresh);
+        if (frameGenRequested || frameGenEnabled) {
+            removeCallbacks(frameGenCheck);
+            post(frameGenCheck);
+        }
+    }
+    @Override public synchronized void setFilterMode(int mode) {
+        filterMode = Math.max(0, Math.min(5, mode)); applyVisualOptions();
+    }
+    @Override public synchronized void setPostFXMode(int mode) {
+        postFXMode = Math.max(0, Math.min(20, mode)); applyVisualOptions();
+    }
+    @Override public synchronized void setStretchMode(int mode) {
+        stretchMode = mode == 1 ? 1 : 0; applyVisualOptions();
+    }
+    @Override public synchronized void setSharpness(float value) {
+        sharpness = Float.isNaN(value) ? .5f : Math.max(0f, Math.min(1f, value)); applyVisualOptions();
+    }
+    @Override public synchronized void setFrameGenerationConfig(boolean enabled, String cachePath,
+            int multiplier, int targetRate, int flowScalePercent, float refreshRate) {
+        frameGenCache = cachePath;
+        frameGenRequested = enabled && cachePath != null && !cachePath.isEmpty();
+        frameGenRefresh = refreshRate >= 1f ? refreshRate : 60f;
+        setFrameGenerationSettings(multiplier, targetRate, flowScalePercent);
+    }
+    @Override public synchronized boolean setFrameGenerationEnabled(boolean enabled) {
+        if (destroyed || handle == 0) return false;
+        if (enabled && (frameGenCache == null || !new File(frameGenCache).isFile())) {
+            File cache = LosslessScaling.resolveCacheFile(getContext(), true);
+            if (cache == null) return false;
+            frameGenCache = cache.getAbsolutePath();
+        }
+        frameGenRequested = enabled;
+        applyVisualOptions();
+        return true;
+    }
+    @Override public synchronized void setFrameGenerationSettings(int multiplier, int targetRate, int flowScalePercent) {
+        frameGenMultiplier = Math.max(2, Math.min(4, multiplier));
+        frameGenTargetRate = Math.max(-1, Math.min(1000, targetRate));
+        frameGenFlowScale = Math.max(25, Math.min(100, flowScalePercent));
+        applyVisualOptions();
+    }
+    @Override public synchronized int getFrameGenerationMultiplier() { return frameGenMultiplier; }
+    @Override public synchronized int getFrameGenerationTargetRate() { return frameGenTargetRate; }
+    @Override public synchronized int getFrameGenerationFlowScale() { return frameGenFlowScale; }
+    @Override public synchronized boolean isFrameGenerationEnabled() { return frameGenEnabled; }
+    @Override public synchronized boolean isFrameGenerationRequested() { return frameGenRequested; }
+    @Override public synchronized long getGeneratedFrameCount() { return generatedFrames; }
+    @Override public synchronized void setOnFrameGenerationStateChangedListener(Runnable listener) {
+        frameGenListener = listener;
+        notifyFrameGenerationStateChanged();
+    }
+    private void notifyFrameGenerationStateChanged() {
+        if (frameGenListener != null) post(frameGenListener);
+    }
+    private static native long nativeVisualOptions(long handle, int filter, int postFX, int stretch,
+            float sharpness, boolean frameGen, String cachePath, int multiplier, int targetRate,
+            int flowScale, float refreshRate);
+    private static native long[] nativeVisualState(long handle);
     private static native void nativeHudEnabled(long handle, boolean enabled);
     private static native String[] nativeHudSnapshot(long handle);
     private static native long nativeCreate(int width, int height, boolean validationEnabled);

@@ -182,7 +182,7 @@ public class WinlatorHUD extends View {
     private final AtomicInteger frameAccum = new AtomicInteger(0);
     private long lastFpsNs = 0;
     private float snapFps = 0;
-    private VulkanXServerView frameGenerationSource = null;
+    private VulkanRendererControls frameGenerationSource = null;
     private long lastGeneratedFrames = 0;
     private boolean generatedCounterPrimed = false;
     private boolean frameGenerationActive = false;
@@ -1508,7 +1508,7 @@ public class WinlatorHUD extends View {
 
     public void setDataSource(Object dataSource) {}
 
-    public void setFrameGenerationSource(VulkanXServerView source) {
+    public void setFrameGenerationSource(VulkanRendererControls source) {
         frameGenerationSource = source;
         generatedCounterPrimed = false;
         lastGeneratedFrames = 0;
@@ -1574,7 +1574,7 @@ public class WinlatorHUD extends View {
     }
 
     private long sampleGeneratedFrames() {
-        VulkanXServerView source = frameGenerationSource;
+        VulkanRendererControls source = frameGenerationSource;
         boolean active = source != null && source.isFrameGenerationEnabled();
         if (active != frameGenerationActive) {
             frameGenerationActive = active;

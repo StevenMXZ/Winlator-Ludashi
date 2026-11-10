@@ -71,6 +71,30 @@ void NativeScreen::UpdateCursor(Drawable* d, s16 x, s16 y) {
     }
     PostInvalidate();
 }
+u64 NativeScreen::SetVisualOptions(NativeVisualOptions options) {
+    options.filter = std::clamp(options.filter, 0, 5);
+    options.postFX = std::clamp(options.postFX, 0, 20);
+    options.stretch = options.stretch == 1 ? 1 : 0;
+    options.sharpness = std::isfinite(options.sharpness) ? std::clamp(options.sharpness, 0.f, 1.f) : .5f;
+    options.multiplier = std::clamp(options.multiplier, 2, 4);
+    options.targetRate = std::clamp(options.targetRate, -1, 1000);
+    options.flowScale = std::clamp(options.flowScale, 25, 100);
+    options.refresh = std::isfinite(options.refresh) ? std::clamp(options.refresh, 24.f, 240.f) : 60.f;
+    options.frameGen = options.frameGen && !options.frameGenCache.empty();
+    std::lock_guard lock(state);
+    if (options == visualOptions) return visualRevision;
+    visualOptions = std::move(options);
+    frameGenRequested.store(visualOptions.frameGen, std::memory_order_relaxed);
+    ++visualRevision;
+    visualDirty = true; dirty = true; cv.notify_one();
+    return visualRevision;
+}
+std::array<u64, 3> NativeScreen::VisualState() {
+    std::lock_guard lock(state);
+    return {appliedVisualRevision,
+        u64(visualState.ready) | (u64(visualState.supported) << 1) | (u64(visualState.enabled) << 2),
+        visualState.generatedFrames};
+}
 void NativeScreen::SetRandrRates(std::vector<u16> rates) {
     std::erase_if(rates, [](u16 hz) { return hz == 0 || hz > 1000; });
     std::sort(rates.begin(), rates.end(), std::greater<u16>());
@@ -297,6 +321,8 @@ void NativeScreen::HudFrame(u32 id) {
 }
 void NativeScreen::Present(sp<PresentTicket> ticket) {
     if (!FenceTriggered(ticket->waitFence)) { waiting.push_back(std::move(ticket)); return; }
+    if (frameGenRequested.load(std::memory_order_relaxed))
+        frameGenSources.fetch_add(1, std::memory_order_relaxed);
     if (DiagnosticsEnabled()) {
         metricPresents.fetch_add(1, std::memory_order_relaxed);
         ticket->diagnosticQueued = std::chrono::steady_clock::now();
@@ -636,7 +662,9 @@ void NativeScreen::Worker() {
         }
 
         NativeFrame frame; ANativeWindow* nextSurface{};
-        bool changeSurface{}, changeOptions{}, fs{}, visible{}, nextHasSurface{};
+        bool changeSurface{}, changeOptions{}, changeVisual{}, fs{}, visible{}, nextHasSurface{};
+        NativeVisualOptions nextVisual;
+        u64 nextVisualRevision{};
         int limit{}; float rate{};
         {
             std::unique_lock lock(state);
@@ -657,6 +685,8 @@ void NativeScreen::Worker() {
             nextHasSurface = surface != nullptr;
             if (changeSurface && surface) { nextSurface = surface; ANativeWindow_acquire(nextSurface); }
             changeOptions = std::exchange(optionsDirty, false);
+            changeVisual = std::exchange(visualDirty, false) || changeSurface;
+            if (changeVisual) { nextVisual = visualOptions; nextVisualRevision = visualRevision; }
             fs = fullscreen; visible = cursorVisible; limit = fps; rate = refresh;
         }
         bool submitted = false;
@@ -677,6 +707,17 @@ void NativeScreen::Worker() {
                 hasSurface = nextHasSurface;
             }
             if (changeOptions) renderer->Options(fs, visible, limit, rate);
+            if (changeVisual) {
+                // Settings can replace samplers, swapchain images and fences.
+                // Retire registered frames before invalidating those handles.
+                std::lock_guard completionLock(completionMutex);
+                retire(renderer->Drain());
+                renderer->VisualOptions(nextVisual);
+                std::lock_guard lock(state);
+                visualState = renderer->VisualState();
+                appliedVisualRevision = nextVisualRevision;
+            }
+            frame.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
             // IDLE is a Java-compatible producer acknowledgement, not an
             // eligibility flag. Already-acknowledged scenes remain drawable.
             if (hasSurface) submitted = renderer->Draw(frame, latch);
@@ -707,6 +748,7 @@ void NativeScreen::Worker() {
             if (submitted) {
                 inFlight.push_back(std::move(frame));
             }
+            if (frameGenRequested.load(std::memory_order_relaxed)) visualState = renderer->VisualState();
             gpuPending = inFlight.size();
             drawing = false;
             cv.notify_all();

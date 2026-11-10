@@ -14,8 +14,31 @@ int main() {
     renderer->Surface(new ANativeWindow);
     auto* context = VulkanRendererContext::instance;
     if (!context->validationRequested) return 12;
+    xorg::NativeVisualOptions options;
+    renderer->VisualOptions(options);
+    if (renderer->VisualState().enabled || context->filter || context->postFX || context->stretch) return 21;
+    options.filter = 4; options.postFX = 2; options.stretch = 1; options.sharpness = .75f;
+    options.frameGen = true; options.frameGenCache = "imported-lossless-cache";
+    options.multiplier = 3; options.flowScale = 50; options.refresh = 144.f;
+    renderer->VisualOptions(options);
+    if (context->filter != 4 || context->postFX != 2 || context->stretch != 1 || context->sharpness != .75f) return 22;
+    if (!renderer->VisualState().enabled || context->multiplier != 3 || context->targetRate != 144 || context->flowScale != 50) return 23;
+    context->frameGenSupported = false;
+    renderer->VisualOptions(options);
+    if (renderer->VisualState().enabled || renderer->VisualState().supported || context->frameGenRequested) return 24;
+    context->frameGenSupported = true;
+    renderer->VisualOptions(options);
     xorg::NativeFrame frame;
+    frame.frameGenSourceFrames = 41;
     if (!renderer->Draw(frame)) return 1;
+    if (context->sourceFrames != 41) return 25;
+    options.frameGen = false;
+    // The screen worker drains registered frames before this operation.
+    context->fences[0].Signal(); renderer->Drain();
+    renderer->VisualOptions(options);
+    if (renderer->VisualState().enabled) return 26;
+    if (!renderer->Draw(frame)) return 27;
+    std::cout << "PASS: native filters, sharpening/stretch, LSFG settings/source counter, unsupported fallback and disable\n";
 
     // Hold the oldest fence unsignaled while the other slot is submitted.
     // A retirement wait holding pendingMutex would block this Draw indefinitely.

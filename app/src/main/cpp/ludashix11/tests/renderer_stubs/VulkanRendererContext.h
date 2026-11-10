@@ -37,6 +37,26 @@ public:
     }
     void onSurfaceResized(int, int) {}
     void setVerboseLog(bool) {}
+    int filter{}, postFX{}, stretch{};
+    float sharpness{.5f};
+    bool frameGenSupported{true}, frameGenEnabled{}, frameGenRequested{};
+    std::string frameGenCache;
+    int multiplier{}, targetRate{}, flowScale{};
+    float refresh{};
+    uint64_t sourceFrames{}, generatedFrames{};
+    void setFilterMode(int value) { filter = value; }
+    void setPostFXMode(int value) { postFX = value; }
+    void setStretchMode(int value) { stretch = value; }
+    void setSharpness(float value) { sharpness = value; }
+    void configureFrameGeneration(bool enabled, const char* cache, int m, int target, int flow, float hz) {
+        frameGenRequested = enabled;
+        frameGenCache = cache; multiplier = m; targetRate = target; flowScale = flow; refresh = hz;
+        frameGenEnabled = enabled && frameGenSupported && !frameGenCache.empty();
+    }
+    bool isFrameGenerationSupported() const { return frameGenSupported; }
+    bool isFrameGenerationEnabled() const { return frameGenEnabled; }
+    void setFrameGenerationSourceCount(uint64_t value) { sourceFrames = value; }
+    uint64_t getGeneratedFrameCount() const { return generatedFrames; }
     void setNativeDiagnostics(bool) {}
     void setTransform(float, float, float, float) {}
     void setCursorVisible(bool) {}
