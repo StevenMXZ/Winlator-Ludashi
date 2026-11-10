@@ -6,10 +6,10 @@
     <string name="steam_ui_disabled_help">Ao desativar, a Steam é ocultada e seu serviço para. Os jogos e a conta salva são mantidos.</string>
     <string name="steam_ui_manage_games">Gerenciar jogos Steam</string>
     <string name="steam_ui_manage_downloads">Gerenciar downloads</string>
-    <string name="steam_ui_download_speed">VELOCIDADE DO DOWNLOAD</string>
+    <string name="steam_ui_download_speed">Velocidade de download</string>
     <string name="steam_ui_slow">Lento</string>
-    <string name="steam_ui_fast">Rápido</string>
-    <string name="steam_ui_blazing">Máximo</string>
+    <string name="steam_ui_fast">Automático (Recomendado)</string>
+    <string name="steam_ui_blazing">Extremo</string>
     <string name="steam_ui_slow_help">Menor uso de rede e CPU</string>
     <string name="steam_ui_fast_help">Adaptativo • recomendado</string>
     <string name="steam_ui_blazing_help">Maior paralelismo • maior uso de CPU e memória</string>

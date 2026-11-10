@@ -6,10 +6,10 @@
     <string name="steam_ui_disabled_help">Turning off hides Steam and stops its service. Games and the saved account are kept.</string>
     <string name="steam_ui_manage_games">Manage Steam games</string>
     <string name="steam_ui_manage_downloads">Manage downloads</string>
-    <string name="steam_ui_download_speed">DOWNLOAD SPEED</string>
+    <string name="steam_ui_download_speed">Download speed</string>
     <string name="steam_ui_slow">Slow</string>
-    <string name="steam_ui_fast">Fast</string>
-    <string name="steam_ui_blazing">Blazing</string>
+    <string name="steam_ui_fast">Automatic (Recommended)</string>
+    <string name="steam_ui_blazing">Extreme</string>
     <string name="steam_ui_slow_help">Lower network and CPU usage</string>
     <string name="steam_ui_fast_help">Adaptive • recommended</string>
     <string name="steam_ui_blazing_help">Maximum concurrency • higher CPU and memory usage</string>

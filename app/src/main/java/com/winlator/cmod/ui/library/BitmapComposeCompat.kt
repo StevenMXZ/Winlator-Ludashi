@@ -2,6 +2,7 @@ package com.winlator.cmod.ui.library
 
 import com.winlator.cmod.ui.uiStr
 import android.graphics.Bitmap
+import android.content.Intent
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -30,6 +31,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Favorite
@@ -82,6 +86,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.winlator.cmod.MainActivity
+import com.winlator.cmod.steam.StoreSettingsActivity
 import com.winlator.cmod.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -95,7 +100,8 @@ internal fun LibraryRoot(
     grid: Boolean,
     query: String,
     selectedShortcutPath: MutableState<String?>,
-    cb: LibraryCallbacks
+    cb: LibraryCallbacks,
+    showAddGames: MutableState<Boolean>
 ) {
     var filterName by rememberSaveable { mutableStateOf(LibraryFilter.All.name) }
     val filter = LibraryFilter.valueOf(filterName)
@@ -115,6 +121,29 @@ internal fun LibraryRoot(
         }
     }
 
+    if (showAddGames.value) {
+        ModalBottomSheet(
+            onDismissRequest = { showAddGames.value = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surface,
+            dragHandle = null
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 30.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                LibraryAddGamesChoice("Stores", Icons.Outlined.Storefront) {
+                    showAddGames.value = false
+                    activity?.startActivity(Intent(activity, StoreSettingsActivity::class.java))
+                }
+                LibraryAddGamesChoice("File Manager", Icons.Outlined.FolderOpen) {
+                    showAddGames.value = false
+                    activity?.navigateToMainDestination(R.id.main_menu_file_manager)
+                }
+            }
+        }
+    }
+
     if (landscape && visible.isNotEmpty() && !grid) {
         var menu by remember { mutableStateOf<LibraryItem?>(null) }
         LandscapePagerCore(
@@ -126,6 +155,7 @@ internal fun LibraryRoot(
                     activity = activity,
                     grid = grid,
                     onArtwork = true,
+                    onAddGames = { showAddGames.value = true },
                     onGridViewChanged = cb::onGridViewChanged
                 )
                 Spacer(Modifier.height(7.dp))
@@ -149,6 +179,7 @@ internal fun LibraryRoot(
                 activity = activity,
                 grid = grid,
                 onArtwork = false,
+                onAddGames = { showAddGames.value = true },
                 onGridViewChanged = cb::onGridViewChanged
             )
             Spacer(Modifier.height(7.dp))
@@ -169,9 +200,9 @@ internal fun LibraryRoot(
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Surface(
-                        onClick = { activity?.navigateToMainDestination(R.id.main_menu_file_manager) },
-                        modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
+                        onClick = { showAddGames.value = true },
+                        modifier = Modifier.widthIn(max = 320.dp).fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.surface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
@@ -213,6 +244,7 @@ private fun LibraryLandscapeHeader(
     activity: MainActivity?,
     grid: Boolean,
     onArtwork: Boolean,
+    onAddGames: () -> Unit,
     onGridViewChanged: (Boolean) -> Unit
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -223,17 +255,10 @@ private fun LibraryLandscapeHeader(
             fontWeight = FontWeight.Medium
         )
         Spacer(Modifier.weight(1f))
-        if (activity != null && com.winlator.cmod.steam.SteamSettings.enabled(activity)) Box {
-            var steamMenu by remember { mutableStateOf(false) }
-            IconButton(onClick = { steamMenu = true }) {
-                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_steam), "Steam account", tint = if (onArtwork) Color.White else MaterialTheme.colorScheme.onBackground)
-            }
-            DropdownMenu(steamMenu, { steamMenu = false }) { com.winlator.cmod.steam.SteamSheets.MenuEntries(activity) { steamMenu = false } }
-        }
         LibraryTopIcon(if (grid) Icons.Outlined.ViewList else Icons.Outlined.GridView, false) {
             onGridViewChanged(!grid)
         }
-        LibraryTopIcon(Icons.Outlined.Add, false) { activity?.navigateToMainDestination(R.id.main_menu_file_manager) }
+        LibraryTopIcon(Icons.Outlined.Add, false, onAddGames)
         LibraryTopIcon(Icons.Outlined.Home, true) {}
         LibraryTopIcon(Icons.Outlined.Dns, false) { activity?.navigateToMainDestination(R.id.main_menu_containers) }
         LibraryTopIcon(Icons.Outlined.SportsEsports, false) { activity?.navigateToMainDestination(R.id.main_menu_input_controls) }
@@ -255,7 +280,16 @@ private fun LibraryOrientationMenu(activity: MainActivity?) {
     }
 
     Box {
-        LibraryTopIcon(androidx.compose.material.icons.Icons.Outlined.ScreenRotation, false) { expanded = true }
+        Surface(
+            onClick = { expanded = true },
+            modifier = Modifier.padding(horizontal = 3.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = Color.Transparent
+        ) {
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_orientation), null, Modifier.size(23.dp), tint = Color.White.copy(alpha = .68f))
+            }
+        }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             OrientationToggleMenuItem(uiStr(R.string.ui_lock_screen_orientation), orientationState.first) {
                 activity?.toggleOrientationLock()
@@ -295,6 +329,28 @@ private fun LibraryTopIcon(icon: ImageVector, selected: Boolean, click: () -> Un
         color = background,
         contentColor = content
     ) { Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { Icon(icon, null, modifier = Modifier.size(23.dp)) } }
+}
+
+@Composable
+private fun LibraryAddGamesChoice(label: String, icon: ImageVector, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .35f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, null, Modifier.size(25.dp))
+            Spacer(Modifier.width(16.dp))
+            Text(label, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.weight(1f))
+            Icon(Icons.Outlined.ChevronRight, null, Modifier.size(22.dp))
+        }
+    }
 }
 
 @Composable

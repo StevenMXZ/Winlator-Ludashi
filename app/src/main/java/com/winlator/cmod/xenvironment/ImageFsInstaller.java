@@ -48,6 +48,17 @@ public abstract class ImageFsInstaller {
         }
     }
 
+    private static void installOptionalGoldberg(Context context) {
+        Thread worker = new Thread(() -> {
+            try {
+                com.winlator.cmod.steam.SteamGoldberg.INSTANCE.ensureInstalled(context.getApplicationContext());
+            } catch (Exception error) {
+                android.util.Log.w("ImageFsInstaller", "Optional Goldberg installation failed", error);
+            }
+        }, "GoldbergComponentInstall");
+        worker.start();
+    }
+
     public static boolean installWineArchive(final Context context, String version, File archiveFile) {
         File rootDir = ImageFs.find(context).getRootDir();
         File outFile = new File(rootDir, "opt/" + version);
@@ -134,6 +145,7 @@ public abstract class ImageFsInstaller {
             if (success) {
                 installWineFromAssets(dialog, activity);
                 installDriversFromAssets(dialog, activity);
+                installOptionalGoldberg(activity);
                 imageFs.createImgVersionFile(LATEST_VERSION);
                 FileUtils.symlink("libSDL2-2.0.so", new File(imageFs.getLibDir(), "libSDL2-2.0.so.0").getAbsolutePath());
                 resetContainerImgVersions(activity);
@@ -185,6 +197,7 @@ public abstract class ImageFsInstaller {
                 installWineFromAssets(null, activity);
                 if (listener != null) activity.runOnUiThread(() -> listener.onProgress(88));
                 installDriversFromAssets(null, activity);
+                installOptionalGoldberg(activity);
                 if (listener != null) activity.runOnUiThread(() -> listener.onProgress(96));
                 imageFs.createImgVersionFile(LATEST_VERSION);
                 FileUtils.symlink("libSDL2-2.0.so",

@@ -9,7 +9,8 @@ internal fun LibraryRootWithoutEmptyDescription(
     grid: Boolean,
     query: String,
     selectedShortcutPath: MutableState<String?>,
-    callbacks: LibraryCallbacks
+    callbacks: LibraryCallbacks,
+    showAddGames: MutableState<Boolean>
 ) {
-    LibraryRoot(items, grid, query, selectedShortcutPath, callbacks)
+    LibraryRoot(items, grid, query, selectedShortcutPath, callbacks, showAddGames)
 }

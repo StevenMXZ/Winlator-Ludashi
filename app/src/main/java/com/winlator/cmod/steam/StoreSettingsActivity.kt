@@ -32,8 +32,6 @@ class StoreSettingsActivity : ImmersiveSteamActivity() {
         super.onCreate(savedInstanceState); supportActionBar?.hide()
         setContent { StoreTheme {
             var error by remember { mutableStateOf("") }
-            var busy by remember { mutableStateOf(false) }
-            var status by remember { mutableStateOf("") }
             var tier by remember { mutableIntStateOf(SteamDownloadSettings.tier(this)) }
             var speedMenu by remember { mutableStateOf(false) }
             var showFolder by remember { mutableStateOf(false) }
@@ -112,18 +110,7 @@ class StoreSettingsActivity : ImmersiveSteamActivity() {
                                     SteamDownloadSettings.tiers.forEach { index -> DropdownMenuItem(text = { Text(speedLabel(index)) }, onClick = { tier = index; SteamDownloadSettings.setTier(this@StoreSettingsActivity, index); speedMenu = false }) }
                                 }
                             }
-                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                            ListItem(headlineContent = { Text("Goldberg") }, supportingContent = { Text(if (busy) uiStr(R.string.steam_ui_installing) else uiStr(R.string.steam_ui_install_component)) }, leadingContent = { Icon(Icons.Outlined.Extension, null) },
-                                trailingContent = { if (busy) CircularProgressIndicator(Modifier.size(24.dp)) else Icon(Icons.Outlined.Download, null) },
-                                modifier = Modifier.clickable(enabled = !busy && !SteamSession.gameActive) {
-                                    busy = true; status = ""
-                                    scope.launch {
-                                        val result = withContext(Dispatchers.IO) { runCatching { SteamGoldberg.ensureInstalled(this@StoreSettingsActivity) } }
-                                        busy = false; status = result.exceptionOrNull()?.message ?: uiStr(R.string.steam_ui_component_installed)
-                                    }
-                                })
                         }
-                        if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }

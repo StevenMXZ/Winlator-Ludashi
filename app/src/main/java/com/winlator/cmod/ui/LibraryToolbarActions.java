@@ -25,7 +25,6 @@ public final class LibraryToolbarActions {
     private static final int MENU_FILE_MANAGER = 3;
     private static final int MENU_MORE = 4;
     private static final int[] DESIRED_ORDER = {
-            11, // Steam account
             MENU_SEARCH,
             MENU_FILE_MANAGER,
             MENU_VIEW_MODE,

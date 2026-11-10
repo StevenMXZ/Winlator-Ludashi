@@ -89,7 +89,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class ShortcutsFragment extends Fragment {
     private static final String TAG = "ShortcutsFragment";
-    private static final int MENU_STEAM = 11;
     private static final int MENU_IMPORT_SHORTCUT = 10;
     private static final int MENU_VIEW_MODE = 1;
     private static final int MENU_SEARCH = 2;
@@ -260,10 +259,6 @@ public class ShortcutsFragment extends Fragment {
     public void onCreateOptionsMenu(@NonNull Menu menu, @NonNull MenuInflater inflater) {
         super.onCreateOptionsMenu(menu, inflater);
 
-        MenuItem steamItem = menu.add(0, MENU_STEAM, 0, "Steam account");
-        steamItem.setVisible(com.winlator.cmod.steam.SteamSettings.enabled(requireContext()));
-        steamItem.setIcon(R.drawable.ic_steam);
-        steamItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
         MenuItem viewItem = menu.add(0, MENU_VIEW_MODE, 0, isGridView ? com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_list_view) : com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_grid_view));
         viewItem.setIcon(R.drawable.ui_ic_view);
         viewItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
@@ -316,10 +311,6 @@ public class ShortcutsFragment extends Fragment {
 
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
-        if (item.getItemId() == MENU_STEAM) {
-            com.winlator.cmod.steam.SteamLibrary.showMenu(requireContext());
-            return true;
-        }
         if (item.getItemId() == MENU_IMPORT_SHORTCUT) {
             shortcutImportLauncher.launch("*/*");
             return true;
@@ -329,11 +320,7 @@ public class ShortcutsFragment extends Fragment {
             return true;
         }
         if (item.getItemId() == MENU_FILE_MANAGER) {
-            getParentFragmentManager().beginTransaction()
-                    .setCustomAnimations(R.anim.winz_screen_enter, R.anim.winz_screen_exit, R.anim.winz_screen_enter, R.anim.winz_screen_exit)
-                    .addToBackStack(null)
-                    .replace(R.id.FLFragmentContainer, new FileManagerFragment())
-                    .commit();
+            if (libraryController != null) libraryController.showAddGamesChooser();
             return true;
         }
         MainActivity activity = (MainActivity) requireActivity();

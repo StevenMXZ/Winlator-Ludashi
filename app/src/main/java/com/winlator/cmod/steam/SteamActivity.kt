@@ -57,7 +57,7 @@ class SteamActivity : ImmersiveSteamActivity() {
                 SteamManagerScreen(state, intent.getIntExtra("steam_tab", 0), { finish() }, ::signOut, ::showDetail)
             } else {
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)).imePadding()) {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(if (androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) 4.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { finish() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, uiStr(R.string.steam_ui_back)) }
                         Icon(androidx.compose.ui.res.painterResource(com.winlator.cmod.R.drawable.ic_steam), null, Modifier.size(30.dp))
                         Text("Steam", Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleLarge)
@@ -73,22 +73,22 @@ class SteamActivity : ImmersiveSteamActivity() {
         var visible by remember { mutableStateOf(false) }
         var code by remember { mutableStateOf("") }
         var qr by rememberSaveable { mutableStateOf(false) }
+        val landscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
         DisposableEffect(Unit) {
             onDispose { if (!SteamSession.savedAccount && SteamSession.signingIn) SteamSession.cancelLogin() }
         }
         LaunchedEffect(qr, state.ready) {
             if (qr && state.ready && !SteamSession.signingIn) SteamSession.loginQr()
         }
-        StoreTheme {
-            Box(Modifier.fillMaxSize().storeBackground(), contentAlignment = Alignment.TopCenter) {
-                Column(Modifier.widthIn(max = 440.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    if (!qr) {
-                        Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_steam), null, Modifier.size(64.dp), tint = Color.White)
-                        Text(uiStr(R.string.steam_ui_login_title), style = MaterialTheme.typography.headlineSmall)
-                        Text(uiStr(R.string.steam_ui_login_intro), color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
+        val introduction: @Composable () -> Unit = {
+            Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_steam), null,
+                Modifier.size(if (landscape) 48.dp else 64.dp), tint = Color.White)
+            Text(uiStr(R.string.steam_ui_login_title), style = MaterialTheme.typography.headlineSmall)
+            Text(uiStr(R.string.steam_ui_login_intro), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+        val form: @Composable () -> Unit = {
                     OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
                         Row(Modifier.fillMaxWidth().padding(3.dp)) {
                             listOf(false to R.string.steam_login_account, true to R.string.steam_login_qr).forEach { (value, label) ->
@@ -106,9 +106,9 @@ class SteamActivity : ImmersiveSteamActivity() {
                         }
                     }
                     if (qr) {
-                        SteamQrCode(SteamSession.qrUrl)
-                        Text(uiStr(R.string.steam_qr_scan), style = MaterialTheme.typography.titleLarge)
-                        Text(uiStr(R.string.steam_qr_help), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        SteamQrCode(SteamSession.qrUrl, if (landscape) 150.dp else 240.dp)
+                        if (!landscape) Text(uiStr(R.string.steam_qr_scan), style = MaterialTheme.typography.titleLarge)
+                        if (!landscape) Text(uiStr(R.string.steam_qr_help), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         OutlinedButton(onClick = { SteamSession.cancelLogin(); SteamSession.loginQr() }, enabled = state.ready && !state.gameActive,
                             modifier = Modifier.fillMaxWidth()) {
@@ -140,6 +140,46 @@ class SteamActivity : ImmersiveSteamActivity() {
                     if (!qr) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Icon(Icons.Outlined.Info, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(uiStr(R.string.steam_ui_password_help), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+        }
+        StoreTheme {
+            Box(Modifier.fillMaxSize().storeBackground(), contentAlignment = Alignment.TopCenter) {
+                if (landscape) {
+                    Row(
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                            .padding(horizontal = 24.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            Modifier.weight(.85f),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            if (qr) {
+                                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_steam), null,
+                                    Modifier.size(48.dp), tint = Color.White)
+                                Text(uiStr(R.string.steam_qr_scan), style = MaterialTheme.typography.titleLarge)
+                                Text(uiStr(R.string.steam_qr_help),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                            } else introduction()
+                        }
+                        Column(
+                            Modifier.weight(1.15f).widthIn(max = 440.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) { form() }
+                    }
+                } else {
+                    Column(
+                        Modifier.widthIn(max = 440.dp).fillMaxWidth()
+                            .verticalScroll(rememberScrollState()).padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                    ) {
+                        if (!qr) introduction()
+                        form()
                     }
                 }
             }

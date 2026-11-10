@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -27,12 +28,12 @@ internal fun encodeSteamQr(url: String): Bitmap {
     }
 }
 
-@Composable internal fun SteamQrCode(url: String) {
+@Composable internal fun SteamQrCode(url: String, qrSize: Dp = 240.dp) {
     val bitmap by produceState<Bitmap?>(null, url) {
         value = null
         if (url.isNotBlank()) value = withContext(Dispatchers.Default) { runCatching { encodeSteamQr(url) }.getOrNull() }
     }
-    Box(Modifier.padding(top = 14.dp).size(240.dp).border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(20.dp)).padding(14.dp).background(Color.White),
+    Box(Modifier.padding(top = 4.dp).size(qrSize).border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(20.dp)).padding(14.dp).background(Color.White),
         contentAlignment = androidx.compose.ui.Alignment.Center) {
         bitmap?.let { Image(it.asImageBitmap(), com.winlator.cmod.ui.uiStr(com.winlator.cmod.R.string.steam_login_qr), Modifier.fillMaxSize()) }
             ?: CircularProgressIndicator(Modifier.size(32.dp))

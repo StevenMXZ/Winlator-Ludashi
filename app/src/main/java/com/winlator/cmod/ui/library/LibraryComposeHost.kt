@@ -68,7 +68,8 @@ class LibraryComposeController internal constructor(
     private val items: MutableState<List<LibraryItem>>,
     private val grid: MutableState<Boolean>,
     private val query: MutableState<String>,
-    private val selectedShortcutPath: MutableState<String?>
+    private val selectedShortcutPath: MutableState<String?>,
+    private val showAddGames: MutableState<Boolean>
 ) {
     private val statePreferences = context.getSharedPreferences("library_compose_state", Context.MODE_PRIVATE)
     private val metadataGeneration = AtomicInteger(0)
@@ -90,6 +91,7 @@ class LibraryComposeController internal constructor(
 
     fun dispose() { metadataGeneration.incrementAndGet() }
 
+    fun showAddGamesChooser() { showAddGames.value = true }
     fun setGridView(value: Boolean) { grid.value = value }
     fun setSearchQuery(value: String?) { query.value = value?.trim().orEmpty() }
 
@@ -129,6 +131,7 @@ object LibraryComposeHost {
         val items = mutableStateOf<List<LibraryItem>>(emptyList())
         val grid = mutableStateOf(initialGridView)
         val query = mutableStateOf("")
+        val showAddGames = mutableStateOf(false)
         val selectedShortcutPath = mutableStateOf(
             context.getSharedPreferences("library_compose_state", Context.MODE_PRIVATE)
                 .getString("selected_shortcut_path", null)
@@ -138,7 +141,8 @@ object LibraryComposeHost {
             items,
             grid,
             query,
-            selectedShortcutPath
+            selectedShortcutPath,
+            showAddGames
         )
         val view = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -164,7 +168,7 @@ object LibraryComposeHost {
                             val configuration = androidx.compose.ui.platform.LocalConfiguration.current
                             if (configuration.screenWidthDp <= configuration.screenHeightDp) SteamDownloadPanel(steam)
                             Box(Modifier.weight(1f)) {
-                                LibraryRootWithoutEmptyDescription(merged, grid.value, query.value, selectedShortcutPath, combined)
+                                LibraryRootWithoutEmptyDescription(merged, grid.value, query.value, selectedShortcutPath, combined, showAddGames)
                             }
                         }
                     }
