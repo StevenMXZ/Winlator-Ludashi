@@ -53,6 +53,7 @@ import com.winlator.cmod.core.ImageUtils;
 import com.winlator.cmod.core.PreloaderDialog;
 import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.container.Shortcut;
+import com.winlator.cmod.ui.container.ContainerCreateComposeFragment;
 import com.winlator.cmod.core.WineThemeManager;
 import com.winlator.cmod.xenvironment.ImageFsInstaller;
 import com.winlator.cmod.services.NotificationService;
@@ -370,7 +371,8 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             if (current instanceof GameDetailFragment
                     || current instanceof ContainerOverviewFragment
                     || current instanceof ContainerDetailFragment
-                    || current instanceof ContainerSectionFragment) {
+                    || current instanceof ContainerSectionFragment
+                    || current instanceof ContainerCreateComposeFragment) {
                 onBackPressed();
                 return true;
             }
