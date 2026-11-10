@@ -87,6 +87,8 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     private boolean syncingBottomNavigation;
     private boolean orientationLocked;
     private String orientationMode = ORIENTATION_MODE_AUTO;
+    private static final String PREF_ORIENTATION_LOCKED = "library_orientation_locked";
+    private static final String PREF_ORIENTATION_MODE = "library_orientation_mode";
 
     private void createNotificationChannel() {
         String name = "Winlator";
@@ -119,6 +121,12 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         }
 
         super.onCreate(savedInstanceState);
+        orientationLocked = sharedPreferences.getBoolean(PREF_ORIENTATION_LOCKED, false);
+        orientationMode = sharedPreferences.getString(PREF_ORIENTATION_MODE, ORIENTATION_MODE_AUTO);
+        if (!ORIENTATION_MODE_VERTICAL.equals(orientationMode) && !ORIENTATION_MODE_HORIZONTAL.equals(orientationMode)) {
+            orientationMode = ORIENTATION_MODE_AUTO;
+        }
+        if (orientationLocked || !ORIENTATION_MODE_AUTO.equals(orientationMode)) applyOrientationMode();
         applyImmersiveMode();
 
         if (!sharedPreferences.getBoolean(OnboardingActivity.PREF_ONBOARDING_COMPLETE, false)) {
@@ -309,20 +317,33 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
     public boolean toggleOrientationLock() {
         orientationLocked = !orientationLocked;
+        if (orientationLocked) orientationMode = ORIENTATION_MODE_AUTO;
+        persistOrientationPreferences();
         applyOrientationMode();
         return orientationLocked;
     }
 
     public boolean toggleVerticalMode() {
         orientationMode = isVerticalModeEnabled() ? ORIENTATION_MODE_AUTO : ORIENTATION_MODE_VERTICAL;
+        orientationLocked = false;
+        persistOrientationPreferences();
         applyOrientationMode();
         return isVerticalModeEnabled();
     }
 
     public boolean toggleHorizontalMode() {
         orientationMode = isHorizontalModeEnabled() ? ORIENTATION_MODE_AUTO : ORIENTATION_MODE_HORIZONTAL;
+        orientationLocked = false;
+        persistOrientationPreferences();
         applyOrientationMode();
         return isHorizontalModeEnabled();
+    }
+
+    private void persistOrientationPreferences() {
+        sharedPreferences.edit()
+                .putBoolean(PREF_ORIENTATION_LOCKED, orientationLocked)
+                .putString(PREF_ORIENTATION_MODE, orientationMode)
+                .apply();
     }
 
     private void applyOrientationMode() {
