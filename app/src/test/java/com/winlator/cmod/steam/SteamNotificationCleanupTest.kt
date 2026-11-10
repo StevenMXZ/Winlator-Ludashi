@@ -33,6 +33,7 @@ class SteamNotificationCleanupTest {
     }
     @Test fun steamForegroundUsesSteamIconAndRemovesItOnDestroy() {
         val context = RuntimeEnvironment.getApplication()
+        SteamSettings.setEnabled(context, true)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val controller = Robolectric.buildService(SteamService::class.java).create()
         val notification = shadowOf(manager).getNotification(SteamService.NOTIFICATION_ID)
