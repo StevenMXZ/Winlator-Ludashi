@@ -127,7 +127,13 @@ public class AdrenotoolsManager {
         for (File f : adrenotoolsContentDir.listFiles()) {
             boolean fromResources = isFromResources(f.getName());
             if (!f.getName().startsWith(".import-") && !fromResources && new File(f, "meta.json").exists())
-                driversList.add(f.getName());
+                try {
+                    JSONObject meta = new JSONObject(FileUtils.readString(new File(f, "meta.json")));
+                    if (!"freedreno".equalsIgnoreCase(meta.optString("type"))
+                            && !meta.optString("libraryName").startsWith("libGL.so")) driversList.add(f.getName());
+                } catch (Exception error) {
+                    Log.w("AdrenotoolsManager", "Ignoring invalid driver metadata: " + f.getName(), error);
+                }
         }
         return driversList;
     }
@@ -269,6 +275,9 @@ public class AdrenotoolsManager {
             File manifest = new File(base, "meta.json");
             if (!manifest.isFile()) throw new IOException("Missing AdrenoTools meta.json");
             JSONObject metadata = new JSONObject(FileUtils.readString(manifest));
+            if ("freedreno".equalsIgnoreCase(metadata.optString("type"))
+                    || metadata.optString("libraryName").startsWith("libGL.so"))
+                throw new IOException("Freedreno OpenGL packages must be imported through Components");
             String name = metadata.optString("name", "").trim();
             String libName = metadata.optString("libraryName", "").trim();
             if (name.isEmpty() || libName.isEmpty() || name.equals(".")

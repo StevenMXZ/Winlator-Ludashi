@@ -72,7 +72,7 @@ private val bundledRuntimeName = ProtonPackageManager.getPackage(ProtonPackageMa
     ?: ProtonPackageManager.DEFAULT_IDENTIFIER
 
 private val componentCategories = listOf(
-    "Recommended", "Wine & Proton", "DXVK", "VKD3D", "FEXCore", "Box64", "WOWBox64", "AdrenoTools"
+    "Recommended", "Wine & Proton", "DXVK", "VKD3D", "FEXCore", "Box64", "WOWBox64", "Freedreno", "AdrenoTools"
 )
 
 private val latestRecommendedTypes = setOf("DXVK", "VKD3D", "FEXCore", "Box64", "WOWBox64")
@@ -192,7 +192,7 @@ internal fun OnboardingComponentsScreen(
         if (landscape) {
             // Landscape: height is the scarce axis, so the list owns the whole width and everything
             // else is packed above it — title/subtitle and the source card share one header row,
-            // category chips get a full-width row (all 8 visible on most phones), and the bundled
+            // category chips get a full-width scrollable row, and the bundled
             // runtime and local-install progress ride at the top of the list
             // instead of a fixed side column (which used to clip at the bottom on phones).
             LandscapeComponentsHeader(

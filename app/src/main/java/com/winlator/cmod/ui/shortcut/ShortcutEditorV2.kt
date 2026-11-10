@@ -212,6 +212,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
             if (readConfig(raw, "version", ';').isBlank()) writeConfig(raw, "version", defaultDriverVersion, ';') else raw
         }
     )
+    var freedrenoVersion by mutableStateOf(shortcut.getExtra("freedrenoVersion", container.getExtra("freedrenoVersion", "Bundled")))
     var driverVersion by mutableStateOf(readConfig(graphicsConfig, "version", ';').ifBlank { defaultDriverVersion })
     var vulkanVersion by mutableStateOf(readConfig(graphicsConfig, "vulkanVersion", ';').ifBlank { "1.3" })
     var maxMemory by mutableStateOf(readConfig(graphicsConfig, "maxDeviceMemory", ';').ifBlank { "0" })
@@ -1136,6 +1137,14 @@ private fun ShortcutCategoryV2(
             SettingsCard {
                 SettingChoice(uiStr(R.string.graphics_driver), graphicsEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(s.graphicsDriver, true) } ?: s.graphicsDriver, graphicsEntries) {
                     s.selectGraphicsDriver(StringUtils.parseIdentifier(it))
+                }
+                if (s.graphicsDriver.equals("freedreno", true)) {
+                    SettingsDivider()
+                    SettingMappedChoice("Freedreno OpenGL", s.freedrenoVersion,
+                        com.winlator.cmod.contents.OpenGLDriverManager(context).versionLabels(s.freedrenoVersion)) {
+                        s.freedrenoVersion = it
+                        s.extra("freedrenoVersion", it)
+                    }
                 }
                 catalog?.let { c ->
                     SettingsDivider()

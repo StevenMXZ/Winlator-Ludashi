@@ -208,6 +208,7 @@ private class ContainerEditorStateV2(
             if (readConfig(original, "version", ';').isBlank()) writeConfig(original, "version", preferredDriver, ';') else original
         }
     )
+    var freedrenoVersion by mutableStateOf(editing?.getExtra("freedrenoVersion", "Bundled") ?: "Bundled")
     var driverVersion by mutableStateOf(readConfig(graphicsConfig, "version", ';').ifBlank { preferredDriver })
     var blacklistedExtensions by mutableStateOf(readConfig(graphicsConfig, "blacklistedExtensions", ';'))
     var vulkanVersion by mutableStateOf(readConfig(graphicsConfig, "vulkanVersion", ';').ifBlank { "1.3" })
@@ -256,7 +257,9 @@ private class ContainerEditorStateV2(
 
     var startup by mutableIntStateOf(editing?.startupSelection?.toInt() ?: Container.STARTUP_SELECTION_ESSENTIAL.toInt())
     var openGlDefaultInitialized by mutableStateOf((editing?.getExtra("openGlDefaultInitialized", "0") ?: "0") == "1")
-    private val initialEnvVars = cleanContainerEnvironment(editing?.envVars ?: Container.DEFAULT_ENV_VARS)
+    private val initialEnvVars = cleanContainerEnvironment(editing?.envVars ?: envPut(Container.DEFAULT_ENV_VARS, "DXVK_HUD", null)).let {
+        if (envValue(it, "FD_MESA_DEBUG").isNullOrBlank()) envPut(it, "FD_MESA_DEBUG", "hiprio,sysmem") else it
+    }
     private val shouldAddMesaGlOverride = graphicsDriver.equals("freedreno", true) &&
         envValue(initialEnvVars, "MESA_GL_VERSION_OVERRIDE").isNullOrBlank()
     var autoMesaGlVersionOverride by mutableStateOf(
@@ -332,7 +335,7 @@ private class ContainerEditorStateV2(
         displayServer, renderer, rendererPresentMode, rendererDriver, filterMode, surfaceFormat, trueDisplayX,
         displayXPerformanceMode, displayXPresentAtRefreshRate, displayXPresentMode,
         displayXPrecisePresentation, frameGenEnabled, frameGenMultiplier,
-        frameGenTargetRate, frameGenFlowScale, graphicsDriver, graphicsConfig,
+        frameGenTargetRate, frameGenFlowScale, graphicsDriver, freedrenoVersion, graphicsConfig,
         wrapper, wrapperConfig, emulator, fexVersion, boxVersion, fexPreset, boxPreset, exclusive, xinput, dinput,
         forceSsbs, syncCpu, startup, openGlDefaultInitialized, autoMesaGlVersionOverride, envVars,
         cpu64.joinToString(), cpu32.joinToString(), components.entries.sortedBy { it.key }.joinToString()
@@ -465,6 +468,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.setCPUList(state.cpu64.indices.filter { state.cpu64[it] }.joinToString(","))
         container.setCPUListWoW64(state.cpu32.indices.filter { state.cpu32[it] }.joinToString(","))
         container.setSyncCpuTopology(state.syncCpu)
+        container.putExtra("freedrenoVersion", state.freedrenoVersion)
         container.setGraphicsDriver(state.graphicsDriver)
         container.setGraphicsDriverConfig(state.graphicsConfig)
         container.putExtra("displayServer", if (state.displayServer == "X++") "native" else "java")
@@ -564,7 +568,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                 put("wineVersion", state.runtime)
                 put("midiSoundFont", state.soundFont)
                 put("lc_all", state.locale)
-                put("extraData", JSONObject()
+                put("extraData", JSONObject().put("freedrenoVersion", state.freedrenoVersion)
                     .put("builtinDecoder", state.builtinDecoder)
                     .put("softwareDecoding", if (state.softwareDecoding) "1" else "0")
                     .put("hudMode", state.hudMode.toString())
@@ -770,6 +774,11 @@ private fun ContainerCategoryV2(
                 }
             }
             SettingsCard {
+                SettingToggle(uiStr(R.string.ui_dxvk_hud), !envValue(s.envVars, "DXVK_HUD").isNullOrBlank()) {
+                    s.setEnvironment(envPut(s.envVars, "DXVK_HUD", if (it) "fps,devinfo,gpuload,version" else null))
+                }
+            }
+            SettingsCard {
                 SettingChoice(uiStr(R.string.ui_locale_lc_all), localeDisplayValue(s.locale), localeEntries) {
                     s.locale = normalizeLocaleValue(it)
                 }
@@ -924,6 +933,11 @@ private fun ContainerCategoryV2(
                     graphicsEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(s.graphicsDriver, true) } ?: s.graphicsDriver,
                     graphicsEntries
                 ) { s.selectGraphicsDriver(StringUtils.parseIdentifier(it)) }
+                if (s.graphicsDriver.equals("freedreno", true)) {
+                    SettingsDivider()
+                    SettingMappedChoice("Freedreno OpenGL", s.freedrenoVersion,
+                        com.winlator.cmod.contents.OpenGLDriverManager(context).versionLabels(s.freedrenoVersion)) { s.freedrenoVersion = it }
+                }
                 catalog?.let { c ->
                     SettingsDivider()
                     SettingDriverChoice(uiStr(R.string.ui_driver_version), s.driverVersion, c.drivers, installing, installDriver) {

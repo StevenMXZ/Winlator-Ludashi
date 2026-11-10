@@ -20,7 +20,7 @@ internal fun envPut(raw: String, key: String, value: String?): String {
     return items.joinToString(" ")
 }
 
-internal fun cleanContainerEnvironment(raw: String): String = envPut(envPut(raw, "DXVK_HUD", null), "TU_DEBUG", null)
+internal fun cleanContainerEnvironment(raw: String): String = envPut(raw, "TU_DEBUG", null)
 
 internal fun isTurnipDriver(version: String): Boolean {
     val value = version.lowercase()

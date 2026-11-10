@@ -701,7 +701,16 @@ public class XServerDisplayActivity extends AppCompatActivity {
             }
             Executors.newSingleThreadExecutor().execute(() -> {
                 setupWineSystemFiles();
-                extractGraphicsDriverFiles();
+                try {
+                    extractGraphicsDriverFiles();
+                } catch (IllegalStateException error) {
+                    Log.e("OpenGLDriver", "Driver startup failed", error);
+                    runOnUiThread(() -> {
+                        android.widget.Toast.makeText(this, error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                        exit();
+                    });
+                    return;
+                }
                 changeWineAudioDriver();
                 applyGameRefreshRateUnlock();
                 try {
@@ -2892,29 +2901,23 @@ public class XServerDisplayActivity extends AppCompatActivity {
         return "freedreno".equalsIgnoreCase(graphicsDriver) ? "freedreno" : "Vulkan";
     }
 
+    private String openGlLibraryPath;
+
     private String getSelectedOpenGLDriver() {
         return "freedreno".equalsIgnoreCase(graphicsDriver) ? "freedreno" : "zink";
     }
 
     private void extractOpenGLDriver(File rootDir) {
         String selectedDriver = getSelectedOpenGLDriver();
-        String installedDriver = container.getExtra("installedOpenGLDriver", "");
-
-        if (!firstTimeBoot && selectedDriver.equals(installedDriver))
-            return;
-
-        Log.d("XServerDisplayActivity", "Installing OpenGL driver " + selectedDriver
-                + " (installed: '" + installedDriver + "')");
-
-        boolean extracted = TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this,
-                "graphics_driver/opengl_" + selectedDriver + ".tzst", rootDir);
-        if (!extracted) {
-            Log.e("XServerDisplayActivity", "Failed to extract OpenGL driver " + selectedDriver);
-            return;
+        String version = shortcut != null ? shortcut.getExtra("freedrenoVersion", container.getExtra("freedrenoVersion", "Bundled"))
+                : container.getExtra("freedrenoVersion", "Bundled");
+        try {
+            File directory = new com.winlator.cmod.contents.OpenGLDriverManager(this).resolve(selectedDriver, version);
+            openGlLibraryPath = directory.getAbsolutePath() + ":" + imageFs.getLibDir() + ":/system/lib64";
+            envVars.put("LD_LIBRARY_PATH", openGlLibraryPath);
+        } catch (Exception error) {
+            throw new IllegalStateException("Cannot load selected OpenGL driver: " + error.getMessage(), error);
         }
-
-        container.putExtra("installedOpenGLDriver", selectedDriver);
-        container.saveData();
     }
 
     private boolean isMesaGlVersionOverrideManual() {
@@ -2935,7 +2938,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private void applyOpenGLDriverEnvVars() {
         boolean freedreno = "freedreno".equals(getSelectedOpenGLDriver());
 
-        envVars.put("GALLIUM_DRIVER", freedreno ? "freedreno" : "zink");
+        envVars.remove("GALLIUM_DRIVER");
+        if (openGlLibraryPath != null) envVars.put("LD_LIBRARY_PATH", openGlLibraryPath);
         envVars.put("MESA_LOADER_DRIVER_OVERRIDE", freedreno ? "kgsl" : "zink");
 
         if (freedreno) {
@@ -2943,7 +2947,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             envVars.remove("ZINK_DESCRIPTORS");
             envVars.remove("ZINK_DEBUG");
             envVars.remove("ZINK_INLINE_UNIFORMS");
-            if (!envVars.has("FD_MESA_DEBUG")) envVars.put("FD_MESA_DEBUG", "hiprio");
+            if (!envVars.has("FD_MESA_DEBUG")) envVars.put("FD_MESA_DEBUG", "hiprio,sysmem");
             if (!envVars.has("vblank_mode")) envVars.put("vblank_mode", "0");
         } else {
             if (!isMesaGlVersionOverrideManual()

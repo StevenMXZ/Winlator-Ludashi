@@ -399,6 +399,7 @@ public class OnboardingActivity extends AppCompatActivity {
         if (key.contains("fexcore")) return "FEXCore";
         if (key.contains("vkd3d")) return "VKD3D";
         if (key.contains("dxvk")) return "DXVK";
+        if (key.equals("freedreno")) return "Freedreno";
         if (key.contains("proton")) return "Proton";
         if (key.contains("wine")) return "Wine";
         return "";
@@ -427,7 +428,9 @@ public class OnboardingActivity extends AppCompatActivity {
                 ui.add(new OnboardingComponent(
                         componentId(item),
                         item.type,
-                        item.name,
+                        item.type.equals("Freedreno") && item.installed && item.profile != null
+                                ? new com.winlator.cmod.contents.OpenGLDriverManager(this).versionLabel(
+                                        ContentsManager.getInstallDir(this, item.profile).getName()) : item.name,
                         item.installed,
                         item.recommended,
                         item.installed,
@@ -802,26 +805,15 @@ public class OnboardingActivity extends AppCompatActivity {
             composeController.updateInstallProgress("Preparing " + displayName, 0);
             io.execute(() -> {
                 // "Local package" is shared by Wine components and AdrenoTools drivers.
-                // ZIPs are routed through the same validated installer as "Local driver".
+                // ZIP metadata selects Freedreno OpenGL or AdrenoTools Vulkan in both pickers.
                 // WCP / tar.xz / tar.zst archives retain the original component importer.
                 try (InputStream input = getContentResolver().openInputStream(uri)) {
                     if (input == null) throw new IOException("Unable to open local package");
                     if (LocalDriverArchive.isZip(input)) {
-                        postInstallProgress("Installing driver " + displayName, -1);
-                        String installed = adrenotoolsManager.installDriver(uri);
-                        if (installed != null && !installed.isEmpty()) {
-                            postInstallProgress("Installed " + installed, 100);
-                            runOnUiThread(() -> {
-                                syncComposeCatalog();
-                                finishInstall("local", null);
-                            });
-                        } else {
-                            runOnUiThread(() -> finishInstall("local",
-                                    "Invalid AdrenoTools driver ZIP or driver already installed."));
-                        }
+                        installLocalDriverPackage(uri, displayName, "local");
                         return;
                     }
-                } catch (IOException | SecurityException error) {
+                } catch (Exception error) {
                     runOnUiThread(() -> finishInstall("local", "Unable to read local package: " + error.getMessage()));
                     return;
                 }
@@ -837,19 +829,30 @@ public class OnboardingActivity extends AppCompatActivity {
             composeController.setInstallBusy("driver-local", true);
             Uri uri = data.getData();
             composeController.updateInstallProgress("Installing " + localDisplayName(uri), -1);
-            io.execute(() -> {
-                String installed = adrenotoolsManager.installDriver(uri);
-                runOnUiThread(() -> {
-                    installBusy = false;
-                    composeController.setInstallBusy(null, false);
-                    syncComposeCatalog();
-                    if (installed == null || installed.isEmpty()) {
-                        Toast.makeText(this, "Unable to install the driver.", Toast.LENGTH_LONG).show();
-                    }
-                });
-            });
+            io.execute(() -> installLocalDriverPackage(uri, localDisplayName(uri), "driver-local"));
         } else if (requestCode == REQUEST_ALL_FILES) {
             continuePermissionFlow();
+        }
+    }
+
+    // Runs on the import worker. Both pickers must use the same package classifier.
+    private void installLocalDriverPackage(Uri uri, String displayName, String progressId) {
+        try {
+            postInstallProgress("Installing driver " + displayName, -1);
+            com.winlator.cmod.contents.DriverPackageInstaller.Result result =
+                    com.winlator.cmod.contents.DriverPackageInstaller.install(this, uri);
+            android.util.Log.i("DriverPackageInstaller", "Installed " + result.id
+                    + " as " + (result.freedreno ? "Freedreno OpenGL" : "AdrenoTools Vulkan"));
+            contentsManager.syncContents();
+            rebuildCatalog();
+            postInstallProgress("Installed " + result.id, 100);
+            runOnUiThread(() -> {
+                syncComposeCatalog();
+                finishInstall(progressId, null);
+            });
+        } catch (Exception error) {
+            android.util.Log.e("DriverPackageInstaller", "Local driver import failed", error);
+            runOnUiThread(() -> finishInstall(progressId, error.getMessage()));
         }
     }
 

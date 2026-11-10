@@ -129,7 +129,7 @@ public class ContentsFragment extends Fragment {
         View btInstallContent = layout.findViewById(R.id.BTInstallContent);
         btInstallContent.setOnClickListener(v -> {
             ContentDialog.confirm(getContext(), getString(R.string.do_you_want_to_install_content) + " " + getString(R.string.pls_make_sure_content_trustworthy) + " "
-                    + getString(R.string.content_suffix_is_wcp_packed_xz_zst) + '\n' + "AdrenoTools driver ZIP files are also supported." + '\n' + getString(R.string.get_more_contents_form_github), () -> {
+                    + getString(R.string.content_suffix_is_wcp_packed_xz_zst) + '\n' + "Turnip and Freedreno OpenGL driver ZIP files are also supported." + '\n' + getString(R.string.get_more_contents_form_github), () -> {
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("*/*");
@@ -249,6 +249,26 @@ public class ContentsFragment extends Fragment {
                     try (InputStream input = appContext.getContentResolver().openInputStream(selectedFile)) {
                         if (input == null) throw new IOException("Could not open the selected file");
                         if (LocalDriverArchive.isZip(input)) {
+                            if (com.winlator.cmod.contents.OpenGLDriverManager.isFreedreno(appContext, selectedFile)) {
+                                try {
+                                    String version = new com.winlator.cmod.contents.OpenGLDriverManager(appContext).install(selectedFile);
+                                    activity.runOnUiThread(() -> {
+                                        preloaderDialog.closeOnUiThread();
+                                        if (!isAdded()) return;
+                                        manager.syncContents();
+                                        currentContentType = ContentProfile.ContentType.CONTENT_TYPE_FREEDRENO;
+                                        AppUtils.setSpinnerSelectionFromValue(sContentType, "Freedreno");
+                                        loadContentList();
+                                        ContentDialog.alert(getContext(), "Freedreno installed: " + version, null);
+                                    });
+                                } catch (Exception error) {
+                                    activity.runOnUiThread(() -> {
+                                        preloaderDialog.closeOnUiThread();
+                                        if (isAdded()) ContentDialog.alert(getContext(), "Freedreno import failed: " + error.getMessage(), null);
+                                    });
+                                }
+                                return;
+                            }
                             String driver = new AdrenotoolsManager(appContext).installDriver(selectedFile);
                             activity.runOnUiThread(() -> {
                                 preloaderDialog.closeOnUiThread();
@@ -265,7 +285,7 @@ public class ContentsFragment extends Fragment {
                             });
                             return;
                         }
-                    } catch (IOException | SecurityException e) {
+                    } catch (Exception e) {
                         activity.runOnUiThread(() -> {
                             preloaderDialog.closeOnUiThread();
                             if (isAdded()) ContentDialog.alert(getContext(),
@@ -347,7 +367,10 @@ public class ContentsFragment extends Fragment {
             };
             holder.ivIcon.setBackground(getContext().getDrawable(iconId));
 
-            holder.tvVersionName.setText(getContext().getString(R.string.version) + ": " + profile.verName);
+            String shownVersion = profile.type == ContentProfile.ContentType.CONTENT_TYPE_FREEDRENO
+                    ? new com.winlator.cmod.contents.OpenGLDriverManager(requireContext()).versionLabel(
+                            ContentsManager.getInstallDir(requireContext(), profile).getName()) : profile.verName;
+            holder.tvVersionName.setText(getContext().getString(R.string.version) + ": " + shownVersion);
             holder.tvVersionCode.setText(getContext().getString(R.string.version_code) + ": " + profile.verCode);
             holder.ibMenu.setVisibility(profile.remoteUrl == null ? View.VISIBLE : View.GONE);
             holder.ibMenu.setOnClickListener(v -> {
