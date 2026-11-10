@@ -1,5 +1,6 @@
 package com.winlator.cmod.services;
 
+import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -8,6 +9,8 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -15,9 +18,15 @@ import androidx.core.content.ContextCompat;
 
 import com.winlator.cmod.MainActivity;
 import com.winlator.cmod.R;
+import com.winlator.cmod.core.ProcessHelper;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class NotificationService extends Service {
+    private static final String TAG = "WinlatorNotification";
+    private static final String ACTION_EXIT = "com.winlator.cmod.action.EXIT";
     private static boolean isRunning = false;
+    private final AtomicBoolean exiting = new AtomicBoolean(false);
     public static PowerManager.WakeLock wakeLock = null;
 
     public static boolean isRunning() {
@@ -25,12 +34,15 @@ public class NotificationService extends Service {
     }
 
     @Override
-    public void onCreate() {
-        super.onCreate();
-    }
-
-    @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // Handle Exit before checking the notification permission. The action must still
+        // work when the user has disabled notifications after the service started.
+        if (intent != null && ACTION_EXIT.equals(intent.getAction())) {
+            exitApplication();
+            return START_NOT_STICKY;
+        }
+        if (exiting.get()) return START_NOT_STICKY;
+
         if (Build.VERSION.SDK_INT >= 33
                 && ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -38,23 +50,68 @@ public class NotificationService extends Service {
             return START_NOT_STICKY;
         }
 
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, MainActivity.NOTIFICATION_CHANNEL_ID)
+        Intent launchIntent = new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent contentIntent = PendingIntent.getActivity(
+                this, 0, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        Intent exitIntent = new Intent(this, NotificationService.class).setAction(ACTION_EXIT);
+        PendingIntent exitPendingIntent = PendingIntent.getService(
+                this, 1, exitIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        Notification notification = new NotificationCompat.Builder(this, MainActivity.NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(R.drawable.winlator_mark)
                 .setContentTitle("Winlator")
-                .setContentText("Winlator is running, do not kill or swipe this notification")
+                .setContentText("Winlator is running")
                 .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setContentIntent(pendingIntent)
+                .setContentIntent(contentIntent)
+                .addAction(R.drawable.icon_exit, "Exit", exitPendingIntent)
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-                .setOngoing(true);
+                .setOngoing(true)
+                .build();
 
-        Notification notification = builder.build();
         startForeground(MainActivity.NOTIFICATION_ID, notification);
         isRunning = true;
 
         PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
-        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Winlator::KeepAlive");
+        if (powerManager != null && wakeLock == null) {
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Winlator::KeepAlive");
+        }
         return START_NOT_STICKY;
+    }
+
+    private void exitApplication() {
+        if (!exiting.compareAndSet(false, true)) return;
+
+        // Do not block the service main thread while terminating Wine processes.
+        new Thread(() -> {
+            try {
+                ProcessHelper.terminateAllWineProcesses();
+                long deadline = SystemClock.uptimeMillis() + 1500;
+                while (SystemClock.uptimeMillis() < deadline
+                        && !ProcessHelper.listRunningWineProcesses().isEmpty()) {
+                    Thread.sleep(50);
+                }
+                ProcessHelper.killAllWineProcesses();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                ProcessHelper.killAllWineProcesses();
+            } catch (Exception e) {
+                Log.w(TAG, "Unable to stop all Wine processes cleanly", e);
+            } finally {
+                // Remove the persistent notification and all Winlator tasks before
+                // terminating the app process, including when a game is active.
+                stopForeground(STOP_FOREGROUND_REMOVE);
+                stopSelf();
+                ActivityManager manager = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+                if (manager != null) {
+                    for (ActivityManager.AppTask task : manager.getAppTasks()) {
+                        task.finishAndRemoveTask();
+                    }
+                }
+                android.os.Process.killProcess(android.os.Process.myPid());
+            }
+        }, "WinlatorNotificationExit").start();
     }
 
     @Override
@@ -71,6 +128,7 @@ public class NotificationService extends Service {
         super.onDestroy();
         isRunning = false;
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        wakeLock = null;
     }
 
     @Nullable
