@@ -1817,13 +1817,22 @@ public class XServerDisplayActivity extends AppCompatActivity {
         hideAllSidebarPanels();
         View sub = findViewById(subId);
         if (sub != null) {
-            float density = getResources().getDisplayMetrics().density;
             sub.setVisibility(View.VISIBLE);
-            sub.setAlpha(0.0f);
-            sub.setTranslationX(-8.0f * density);
-            sub.animate().alpha(1.0f).translationX(0.0f).setDuration(130).start();
+            if (modernSidebar != null) {
+                // The old sidebar is only a binding tree under Compose. Avoid
+                // invisible animations and drawing invalidations on its panels.
+                sub.animate().cancel();
+                sub.setAlpha(1.0f);
+                sub.setTranslationX(0.0f);
+            } else {
+                float density = getResources().getDisplayMetrics().density;
+                sub.setAlpha(0.0f);
+                sub.setTranslationX(-8.0f * density);
+                sub.animate().alpha(1.0f).translationX(0.0f).setDuration(130).start();
+            }
         }
-        setSidebarActiveItem(parentId);
+        // This updates hidden old rail buttons; Compose owns its own rail.
+        if (modernSidebar == null) setSidebarActiveItem(parentId);
         if (parentId != R.id.BTItemMouse && parentId != R.id.BTItemPause) {
             activeSidebarItemId = parentId;
             activeSidebarPanelId = subId;

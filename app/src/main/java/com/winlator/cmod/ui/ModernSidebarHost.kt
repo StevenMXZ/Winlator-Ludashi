@@ -51,10 +51,16 @@ class ModernSidebarController internal constructor(internal val activity: XServe
     internal var paused by mutableStateOf(false)
     internal val panelRoots = listOf(R.id.LLSubGraphics, R.id.LLSubScreen, R.id.LLSubInput, R.id.LLSubFPS, R.id.LLSubTaskManager)
         .associateWith { activity.findViewById<View>(it) }
+    // Coalesce control updates into one UI snapshot after the legacy widgets
+    // have applied their dependent visibility/selection changes.
+    private var refreshPosted = false
     internal fun refresh() {
-        revision++
-        // Spinner callbacks can post dependent visibility changes; take one more snapshot next turn.
-        root.post { revision++ }
+        if (refreshPosted) return
+        refreshPosted = true
+        root.post {
+            refreshPosted = false
+            revision++
+        }
     }
     internal fun select(panel: Int) {
         selected = panel
@@ -122,30 +128,35 @@ private fun Sidebar(state: ModernSidebarController) {
             }
             }
             VerticalDivider(color = dividerColor())
+            // Compose only the selected panel. Previously all five panels were
+            // laid out simultaneously behind transparent graphics layers, even
+            // though the legacy sidebar rendered just one visible ViewGroup.
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                sections.forEach { section ->
-                    val panel = section.id
-                    val selected = panel == state.selected
-                    val alpha by animateFloatAsState(if (selected) 1f else 0f, WinZMotion.standard(130), label = "sidebarPanel")
-                    Column(Modifier.fillMaxSize().zIndex(if (selected) 1f else 0f)
-                        .graphicsLayer { this.alpha = alpha; translationX = if (selected) -8f * (1f - alpha) else 0f }
-                        .then(if (!selected) Modifier.clearAndSetSemantics { }.focusProperties { canFocus = false }.focusGroup() else Modifier)
-                        .then(if (panel != R.id.LLSubTaskManager) Modifier.verticalScroll(rememberScrollState()) else Modifier)
-                        .padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        val revision = state.revision
-                        val source = state.panelRoots[panel]
-                        if (panel == R.id.LLSubTaskManager && source != null) {
-                            // The native panel includes the one visible heading and owns scrolling.
-                            TaskManagerPanel(source, selected)
-                        } else {
-                            Text(stringResource(section.label), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                            if (panel == R.id.LLSubGraphics) RuntimeStatusCard(state.activity.sidebarRuntimeStatusRows)
-                            if (panel == R.id.LLSubScreen) FullscreenModeSelector(state)
-                            if (panel == R.id.LLSubInput) ExclusiveInputRow(state)
-                            if (source is ViewGroup) LegacyFields(source, revision, selected, state::refresh, stringResource(section.label))
-                        }
+                val panel = state.selected
+                val section = sections.firstOrNull { it.id == panel } ?: sections[3]
+                val source = state.panelRoots[panel]
+                Column(
+                    Modifier.fillMaxSize()
+                        .then(if (panel == R.id.LLSubTaskManager) Modifier
+                              else Modifier.verticalScroll(rememberScrollState()))
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val revision = state.revision
+                    if (panel == R.id.LLSubTaskManager && source != null) {
+                        TaskManagerPanel(source, true)
+                    } else {
+                        Text(stringResource(section.label),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold)
+                        if (panel == R.id.LLSubGraphics)
+                            RuntimeStatusCard(state.activity.sidebarRuntimeStatusRows)
+                        if (panel == R.id.LLSubScreen) FullscreenModeSelector(state)
+                        if (panel == R.id.LLSubInput) ExclusiveInputRow(state)
+                        if (source is ViewGroup)
+                            LegacyFields(source, revision, true, state::refresh,
+                                stringResource(section.label))
                     }
-                    if (!selected) Box(Modifier.fillMaxSize().zIndex(0f).pointerInput(Unit) { })
                 }
             }
         }
