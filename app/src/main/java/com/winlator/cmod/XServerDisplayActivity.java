@@ -3011,9 +3011,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     public String getHudGraphicsFallback() {
-        if (xServerView instanceof com.winlator.cmod.widget.NativeX11View)
-            return getActiveRendererName();
-        return "freedreno".equalsIgnoreCase(graphicsDriver) ? "freedreno" : "Vulkan";
+        String backend = getActiveRendererName();
+        if ("DisplayX".equals(backend) || "DisplayX+".equals(backend)) return backend;
+        return "freedreno".equalsIgnoreCase(graphicsDriver) ? "freedreno" : backend;
     }
 
     private String openGlLibraryPath;

@@ -325,25 +325,7 @@ public class WinlatorHUD extends View {
                 XServerDisplayActivity activity = (XServerDisplayActivity) context;
                 XServerRendererView view = activity.getXServerView();
 
-                if (view instanceof XServerView
-                        && activity.getXServer() != null
-                        && activity.getXServer().isDisplayX()) {
-                    boolean bypass = isNative;
-                    Container container = activity.getContainer();
-                    if (container != null) {
-                        bypass |= "1".equals(container.getExtra("trueDisplayX", "0"));
-                    }
-
-                    String shortcutPath = activity.getIntent() != null
-                            ? activity.getIntent().getStringExtra("shortcut_path") : null;
-                    String shortcutBypass = readShortcutExtra(shortcutPath, "trueDisplayX");
-                    if (shortcutBypass != null) bypass = "1".equals(shortcutBypass);
-                    return bypass ? "DisplayX+" : "DisplayX";
-                }
-
-                if (view instanceof NativeX11View) return activity.getHudGraphicsFallback();
-                if (view instanceof XServerView) return "EGL";
-                if (view instanceof VulkanXServerView) return "Vulkan";
+                if (view != null) return activity.getHudGraphicsFallback();
             }
         } catch (Throwable ignored) {}
         return "Vulkan";
