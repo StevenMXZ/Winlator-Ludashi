@@ -635,4 +635,27 @@
     <string name="steam_download_estimating">Estimando…</string>
     <string name="steam_download_timing">%1$s MiB/s · Restante: %2$s</string>
     <string name="ui_component_uninstall_failed">Não foi possível remover este componente.</string>
+    <string name="steam_cloud_download_action">Baixar da Steam Cloud</string>
+    <string name="steam_cloud_upload_action">Enviar save local</string>
+    <string name="steam_cloud_transfer_done">Transferência concluída</string>
+    <string name="steam_cloud_files_found">%1$d arquivos na nuvem</string>
+    <string name="steam_cloud_save_date">Data do save: %1$s</string>
+    <string name="steam_cloud_date_unknown">Data do save indisponível</string>
+    <string name="steam_cloud_client_fallback">Se não for possível baixar o save da nuvem, abra o jogo pelo Steam Client para recuperá-lo.</string>
+    <string name="steam_cloud_pending_files">%1$d arquivos para transferir</string>
+    <string name="steam_cloud_already_updated">Saves já estão atualizados</string>
+    <string name="steam_cloud_apply_download">Baixar e aplicar</string>
+    <string name="steam_cloud_confirm_upload">Enviar para Steam Cloud</string>
+    <string name="steam_ui_demos">Demos</string>
+    <string name="steam_ui_no_demos">Nenhuma demo encontrada na biblioteca Steam</string>
+    <string name="steam_store_details">Detalhes</string>
+    <string name="steam_store_dlc">DLC</string>
+    <string name="steam_store_cloud">Saves na nuvem</string>
+    <string name="steam_store_media">Mídia</string>
+    <string name="steam_store_no_data">Detalhes do jogo indisponíveis</string>
+    <string name="steam_store_no_dlc">Informações de DLC indisponíveis</string>
+    <string name="steam_store_dlc_count">%1$d DLCs</string>
+    <string name="steam_store_cloud_setup">Instale o jogo e configure um container para transferir saves da nuvem.</string>
+    <string name="steam_store_no_media">Nenhuma mídia disponível</string>
+    <string name="steam_store_videos">Vídeos</string>
 </resources>

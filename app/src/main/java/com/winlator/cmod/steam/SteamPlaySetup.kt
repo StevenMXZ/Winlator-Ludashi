@@ -41,34 +41,52 @@ import kotlinx.coroutines.withContext
         result.onSuccess { (all, old, files) -> containers = all; selected = all.firstOrNull { it.id == old?.container?.id } ?: all.firstOrNull(); executables = files; exe = old?.getExtra("steamExecutable").orEmpty() }
             .onFailure { error = it.message.orEmpty() }
     }
-    AlertDialog(onDismissRequest = { if (!busy) dismiss() }, title = { Text(uiStr(R.string.steam_play_setup)) }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box {
-                OutlinedButton(enabled = !busy, onClick = { containerMenu = true }) { Text(selected?.name ?: uiStr(R.string.steam_ui_create_container)) }
-                DropdownMenu(containerMenu, { containerMenu = false }) { containers.forEach { c -> DropdownMenuItem(text = { Text(c.name) }, onClick = { selected = c; containerMenu = false }) } }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(uiStr(R.string.steam_play_setup), style = MaterialTheme.typography.titleLarge)
+        Box {
+            OutlinedButton(enabled = !busy, onClick = { containerMenu = true }) {
+                Text(selected?.name ?: uiStr(R.string.steam_ui_create_container))
             }
-            Box {
-                OutlinedButton(enabled = !busy, onClick = { menu = true }) { Text(exe.ifBlank { uiStr(R.string.steam_ui_choose_exe) }, maxLines = 2) }
-                DropdownMenu(menu, { menu = false }, Modifier.heightIn(max = 260.dp)) { executables.forEach { path -> DropdownMenuItem(text = { Text(path) }, onClick = { exe = path; menu = false }) } }
+            DropdownMenu(containerMenu, { containerMenu = false }) {
+                containers.forEach { c ->
+                    DropdownMenuItem(text = { Text(c.name) }, onClick = { selected = c; containerMenu = false })
+                }
             }
-            if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
         }
-    }, confirmButton = { TextButton(enabled = selected != null && exe.isNotBlank() && !busy, onClick = {
-        busy = true
-        scope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching {
-                check(SteamSettings.enabled(context)) { uiStr(R.string.steam_ui_enable_signin) }
-                if (SteamSettings.mode(context, id) == "RealSteam") check(SteamCredentials.load(context) != null) { uiStr(R.string.steam_ui_enable_signin) }
-                val container = selected!!
-                val existing = container.desktopDir.listFiles().orEmpty().any { it.extension == "desktop" && Shortcut(container, it).getExtra("steamAppId") == id.toString() }
-                if (!existing) SteamGames.draft(context, id, container)
-                val file = SteamLaunch.createShortcut(context, container, id, SteamGames.info(context, id), exe)
-                Shortcut(container, file).apply { putExtra("steamExecutable", exe); putExtra("steamConfigured", "1"); saveData() }
-            } }
-            busy = false
-            result.onSuccess { shortcut -> context.getSharedPreferences("steam-settings", 0).edit().putInt("steam-container-$id", shortcut.container.id).apply(); SteamGames.changed(); done(shortcut) }
-                .onFailure { error = it.message.orEmpty() }
+        Box {
+            OutlinedButton(enabled = !busy, onClick = { menu = true }) {
+                Text(exe.ifBlank { uiStr(R.string.steam_ui_choose_exe) }, maxLines = 2)
+            }
+            DropdownMenu(menu, { menu = false }, Modifier.heightIn(max = 260.dp)) {
+                executables.forEach { path ->
+                    DropdownMenuItem(text = { Text(path) }, onClick = { exe = path; menu = false })
+                }
+            }
         }
-    }) { Text(if (busy) uiStr(R.string.steam_ui_preparing) else if (play) uiStr(R.string.ui_play) else uiStr(R.string.steam_ui_save_launch)) } },
-        dismissButton = { TextButton(enabled = !busy, onClick = dismiss) { Text(uiStr(R.string.steam_ui_cancel)) } })
+        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(enabled = !busy, onClick = dismiss) { Text(uiStr(R.string.steam_ui_cancel)) }
+            TextButton(enabled = selected != null && exe.isNotBlank() && !busy, onClick = {
+                busy = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { runCatching {
+                        check(SteamSettings.enabled(context)) { uiStr(R.string.steam_ui_enable_signin) }
+                        if (SteamSettings.mode(context, id) == "RealSteam") check(SteamCredentials.load(context) != null) { uiStr(R.string.steam_ui_enable_signin) }
+                        val container = selected!!
+                        val existing = container.desktopDir.listFiles().orEmpty().any { it.extension == "desktop" && Shortcut(container, it).getExtra("steamAppId") == id.toString() }
+                        if (!existing) SteamGames.draft(context, id, container)
+                        val file = SteamLaunch.createShortcut(context, container, id, SteamGames.info(context, id), exe)
+                        Shortcut(container, file).apply { putExtra("steamExecutable", exe); putExtra("steamConfigured", "1"); saveData() }
+                    } }
+                    busy = false
+                    result.onSuccess { shortcut ->
+                        context.getSharedPreferences("steam-settings", 0).edit().putInt("steam-container-$id", shortcut.container.id).apply()
+                        SteamGames.changed()
+                        done(shortcut)
+                    }.onFailure { error = it.message.orEmpty() }
+                }
+            }) { Text(if (busy) uiStr(R.string.steam_ui_preparing) else if (play) uiStr(R.string.ui_play) else uiStr(R.string.steam_ui_save_launch)) }
+        }
+    }
+
 }

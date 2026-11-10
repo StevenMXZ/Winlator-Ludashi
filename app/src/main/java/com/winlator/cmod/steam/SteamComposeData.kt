@@ -7,11 +7,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-@Composable fun rememberSteamLibrary(context: Context, json: String, enabled: Boolean = true): List<LibraryItem> {
+@Composable fun rememberSteamLibrary(context: Context, json: String, enabled: Boolean = true, filterType: String = "game"): List<LibraryItem> {
     val changes = SteamGames.version
     val artwork = SteamLibrary.artworkVersion
-    val items by produceState(emptyList<LibraryItem>(), json, enabled, changes, artwork) {
-        value = if (enabled) withContext(Dispatchers.IO) { SteamLibrary.items(context, json) } else emptyList()
+    val items by produceState(emptyList<LibraryItem>(), json, enabled, changes, artwork, filterType) {
+        value = if (enabled) withContext(Dispatchers.IO) { SteamLibrary.items(context, json, filterType) } else emptyList()
     }
     return items
 }

@@ -727,4 +727,27 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="steam_download_estimating">Estimating…</string>
     <string name="steam_download_timing">%1$s MiB/s · Remaining: %2$s</string>
     <string name="ui_component_uninstall_failed">Could not remove this component.</string>
+    <string name="steam_cloud_download_action">Download from Steam Cloud</string>
+    <string name="steam_cloud_upload_action">Upload local save</string>
+    <string name="steam_cloud_transfer_done">Transfer completed</string>
+    <string name="steam_cloud_files_found">%1$d cloud save files</string>
+    <string name="steam_cloud_save_date">Save date: %1$s</string>
+    <string name="steam_cloud_date_unknown">Save date unavailable</string>
+    <string name="steam_cloud_client_fallback">If the cloud save cannot be downloaded, launch the game using Steam Client to retrieve it.</string>
+    <string name="steam_cloud_pending_files">%1$d files to transfer</string>
+    <string name="steam_cloud_already_updated">Saves are already up to date</string>
+    <string name="steam_cloud_apply_download">Download and apply</string>
+    <string name="steam_cloud_confirm_upload">Upload to Steam Cloud</string>
+    <string name="steam_ui_demos">Demos</string>
+    <string name="steam_ui_no_demos">No demos in your Steam library</string>
+    <string name="steam_store_details">Details</string>
+    <string name="steam_store_dlc">DLC</string>
+    <string name="steam_store_cloud">Cloud Saves</string>
+    <string name="steam_store_media">Media</string>
+    <string name="steam_store_no_data">No game details available</string>
+    <string name="steam_store_no_dlc">No DLC information available</string>
+    <string name="steam_store_dlc_count">%1$d DLC entries</string>
+    <string name="steam_store_cloud_setup">Install and configure a game container to transfer cloud saves.</string>
+    <string name="steam_store_no_media">No media available</string>
+    <string name="steam_store_videos">Videos</string>
 </resources>

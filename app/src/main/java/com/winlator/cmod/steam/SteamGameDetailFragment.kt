@@ -2,6 +2,11 @@ package com.winlator.cmod.steam
 
 import com.winlator.cmod.R
 import com.winlator.cmod.ui.uiStr
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 
 import android.content.Intent
 import android.os.Bundle
@@ -51,14 +56,6 @@ class SteamGameDetailFragment : Fragment() {
                 }.invokeOnCompletion { preparing = false }
             }
             override fun onSteamExecutable() { setupPlay(false) }
-            override fun onSteamCloud() {
-                viewLifecycleOwner.lifecycleScope.launch {
-                    val found = withContext(Dispatchers.IO) { runCatching {
-                        SteamGames.shortcut(context, appId) ?: SteamGames.draft(context, appId, ContainerManager(context).containers.firstOrNull() ?: error(uiStr(R.string.steam_ui_create_container)))
-                    } }
-                    found.onSuccess { SteamCloud.showNative(this@SteamGameDetailFragment, appId, it) }.onFailure { notice(it.message.orEmpty()) }
-                }
-            }
             override fun onSteamMode(mode: String) {
                 if (preparing || SteamSession.gameActive) return
                 SteamSettings.setMode(context, appId, mode)
@@ -92,8 +89,7 @@ class SteamGameDetailFragment : Fragment() {
                         SteamGames.shortcut(context, appId) ?: SteamGames.draft(context, appId, ContainerManager(context).containers.firstOrNull() ?: error(uiStr(R.string.steam_ui_create_container)))
                     } }
                     found.onSuccess { shortcut ->
-                        if (SteamSettings.mode(context, appId) == "RealSteam") SteamCloud.showStatus(this@SteamGameDetailFragment, appId, shortcut)
-                        else GameSavesComposeDialog.show(this@SteamGameDetailFragment, shortcut)
+                        SteamCloud.showStatus(this@SteamGameDetailFragment, appId, shortcut)
                     }.onFailure { notice(it.message.orEmpty()) }
                 }
             }
@@ -124,15 +120,29 @@ class SteamGameDetailFragment : Fragment() {
         if (root.findViewWithTag<View>("steam-play-setup") != null) return
         val view = androidx.compose.ui.platform.ComposeView(requireContext()).apply { tag = "steam-play-setup" }
         val dismiss = { view.disposeComposition(); root.removeView(view) }
-        view.setContent { com.winlator.cmod.ui.theme.WinZTheme {
-            SteamPlaySetup(appId, play, done = { shortcut ->
-                dismiss()
-                if (play) startActivity(Intent(requireContext(), XServerDisplayActivity::class.java)
-                    .putExtra("container_id", shortcut.container.id).putExtra("shortcut_path", shortcut.file.path)
-                    .putExtra("shortcut_name", SteamGames.displayName(shortcut)))
-            }, dismiss = dismiss)
-        } }
-        root.addView(view)
+        view.setContent {
+            com.winlator.cmod.ui.theme.WinZOverlayTheme {
+                androidx.activity.compose.BackHandler { dismiss() }
+                androidx.compose.foundation.layout.Box(
+                    androidx.compose.ui.Modifier.fillMaxSize()
+                        .background(com.winlator.cmod.ui.theme.DialogScrimColor)
+                        .clickable { dismiss() }.padding(24.dp),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    com.winlator.cmod.ui.theme.ThemedDialogSurface(
+                        modifier = androidx.compose.ui.Modifier.clickable { }
+                    ) {
+                        SteamPlaySetup(appId, play, done = { shortcut ->
+                            dismiss()
+                            if (play) startActivity(Intent(requireContext(), XServerDisplayActivity::class.java)
+                                .putExtra("container_id", shortcut.container.id).putExtra("shortcut_path", shortcut.file.path)
+                                .putExtra("shortcut_name", SteamGames.displayName(shortcut)))
+                        }, dismiss = dismiss)
+                    }
+                }
+            }
+        }
+        root.addView(view, android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT))
     }
     override fun onResume() {
         super.onResume()

@@ -90,6 +90,7 @@ object SteamSheets {
                     favorite = !favorite; context.getSharedPreferences("steam-settings", 0).edit().putBoolean("favorite-$id", favorite).apply(); SteamGames.changed()
                 }) { Icon(if (favorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (favorite) uiStr(R.string.steam_ui_unfavorite) else uiStr(R.string.steam_ui_favorite)) }
             }
+            SteamStoreDetails(id, installed, state)
             if (state.downloading && state.id == id) SteamDownloadPanel(state)
             else if (!state.signedIn) {
                 Text(steamStatusText(state.status), Modifier.padding(horizontal = 16.dp, vertical = 4.dp).heightIn(max = 48.dp), style = MaterialTheme.typography.bodySmall)

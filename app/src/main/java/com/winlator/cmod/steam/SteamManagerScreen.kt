@@ -34,7 +34,7 @@ import java.io.File
 
 @Composable fun SteamManagerScreen(state: SteamUiSnapshot, initialTab: Int, onBack: () -> Unit, signOut: () -> Unit, openGame: (Int) -> Unit) {
     val context = LocalContext.current
-    var tab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 3)) }
+    var tab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 4)) }
     var query by rememberSaveable { mutableStateOf("") }
     var search by rememberSaveable { mutableStateOf(false) }
     var grid by rememberSaveable { mutableStateOf(true) }
@@ -42,6 +42,7 @@ import java.io.File
     var sorting by remember { mutableStateOf(false) }
     var sort by rememberSaveable { mutableStateOf("Recent") }
     val apps = rememberSteamLibrary(context, state.library)
+    val demos = rememberSteamLibrary(context, state.library, filterType = "demo")
     val installed = remember(apps) { apps.count { it.containerName == "Steam · Installed" } }
     val user = rememberSteamUserSnapshot(context)
     val profile = user.profile
@@ -69,7 +70,7 @@ import java.io.File
             }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(uiStr(R.string.steam_ui_games) to Icons.Outlined.SportsEsports, uiStr(R.string.steam_ui_downloads) to Icons.Outlined.Download, uiStr(R.string.steam_ui_installed) to Icons.Outlined.DownloadDone, uiStr(R.string.steam_ui_achievements) to Icons.Outlined.EmojiEvents).forEachIndexed { index, (title, icon) ->
+            listOf(uiStr(R.string.steam_ui_games) to Icons.Outlined.SportsEsports, uiStr(R.string.steam_ui_downloads) to Icons.Outlined.Download, uiStr(R.string.steam_ui_installed) to Icons.Outlined.DownloadDone, uiStr(R.string.steam_ui_achievements) to Icons.Outlined.EmojiEvents, uiStr(R.string.steam_ui_demos) to Icons.Outlined.SportsEsports).forEachIndexed { index, (title, icon) ->
                 FilterChip(tab == index, onClick = { tab = index }, label = { Text(title) }, leadingIcon = { Icon(icon, null, Modifier.size(20.dp)) })
             }
         }
@@ -103,14 +104,15 @@ import java.io.File
                 }
             }
         } else {
-            val filtered = remember(apps, query, tab) { apps.filter { it.name.contains(query, true) && (tab != 2 || it.containerName == "Steam · Installed") } }
+            val sourceApps = if (tab == 4) demos else apps
+            val filtered = remember(sourceApps, query, tab) { sourceApps.filter { it.name.contains(query, true) && (tab != 2 || it.containerName == "Steam · Installed") } }
             val visible = remember(filtered, owned, sort) { sortSteamLibrary(filtered, owned, sort) }
             LazyVerticalGrid(if (grid) GridCells.Adaptive(160.dp) else GridCells.Fixed(1), Modifier.weight(1f), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item(key = "account", span = { GridItemSpan(maxLineSpan) }) { SteamAccountCard(profile, state.signedIn, apps.size, installed) }
                 item(key = "controls", span = { GridItemSpan(maxLineSpan) }) {
                     Column {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (tab == 2) uiStr(R.string.steam_ui_installed) else uiStr(R.string.steam_ui_library), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(if (tab == 2) uiStr(R.string.steam_ui_installed) else if (tab == 4) uiStr(R.string.steam_ui_demos) else uiStr(R.string.steam_ui_library), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                             IconButton(onClick = { search = !search }) { Icon(Icons.Outlined.Search, uiStr(R.string.steam_ui_search_games)) }
                             Box {
                                 TextButton(onClick = { sorting = true }) { Icon(Icons.Outlined.SwapVert, null); Text(steamSortLabel(sort)); Icon(Icons.Outlined.ArrowDropDown, null) }
@@ -136,7 +138,7 @@ import java.io.File
                         }
                     }
                 }
-                if (visible.isEmpty() && !state.libraryLoading) item(span = { GridItemSpan(maxLineSpan) }) { Text(if (tab == 2) uiStr(R.string.steam_ui_no_installed) else uiStr(R.string.steam_ui_no_games), Modifier.padding(20.dp)) }
+                if (visible.isEmpty() && !state.libraryLoading) item(span = { GridItemSpan(maxLineSpan) }) { Text(if (tab == 2) uiStr(R.string.steam_ui_no_installed) else if (tab == 4) uiStr(R.string.steam_ui_no_demos) else uiStr(R.string.steam_ui_no_games), Modifier.padding(20.dp)) }
             }
         }
     }

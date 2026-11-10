@@ -25,6 +25,7 @@ object SteamNativeCloud {
         val conflicts get() = entries.count { it.remoteSha != null && it.localSha != null && it.remoteSha != it.localSha }
     }
     enum class Choice { Cloud, Local }
+    enum class Direction { Download, Upload }
     private fun sha(file: File): String {
         require(file.length() <= MAX_FILE) { "Save exceeds 64 MiB" }
         val digest = MessageDigest.getInstance("SHA-1")
@@ -114,19 +115,19 @@ object SteamNativeCloud {
         }
         Plan(id, user, container, listing.getLong("currentChangeNumber"), entries.values.toList())
     }
-    fun synchronize(context: Context, plan: Plan, choice: Choice?, progress: (Int, Int) -> Unit): String = operation(context, plan.container) { session, user ->
+    fun synchronize(context: Context, plan: Plan, direction: Direction, progress: (Int, Int) -> Unit): String = operation(context, plan.container) { session, user ->
         check(user == plan.user) { "Steam account changed; preview again" }
-        check(plan.conflicts == 0 || choice != null) { "Choose which saves to keep" }
         val now = listing(session, plan.id)
         check(now.getLong("currentChangeNumber") == plan.change) { "Steam Cloud changed; preview again" }
         plan.entries.forEach { e -> check((if (e.local.isFile) sha(e.local) else null) == e.localSha) { "Local saves changed; preview again" } }
-        val downloads = plan.entries.filter { it.remoteSha != null && it.remoteSha != it.localSha && (it.localSha == null || choice == Choice.Cloud) }
-        val uploads = plan.entries.filter { it.localSha != null && it.localSha != it.remoteSha && (it.remoteSha == null || choice == Choice.Local) }
+        val downloads = if (direction == Direction.Download) plan.entries.filter { it.remoteSha != null && it.remoteSha != it.localSha } else emptyList()
+        val uploads = if (direction == Direction.Upload) plan.entries.filter { it.localSha != null && it.localSha != it.remoteSha } else emptyList()
         val deadline = android.os.SystemClock.elapsedRealtime() + 300000
         val backup = File(context.filesDir, "steam-cloud-backups/$user/${plan.id}/${System.currentTimeMillis()}").apply { mkdirs() }
         val staged = mutableMapOf<Entry, File>()
         var done = 0; val total = downloads.size + uploads.size
         progress(0, total)
+        if (total == 0) return@operation "Already up to date"
         for ((index, entry) in downloads.withIndex()) {
             check(android.os.SystemClock.elapsedRealtime() < deadline) { "Sync exceeded five minutes; retry remaining files" }
             val bytes = session.downloadCloudFile(plan.id, entry.name) ?: error("Cloud download failed; originals preserved")
@@ -174,7 +175,7 @@ object SteamNativeCloud {
         }
         // Native completion is recorded only after transfers and upload verification succeed.
         val report = File(context.filesDir, "steam-cloud/$user/${plan.container.id}-${plan.id}.txt")
-        report.parentFile?.mkdirs(); report.writeText("appid=${plan.id}\nphase=exit\nstate=2\ntransfers=$total\n")
+        report.parentFile?.mkdirs(); report.writeText("appid=${plan.id}\nphase=${if (direction == Direction.Download) "launch" else "exit"}\nstate=2\ntransfers=$total\n")
         progress(total, total)
         backup.path
     }

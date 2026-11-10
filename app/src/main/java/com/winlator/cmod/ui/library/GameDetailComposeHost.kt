@@ -45,7 +45,7 @@ interface GameDetailCallbacks {
     fun onHome()
 }
 
-interface SteamDetailCallbacks : GameDetailCallbacks { fun onSteamMode(mode: String); fun onSteamExecutable(); fun onSteamCloud() }
+interface SteamDetailCallbacks : GameDetailCallbacks { fun onSteamMode(mode: String); fun onSteamExecutable() }
 
 // Layout and statistics adapted from teldommm/WinLite. Ludashi keeps its original
 // artwork selection/crop (including offline icons) and all six user-selected palettes.
@@ -171,7 +171,7 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
             Surface(Modifier.align(Alignment.BottomEnd).padding(18.dp).width(panelWidth).heightIn(max = (maxHeight - 116.dp).coerceAtLeast(100.dp)),
                 shape = WinZShapes.ExtraLarge, color = Color.Black.copy(.48f), border = BorderStroke(1.dp, Color.White.copy(.18f))) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() }, { (callbacks as? SteamDetailCallbacks)?.onSteamCloud() })
+                    PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
                     Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         LandscapeAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), Modifier.weight(1f), callbacks::onConfigure)
                         LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
@@ -201,7 +201,7 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
         }
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth())
-            PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() }, { (callbacks as? SteamDetailCallbacks)?.onSteamCloud() })
+            PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
             DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)
             DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
             DetailAction(Icons.Outlined.Backup, savesLabel(), callbacks::onSaves)
@@ -218,17 +218,20 @@ private fun savesLabel(): String = if (LocalSteamDetail.current && LocalSteamMod
     stringResource(R.string.steam_cloud_saves) else stringResource(R.string.ui_saves)
 
 @Composable
-private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit, chooseExecutable: () -> Unit, syncCloud: () -> Unit) {
+private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit, chooseExecutable: () -> Unit) {
     val steam = LocalSteamDetail.current
     val mode = LocalSteamMode.current
     var expanded by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Button(click, enabled = LocalSteamReady.current, modifier = Modifier.weight(1f).heightIn(min = 52.dp), shape = WinZShapes.Medium) {
+        Button(click, enabled = LocalSteamReady.current, modifier = Modifier.weight(1f).heightIn(min = if (steam) 44.dp else 52.dp), shape = WinZShapes.Medium) {
             Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp))
             Text(if (!LocalSteamReady.current) stringResource(R.string.steam_ui_configure_first)
                 else if (steam) stringResource(if (mode == "RealSteam") R.string.steam_ui_client else R.string.steam_ui_offline)
                 else stringResource(R.string.ui_play), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (steam) IconButton(onClick = chooseExecutable, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Outlined.FolderOpen, stringResource(R.string.steam_ui_choose_exe), Modifier.size(20.dp))
         }
         if (steam) Box {
             FilledTonalIconButton(onClick = { expanded = true }, enabled = !com.winlator.cmod.steam.SteamSession.gameActive) {
@@ -242,14 +245,6 @@ private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit, chooseEx
             }
         }
     }
-    if (steam) Row(verticalAlignment = Alignment.CenterVertically) {
-    TextButton(onClick = chooseExecutable, modifier = Modifier.weight(1f)) {
-        Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-        Text(LocalSteamExecutable.current.ifBlank { stringResource(R.string.steam_ui_choose_exe) }, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Icon(Icons.Outlined.ArrowDropDown, null)
-    }
-    IconButton(onClick = syncCloud) { Icon(Icons.Outlined.CloudSync, stringResource(R.string.steam_cloud_sync_now)) }
-    }
     }
 }
 
@@ -257,15 +252,15 @@ private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit, chooseEx
 private fun LandscapeAction(icon: ImageVector, label: String, modifier: Modifier, click: () -> Unit, destructive: Boolean = false) {
     Surface(click, modifier.fillMaxHeight(), shape = WinZShapes.Medium, color = Color.White.copy(.10f), contentColor = if (destructive) MaterialTheme.colorScheme.error else Color.White,
         border = BorderStroke(1.dp, Color.White.copy(.16f))) {
-        Column(Modifier.padding(horizontal = 4.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Icon(icon, null, Modifier.size(23.dp)); Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.padding(horizontal = 3.dp, vertical = if (LocalSteamDetail.current) 6.dp else 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Icon(icon, null, Modifier.size(if (LocalSteamDetail.current) 20.dp else 23.dp)); Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
 private fun DetailAction(icon: ImageVector, label: String, click: () -> Unit, destructive: Boolean = false) {
-    Surface(click, Modifier.fillMaxWidth().heightIn(min = 54.dp), shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant,
+    Surface(click, Modifier.fillMaxWidth().heightIn(min = if (LocalSteamDetail.current) 48.dp else 54.dp), shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {

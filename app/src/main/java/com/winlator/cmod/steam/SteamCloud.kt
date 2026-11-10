@@ -129,30 +129,11 @@ object SteamCloud {
         }.onFailure { android.util.Log.w("SteamCloud", "Graceful shutdown did not complete", it) }
     }
     fun showStatus(fragment: Fragment, id: Int, shortcut: Shortcut) {
-        val activity = fragment.requireActivity()
-        panel(activity, "steam-cloud-status") { close ->
-            var native by remember { mutableStateOf(false) }
-            if (native) { SteamNativeCloudPanel(id, shortcut.container, close); return@panel }
-            val report by produceState<Pair<Report?, Long>>(null to 0L, id) {
-                value = withContext(Dispatchers.IO) {
-                    val file = cached(activity, id, shortcut)
-                    runCatching { parse(file.readText()) to file.lastModified() }.getOrDefault(null to 0L)
-                }
-            }
-            val status = when (report.first?.state) {
-                2 -> uiStr(if (report.first?.phase == "exit") R.string.steam_cloud_uploaded else R.string.steam_cloud_downloaded, DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(report.second)))
-                0 -> uiStr(R.string.steam_cloud_disabled)
-                7 -> uiStr(R.string.steam_cloud_conflict)
-                null -> uiStr(R.string.steam_cloud_not_synced)
-                else -> uiStr(R.string.steam_cloud_pending)
-            }
-            AlertDialog(onDismissRequest = close, title = { Text(uiStr(R.string.steam_cloud_saves)) },
-                text = { androidx.compose.foundation.layout.Column {
-                    Text(status + "\n\n" + uiStr(R.string.steam_native_cloud_help))
-                    TextButton(enabled = !SteamSession.gameActive && !SteamNativeCloud.busy, onClick = { native = true }) { Text(uiStr(R.string.steam_cloud_sync_now)) }
-                } },
-                confirmButton = { TextButton(onClick = close) { Text(uiStr(R.string.ui_close)) } },
-                dismissButton = { TextButton(onClick = { close(); GameSavesComposeDialog.show(fragment, shortcut) }) { Text(uiStr(R.string.steam_cloud_backup)) } })
+        panel(fragment.requireActivity(), "steam-cloud-status") { close ->
+            SteamNativeCloudPanel(id, shortcut.container, close, onBackup = {
+                close()
+                GameSavesComposeDialog.show(fragment, shortcut)
+            })
         }
     }
     fun showNative(fragment: Fragment, id: Int, shortcut: Shortcut) {

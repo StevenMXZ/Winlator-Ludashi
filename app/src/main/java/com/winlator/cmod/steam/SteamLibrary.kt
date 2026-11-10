@@ -18,7 +18,7 @@ object SteamLibrary {
     private val images = Executors.newFixedThreadPool(2)
     private val requested = ConcurrentHashMap.newKeySet<String>()
     fun appId(path: String): Int? = path.removePrefix("steam://").takeIf { path.startsWith("steam://") }?.toIntOrNull()
-    fun items(context: Context, json: String): List<LibraryItem> = runCatching {
+    fun items(context: Context, json: String, filterType: String = "game"): List<LibraryItem> = runCatching {
         val apps = JSONObject(json).optJSONArray("owned_apps") ?: org.json.JSONArray()
         val owned = (0 until apps.length()).map { apps.getJSONObject(it) }
         val ownedIds = owned.map { it.getInt("id") }.toSet()
@@ -26,11 +26,11 @@ object SteamLibrary {
         val installedIds = records.map { it.nameWithoutExtension.toInt() }.toSet()
         val artworkNames = File(context.cacheDir, "steam-art").list()?.toSet().orEmpty()
         val installed = records.filter { it.nameWithoutExtension.toInt() !in ownedIds }.mapNotNull { file ->
-            runCatching { val info = JSONObject(file.readText()); JSONObject().put("id", file.nameWithoutExtension.toInt()).put("type", "game")
+            runCatching { val info = JSONObject(file.readText()); JSONObject().put("id", file.nameWithoutExtension.toInt()).put("type", info.optJSONObject("common")?.optString("type").orEmpty().ifBlank { "game" })
                 .put("name", info.optJSONObject("common")?.optString("name").orEmpty().ifBlank { "Steam game" }) }.getOrNull()
         }
         (owned + installed).distinctBy { it.getInt("id") }.filter {
-            it.optString("type").equals("game", true)
+            it.optString("type").equals(filterType, true)
         }.map { app ->
             val id = app.getInt("id")
             val installed = id in installedIds
