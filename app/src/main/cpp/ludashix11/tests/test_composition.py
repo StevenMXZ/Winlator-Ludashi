@@ -10,7 +10,7 @@ import re
 import subprocess
 import tempfile
 
-root=pathlib.Path(__file__).resolve().parents[3]
+root=pathlib.Path(__file__).resolve().parents[6]
 renderer=root/'app/src/main/cpp/winlator/renderer/vulkan'
 tests=pathlib.Path(__file__).resolve().parent
 cmake=(root/'app/src/main/cpp/CMakeLists.txt').read_text()

@@ -294,5 +294,5 @@ target_link_libraries(vulkan_renderer
 
 
 # A separate native X11 session. Its core and renderer have no per-frame Java callbacks.
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../../native/ludashix11
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ludashix11
                  ${CMAKE_CURRENT_BINARY_DIR}/ludashix11)

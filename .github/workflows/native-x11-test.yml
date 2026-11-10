@@ -1,0 +1,123 @@
+name: Ludashi native X11 test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/4.1-upstream-native-x11
+      - perf/native-x11-*
+      - feature/4.1-rebuilt-native-x11
+      - ludashi-4.2
+
+permissions:
+  contents: write
+
+concurrency:
+  group: native-x11-test-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-x11-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build glslang-tools zstd
+      - name: Validate the native X11 core with sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          cmake -S app/src/main/cpp/ludashix11 -B "$RUNNER_TEMP/native-x11-host" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'
+          cmake --build "$RUNNER_TEMP/native-x11-host" -j2
+          "$RUNNER_TEMP/native-x11-host/ludashix11_renderer_test"
+          python3 app/src/main/cpp/ludashix11/tests/test_command_cache.py
+          python3 app/src/main/cpp/ludashix11/tests/test_gpu_timing.py
+          python3 app/src/main/cpp/ludashix11/tests/test_validation_config.py
+          python3 app/src/main/cpp/ludashix11/tests/test_image_fences.py
+          python3 app/src/main/cpp/ludashix11/tests/test_drawable.py
+          python3 app/src/main/cpp/ludashix11/tests/test_composition.py
+          python3 app/src/main/cpp/ludashix11/tests/test_wire.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_compat.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_fps_limit.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_shm.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_randr.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_retirement.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_frame_release.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_present_scene.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_scene_wakeup.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_drawable_scene.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_sync_sleep.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_extensions.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_hidden_present.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_present_configure.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+          python3 app/src/main/cpp/ludashix11/tests/test_late_latch.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
+      - name: Prepare upstream Vulkan dependencies
+        run: |
+          rm -rf app/src/main/cpp/adrenotools
+          git clone https://github.com/Pipetto-crypto/libadrenotools.git app/src/main/cpp/adrenotools
+          git -C app/src/main/cpp/adrenotools checkout 8483dfdaa2abf97ee89ad0e5f337e7b508550c6b
+          git clone https://github.com/Pipetto-crypto/liblinkernsbypass.git app/src/main/cpp/adrenotools/lib/linkernsbypass
+      - name: Bundle Khronos Vulkan validation layer (activation remains opt-in)
+        run: |
+          set -euo pipefail
+          VVL_VERSION="1.4.357.0"
+          VVL_SHA256="daaeac9291167a2d5257a8a0f7c0a86e56d0821d0211af661710fe68c8040ffa"
+          VVL_ARCHIVE="$RUNNER_TEMP/android-binaries-$VVL_VERSION.tar.gz"
+          VVL_DIR="$RUNNER_TEMP/vulkan-validation-layers"
+          curl --retry 3 -fL \
+            "https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases/download/vulkan-sdk-$VVL_VERSION/android-binaries-$VVL_VERSION.tar.gz" \
+            -o "$VVL_ARCHIVE"
+          echo "$VVL_SHA256  $VVL_ARCHIVE" | sha256sum -c -
+          mkdir -p "$VVL_DIR"
+          tar -xzf "$VVL_ARCHIVE" -C "$VVL_DIR"
+          LAYER="$(find "$VVL_DIR" -type f -path '*/arm64-v8a/libVkLayer_khronos_validation.so' -print -quit)"
+          test -n "$LAYER"
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          cp "$LAYER" app/src/main/jniLibs/arm64-v8a/libVkLayer_khronos_validation.so
+          test -s app/src/main/jniLibs/arm64-v8a/libVkLayer_khronos_validation.so
+      - name: Restore the upstream signing identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LUDASHI_KEYSTORE_B64: ${{ secrets.LUDASHI_KEYSTORE_B64 }}
+          LUDASHI_STORE_PASSWORD: ${{ secrets.LUDASHI_STORE_PASSWORD }}
+        run: bash app/src/main/scripts/prepare-upstream-signing.sh
+      - name: Build and verify the experimental APK
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest assembleRelease --no-configuration-cache --stacktrace
+          apk=app/build/outputs/apk/release/app-release.apk
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
+          unzip -l "$apk" | grep -F 'lib/arm64-v8a/libludashix11.so'
+          unzip -l "$apk" | grep -F 'lib/arm64-v8a/libVkLayer_khronos_validation.so'
+      - name: Save the APK as a private test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY" --jq .private)" = true
+          tag="native-x11-${{ github.run_number }}-r${{ github.run_attempt }}"
+          gh release create "$tag" \
+            app/build/outputs/apk/release/app-release.apk#winlator-ludashi-native-x11.apk \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Ludashi native X11 test #${{ github.run_number }}" \
+            --notes 'Native C++ X11 + Ludashi Vulkan backend, based on feature/4.1-upstream. Select Display Server → Ludashi X11 (Native Vulkan). Signed with the upstream identity. Host protocol tests and Android compilation are checks; Android driver behavior and FPS need device testing.' \
+            --prerelease
+
+
+
+

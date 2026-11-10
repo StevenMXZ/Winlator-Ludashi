@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-root = Path(__file__).resolve().parents[1]
+root = Path(__file__).resolve().parents[4]
 source = (root / "app/src/main/java/com/winlator/cmod/XServerDisplayActivity.java").read_text()
 start = source.index("    public void changeExclusiveInput(")
 opening = source.index("{", start)

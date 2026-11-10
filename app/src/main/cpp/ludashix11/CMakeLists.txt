@@ -15,7 +15,7 @@ if(ANDROID)
         if(IS_ABSOLUTE "${source}")
             list(APPEND ABS_RENDERER_SOURCES "${source}")
         else()
-            list(APPEND ABS_RENDERER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../../app/src/main/cpp/${source}")
+            list(APPEND ABS_RENDERER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../${source}")
         endif()
     endforeach()
     add_library(ludashix11 SHARED ${CORE_SOURCES} ${NATIVE_SOURCES} ${ABS_RENDERER_SOURCES}
@@ -23,7 +23,7 @@ if(ANDROID)
     target_compile_definitions(ludashix11 PRIVATE LUDASHI_NATIVE_X11=1)
     add_dependencies(ludashix11 vulkan_renderer)
     target_include_directories(ludashix11 PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../app/src/main/cpp/winlator/renderer/vulkan
+        ${CMAKE_CURRENT_SOURCE_DIR}/../winlator/renderer/vulkan
         ${CMAKE_CURRENT_BINARY_DIR}/..)
     target_link_libraries(ludashix11 PRIVATE android log vulkan adrenotools dl atomic)
 else()

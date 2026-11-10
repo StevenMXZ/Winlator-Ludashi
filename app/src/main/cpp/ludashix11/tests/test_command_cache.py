@@ -4,7 +4,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
-root = pathlib.Path(__file__).resolve().parents[3]
+root = pathlib.Path(__file__).resolve().parents[6]
 renderer = root / 'app/src/main/cpp/winlator/renderer/vulkan'
 source = (renderer / 'VulkanRendererContext.cpp').read_text()
 start = source.index('    VkCommandBuffer selectedCommand = cmdBufs[currentFrame];')

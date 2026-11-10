@@ -34,9 +34,9 @@ def main():
                 gh("release", "download", old_tag, "--repo", REPO, "--pattern", "*.apk", "--dir", str(dest))
                 old = next(dest.glob("*.apk"))
                 patch = work / f"update-{code}-from-{digest(old)[:16]}.bldp"
-                subprocess.run([sys.executable, "scripts/apk_delta.py", "make", str(old), str(apk), str(patch)], check=True)
+                subprocess.run([sys.executable, "app/src/main/scripts/apk_delta.py", "make", str(old), str(apk), str(patch)], check=True)
                 restored = dest / "restored.apk"
-                subprocess.run([sys.executable, "scripts/apk_delta.py", "apply", str(old), str(patch), str(restored)], check=True)
+                subprocess.run([sys.executable, "app/src/main/scripts/apk_delta.py", "apply", str(old), str(patch), str(restored)], check=True)
                 if digest(restored) != digest(apk) or patch.stat().st_size >= apk.stat().st_size:
                     continue
                 assets.append(patch)

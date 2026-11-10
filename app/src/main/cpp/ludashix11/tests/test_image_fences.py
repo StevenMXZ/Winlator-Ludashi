@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fence recycling must not make an old image wait for a newer unrelated draw."""
 import pathlib, subprocess, tempfile
-root=pathlib.Path(__file__).resolve().parents[3]
+root=pathlib.Path(__file__).resolve().parents[6]
 directory=root/'app/src/main/cpp/winlator/renderer/vulkan'
 source=(directory/'VulkanRendererContext.cpp').read_text()
 start=source.index('void VulkanRendererContext::renderFrame()')

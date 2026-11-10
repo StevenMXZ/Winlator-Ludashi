@@ -2,7 +2,7 @@
 """Exercise the production opt-in layer/extension/pNext configuration block."""
 import pathlib, subprocess, tempfile
 
-root = pathlib.Path(__file__).resolve().parents[3]
+root = pathlib.Path(__file__).resolve().parents[6]
 source = (root / 'app/src/main/cpp/winlator/renderer/vulkan/VulkanRendererContext.cpp').read_text()
 begin = source.index('    const char* validationLayer = "VK_LAYER_KHRONOS_validation";')
 end = source.index('    VkResult result = vk_.CreateInstance', begin)

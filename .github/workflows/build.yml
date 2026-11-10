@@ -4,7 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - 4.1
+      - feature/4.1-controls-lean
+
 permissions:
   contents: write
 
@@ -66,12 +67,23 @@ jobs:
           cp "$LAYER" app/src/main/jniLibs/arm64-v8a/libVkLayer_khronos_validation.so
           test -s app/src/main/jniLibs/arm64-v8a/libVkLayer_khronos_validation.so
 
+      - name: Restore persistent upstream signing identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LUDASHI_KEYSTORE_B64: ${{ secrets.LUDASHI_KEYSTORE_B64 }}
+          LUDASHI_STORE_PASSWORD: ${{ secrets.LUDASHI_STORE_PASSWORD }}
+        run: bash app/src/main/scripts/prepare-upstream-signing.sh
+
       - name: Build with Gradle
         run: ./gradlew assembleRelease
 
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
+      - name: Publish APK Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: Bionic-Build-${{ github.run_number }}
-          path: app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
+          tag_name: 4.1-controls-${{ github.run_number }}
+          name: 4.1 Controls #${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          files: app/build/outputs/apk/release/*.apk
+

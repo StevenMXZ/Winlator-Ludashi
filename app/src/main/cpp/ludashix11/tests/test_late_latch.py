@@ -69,7 +69,7 @@ def run(binary, unmap):
 
 if __name__ == '__main__':
     # Check the production hook's placement as well as the adapter/scene behavior.
-    source = (pathlib.Path(__file__).parents[3] / 'app/src/main/cpp/winlator/renderer/vulkan/VulkanRendererContext.cpp').read_text()
+    source = (pathlib.Path(__file__).parents[6] / 'app/src/main/cpp/winlator/renderer/vulkan/VulkanRendererContext.cpp').read_text()
     start = source.index('void VulkanRendererContext::renderFrame()')
     acquire = source.index('vk_.AcquireNextImageKHR(', start)
     wait = source.index('imgInFlight[imgIdx]=inFlightFences[currentFrame]', acquire)
