@@ -197,7 +197,8 @@ private fun userArtworkPath(item: LibraryItem): String? =
 
 @Composable
 private fun PagerImage(path: String?, fallback: Bitmap?, modifier: Modifier) {
-    val cacheKey = LibraryImageCache.keyFor(path)
+    val artworkRevision = LibraryImageCache.revision
+    val cacheKey = remember(path, artworkRevision) { LibraryImageCache.keyFor(path) }
     val image by produceState<Bitmap?>(LibraryImageCache.peek(cacheKey) ?: fallback, cacheKey, fallback) {
         value = withContext(Dispatchers.IO) {
             path?.takeIf { File(it).isFile }?.let { LibraryImageCache.load(it) } ?: fallback

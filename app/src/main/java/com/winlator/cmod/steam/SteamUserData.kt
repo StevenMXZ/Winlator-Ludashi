@@ -9,6 +9,7 @@ import java.io.File
 /** Read-only account information. Cached per Steam account; never changes achievements. */
 object SteamUserData {
     val revision = mutableIntStateOf(0)
+    val contentRevision = mutableIntStateOf(0)
     data class Achievement(val key: String, val title: String, val description: String, val unlocked: Boolean, val unlockedAt: Long, val icon: String)
     private fun root(context: Context): File? = SteamCredentials.load(context)?.optLong("id")?.takeIf { it > 0 }?.let { File(context.filesDir, "steam-user/$it") }
     private fun file(context: Context, name: String) = root(context)?.let { File(it, name) }
@@ -34,9 +35,22 @@ object SteamUserData {
             runCatching { val id = f.nameWithoutExtension.removePrefix("achievements-").toInt(); id to parseAchievements(JSONObject(f.readText()), id) }.getOrNull()
         }.toMap()
     }
+    fun capturePersona(context: Context, raw: String?) {
+        if (raw == null) return
+        val target = file(context, "profile.json") ?: return
+        val persona = JSONObject(raw)
+        val old = runCatching { JSONObject(target.readText()) }.getOrDefault(JSONObject())
+        val name = persona.optString("playerName").ifBlank { old.optString("playerName") }
+        if (name.isBlank()) return
+        val hash = persona.optString("avatarHash").takeIf { it.matches(Regex("[a-fA-F0-9]{40}")) && it.any { char -> char != '0' } } ?: old.optString("avatarHash")
+        val value = JSONObject().put("playerName", name).put("avatarHash", hash).toString()
+        if (target.isFile && target.readText() == value) return
+        target.parentFile?.mkdirs(); save(target, value)
+        android.os.Handler(android.os.Looper.getMainLooper()).post { revision.intValue++ }
+    }
     private fun save(file: File, text: String) {
         val temporary = File(file.parentFile, file.name + ".tmp")
-        try { temporary.writeText(text); check(temporary.renameTo(file)) { "Could not save Steam information" } }
+        try { temporary.writeText(text); check(temporary.renameTo(file)) { "Could not save Steam information" }; android.os.Handler(android.os.Looper.getMainLooper()).post { contentRevision.intValue++ } }
         finally { temporary.delete() }
     }
     private val pending = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -44,14 +58,15 @@ object SteamUserData {
         private set
     fun busy(key: String? = null): Boolean { revision.intValue; return if (key == null) pending.isNotEmpty() else key in pending }
     fun refreshProfile(context: Context, force: Boolean = false) {
-        if (!force && file(context, "owned.json")?.isFile == true) return
+        if (!force && file(context, "owned.json")?.isFile == true && profile(context).optString("playerName").isNotBlank()) return
         request(context, "profile") { session, destination ->
             val id = SteamCredentials.load(context)?.getLong("id") ?: error("Sign in first")
+            capturePersona(context, session.getSelfPersona())
             session.requestUserPersona()
             val games = session.getOwnedGames(id) ?: error("Steam playtime request timed out")
             JSONArray(games)
             save(destination.resolve("owned.json"), games)
-            session.getSelfPersona()?.let { save(destination.resolve("profile.json"), it) }
+            capturePersona(context, session.getSelfPersona())
         }
     }
     fun refreshAchievements(context: Context, id: Int, force: Boolean = false) {

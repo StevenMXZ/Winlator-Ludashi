@@ -46,11 +46,13 @@ public class GameDetailFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup parent,
                              @Nullable Bundle savedInstanceState) {
         ContainerManager manager = new ContainerManager(requireContext());
-        for (Shortcut candidate : manager.loadShortcuts()) {
-            if (candidate != null && candidate.file != null
-                    && candidate.file.getPath().equals(shortcutPath)) {
-                shortcut = candidate;
-                break;
+        File requestedShortcut = new File(shortcutPath);
+        if (requestedShortcut.isFile()) {
+            for (com.winlator.cmod.container.Container container : manager.getContainers()) {
+                if (container.getDesktopDir().equals(requestedShortcut.getParentFile())) {
+                    shortcut = new Shortcut(container, requestedShortcut);
+                    break;
+                }
             }
         }
 

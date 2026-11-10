@@ -66,6 +66,20 @@ object LibraryImageCache {
         return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
+    fun thumbnailKeyFor(path: String?): String? = keyFor(path)?.plus("|thumbnail512")
+    fun loadThumbnail(path: String?): Bitmap? {
+        val key = thumbnailKeyFor(path) ?: return null
+        cache.get(key)?.let { return it }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 512) sample *= 2
+        val bitmap = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+        cache.put(key, bitmap)
+        return bitmap
+    }
+
     // Decodes (off the main thread!) and caches; returns the cached bitmap when present.
     @JvmStatic
     fun load(path: String?): Bitmap? {

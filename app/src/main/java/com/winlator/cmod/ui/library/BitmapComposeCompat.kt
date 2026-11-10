@@ -223,8 +223,12 @@ private fun LibraryLandscapeHeader(
             fontWeight = FontWeight.Medium
         )
         Spacer(Modifier.weight(1f))
-        if (activity != null && com.winlator.cmod.steam.SteamSettings.enabled(activity)) androidx.compose.material3.IconButton(onClick = { activity.navigateToMainDestination(R.id.main_menu_steam) }) {
-            Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_steam), "Steam account", tint = if (onArtwork) Color.White else MaterialTheme.colorScheme.onBackground)
+        if (activity != null && com.winlator.cmod.steam.SteamSettings.enabled(activity)) Box {
+            var steamMenu by remember { mutableStateOf(false) }
+            IconButton(onClick = { steamMenu = true }) {
+                Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_steam), "Steam account", tint = if (onArtwork) Color.White else MaterialTheme.colorScheme.onBackground)
+            }
+            DropdownMenu(steamMenu, { steamMenu = false }) { com.winlator.cmod.steam.SteamSheets.MenuEntries(activity) { steamMenu = false } }
         }
         LibraryTopIcon(if (grid) Icons.Outlined.ViewList else Icons.Outlined.GridView, false) {
             onGridViewChanged(!grid)
@@ -390,10 +394,11 @@ private fun userArtworkPath(item: LibraryItem): String? =
 
 @Composable
 private fun ArtworkCompat(path: String?, fallback: Bitmap?, modifier: Modifier) {
-    val cacheKey = LibraryImageCache.keyFor(path)
+    val artworkRevision = LibraryImageCache.revision
+    val cacheKey = remember(path, artworkRevision) { LibraryImageCache.thumbnailKeyFor(path) }
     val bitmap by produceState<Bitmap?>(LibraryImageCache.peek(cacheKey) ?: fallback, cacheKey, fallback) {
         value = withContext(Dispatchers.IO) {
-            path?.takeIf { File(it).isFile }?.let(LibraryImageCache::load) ?: fallback
+            path?.let(LibraryImageCache::loadThumbnail) ?: fallback
         }
     }
     if (bitmap != null) Image(bitmap!!.asImageBitmap(), null, modifier, contentScale = ContentScale.Crop)

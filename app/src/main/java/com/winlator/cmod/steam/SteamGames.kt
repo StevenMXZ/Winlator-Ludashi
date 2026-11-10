@@ -10,6 +10,7 @@ import java.nio.file.Files
 
 object SteamGames {
     private val revision = mutableIntStateOf(0)
+    val version get() = revision.intValue
     @JvmStatic fun displayName(shortcut: Shortcut): String = cleanTitle(shortcut.name, shortcut.getExtra("steamAppId"))
     fun cleanTitle(title: String, id: String): String = if (id.toIntOrNull() != null) title.removeSuffix(" [$id]") else title
     @JvmStatic fun launchTitle(context: Context, path: String?, title: String): String = runCatching {
@@ -17,14 +18,35 @@ object SteamGames {
         val id = lines.firstOrNull { it.startsWith("steamAppId=") }?.substringAfter('=') ?: return title
         cleanTitle(title, id)
     }.getOrDefault(title)
-    fun changed() { revision.intValue++ }
+    private data class CachedShortcut(val shortcut: Shortcut, val modified: Long, val length: Long, val containerModified: Long)
+    private val shortcutCache = mutableMapOf<String, CachedShortcut>()
+    private val shortcutLocations = mutableMapOf<String, Pair<Int, File>>()
+    @Synchronized fun changed() { shortcutCache.clear(); revision.intValue++ }
     fun info(context: Context, id: Int) = JSONObject(File(context.filesDir, "steam-library/$id.json").readText())
     fun directory(context: Context, id: Int): File = File(context.filesDir, "steam-library/common/${SteamCatalog.installName(info(context, id))}").canonicalFile
-    fun shortcut(context: Context, id: Int): Shortcut? {
+    @Synchronized fun shortcut(context: Context, id: Int): Shortcut? {
         revision.intValue
-        val candidates = ContainerManager(context).loadShortcuts().filter { it.getExtra("steamAppId") == id.toString() }
+        val key = "${context.filesDir.path}:$id"
         val preferred = context.getSharedPreferences("steam-settings", 0).getInt("steam-container-$id", -1)
-        return candidates.firstOrNull { it.container.id == preferred } ?: candidates.firstOrNull()
+        val cached = shortcutCache[key]
+        if (cached != null && (preferred < 0 || cached.shortcut.container.id == preferred)) {
+            val file = cached.shortcut.file
+            if (file.isFile && file.lastModified() == cached.modified && file.length() == cached.length && cached.shortcut.container.configFile.lastModified() == cached.containerModified) return cached.shortcut
+        }
+        val containers = ContainerManager(context).containers.sortedBy { if (it.id == preferred) 0 else 1 }
+        for (container in containers) {
+            val known = shortcutLocations[key]?.takeIf { it.first == container.id && it.second.isFile }?.second
+            val candidates = if (known != null) listOf(known) else container.desktopDir.listFiles().orEmpty().filter { it.extension == "desktop" }
+            val match = candidates.firstOrNull { file ->
+                runCatching { file.useLines { lines -> lines.any { it.trim() == "steamAppId=$id" } } }.getOrDefault(false)
+            } ?: continue
+            val shortcut = Shortcut(container, match)
+            shortcutLocations[key] = container.id to match
+            shortcutCache[key] = CachedShortcut(shortcut, match.lastModified(), match.length(), container.configFile.lastModified())
+            return shortcut
+        }
+        shortcutCache.remove(key); shortcutLocations.remove(key)
+        return null
     }
     fun configured(context: Context, id: Int) = shortcut(context, id)?.getExtra("steamConfigured") == "1"
     fun draft(context: Context, id: Int, container: com.winlator.cmod.container.Container): Shortcut {

@@ -20,17 +20,16 @@ import org.json.JSONObject
 @Composable fun SteamGameInfoPanel(id: Int) {
     val context = LocalContext.current
     val state = observeSteam()
-    val revision = SteamUserData.revision.intValue
-    val info = remember(id) { runCatching { SteamGames.info(context, id) }.getOrDefault(JSONObject()) }
-    val play = remember(id, revision) { SteamUserData.game(context, id) }
-    val raw = remember(id, revision) { SteamUserData.achievementData(context, id) }
-    val achievements = remember(raw) { raw?.let { SteamUserData.parseAchievements(it, id) } }
+    val data = rememberSteamGameSnapshot(context, id)
+    val info = data.info
+    val play = data.play
+    val achievements = data.achievements
     var expanded by remember(id) { mutableStateOf(false) }
     var profileRequested by remember(id) { mutableStateOf(false) }
     var achievementsRequested by remember(id) { mutableStateOf(false) }
     val profileBusy = SteamUserData.busy()
-    LaunchedEffect(id, state.signedIn, state.libraryLoading, profileBusy) {
-        if (state.signedIn && !state.libraryLoading && !state.gameActive && !profileBusy) {
+    LaunchedEffect(id, state.signedIn, state.libraryLoading, profileBusy, profileRequested, achievementsRequested, data.ready) {
+        if (data.ready && state.signedIn && !state.libraryLoading && !state.gameActive && !profileBusy) {
             if (!profileRequested && play == null) { profileRequested = true; SteamUserData.refreshProfile(context) }
             else if (!achievementsRequested) { achievementsRequested = true; SteamUserData.refreshAchievements(context, id) }
         }

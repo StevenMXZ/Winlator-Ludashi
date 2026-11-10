@@ -5,6 +5,10 @@ import android.os.Bundle
 import android.view.*
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.winlator.cmod.MainActivity
 import com.winlator.cmod.XServerDisplayActivity
 import com.winlator.cmod.container.ContainerManager
@@ -16,6 +20,7 @@ class SteamGameDetailFragment : Fragment() {
     companion object {
         fun newInstance(appId: Int) = SteamGameDetailFragment().apply { arguments = Bundle().apply { putInt("appId", appId) } }
     }
+    private var configuring = false
     private val appId get() = requireArguments().getInt("appId")
     private fun notice(text: String) = Toast.makeText(requireContext(), text, Toast.LENGTH_LONG).show()
     override fun onCreateView(inflater: LayoutInflater, parent: ViewGroup?, state: Bundle?): View {
@@ -32,13 +37,21 @@ class SteamGameDetailFragment : Fragment() {
             }
             override fun onConfigure() {
                 if (SteamSession.gameActive) { notice("Exit the game before configuring"); return }
-                val shortcut = SteamGames.shortcut(context, appId)
-                if (shortcut != null) { ShortcutSettingsComposeDialog.show(this@SteamGameDetailFragment, shortcut); return }
-                val containers = ContainerManager(context).containers
-                if (containers.isEmpty()) { notice("Create a container first"); return }
-                val preferred = context.getSharedPreferences("steam-settings", 0).getInt("steam-container-$appId", -1)
-                val container = containers.firstOrNull { it.id == preferred } ?: containers.first()
-                ShortcutSettingsComposeDialog.show(this@SteamGameDetailFragment, SteamGames.draft(context, appId, container))
+                if (configuring) return
+                configuring = true
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val result = withContext(Dispatchers.IO) { runCatching {
+                        SteamGames.shortcut(context, appId) ?: run {
+                            val containers = ContainerManager(context).containers
+                            check(containers.isNotEmpty()) { "Create a container first" }
+                            val preferred = context.getSharedPreferences("steam-settings", 0).getInt("steam-container-$appId", -1)
+                            val container = containers.firstOrNull { it.id == preferred } ?: containers.first()
+                            SteamGames.draft(context, appId, container)
+                        }
+                    } }
+                    if (isAdded) result.onSuccess { ShortcutSettingsComposeDialog.show(this@SteamGameDetailFragment, it) }
+                        .onFailure { notice(it.message.orEmpty()) }
+                }.invokeOnCompletion { configuring = false }
             }
             override fun onArguments() {
                 val shortcut = SteamGames.shortcut(context, appId) ?: return notice("Choose a container in Configure first")

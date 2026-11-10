@@ -38,7 +38,7 @@ import com.winlator.cmod.ui.theme.WinZTheme
 import java.util.concurrent.atomic.AtomicInteger
 
 @Immutable
-data class LibraryItem(
+data class LibraryItem @JvmOverloads constructor(
     val id: String,
     val shortcutPath: String,
     val name: String,
@@ -48,7 +48,10 @@ data class LibraryItem(
     val iconPath: String?,
     val fallbackIcon: Bitmap?,
     val favorite: Boolean,
-    val lastRunAt: Long
+    val lastRunAt: Long,
+    val wineVersion: String? = null,
+    val renderer: String? = null,
+    val steamAppId: Int? = null
 )
 
 @Stable
@@ -70,18 +73,22 @@ class LibraryComposeController internal constructor(
     private val statePreferences = context.getSharedPreferences("library_compose_state", Context.MODE_PRIVATE)
     private val metadataGeneration = AtomicInteger(0)
     private val mainHandler = Handler(Looper.getMainLooper())
+    companion object { private val metadataWorker = java.util.concurrent.Executors.newSingleThreadExecutor() }
 
     fun setItems(value: List<LibraryItem>) {
         val snapshot = value.toList()
         items.value = snapshot
         val generation = metadataGeneration.incrementAndGet()
-        Thread {
+        metadataWorker.execute {
+            if (metadataGeneration.get() != generation) return@execute
             val resolved = resolveLibraryEnvironmentLabels(context, snapshot)
             mainHandler.post {
                 if (metadataGeneration.get() == generation) items.value = resolved
             }
-        }.start()
+        }
     }
+
+    fun dispose() { metadataGeneration.incrementAndGet() }
 
     fun setGridView(value: Boolean) { grid.value = value }
     fun setSearchQuery(value: String?) { query.value = value?.trim().orEmpty() }
@@ -141,20 +148,18 @@ object LibraryComposeHost {
                         val steam = observeSteam()
                         val enabled = SteamSettings.enabled(context)
                         LaunchedEffect(enabled) {
-                            if (enabled && SteamCredentials.load(context) != null) context.startForegroundService(Intent(context, SteamService::class.java))
+                            val saved = withContext(Dispatchers.IO) { enabled && SteamCredentials.load(context) != null }
+                            if (saved) context.startForegroundService(Intent(context, SteamService::class.java))
                         }
-                        val steamItems = remember(enabled, steam.library, steam.tick / 3) { if (enabled) SteamLibrary.items(context, steam.library) else emptyList() }
-                        val steamPaths by produceState(emptySet<String>(), items.value) {
-                            value = withContext(Dispatchers.IO) { items.value.filter { item -> runCatching { java.io.File(item.shortcutPath).readText().contains("steamAppId=") }.getOrDefault(false) }.map { it.shortcutPath }.toSet() }
-                        }
-                        val merged = items.value.filterNot { it.shortcutPath in steamPaths } + steamItems
-                        val combined = object : LibraryCallbacks {
+                        val steamItems = rememberSteamLibrary(context, steam.library, enabled)
+                        val merged = remember(items.value, steamItems) { items.value.filter { it.steamAppId == null } + steamItems }
+                        val combined = remember(context, callbacks) { object : LibraryCallbacks {
                             override fun onOpen(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onOpen(path) }
                             override fun onRun(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onRun(path) }
                             override fun onGridViewChanged(value: Boolean) = callbacks.onGridViewChanged(value)
                             override fun onAction(path: String, action: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onAction(path, action) }
                             override fun onArtworkNeeded(path: String, kind: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.requestArtwork(context, path, kind) else callbacks.onArtworkNeeded(path, kind) }
-                        }
+                        } }
                         Column(Modifier.fillMaxSize()) {
                             val configuration = androidx.compose.ui.platform.LocalConfiguration.current
                             if (configuration.screenWidthDp <= configuration.screenHeightDp) SteamDownloadPanel(steam)

@@ -39,20 +39,16 @@ import java.io.File
     var menu by remember { mutableStateOf(false) }
     var sorting by remember { mutableStateOf(false) }
     var sort by rememberSaveable { mutableStateOf("Recent") }
-    val revision = SteamUserData.revision.intValue
-    val apps = remember(state.library, state.tick / 3) { SteamLibrary.items(context, state.library) }
-    val installed = apps.count { File(context.filesDir, "steam-library/${SteamLibrary.appId(it.shortcutPath)}.json").isFile }
-    val profile = remember(revision) { SteamUserData.profile(context) }
-    val owned = remember(revision) {
-        val array = SteamUserData.owned(context)
-        (0 until array.length()).map { array.getJSONObject(it) }.associateBy { it.optInt("appId") }
-    }
-    val achievementCache = remember(revision) { SteamUserData.cachedAchievements(context) }
-    val account = remember(state.savedAccount) { SteamCredentials.load(context) }
+    val apps = rememberSteamLibrary(context, state.library)
+    val installed = remember(apps) { apps.count { it.containerName == "Steam · Installed" } }
+    val user = rememberSteamUserSnapshot(context)
+    val profile = user.profile
+    val owned = user.owned
+    val achievementCache = user.achievements
     LaunchedEffect(state.signedIn, state.libraryLoading) {
         if (state.signedIn && !state.libraryLoading && !state.gameActive) SteamUserData.refreshProfile(context)
     }
-    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primary.copy(alpha = .09f), MaterialTheme.colorScheme.background))).statusBarsPadding().navigationBarsPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primary.copy(alpha = .09f), MaterialTheme.colorScheme.background))).displayCutoutPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
             Icon(painterResource(R.drawable.ic_steam), null, Modifier.size(38.dp))
@@ -88,7 +84,7 @@ import java.io.File
             }
         } else if (state.libraryError.isNotEmpty()) Text(state.libraryError, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
         if (tab != 1) {
-            SteamAccountCard(profile, account?.optString("account").orEmpty(), state.signedIn, apps.size, installed,
+            SteamAccountCard(profile, state.signedIn, apps.size, installed,
                 if (achievementCache.isEmpty()) null else achievementCache.values.sumOf { list -> list.count { it.unlocked } })
         }
         if (tab == 1) {
@@ -116,16 +112,12 @@ import java.io.File
                 IconButton(onClick = { grid = !grid }) { Icon(if (grid) Icons.Outlined.ViewList else Icons.Outlined.GridView, "Change layout") }
             }
             if (search) OutlinedTextField(query, { query = it }, label = { Text("Search Steam games") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp))
-            val filtered = apps.filter { it.name.contains(query, true) && (tab != 2 || File(context.filesDir, "steam-library/${SteamLibrary.appId(it.shortcutPath)}.json").isFile) }
-            val visible = when (sort) {
-                "Recent" -> filtered.sortedWith(compareByDescending<com.winlator.cmod.ui.library.LibraryItem> { owned[SteamLibrary.appId(it.shortcutPath)]?.optLong("rtimeLastPlayed") ?: 0 }.thenBy { it.name })
-                "Playtime" -> filtered.sortedByDescending { owned[SteamLibrary.appId(it.shortcutPath)]?.optLong("playtimeForever") ?: 0 }
-                else -> filtered.sortedBy { it.name }
-            }
+            val filtered = remember(apps, query, tab) { apps.filter { it.name.contains(query, true) && (tab != 2 || it.containerName == "Steam · Installed") } }
+            val visible = remember(filtered, owned, sort) { sortSteamLibrary(filtered, owned, sort) }
             LazyVerticalGrid(if (grid) GridCells.Adaptive(160.dp) else GridCells.Fixed(1), Modifier.weight(1f), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(visible, key = { it.id }) { app ->
                     val id = SteamLibrary.appId(app.shortcutPath)!!
-                    val isInstalled = File(context.filesDir, "steam-library/$id.json").isFile
+                    val isInstalled = app.containerName == "Steam · Installed"
                     OutlinedCard(onClick = { if (isInstalled) openGame(id) else SteamSheets.game(context, id) }, shape = RoundedCornerShape(16.dp)) {
                         SteamArt("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/header.jpg", Modifier.fillMaxWidth().padding(6.dp).aspectRatio(460f / 215f).clip(RoundedCornerShape(12.dp)))
                         Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -145,7 +137,7 @@ import java.io.File
 }
 
 @Composable internal fun SteamArt(url: String, modifier: Modifier) {
-    AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } }, update = { Glide.with(it).load(url).into(it) }, modifier = modifier)
+    AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } }, update = { if (it.tag != url) { it.tag = url; Glide.with(it).load(url).error(R.drawable.icon_wine).into(it) } }, onRelease = { Glide.with(it).clear(it) }, modifier = modifier)
 }
 
 @Composable private fun SteamDownloadsScreen(state: SteamUiSnapshot, openGame: (Int) -> Unit, modifier: Modifier) {
@@ -174,7 +166,7 @@ import java.io.File
     }
 }
 
-@Composable private fun SteamAccountCard(profile: JSONObject, account: String, connected: Boolean, games: Int, installed: Int, achievements: Int?) {
+@Composable private fun SteamAccountCard(profile: JSONObject, connected: Boolean, games: Int, installed: Int, achievements: Int?) {
     OutlinedCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -182,7 +174,7 @@ import java.io.File
                 if (hash.matches(Regex("[a-fA-F0-9]{40}")) && hash.any { it != '0' }) SteamArt("https://avatars.akamai.steamstatic.com/${hash}_medium.jpg", Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)))
                 else Icon(painterResource(R.drawable.ic_steam), null, Modifier.size(44.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(profile.optString("playerName").ifBlank { account.ifBlank { "Steam account" } }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(profile.optString("playerName").ifBlank { "Steam profile" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(if (connected) "● Connected" else "● Offline", style = MaterialTheme.typography.labelMedium, color = if (connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

@@ -52,8 +52,13 @@ object GameDetailComposeHost {
     fun createSteam(context: Context, title: String, artwork: String?, id: Int, callbacks: GameDetailCallbacks): ComposeView =
         ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent { WinZTheme { GameDetailScreen(title, "Steam", artwork, null, context.getSharedPreferences("steam-settings", 0).getBoolean("favorite-$id", false),
-                com.winlator.cmod.steam.SteamGames.shortcut(context, id), callbacks, id) } }
+            setContent { WinZTheme {
+                val revision = com.winlator.cmod.steam.SteamGames.version
+                val shortcut by produceState<Shortcut?>(null, id, revision) {
+                    value = withContext(Dispatchers.IO) { com.winlator.cmod.steam.SteamGames.shortcut(context, id) }
+                }
+                GameDetailScreen(title, "Steam", artwork, null, context.getSharedPreferences("steam-settings", 0).getBoolean("favorite-$id", false), shortcut, callbacks, id)
+            } }
         }
     @JvmStatic
     fun create(context: Context, title: String, subtitle: String, artworkPath: String?, fallback: Bitmap?, favorite: Boolean, shortcut: Shortcut, callbacks: GameDetailCallbacks): ComposeView {

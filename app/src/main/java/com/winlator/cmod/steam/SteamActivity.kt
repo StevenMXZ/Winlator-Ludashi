@@ -38,6 +38,7 @@ class SteamActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
+        com.winlator.cmod.ui.applyAppFullscreen(this)
         if (!SteamSettings.enabled(this)) { startActivity(Intent(this, StoreSettingsActivity::class.java)); finish(); return }
         startForegroundService(Intent(this, SteamService::class.java))
         if (savedInstanceState != null && supportFragmentManager.findFragmentById(android.R.id.content) is SteamGameDetailFragment) return
@@ -45,13 +46,17 @@ class SteamActivity : AppCompatActivity() {
         if (selectedId > 0 && isInstalled(selectedId)) showDetail(selectedId)
         else setContent { WinZTheme { SteamScreen() } }
     }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) com.winlator.cmod.ui.applyAppFullscreen(this)
+    }
     @Composable private fun SteamScreen() {
         val state = observeSteam()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             if (state.signedIn || state.savedAccount) {
                 SteamManagerScreen(state, intent.getIntExtra("steam_tab", 0), { finish() }, ::signOut, ::showDetail)
             } else {
-                Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+                Column(Modifier.fillMaxSize().displayCutoutPadding().imePadding()) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { finish() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back") }
                         Icon(androidx.compose.ui.res.painterResource(com.winlator.cmod.R.drawable.ic_steam), null, Modifier.size(30.dp))

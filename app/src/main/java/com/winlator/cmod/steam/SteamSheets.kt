@@ -17,7 +17,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.bumptech.glide.Glide
-import com.winlator.cmod.ui.theme.WinZTheme
+import com.winlator.cmod.ui.theme.WinZOverlayTheme
 
 object SteamSheets {
     @OptIn(ExperimentalMaterial3Api::class)
@@ -28,17 +28,39 @@ object SteamSheets {
         val dismiss = { root.removeView(view); Unit }
         view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
         root.addView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        view.setContent { WinZTheme {
+        view.setContent { WinZOverlayTheme {
             ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
                 Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 16.dp)) { content(dismiss) }
             }
         } }
     }
-    fun menu(context: Context) = show(context) { dismiss ->
-        Text("Steam", Modifier.padding(horizontal = 24.dp, vertical = 12.dp), style = MaterialTheme.typography.titleLarge)
+    fun menu(context: Context) {
+        val activity = context as? AppCompatActivity ?: return
+        val anchor = activity.findViewById<android.view.View>(11)
+            ?: activity.findViewById(com.winlator.cmod.R.id.Toolbar) ?: return
+        val coordinates = IntArray(2); anchor.getLocationInWindow(coordinates)
+        val bounds = androidx.compose.ui.unit.IntRect(coordinates[0], coordinates[1], coordinates[0] + anchor.width, coordinates[1] + anchor.height)
+        val root = activity.findViewById<ViewGroup>(android.R.id.content)
+        val view = ComposeView(activity)
+        val dismiss = { root.removeView(view); Unit }
+        view.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+        root.addView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        view.setContent { WinZOverlayTheme {
+            androidx.compose.ui.window.Popup(popupPositionProvider = object : androidx.compose.ui.window.PopupPositionProvider {
+                override fun calculatePosition(anchorBounds: androidx.compose.ui.unit.IntRect, windowSize: androidx.compose.ui.unit.IntSize, layoutDirection: androidx.compose.ui.unit.LayoutDirection, popupContentSize: androidx.compose.ui.unit.IntSize): androidx.compose.ui.unit.IntOffset =
+                    androidx.compose.ui.unit.IntOffset(bounds.left.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)), bounds.bottom.coerceAtMost((windowSize.height - popupContentSize.height).coerceAtLeast(0)))
+            }, onDismissRequest = dismiss, properties = androidx.compose.ui.window.PopupProperties(focusable = true)) {
+                Surface(shape = MaterialTheme.shapes.medium, shadowElevation = 10.dp, tonalElevation = 3.dp) {
+                    Column(Modifier.width(260.dp).padding(vertical = 8.dp)) { MenuEntries(context, dismiss) }
+                }
+            }
+        } }
+    }
+    @Composable fun MenuEntries(context: Context, dismiss: () -> Unit) {
         listOf("Manage Steam games" to Icons.Outlined.SportsEsports, "Manage downloads" to Icons.Outlined.Download).forEachIndexed { index, (title, icon) ->
-            ListItem(headlineContent = { Text(title) }, leadingContent = { Icon(icon, null) }, trailingContent = { Icon(Icons.Outlined.ChevronRight, null) },
-                modifier = Modifier.clickable { dismiss(); context.startActivity(Intent(context, SteamActivity::class.java).putExtra("steam_tab", index)) })
+            DropdownMenuItem(text = { Text(title) }, leadingIcon = { Icon(icon, null) }, onClick = {
+                dismiss(); context.startActivity(Intent(context, SteamActivity::class.java).putExtra("steam_tab", index))
+            })
         }
     }
     fun game(context: Context, id: Int) {

@@ -52,3 +52,11 @@ object SteamLogonResult {
     }.getOrNull()
     fun requiresNewLogin(code: Int?) = code in setOf(5, 15, 18, 65)
 }
+
+/** Native connect starts a transport; token logon requires its Connected callback. */
+internal class SteamConnectionGate {
+    private val signal = java.util.concurrent.CountDownLatch(1)
+    @Volatile private var state = 1
+    fun observe(value: Int) { state = value; if (value == 0 || value >= 2) signal.countDown() }
+    fun awaitConnected(timeoutMs: Long): Boolean = signal.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS) && state >= 2
+}

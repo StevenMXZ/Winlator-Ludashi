@@ -102,6 +102,11 @@ public class ShortcutsFragment extends Fragment {
     private static final int MENU_GROUP_ORIENTATION_MODE = 9;
     private static final String STEAMGRID_BASE_URL = "https://www.steamgriddb.com/api/v2/";
     private static String STEAMGRID_API_KEY = "0324c52513634547a7b32d6d323635d0";
+    private static final ExecutorService LIBRARY_LOADER = Executors.newSingleThreadExecutor();
+    private static final ExecutorService ARTWORK_WORKERS = Executors.newFixedThreadPool(2);
+    private final AtomicInteger libraryLoadGeneration = new AtomicInteger();
+    private final AtomicInteger libraryModelGeneration = new AtomicInteger();
+    private final Handler libraryHandler = new Handler(Looper.getMainLooper());
     private static final ExecutorService DYNAMIC_SHORTCUT_EXECUTOR = Executors.newSingleThreadExecutor();
     private static final AtomicInteger DYNAMIC_SHORTCUT_SYNC_GENERATION = new AtomicInteger();
     private static volatile String lastDynamicShortcutSignature;
@@ -467,7 +472,7 @@ public class ShortcutsFragment extends Fragment {
 
     private void downloadAndSaveCover(String url, File destFile,
                                        Runnable onSuccess, Runnable onFail) {
-        Executors.newSingleThreadExecutor().execute(() -> {
+        ARTWORK_WORKERS.execute(() -> {
             try {
                 HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
                 conn.connect();
@@ -521,18 +526,29 @@ public class ShortcutsFragment extends Fragment {
     }
 
     public void loadShortcutsList() {
-        ArrayList<Shortcut> shortcuts = manager.loadShortcuts();
-        allShortcuts.clear();
-        if (shortcuts != null) {
+        Context context = getContext();
+        if (context == null) return;
+        Context appContext = context.getApplicationContext();
+        int generation = libraryLoadGeneration.incrementAndGet();
+        LIBRARY_LOADER.execute(() -> {
+            if (generation != libraryLoadGeneration.get()) return;
+            ArrayList<Shortcut> shortcuts = new ContainerManager(appContext).loadShortcuts();
             shortcuts.removeIf(shortcut -> shortcut == null || shortcut.file == null || shortcut.file.getName().isEmpty());
-            Bitmap defaultIcon = BitmapFactory.decodeResource(getResources(), R.drawable.icon_wine);
-            for (Shortcut shortcut : shortcuts) {
-                if (shortcut.icon == null) shortcut.icon = defaultIcon;
-            }
-            allShortcuts.addAll(shortcuts);
-        }
-        publishLibraryItems();
-        syncDynamicAppShortcuts();
+            Bitmap defaultIcon = BitmapFactory.decodeResource(appContext.getResources(), R.drawable.icon_wine);
+            for (Shortcut shortcut : shortcuts) if (shortcut.icon == null) shortcut.icon = defaultIcon;
+            libraryHandler.post(() -> {
+                if (!isAdded() || libraryController == null || generation != libraryLoadGeneration.get()) return;
+                allShortcuts.clear(); allShortcuts.addAll(shortcuts);
+                publishLibraryItems(); syncDynamicAppShortcuts();
+            });
+        });
+    }
+
+    @Override public void onDestroyView() {
+        libraryLoadGeneration.incrementAndGet(); libraryModelGeneration.incrementAndGet();
+        if (libraryController != null) libraryController.dispose();
+        libraryController = null;
+        super.onDestroyView();
     }
 
     private Shortcut findShortcut(String shortcutPath) {
@@ -544,30 +560,31 @@ public class ShortcutsFragment extends Fragment {
 
     private void publishLibraryItems() {
         if (libraryController == null) return;
-        ArrayList<LibraryItem> items = new ArrayList<>();
-        for (Shortcut shortcut : allShortcuts) {
-            String baseName = FileUtils.getBasename(shortcut.file.getPath());
-            File userIcon = new File(getImagesDir(false), baseName + ".user.png");
-            File autoIcon = new File(getImagesDir(false), baseName + ".png");
-            File cover = new File(getImagesDir(true), baseName + ".png");
-            File banner = new File(getBannerDir(), baseName + ".png");
-            String iconPath = userIcon.exists() ? userIcon.getPath() :
-                    (autoIcon.exists() ? autoIcon.getPath() : null);
-
-            items.add(new LibraryItem(
-                    shortcut.file.getPath(),
-                    shortcut.file.getPath(),
-                    shortcut.name,
-                    shortcut.container != null ? shortcut.container.getName() : "",
-                    cover.exists() ? cover.getPath() : null,
-                    banner.exists() ? banner.getPath() : null,
-                    iconPath,
-                    shortcut.icon,
-                    "1".equals(shortcut.getExtra("favorite", "0")),
-                    parseLastRunAt(shortcut)
-            ));
-        }
-        libraryController.setItems(items);
+        final ArrayList<Shortcut> snapshot = new ArrayList<>(allShortcuts);
+        int generation = libraryModelGeneration.incrementAndGet();
+        LIBRARY_LOADER.execute(() -> {
+            if (generation != libraryModelGeneration.get()) return;
+            ArrayList<LibraryItem> items = new ArrayList<>();
+            File icons = getImagesDir(false), covers = getImagesDir(true), banners = getBannerDir();
+            for (Shortcut shortcut : snapshot) {
+                String baseName = FileUtils.getBasename(shortcut.file.getPath());
+                File userIcon = new File(icons, baseName + ".user.png");
+                File autoIcon = new File(icons, baseName + ".png");
+                File cover = new File(covers, baseName + ".png");
+                File banner = new File(banners, baseName + ".png");
+                String iconPath = userIcon.exists() ? userIcon.getPath() : (autoIcon.exists() ? autoIcon.getPath() : null);
+                items.add(new LibraryItem(shortcut.file.getPath(), shortcut.file.getPath(), shortcut.name,
+                        shortcut.container != null ? shortcut.container.getName() : "",
+                        cover.exists() ? cover.getPath() : null, banner.exists() ? banner.getPath() : null,
+                        iconPath, shortcut.icon, "1".equals(shortcut.getExtra("favorite", "0")), parseLastRunAt(shortcut),
+                        shortcut.container != null ? shortcut.container.getWineVersion() : null,
+                        shortcut.getUseDisplayX() ? "DisplayX" : shortcut.getRendererNative() ? "EGL" : "Vulkan",
+                        com.winlator.cmod.steam.SteamLibrary.shortcutAppId(shortcut)));
+            }
+            libraryHandler.post(() -> {
+                if (isAdded() && libraryController != null && generation == libraryModelGeneration.get()) libraryController.setItems(items);
+            });
+        });
     }
 
     private long parseLastRunAt(Shortcut shortcut) {

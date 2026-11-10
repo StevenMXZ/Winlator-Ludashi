@@ -192,8 +192,10 @@ object SteamSession {
         if (saved != null) recovery.began(SystemClock.elapsedRealtime())
         s.setAutoPersonaOnline(false)
         s.setCaBundlePath(ca)
+        val connectionGate = SteamConnectionGate()
         s.setStateObserver(object : LudashiSteamStateObserver {
             override fun onStateChanged(state: Int) {
+                connectionGate.observe(state)
                 if (session !== s || closing || recoveryBlocked || gameActive) return
                 connected = state >= 2; signedIn = state == 3
                 if (signedIn) {
@@ -207,6 +209,7 @@ object SteamSession {
             }
             override fun onClientMessage(emsg: Int, eresult: Int, body: ByteArray) {
                 if (session !== s || closing) return
+                if (emsg == 766) work { if (session === s && !gameActive) SteamUserData.capturePersona(context, s.getSelfPersona()) }
                 if (emsg == 780) licensesReceived = true
                 if (emsg == 751 || emsg == 757 || emsg == 5500) {
                     val code = SteamLogonResult.code(body, eresult)
@@ -231,7 +234,11 @@ object SteamSession {
         restoreStage = "Connecting to Steam server"
         check(url.startsWith("wss://")) { "Could not locate a Steam server" }
         check(s.connect(url)) { "Steam connection failed" }
-        if (saved != null) check(s.logonWithRefreshToken(saved.getString("token"), saved.getString("account"), saved.getLong("id"))) { "Saved Steam login could not start. Reconnect to retry." }
+        if (saved != null) {
+            check(connectionGate.awaitConnected(10_000) && !closing && !gameActive && !recoveryBlocked) { "Steam transport did not become ready. Retry connection." }
+            restoreStage = "Authenticating saved Steam account"
+            if (s.state() != 3) check(s.logonWithRefreshToken(saved.getString("token"), saved.getString("account"), saved.getLong("id"))) { "Saved Steam login could not start. Reconnect to retry." }
+        }
     }
     fun login(username: String, password: String) {
         if (gameActive || app?.let { !SteamSettings.enabled(it) } == true) return
@@ -327,6 +334,7 @@ object SteamSession {
                             if (success) {
                                 dir.walkTopDown().filter { it.isFile && it.name.endsWith(".ludashi-original") }.forEach { it.delete() }
                                 File(context.filesDir, "steam-library/$id.json").writeText(info.toString())
+                                main.post { SteamGames.changed() }
                             }
                             downloading = false
                             status = if (success) "$name installed" else "Download failed: $error"
