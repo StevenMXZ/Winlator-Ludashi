@@ -158,7 +158,7 @@
   <string name="ui_install_soundfont">"Install SoundFont"</string>
   <string name="ui_install_or_remove_dxvk_vkd3d_and_emulator_components">"Install or remove DXVK, VKD3D and emulator components"</string>
   <string name="ui_library">"LIBRARY"</string>
-  <string name="ui_labs">"Labs"</string>
+  <string name="ui_labs">"Device Information"</string>
   <string name="ui_latest_backup">"Latest backup"</string>
   <string name="ui_limits">"Limits"</string>
   <string name="ui_locale_lc_all">"Locale (LC_ALL)"</string>

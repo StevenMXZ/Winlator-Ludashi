@@ -230,16 +230,6 @@ internal fun OnboardingComponentsScreen(
                         onRemove = cb::onRemoveBundledRuntime
                     )
                 }
-                if (!managerMode && !hasInstalledRuntime) item(key = "runtime-hint") {
-                    // Right under the bundled runtime: it's the reason Continue is disabled.
-                    Text(
-                        if (!ready.value) uiStr(R.string.ui_wait_for_to_finish_installing_or_install, bundledRuntimeName)
-                        else uiStr(R.string.ui_install_at_least_one_wine_or_proton_versi),
-                        Modifier.padding(horizontal = 4.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
                 if (showLocalInstallProgress) item(key = "local-progress") {
                     InstallProgressCard(installingLabel, installingProgress)
                 }
@@ -299,16 +289,6 @@ internal fun OnboardingComponentsScreen(
                         installingProgress,
                         cb
                     )
-                }
-                if (!managerMode && !hasInstalledRuntime) {
-                    item {
-                        Text(
-                            if (!ready.value) uiStr(R.string.ui_continue_unlocks_when_finishes_installing, bundledRuntimeName)
-                            else uiStr(R.string.ui_install_at_least_one_wine_or_proton_versi),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
                 }
             }
         }

@@ -4,6 +4,7 @@ import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import androidx.compose.runtime.mutableIntStateOf
 import java.io.File
 
 // Decoded Library artwork (covers, banners, game icons), keyed by path + last-modified time so a
@@ -16,6 +17,14 @@ import java.io.File
 // and LibraryScreenController pre-decodes the (small) game icons on its loader thread before
 // publishing, so even the first frame is correct.
 object LibraryImageCache {
+    private val artworkRevision = mutableIntStateOf(0)
+    val revision: Int get() = artworkRevision.intValue
+
+    @JvmStatic
+    fun notifyArtworkChanged() {
+        artworkRevision.intValue++
+    }
+
     private val cache = object : LruCache<String, Bitmap>(
         // KB; 1/8 of the app heap.
         (Runtime.getRuntime().maxMemory() / 1024 / 8).toInt()

@@ -592,6 +592,6 @@
   <string name="magnifier_not_available">"A lupa não está disponível no modo DisplayX"</string>
   <string name="codecs">"Codecs"</string>
   <string name="builtin_decoder">"Decodificador integrado"</string>
-  <string name="software_decoding">"Decodificação por software (compatibilidade de vídeo)"</string>
+  <string name="software_decoding">"Decodificação por software"</string>
   <string name="video_decoder_compatibility_note">"Os decodificadores disponíveis dependem da versão do Wine/Proton. O FFmpeg requer suporte à troca de winedmo."</string>
 </resources>

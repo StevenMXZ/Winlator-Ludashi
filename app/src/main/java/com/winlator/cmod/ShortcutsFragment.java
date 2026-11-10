@@ -17,6 +17,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -53,6 +55,7 @@ import com.winlator.cmod.ui.library.LibraryComposeBinding;
 import com.winlator.cmod.ui.library.LibraryComposeController;
 import com.winlator.cmod.ui.library.LibraryComposeHost;
 import com.winlator.cmod.ui.library.LibraryItem;
+import com.winlator.cmod.ui.library.LibraryImageCache;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -337,7 +340,15 @@ public class ShortcutsFragment extends Fragment {
 
     private void fetchBannerFromSteamGrid(Shortcut shortcut, File destFile,
                                            Runnable onSuccess, Runnable onFail) {
-        fetchArtworkFromSteamGrid(shortcut, destFile, "460x215", onSuccess, onFail);
+        fetchArtworkFromSteamGrid(shortcut, destFile, "920x430", onSuccess, () -> {
+            if (destFile.isFile()) {
+                // Keep the legacy banner when no larger version exists.
+                if (onFail != null) onFail.run();
+            } else {
+                // Some games only have a 460x215 grid on SteamGridDB.
+                fetchArtworkFromSteamGrid(shortcut, destFile, "460x215", onSuccess, onFail);
+            }
+        });
     }
 
     private void fetchArtworkFromSteamGrid(Shortcut shortcut, File destFile, String dimensions,
@@ -434,11 +445,21 @@ public class ShortcutsFragment extends Fragment {
                 if (bmp == null) { if (onFail != null) onFail.run(); return; }
 
                 if (destFile.getParentFile() != null) destFile.getParentFile().mkdirs();
-
-                try (FileOutputStream fos = new FileOutputStream(destFile)) {
-                    bmp.compress(Bitmap.CompressFormat.PNG, 100, fos);
+                // Keep the previous artwork visible until the new download is complete.
+                File pending = new File(destFile.getParentFile(), destFile.getName() + ".download");
+                try {
+                    try (FileOutputStream fos = new FileOutputStream(pending)) {
+                        if (!bmp.compress(Bitmap.CompressFormat.PNG, 100, fos)) {
+                            throw new IOException("Could not encode artwork");
+                        }
+                    }
+                    if (!pending.renameTo(destFile)) {
+                        throw new IOException("Could not replace artwork");
+                    }
+                } finally {
+                    bmp.recycle();
+                    if (pending.exists()) pending.delete();
                 }
-                bmp.recycle();
                 Log.d(TAG, "SteamGridDB cover salvo: " + destFile.getAbsolutePath());
                 if (onSuccess != null) onSuccess.run();
             } catch (Exception e) {
@@ -562,19 +583,34 @@ public class ShortcutsFragment extends Fragment {
         }
     }
 
+    private static boolean isLegacyLowResolutionBanner(File banner) {
+        if (!banner.isFile()) return false;
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(banner.getPath(), bounds);
+        // SteamGridDB's old automatic banner size. Preserve other sizes/custom artwork.
+        return bounds.outWidth == 460 && bounds.outHeight == 215;
+    }
+
     private void requestBanner(Shortcut shortcut, File banner) {
         final String bannerKey = "banner:" + shortcut.file.getPath();
-        if (!banner.exists() && artworkRequests.add(bannerKey)) {
+        if ((!banner.isFile() || isLegacyLowResolutionBanner(banner))
+                && artworkRequests.add(bannerKey)) {
             fetchBannerFromSteamGrid(shortcut, banner, () -> {
                 artworkRequests.remove(bannerKey);
-                if (getActivity() != null) {
-                    getActivity().runOnUiThread(() -> refreshArtworkAndLauncherShortcuts(shortcut));
-                }
+                // The library fragment can be on the back stack while details are visible.
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    LibraryImageCache.notifyArtworkChanged();
+                    if (isAdded()) refreshArtworkAndLauncherShortcuts(shortcut);
+                });
             }, () -> artworkRequests.remove(bannerKey));
         }
     }
 
     private void openGameDetails(Shortcut shortcut) {
+        String baseName = FileUtils.getBasename(shortcut.file.getPath());
+        File banner = new File(getBannerDir(), baseName + ".png");
+        if (isLegacyLowResolutionBanner(banner)) requestBanner(shortcut, banner);
         getParentFragmentManager().beginTransaction()
                 .setCustomAnimations(R.anim.winz_screen_enter, R.anim.winz_screen_exit, R.anim.winz_screen_enter, R.anim.winz_screen_exit)
                 .addToBackStack(null)

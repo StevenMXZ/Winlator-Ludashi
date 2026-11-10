@@ -25,7 +25,5 @@ internal fun CodecsSettings(
         }
         SettingsDivider()
         SettingToggle(stringResource(R.string.software_decoding), software, onChanged = onSoftware)
-        Text(stringResource(R.string.video_decoder_compatibility_note), modifier = Modifier.padding(12.dp),
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

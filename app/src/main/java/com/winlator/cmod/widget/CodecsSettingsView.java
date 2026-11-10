@@ -34,8 +34,6 @@ public final class CodecsSettingsView extends LinearLayout {
         addView(decoder, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         software = new CheckBox(context);
         software.setText(R.string.software_decoding); addView(software);
-        TextView note = new TextView(context);
-        note.setText(R.string.video_decoder_compatibility_note); addView(note);
     }
 
     public static void attach(View root, String decoder, boolean software) {

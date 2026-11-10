@@ -69,8 +69,9 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
         activity?.setMainToolbarVisible(false)
         onDispose { }
     }
+    val artworkRevision = LibraryImageCache.revision
     val key = LibraryImageCache.keyFor(artworkPath)
-    val artwork by produceState(LibraryImageCache.peek(key) ?: fallback, key, fallback) {
+    val artwork by produceState(LibraryImageCache.peek(key) ?: fallback, key, fallback, artworkRevision) {
         value = withContext(Dispatchers.IO) { LibraryImageCache.load(artworkPath) ?: fallback }
     }
     var resumeSerial by remember { mutableIntStateOf(0) }

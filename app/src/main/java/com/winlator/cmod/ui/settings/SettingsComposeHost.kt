@@ -185,13 +185,8 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("language") { GroupCard { AppLanguagePreference() } }
 
             item("environment-title") { SectionTitle(uiStr(R.string.ui_environments)) }
-            item("containers") {
-                NavigationRow(Icons.Outlined.Dns, uiStr(R.string.containers), uiStr(R.string.ui_create_and_manage_windows_environments)) {
-                    activity?.navigateToMainDestination(R.id.main_menu_containers)
-                }
-            }
             item("components") {
-                NavigationRow(Icons.Outlined.Apps, uiStr(R.string.ui_components), uiStr(R.string.ui_wine_proton_dxvk_vkd3d_and_runtimes), callbacks::onOpenComponents)
+                NavigationRow(Icons.Outlined.Apps, uiStr(R.string.ui_components), null, callbacks::onOpenComponents)
             }
 
             item("file-manager") {
