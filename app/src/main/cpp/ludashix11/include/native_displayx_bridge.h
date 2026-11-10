@@ -9,5 +9,6 @@ class NativeDisplayXBridge {
   public:
     explicit NativeDisplayXBridge(XServer &);
     ~NativeDisplayXBridge();
+    void ResetState();
 };
 } // namespace xorg

@@ -184,8 +184,9 @@ private class ContainerEditorStateV2(
     var surfaceFormat by mutableStateOf(editing?.getSurfaceFormat() ?: if (renderer == "DisplayX") "rgba8" else "bgra8")
     var trueDisplayX by mutableStateOf(editing?.getTrueDisplayX() ?: false)
     var displayXPerformanceMode by mutableStateOf(editing?.getDisplayXPerformanceMode() ?: true)
-    var displayXPresentAtRefreshRate by mutableStateOf(editing?.getDisplayXPresentAtRefreshRate() ?: true)
-    var displayXPresentMode by mutableStateOf(editing?.getDisplayXPresentMode() ?: "mailbox")
+    var displayXPresentAtRefreshRate by mutableStateOf(editing?.getDisplayXPresentAtRefreshRate() ?: false)
+    var displayXDynamicRange by mutableStateOf(editing?.getDisplayXDynamicRange() ?: "sdr")
+    var displayXPresentMode by mutableStateOf(editing?.getDisplayXPresentMode() ?: "auto")
     var displayXPrecisePresentation by mutableStateOf(editing?.getDisplayXPrecisePresentation() ?: false)
     var frameGenEnabled by mutableStateOf((editing?.getExtra("frameGen", "0") ?: "0") == "1")
     var frameGenMultiplier by mutableIntStateOf(
@@ -333,7 +334,7 @@ private class ContainerEditorStateV2(
         name, screen, audio, builtinDecoder, softwareDecoding, hudMode, locale, soundFont,
         fullscreen, desktopTheme, desktopBackground, wallpaperStamp, mouseWarp, drives,
         displayServer, renderer, rendererPresentMode, rendererDriver, filterMode, surfaceFormat, trueDisplayX,
-        displayXPerformanceMode, displayXPresentAtRefreshRate, displayXPresentMode,
+        displayXPerformanceMode, displayXPresentAtRefreshRate, displayXPresentMode, displayXDynamicRange,
         displayXPrecisePresentation, frameGenEnabled, frameGenMultiplier,
         frameGenTargetRate, frameGenFlowScale, graphicsDriver, freedrenoVersion, graphicsConfig,
         wrapper, wrapperConfig, emulator, fexVersion, boxVersion, fexPreset, boxPreset, exclusive, xinput, dinput,
@@ -481,6 +482,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.setTrueDisplayX(state.trueDisplayX)
         container.setDisplayXPerformanceMode(state.displayXPerformanceMode)
         container.setDisplayXPresentAtRefreshRate(state.displayXPresentAtRefreshRate)
+        container.setDisplayXDynamicRange(state.displayXDynamicRange)
         container.setDisplayXPresentMode(state.displayXPresentMode)
         container.setDisplayXPrecisePresentation(state.displayXPrecisePresentation)
         container.putExtra("frameGen", if (state.frameGenEnabled) "1" else "0")
@@ -579,6 +581,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                     .put("trueDisplayX", if (state.trueDisplayX) "1" else "0")
                     .put("displayXPerformanceMode", if (state.displayXPerformanceMode) "1" else "0")
                     .put("displayXPresentAtRefreshRate", if (state.displayXPresentAtRefreshRate) "1" else "0")
+                    .put("displayXDynamicRange", state.displayXDynamicRange)
                     .put("displayXPresentMode", state.displayXPresentMode)
                     .put("displayXPrecisePresentation", if (state.displayXPrecisePresentation) "1" else "0")
                     .put("frameGen", if (state.frameGenEnabled) "1" else "0")
@@ -857,8 +860,8 @@ private fun ContainerCategoryV2(
                 ) { s.surfaceFormat = if (it == "BGRA") "bgra8" else "rgba8" }
                 if (s.renderer == "DisplayX") {
                     SettingsDivider()
-                    SettingToggle(uiStr(R.string.ui_bypass_x11), s.trueDisplayX) {
-                        s.trueDisplayX = it
+                    SettingChoice(uiStr(R.string.ui_displayx_backend), if (s.trueDisplayX) "DisplayX+" else "X11", listOf("X11", "DisplayX+")) {
+                        s.trueDisplayX = it == "DisplayX+"
                     }
                     SettingsDivider()
                     SettingToggle(uiStr(R.string.ui_performance_mode), s.displayXPerformanceMode) {
@@ -869,12 +872,14 @@ private fun ContainerCategoryV2(
                         s.displayXPresentAtRefreshRate = it
                     }
                     SettingsDivider()
-                    SettingChoice(uiStr(R.string.ui_present_mode), s.displayXPresentMode, listOf("mailbox", "fifo")) {
+                    SettingChoice(uiStr(R.string.ui_present_mode), s.displayXPresentMode, listOf("auto", "mailbox", "fifo")) {
                         s.displayXPresentMode = it
                     }
-                    SettingsDivider()
-                    SettingToggle(uiStr(R.string.ui_precise_presentation), s.displayXPrecisePresentation) {
-                        s.displayXPrecisePresentation = it
+                    if (s.trueDisplayX) {
+                        SettingsDivider()
+                        SettingChoice(uiStr(R.string.ui_dynamic_range), s.displayXDynamicRange.uppercase(), listOf("SDR", "HDR")) {
+                            s.displayXDynamicRange = it.lowercase()
+                        }
                     }
                 } else {
                     if (s.renderer != "EGL") {

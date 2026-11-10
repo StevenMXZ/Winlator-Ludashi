@@ -184,6 +184,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var trueDisplayX by mutableStateOf(shortcut.getTrueDisplayX())
     var displayXPerformanceMode by mutableStateOf(shortcut.getDisplayXPerformanceMode())
     var displayXPresentAtRefreshRate by mutableStateOf(shortcut.getDisplayXPresentAtRefreshRate())
+    var displayXDynamicRange by mutableStateOf(shortcut.getDisplayXDynamicRange())
     var displayXPresentMode by mutableStateOf(shortcut.getDisplayXPresentMode())
     var displayXPrecisePresentation by mutableStateOf(shortcut.getDisplayXPrecisePresentation())
     var frameGenEnabled by mutableStateOf(
@@ -412,6 +413,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
         shortcut.setTrueDisplayX(trueDisplayX)
         shortcut.setDisplayXPerformanceMode(displayXPerformanceMode)
         shortcut.setDisplayXPresentAtRefreshRate(displayXPresentAtRefreshRate)
+        shortcut.setDisplayXDynamicRange(displayXDynamicRange)
         shortcut.setDisplayXPresentMode(displayXPresentMode)
         shortcut.setDisplayXPrecisePresentation(displayXPrecisePresentation)
         save()
@@ -1070,8 +1072,8 @@ private fun ShortcutCategoryV2(
                 }
                 if (s.renderer == "DisplayX") {
                     SettingsDivider()
-                    SettingToggle(uiStr(R.string.ui_bypass_x11), s.trueDisplayX) {
-                        s.trueDisplayX = it
+                    SettingChoice(uiStr(R.string.ui_displayx_backend), if (s.trueDisplayX) "DisplayX+" else "X11", listOf("X11", "DisplayX+")) {
+                        s.trueDisplayX = it == "DisplayX+"
                         s.saveRenderer()
                     }
                     SettingsDivider()
@@ -1085,14 +1087,16 @@ private fun ShortcutCategoryV2(
                         s.saveRenderer()
                     }
                     SettingsDivider()
-                    SettingChoice(uiStr(R.string.ui_present_mode), s.displayXPresentMode, listOf("mailbox", "fifo")) {
+                    SettingChoice(uiStr(R.string.ui_present_mode), s.displayXPresentMode, listOf("auto", "mailbox", "fifo")) {
                         s.displayXPresentMode = it
                         s.saveRenderer()
                     }
-                    SettingsDivider()
-                    SettingToggle(uiStr(R.string.ui_precise_presentation), s.displayXPrecisePresentation) {
-                        s.displayXPrecisePresentation = it
-                        s.saveRenderer()
+                    if (s.trueDisplayX) {
+                        SettingsDivider()
+                        SettingChoice(uiStr(R.string.ui_dynamic_range), s.displayXDynamicRange.uppercase(), listOf("SDR", "HDR")) {
+                            s.displayXDynamicRange = it.lowercase()
+                            s.saveRenderer()
+                        }
                     }
                 } else {
                     if (s.renderer != "EGL") {

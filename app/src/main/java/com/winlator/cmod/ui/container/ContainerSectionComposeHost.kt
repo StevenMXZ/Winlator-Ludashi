@@ -255,6 +255,7 @@ private fun ContainerSectionScreen(
     var displayXPerformance by remember { mutableStateOf(settingsContainer.getDisplayXPerformanceMode()) }
     var displayXRefresh by remember { mutableStateOf(settingsContainer.getDisplayXPresentAtRefreshRate()) }
     var displayXMode by remember { mutableStateOf(settingsContainer.getDisplayXPresentMode()) }
+    var displayXRange by remember { mutableStateOf(settingsContainer.getDisplayXDynamicRange()) }
     var displayXPrecise by remember { mutableStateOf(settingsContainer.getDisplayXPrecisePresentation()) }
     var displayServer by remember(initialDisplayServer) { mutableStateOf(initialDisplayServer) }
     var screen by remember(initialScreen) { mutableStateOf(initialScreen) }
@@ -322,7 +323,7 @@ private fun ContainerSectionScreen(
                             settingsContainer.setDisplayXPerformanceMode(displayXPerformance)
                             settingsContainer.setDisplayXPresentAtRefreshRate(displayXRefresh)
                             settingsContainer.setDisplayXPresentMode(displayXMode)
-                            settingsContainer.setDisplayXPrecisePresentation(displayXPrecise)
+                            settingsContainer.setDisplayXDynamicRange(displayXRange)
                         }
                         callbacks.onSave(
                             renderer,
@@ -448,11 +449,13 @@ private fun ContainerSectionScreen(
                             ) { rendererOptionsExpanded = !rendererOptionsExpanded }
                             if (rendererOptionsExpanded && renderer == "DisplayX") {
                                 Column(Modifier.padding(start = 65.dp, end = 12.dp, bottom = 10.dp)) {
-                                    ToggleSetting(uiStr(R.string.ui_bypass_x11), displayXBypass) { displayXBypass = it }
+                                    InlineChoice(uiStr(R.string.ui_displayx_backend), if (displayXBypass) "DisplayX+" else "X11", arrayOf("X11", "DisplayX+")) { displayXBypass = it == "DisplayX+" }
                                     ToggleSetting(uiStr(R.string.ui_performance_mode), displayXPerformance) { displayXPerformance = it }
                                     ToggleSetting(uiStr(R.string.ui_present_at_refresh_rate), displayXRefresh) { displayXRefresh = it }
-                                    InlineChoice(uiStr(R.string.ui_present_mode), displayXMode, arrayOf("mailbox", "fifo")) { displayXMode = it }
-                                    ToggleSetting(uiStr(R.string.ui_precise_presentation), displayXPrecise) { displayXPrecise = it }
+                                    InlineChoice(uiStr(R.string.ui_present_mode), displayXMode, arrayOf("auto", "mailbox", "fifo")) { displayXMode = it }
+                                    if (displayXBypass) {
+                                    InlineChoice(uiStr(R.string.ui_dynamic_range), displayXRange.uppercase(), arrayOf("SDR", "HDR")) { displayXRange = it.lowercase() }
+                                    }
                                 }
                             } else if (rendererOptionsExpanded) {
                                 RendererOptionsPanel(

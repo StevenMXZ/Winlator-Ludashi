@@ -32,6 +32,11 @@ void NativeScreen::UpdateSurface(ANativeWindow* window) {
     surface = window; // Owns the reference supplied by ANativeWindow_fromSurface.
     surfaceDirty = true; dirty = true; cv.notify_one();
 }
+void NativeScreen::SetFrameTimeline(int64_t id) {
+    std::lock_guard lock(state);
+    displayXFrameTimeline.store(id, std::memory_order_relaxed);
+    if (dirty) cv.notify_one();
+}
 void NativeScreen::SetOptions(bool fs, bool visible, int limit, float rate) {
     const int bounded = std::clamp(limit, 0, 1000);
     {
@@ -750,6 +755,9 @@ void NativeScreen::Worker() {
     // DisplayX does not block acquiring a Vulkan/EGL swapchain. Its selected
     // snapshot can go straight to SurfaceControl without a second scene copy
     // and another state-lock round trip inside Draw.
+    int64_t lastDisplayXTimeline = -1;
+    const bool paceDisplayX = server.RendererConfig().backend == NativeRendererConfig::Backend::DisplayX &&
+        server.RendererConfig().presentAtRefreshRate;
     const NativeFrameLatch noLatch;
     const NativeFrameLatch& drawLatch = server.RendererConfig().backend ==
             NativeRendererConfig::Backend::DisplayX ? noLatch : latch;
@@ -757,8 +765,14 @@ void NativeScreen::Worker() {
         {
             std::unique_lock lock(state);
             cv.wait(lock, [&] {
-                return stop || surfaceDirty ||
-                    (dirty && (!hasSurface || !renderer || renderer->ReadyToDraw()));
+                if (stop || surfaceDirty) return true;
+                if (!dirty || (hasSurface && renderer && !renderer->ReadyToDraw())) return false;
+                const auto timeline = displayXFrameTimeline.load(std::memory_order_relaxed);
+                // FIFO delegates pacing to per-layer backpressure, as in Java.
+                const bool fifo = std::ranges::any_of(latest.entries, [](const auto& e) {
+                    return e.external && e.external->presentMode == 2;
+                });
+                return !hasSurface || !paceDisplayX || fifo || timeline < 0 || timeline != lastDisplayXTimeline;
             });
             if (stop) break;
         }
@@ -822,6 +836,7 @@ void NativeScreen::Worker() {
                 visualState = renderer->VisualState();
                 appliedVisualRevision = nextVisualRevision;
             }
+            frame.frameTimeline = displayXFrameTimeline.load(std::memory_order_relaxed);
             frame.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
             // IDLE is a Java-compatible producer acknowledgement, not an
             // eligibility flag. Already-acknowledged scenes remain drawable.
@@ -846,6 +861,7 @@ void NativeScreen::Worker() {
             }
         }
         if (submitted) {
+            lastDisplayXTimeline = frame.frameTimeline;
             if (!frame.entries.empty()) presentedCount.fetch_add(1);
         }
         {

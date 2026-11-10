@@ -582,14 +582,14 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 ? shortcut.getDisplayXPerformanceMode() : container.getDisplayXPerformanceMode();
         presentRR = shortcut != null
                 ? shortcut.getDisplayXPresentAtRefreshRate() : container.getDisplayXPresentAtRefreshRate();
-        precisePresentation = shortcut != null
-                ? shortcut.getDisplayXPrecisePresentation() : container.getDisplayXPrecisePresentation();
+        precisePresentation = false; // Choreographer frame timelines are selected automatically.
         textureFilter = shortcut != null
                 ? shortcut.getRendererFilterMode() : container.getRendererFilterMode();
         if (textureFilter != 1) textureFilter = 0;
         displayxConfig = new KeyValueSet();
-        displayxConfig.put("trueDisplayX", (shortcut != null
-                ? shortcut.getTrueDisplayX() : container.getTrueDisplayX()) ? "1" : "0");
+        displayxConfig.put("backend", (shortcut != null
+                ? shortcut.getTrueDisplayX() : container.getTrueDisplayX()) ? "displayx" : "x11");
+        displayxConfig.put("dynamicRange", shortcut != null ? shortcut.getDisplayXDynamicRange() : container.getDisplayXDynamicRange());
         displayxConfig.put("performanceMode", performanceMode ? "1" : "0");
         displayxConfig.put("surfaceFormat", getSelectedSurfaceFormat());
         displayxConfig.put("presentRR", presentRR ? "1" : "0");
@@ -850,15 +850,14 @@ public class XServerDisplayActivity extends AppCompatActivity {
     public void onResume() {
         super.onResume();
 
-        if (environment != null) {
-            xServerView.onResume();
-            environment.onResume();
+        if (!isInPictureInPictureMode()) {
+            ProcessHelper.resumeAllWineProcesses();
+            if (environment != null) environment.onResume();
+            if (xServerView != null) xServerView.onResume();
         }
         startTime = System.currentTimeMillis();
         handler.removeCallbacks(savePlaytimeRunnable);
         handler.postDelayed(savePlaytimeRunnable, SAVE_INTERVAL_MS);
-        if (!isInPictureInPictureMode())
-            ProcessHelper.resumeAllWineProcesses();
     }
 
     @Override
@@ -868,8 +867,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         if (!isInPictureInPictureMode()) {
             if (environment != null) {
+                if (xServerView != null) xServerView.onPause();
                 environment.onPause();
-                xServerView.onPause();
             }
 
             ProcessHelper.pauseAllWineProcesses();
@@ -1469,12 +1468,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (useDisplayX) presentMode = shortcut != null ? shortcut.getDisplayXPresentMode() : container.getDisplayXPresentMode();
             int displayXFlags = ((shortcut != null ? shortcut.getTrueDisplayX() : container.getTrueDisplayX()) ? 1 : 0)
                     | ((shortcut != null ? shortcut.getDisplayXPerformanceMode() : container.getDisplayXPerformanceMode()) ? 2 : 0)
-                    | ((shortcut != null ? shortcut.getDisplayXPresentAtRefreshRate() : container.getDisplayXPresentAtRefreshRate()) ? 4 : 0)
-                    | ((shortcut != null ? shortcut.getDisplayXPrecisePresentation() : container.getDisplayXPrecisePresentation()) ? 8 : 0);
+                    | ((shortcut != null ? shortcut.getDisplayXPresentAtRefreshRate() : container.getDisplayXPresentAtRefreshRate()) ? 4 : 0);
             com.winlator.cmod.widget.NativeX11View nativeView =
                     new com.winlator.cmod.widget.NativeX11View(this, xServer, validationEnabled,
                             driverPath, libraryName, AppUtils.getNativeLibDir(this),
-                            com.winlator.cmod.contentdialog.RendererOptionsDialog.toVkPresentMode(presentMode),
+                            useDisplayX && "auto".equals(presentMode) ? 1 : com.winlator.cmod.contentdialog.RendererOptionsDialog.toVkPresentMode(presentMode),
                             shortcut != null ? shortcut.getRendererSwapRB()
                                     : container != null && container.getRendererSwapRB(),
                             useDisplayX ? 2 : useEGL ? 1 : 0, displayXFlags);

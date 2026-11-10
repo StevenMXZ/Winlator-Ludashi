@@ -1,5 +1,7 @@
 #include <android/surface_control.h>
 #include <android/performance_hint.h>
+#include <android/data_space.h>
+#include <android/hdr_metadata.h>
 #include <functional>
 #include <string>
 #include <vector>
@@ -8,7 +10,7 @@
 #include <cassert>
 struct ASurfaceControl {
     bool root{}, visible{}, backPressure{}, released{};
-    int order{}, transparency{};
+    int order{}, transparency{}, dataSpace{}, hdrCalls{};
     ARect source{}, destination{};
     AHardwareBuffer *buffer{};
 };
@@ -205,3 +207,24 @@ extern "C" void TestBufferDesc(int index, AHardwareBuffer_Desc *description) {
     assert(controls.at(index)->buffer);
     AHardwareBuffer_describe(controls.at(index)->buffer, description);
 }
+
+extern "C" void ASurfaceTransaction_setBufferDataSpace(ASurfaceTransaction *transaction, ASurfaceControl *control, ADataSpace space) {
+    ++properties;
+    transaction->apply.push_back([=] { control->dataSpace = space; });
+}
+extern "C" void ASurfaceTransaction_setHdrMetadata_smpte2086(ASurfaceTransaction *transaction, ASurfaceControl *control, AHdrMetadata_smpte2086 *metadata) {
+    assert(metadata->maxLuminance > 0);
+    ++properties;
+    transaction->apply.push_back([=] { ++control->hdrCalls; });
+}
+extern "C" void ASurfaceTransaction_setHdrMetadata_cta861_3(ASurfaceTransaction *transaction, ASurfaceControl *control, AHdrMetadata_cta861_3 *metadata) {
+    assert(metadata->maxContentLightLevel > 0);
+    ++properties;
+    transaction->apply.push_back([=] { ++control->hdrCalls; });
+}
+extern "C" int TestDataSpace(int index) { return controls.at(index)->dataSpace; }
+extern "C" int TestHdrCalls(int index) { return controls.at(index)->hdrCalls; }
+
+static int64_t frameTimeline = -1;
+extern "C" void ASurfaceTransaction_setFrameTimeline(ASurfaceTransaction*, int64_t id) { frameTimeline = id; }
+extern "C" int64_t TestFrameTimeline() { return frameTimeline; }

@@ -6,6 +6,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <poll.h>
+#include <set>
+#include "../../winlator/renderer/displayx_protocol.hpp"
 
 namespace xorg {
 namespace {
@@ -13,6 +15,7 @@ struct Peer {
     int fd;
     std::atomic<bool> connected{true};
     std::mutex output;
+    std::set<u8> ids;
     explicit Peer(int value) : fd(value) {}
     ~Peer() {
         close(fd);
@@ -24,72 +27,11 @@ struct Peer {
     void Complete(u8 id, u32 index, u64 present, u32 mode) {
         if (present == UINT64_MAX && mode != 2)
             return;
-        std::array<u8, 17> packet{};
-        const u32 opcode = 4;
-        memcpy(packet.data(), &opcode, 4);
-        memcpy(packet.data() + 4, &id, 1);
-        memcpy(packet.data() + 5, &present, 8);
-        memcpy(packet.data() + 13, &index, 4);
+        const auto packet = displayx_wire::completion({{id, present, index}});
         std::lock_guard lock(output);
-        size_t offset{};
-        while (connected && offset < packet.size()) {
-            const auto sent =
-                send(fd, packet.data() + offset, packet.size() - offset, MSG_NOSIGNAL | MSG_DONTWAIT);
-            if (sent < 0 && errno == EINTR)
-                continue;
-            if (sent <= 0) {
-                Stop();
-                break;
-            }
-            offset += sent;
-        }
+        if (connected && !displayx_wire::sendPacket(fd, packet)) Stop();
     }
 };
-bool Read(int fd, void *address, size_t size) {
-    auto *next = static_cast<u8 *>(address);
-    while (size) {
-        const auto count = recv(fd, next, size, 0);
-        if (count < 0 && errno == EINTR)
-            continue;
-        if (count <= 0)
-            return false;
-        next += count;
-        size -= count;
-    }
-    return true;
-}
-int ReceiveFence(int fd) {
-    char byte{};
-    iovec data{&byte, 1};
-    alignas(cmsghdr) char control[CMSG_SPACE(sizeof(int) * 8)]{};
-    msghdr message{};
-    message.msg_iov = &data;
-    message.msg_iovlen = 1;
-    message.msg_control = control;
-    message.msg_controllen = sizeof(control);
-    ssize_t count;
-    do {
-        count = recvmsg(fd, &message, MSG_CMSG_CLOEXEC);
-    } while (count < 0 && errno == EINTR);
-    std::vector<int> received;
-    for (auto *header = CMSG_FIRSTHDR(&message); header; header = CMSG_NXTHDR(&message, header)) {
-        if (header->cmsg_level != SOL_SOCKET || header->cmsg_type != SCM_RIGHTS ||
-            header->cmsg_len < CMSG_LEN(0))
-            continue;
-        const size_t descriptors = (header->cmsg_len - CMSG_LEN(0)) / sizeof(int);
-        for (size_t i = 0; i < descriptors; ++i) {
-            int value;
-            memcpy(&value, CMSG_DATA(header) + i * sizeof(int), sizeof(value));
-            received.push_back(value);
-        }
-    }
-    if (count != 1 || (message.msg_flags & MSG_CTRUNC) || received.size() != 1) {
-        for (int value : received)
-            close(value);
-        return -1;
-    }
-    return received.front();
-}
 } // namespace
 struct NativeDisplayXBridge::Impl {
     XServer &server;
@@ -103,14 +45,16 @@ struct NativeDisplayXBridge::Impl {
     };
     std::vector<Client> clients;
     struct Swapchain {
-        u32 window{}, mode{};
+        u32 window{}, mode{}, colorSpace{};
+        std::array<float, 12> hdr{};
+        bool hasHdr{};
         u64 generation{};
         std::vector<sp<NativeDrawable>> images;
         sp<NativeExternalFrame> latest;
     };
     explicit Impl(XServer &value) : server(value) {
         clients.reserve(16);
-        listener = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+        listener = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
         if (listener < 0)
             throw std::runtime_error("Cannot create X++ DisplayX+ socket");
         sockaddr_un address{};
@@ -199,23 +143,30 @@ struct NativeDisplayXBridge::Impl {
                     continue;
                 if (ready < 0 || (input.revents & (POLLERR | POLLHUP | POLLNVAL)))
                     break;
-                u32 opcode{};
-                if (!Read(peer->fd, &opcode, 4))
-                    break;
-                if (opcode == 0)
-                    continue;
-                if (opcode == 1) {
-                    u8 id;
-                    u32 count, window, mode, format, width, height;
-                    if (!Read(peer->fd, &id, 1) || !Read(peer->fd, &count, 4) ||
-                        !Read(peer->fd, &window, 4) || !Read(peer->fd, &mode, 4) ||
-                        !Read(peer->fd, &format, 4) || !Read(peer->fd, &width, 4) ||
-                        !Read(peer->fd, &height, 4) || !count || count > 16 || !width || !height ||
-                        width > 16384 || height > 16384)
-                        break;
+                displayx_wire::Packet packet;
+                if (!displayx_wire::receive(peer->fd, packet)) break;
+                const u32 opcode = packet.get<u32>(0);
+                if (opcode == displayx_wire::Create) {
+                    if (packet.size != 25 || packet.fence >= 0) break;
+                    const u8 id = packet.get<u8>(4);
+                    const u32 count = packet.get<u32>(5), window = packet.get<u32>(9);
+                    const u32 mode = packet.get<u32>(13), colorSpace = packet.get<u32>(21);
+                    if (!count || count > 16 || mode > 3) break;
+                    u32 width, height;
+                    u64 generation;
+                    {
+                        auto lock = server.Lock();
+                        auto *resource = server.GetResource(window);
+                        if (!resource || resource->GetType() != XResourceType::Window) break;
+                        auto *w = resource->As<Window>();
+                        width = w->GetWidth(); height = w->GetHeight(); generation = w->generation;
+                    }
+                    if (!width || !height) break;
                     Swapchain chain;
                     chain.window = window;
-                    chain.mode = mode == 2 ? 2 : 1;
+                    chain.mode = mode;
+                    chain.colorSpace = colorSpace;
+                    chain.generation = generation;
                     for (u32 i = 0; i < count; ++i) {
                         AHardwareBuffer *buffer{};
                         if (AHardwareBuffer_recvHandleFromUnixSocket(peer->fd, &buffer) || !buffer)
@@ -232,35 +183,32 @@ struct NativeDisplayXBridge::Impl {
                     {
                         auto lock = server.Lock();
                         auto *resource = server.GetResource(window);
-                        if (!resource || resource->GetType() != XResourceType::Window)
-                            break;
-                        chain.generation = resource->As<Window>()->generation;
+                        if (!resource || resource->GetType() != XResourceType::Window ||
+                            resource->As<Window>()->generation != generation) break;
                     }
                     if (auto found = chains.find(id); found != chains.end())
                         remove(found->second);
                     chains.insert_or_assign(id, std::move(chain));
-                } else if (opcode == 2) {
-                    u8 id;
-                    u32 index;
-                    u64 present;
-                    if (!Read(peer->fd, &id, 1) || !Read(peer->fd, &index, 4))
-                        break;
-                    int fence = ReceiveFence(peer->fd);
-                    if (fence < 0)
-                        break;
-                    if (!Read(peer->fd, &present, 8)) {
-                        close(fence);
-                        break;
-                    }
+                    { std::lock_guard output(peer->output); peer->ids.insert(id); }
+                } else if (opcode == displayx_wire::Present) {
+                    if (packet.size != 17) break;
+                    const u8 id = packet.get<u8>(4);
+                    const u32 index = packet.get<u32>(5);
+                    const u64 present = packet.get<u64>(9);
+                    int fence = packet.takeFence();
                     auto found = chains.find(id);
                     if (found == chains.end() || index >= found->second.images.size()) {
-                        close(fence);
+                        if (fence >= 0) close(fence);
                         break;
                     }
                     auto &chain = found->second;
                     auto frame = std::make_shared<NativeExternalFrame>();
                     frame->drawable = chain.images[index];
                     frame->fence = fence;
+                    frame->presentMode = chain.mode;
+                    frame->colorSpace = chain.colorSpace;
+                    frame->hasHdr = chain.hasHdr;
+                    frame->hdr = chain.hdr;
                     frame->completion = [peer, id, index, present, mode = chain.mode] {
                         peer->Complete(id, index, present, mode);
                     };
@@ -286,13 +234,22 @@ struct NativeDisplayXBridge::Impl {
                                 peer->Stop();
                         }
                     }
-                } else if (opcode == 3) {
-                    u8 id;
-                    if (!Read(peer->fd, &id, 1))
-                        break;
+                } else if (opcode == displayx_wire::Hdr) {
+                    if (packet.size != 53 || packet.fence >= 0) break;
+                    auto found = chains.find(packet.get<u8>(4));
+                    if (found == chains.end()) break;
+                    for (size_t i = 0; i < 12; ++i) {
+                        found->second.hdr[i] = packet.get<float>(5 + i * 4);
+                        if (!std::isfinite(found->second.hdr[i])) throw std::runtime_error("Invalid DisplayX HDR metadata");
+                    }
+                    found->second.hasHdr = true;
+                } else if (opcode == displayx_wire::Destroy) {
+                    if (packet.size != 5 || packet.fence >= 0) break;
+                    const u8 id = packet.get<u8>(4);
                     if (auto found = chains.find(id); found != chains.end()) {
                         remove(found->second);
                         chains.erase(found);
+                        std::lock_guard output(peer->output); peer->ids.erase(id);
                     }
                 } else
                     break;
@@ -307,4 +264,16 @@ struct NativeDisplayXBridge::Impl {
 };
 NativeDisplayXBridge::NativeDisplayXBridge(XServer &server) : impl(std::make_unique<Impl>(server)) {}
 NativeDisplayXBridge::~NativeDisplayXBridge() = default;
+void NativeDisplayXBridge::ResetState() {
+    std::lock_guard clients(impl->clientsMutex);
+    for (const auto& client : impl->clients) {
+        std::lock_guard output(client.peer->output);
+        for (u8 id : client.peer->ids) {
+            std::vector<uint8_t> packet;
+            displayx_wire::append(packet, uint32_t(displayx_wire::Reset));
+            displayx_wire::append(packet, id);
+            if (client.peer->connected && !displayx_wire::sendPacket(client.peer->fd, packet)) client.peer->Stop();
+        }
+    }
+}
 } // namespace xorg

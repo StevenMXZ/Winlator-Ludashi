@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <array>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -34,7 +35,10 @@ struct Window {
     std::unordered_map<int, std::unique_ptr<struct Drawable>> directContents;
     Drawable *externalContent;
     ASurfaceControl *control;
-    bool backPressureEnabled;
+    bool backPressureEnabled{};
+    uint32_t displayXColorSpace{UINT32_MAX};
+    std::array<float, 12> displayXHdr{};
+    bool displayXHasHdr{};
     Window *surface;
         
     bool hasExternalContents() {

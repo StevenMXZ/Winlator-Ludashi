@@ -191,14 +191,14 @@
   <string name="ui_path_settings">"PATH SETTINGS"</string>
   <string name="ui_presets">"PRESETS"</string>
   <string name="ui_path">"Path"</string>
-  <string name="ui_performance_mode">"Performance mode"</string>
+  <string name="ui_performance_mode">"Boost CPU when presenting"</string>
   <string name="ui_pick_the_look_you_prefer_you_can_change_it_later_in_settings">"Pick the look you prefer. You can change it later in Settings."</string>
   <string name="ui_precise_presentation">"Precise presentation"</string>
   <string name="ui_preparing_winlator_core_in_the_background">"Preparing Winlator core in the background"</string>
   <string name="ui_preparing_environment">"Preparing environment"</string>
   <string name="ui_preparing">"Preparing…"</string>
   <string name="ui_present_mode">"Present Mode"</string>
-  <string name="ui_present_at_refresh_rate">"Present at refresh rate"</string>
+  <string name="ui_present_at_refresh_rate">"Submit requests at refresh rate"</string>
   <string name="ui_present_mode_driver_filter_and_color_channels">"Present mode, driver, filter and color channels"</string>
   <string name="ui_preset_actions">"Preset actions"</string>
   <string name="ui_properties">"Properties"</string>
@@ -310,4 +310,6 @@
   <string name="ui_preset_cannot_access_desktop">"Cannot access desktop directory"</string>
   <string name="ui_preset_imported_shortcut_name">"Imported Shortcut"</string>
   <string name="ui_preset_shortcut_imported">"Shortcut imported"</string>
+  <string name="ui_displayx_backend">"Backend DisplayX"</string>
+  <string name="ui_dynamic_range">"Dynamic range"</string>
 </resources>

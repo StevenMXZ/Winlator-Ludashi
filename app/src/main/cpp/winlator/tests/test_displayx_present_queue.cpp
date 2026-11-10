@@ -79,15 +79,15 @@ int main() {
     }
     {
         DisplayXPresentRequest request;
-        std::array<uint8_t, 17> packet{};
+        std::array<uint8_t, 25> packet{};
         request.clientFd = 9; request.swapchainId = 3; request.imageIndex = 7;
         assert(!displayXCompletion(request, packet)); // Mailbox without a present-wait ID.
         request.presentMode = 2;
         assert(displayXCompletion(request, packet)); // FIFO still needs an image-reuse acknowledgement.
         uint32_t code{}, index{}; uint64_t present{};
-        memcpy(&code, packet.data(), 4); memcpy(&present, packet.data() + 5, 8);
-        memcpy(&index, packet.data() + 13, 4);
-        assert(code == 4 && packet[4] == 3 && present == UINT64_MAX && index == 7);
+        memcpy(&code, packet.data(), 4); memcpy(&present, packet.data() + 9, 8);
+        memcpy(&index, packet.data() + 21, 4);
+        assert(code == 4 && packet[8] == 3 && present == UINT64_MAX && index == 7);
         request.presentMode = 1; request.presentId = 123;
         assert(displayXCompletion(request, packet));
         request.clientFd = -1; assert(!displayXCompletion(request, packet));

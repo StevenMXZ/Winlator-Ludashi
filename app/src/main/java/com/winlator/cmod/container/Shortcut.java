@@ -332,6 +332,8 @@ public class Shortcut {
     public boolean getTrueDisplayX() {
         String v = getExtra("trueDisplayX", null);
         if (v != null) return v.equals("1");
+        v = getLegacyDisplayXValue("backend");
+        if (v != null) return "displayx".equalsIgnoreCase(v);
         v = getLegacyDisplayXValue("trueDisplayX");
         return v != null ? v.equals("1") : container.getTrueDisplayX();
     }
@@ -386,11 +388,11 @@ public class Shortcut {
             return previous != null ? (previous.equals("1") ? "fifo" : "mailbox")
                     : container.getDisplayXPresentMode();
         }
-        return "fifo".equalsIgnoreCase(value) ? "fifo" : "mailbox";
+        return Container.normalizeDisplayXPresentMode(value);
     }
 
     public void setDisplayXPresentMode(String value) {
-        putExtra("displayXPresentMode", "fifo".equalsIgnoreCase(value) ? "fifo" : "mailbox");
+        putExtra("displayXPresentMode", Container.normalizeDisplayXPresentMode(value));
     }
     public void setDisplayXBackPressure(boolean v) {
         putExtra("displayXBackPressure", v ? "1" : "0");
@@ -403,6 +405,15 @@ public class Shortcut {
     }
     public void setDisplayXPrecisePresentation(boolean v) {
         putExtra("displayXPrecisePresentation", v ? "1" : "0");
+    }
+
+    public String getDisplayXDynamicRange() {
+        String value = getExtra("displayXDynamicRange", null);
+        if (value == null) value = getLegacyDisplayXValue("dynamicRange");
+        return value != null ? ("hdr".equalsIgnoreCase(value) ? "hdr" : "sdr") : container.getDisplayXDynamicRange();
+    }
+    public void setDisplayXDynamicRange(String value) {
+        putExtra("displayXDynamicRange", "hdr".equalsIgnoreCase(value) ? "hdr" : "sdr");
     }
 
     private String getLegacyDisplayXValue(String key) {

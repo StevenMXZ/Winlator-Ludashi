@@ -5,12 +5,15 @@
 #include <iostream>
 extern "C" void TestFinish();
 extern "C" int TestProperties();
+extern "C" int TestDataSpace(int);
+extern "C" int TestHdrCalls(int);
 extern "C" int TestTransactions();
 extern "C" void TestBufferDesc(int, AHardwareBuffer_Desc *);
 extern "C" int TestControls();
 extern "C" int TestReleased();
 extern "C" int TestFences();
 extern "C" int64_t TestTime();
+extern "C" int64_t TestFrameTimeline();
 extern "C" void TestLayer(int, int *);
 extern "C" void TestReset();
 extern "C" int TestHintCreated();
@@ -117,6 +120,9 @@ int main() {
         auto direct = std::make_shared<NativeDrawable>(32, 32, 24, buffer);
         auto external = std::make_shared<NativeExternalFrame>();
         external->drawable = direct;
+        external->colorSpace = 1000104008;
+        external->hasHdr = true;
+        external->hdr = {.64f, .33f, .3f, .6f, .15f, .06f, .3127f, .329f, 1000.f, .01f, 1000.f, 400.f};
         int pipefd[2];
         assert(pipe(pipefd) == 0);
         external->fence = pipefd[0];
@@ -125,7 +131,10 @@ int main() {
         external->completion = [&] { ++acknowledged; };
         frame.entries[0] = {direct, nullptr, nullptr, direct->Revision(), 0, 0, true, 1, 32, 32, external};
         const int references = buffer->refs;
+        frame.frameTimeline = 123;
         assert(renderer->Draw(frame));
+        assert(TestFrameTimeline() == 123);
+        assert(TestDataSpace(1) == 163971072 && TestHdrCalls(1) == 2);
         assert(buffer->refs == references + 1); // SurfaceControl only; no extra AHB wrapper.
         assert(renderer->Draw(frame));
         assert(renderer->Draw(frame));

@@ -72,4 +72,22 @@ public class DisplayXEnvironmentTest {
         assertTrue(container.getUseDisplayX());
         assertEquals("fifo", container.getDisplayXPresentMode());
     }
+    @Test public void hdrAndAutomaticPresentModeArePassedOnlyToTheWrapper() throws Exception {
+        Container container = container();
+        container.setDisplayXDynamicRange("hdr"); container.setDisplayXPresentMode("auto");
+        EnvVars env = new EnvVars();
+        GuestProgramLauncherComponent.configureDisplayXEnvironment(env, container, null);
+        assertEquals("1", env.get("DXVK_HDR"));
+        assertEquals("auto", env.get("DISPLAYX_PRESENT_MODE"));
+        Shortcut game = new Shortcut(container, temporary.newFile("sdr.desktop"));
+        game.setDisplayXDynamicRange("sdr");
+        EnvVars sdr = new EnvVars();
+        GuestProgramLauncherComponent.configureDisplayXEnvironment(sdr, container, game);
+        assertEquals("", sdr.get("DXVK_HDR"));
+        container.setTrueDisplayX(false);
+        EnvVars dri3 = new EnvVars();
+        GuestProgramLauncherComponent.configureDisplayXEnvironment(dri3, container, null);
+        assertEquals("", dri3.get("DXVK_HDR"));
+    }
+
 }

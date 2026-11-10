@@ -36,6 +36,9 @@ struct PresentTicket {
 struct NativeExternalFrame {
     sp<NativeDrawable> drawable;
     int fence{-1};
+    u32 presentMode{1}, colorSpace{UINT32_MAX};
+    std::array<float, 12> hdr{};
+    bool hasHdr{};
     std::function<void()> completion;
     std::atomic<bool> acknowledged{false}, claimed{false}, discarded{false};
     std::mutex completionMutex;
@@ -73,6 +76,7 @@ struct NativeEntry {
     sp<NativeExternalFrame> external;
 };
 struct NativeFrame {
+    int64_t frameTimeline{-1};
     bool diagnostics{};
     bool commandCacheEnabled{true};
     u64 frameGenSourceFrames{};
@@ -133,6 +137,7 @@ public:
     sp<Drawable> CreateDrawable(u16, u16, u8) override;
     sp<Drawable> CreateDrawable(u16, u16, AHardwareBuffer*) override;
     void UpdateSurface(ANativeWindow*) override;
+    void SetFrameTimeline(int64_t id);
     void UpdateCursor(Drawable*, s16, s16) override;
     void PostInvalidate() override;
     void DrawableChanged(Drawable* drawable);
@@ -202,6 +207,7 @@ public:
     u64 HudFrames() const { return hudFrames; }
 private:
     void MutateDrawable(Drawable*, const void*, void (*)(const void*));
+    std::atomic<int64_t> displayXFrameTimeline{-1};
     bool hudEnabled{};
     u32 hudWindow{};
     u64 hudFrames{};

@@ -2,6 +2,8 @@
 #include "native_backend_geometry.h"
 #include <android/surface_control.h>
 #include <android/performance_hint.h>
+#include <android/data_space.h>
+#include <android/hdr_metadata.h>
 #include <sys/syscall.h>
 #include <dlfcn.h>
 
@@ -46,6 +48,12 @@ struct SurfaceAPI {
         Load<decltype(complete)>("ASurfaceTransaction_setOnComplete");
     void (*reparent)(ASurfaceTransaction *, ASurfaceControl *,
                      ASurfaceControl *) = Load<decltype(reparent)>("ASurfaceTransaction_reparent");
+    void (*dataSpace)(ASurfaceTransaction*, ASurfaceControl*, ADataSpace) =
+        reinterpret_cast<decltype(dataSpace)>(dlsym(library, "ASurfaceTransaction_setBufferDataSpace"));
+    void (*smpte)(ASurfaceTransaction*, ASurfaceControl*, AHdrMetadata_smpte2086*) =
+        reinterpret_cast<decltype(smpte)>(dlsym(library, "ASurfaceTransaction_setHdrMetadata_smpte2086"));
+    void (*cta)(ASurfaceTransaction*, ASurfaceControl*, AHdrMetadata_cta861_3*) =
+        reinterpret_cast<decltype(cta)>(dlsym(library, "ASurfaceTransaction_setHdrMetadata_cta861_3"));
     using BackPressure = void (*)(ASurfaceTransaction *, ASurfaceControl *, bool);
     BackPressure backPressure =
         reinterpret_cast<BackPressure>(dlsym(library, "ASurfaceTransaction_setEnableBackPressure"));
@@ -63,6 +71,8 @@ struct SurfaceAPI {
     UpdateHint hintWork =
         reinterpret_cast<UpdateHint>(dlsym(library, "APerformanceHint_reportActualWorkDuration"));
     CloseHint closeHint = reinterpret_cast<CloseHint>(dlsym(library, "APerformanceHint_closeSession"));
+    void (*frameTimeline)(ASurfaceTransaction*, int64_t) =
+        reinterpret_cast<decltype(frameTimeline)>(dlsym(library, "ASurfaceTransaction_setFrameTimeline"));
     void (*presentTime)(ASurfaceTransaction *, int64_t) =
         reinterpret_cast<decltype(presentTime)>(dlsym(library, "ASurfaceTransaction_setDesiredPresentTime"));
 };
@@ -86,6 +96,9 @@ class DisplayXNativeRenderer final : public NativeRenderer {
         bool attached{}, stateValid{}, visible{}, opaque{}, backPressure{};
         ARect source{}, destination{};
         int order{};
+        u32 colorSpace{UINT32_MAX};
+        std::array<float, 12> hdr{};
+        bool hasHdr{};
     };
     struct Submission {
         bool completed{};
@@ -248,7 +261,24 @@ class DisplayXNativeRenderer final : public NativeRenderer {
             api->transparency(transaction, layer.control,
                               opaque ? ASURFACE_TRANSACTION_TRANSPARENCY_OPAQUE
                                      : ASURFACE_TRANSACTION_TRANSPARENCY_TRANSLUCENT);
-        const bool backPressure = !cursor && config.presentMode == 2;
+        const u32 colorSpace = external ? external->colorSpace : UINT32_MAX;
+        if (api->dataSpace && (!layer.stateValid || layer.colorSpace != colorSpace)) {
+            const ADataSpace space = colorSpace == 0 ? ADATASPACE_SRGB
+                : colorSpace == 1000104008 ? ADATASPACE_BT2020_PQ
+                : colorSpace == 1000104002 ? ADATASPACE_SCRGB_LINEAR : ADATASPACE_UNKNOWN;
+            api->dataSpace(transaction, layer.control, space);
+            layer.colorSpace = colorSpace;
+        }
+        if (external && external->hasHdr && (!layer.hasHdr || layer.hdr != external->hdr || !layer.stateValid)) {
+            AHdrMetadata_smpte2086 smpte{}; AHdrMetadata_cta861_3 cta{};
+            static_assert(sizeof(smpte) == 10 * sizeof(float) && sizeof(cta) == 2 * sizeof(float));
+            memcpy(&smpte, external->hdr.data(), sizeof(smpte));
+            memcpy(&cta, external->hdr.data() + 10, sizeof(cta));
+            if (api->smpte) api->smpte(transaction, layer.control, &smpte);
+            if (api->cta) api->cta(transaction, layer.control, &cta);
+            layer.hdr = external->hdr; layer.hasHdr = true;
+        }
+        const bool backPressure = !cursor && (external ? external->presentMode == 2 : config.presentMode == 2);
         if (api->backPressure && (!layer.stateValid || layer.backPressure != backPressure))
             api->backPressure(transaction, layer.control, backPressure);
         layer.source = source;
@@ -416,7 +446,13 @@ class DisplayXNativeRenderer final : public NativeRenderer {
             api->release(i->second.control);
             i = layers.erase(i);
         }
-        if (api->presentTime && config.presentAtRefreshRate) {
+        const bool wrapperFifo = std::ranges::any_of(frame.entries, [](const auto& entry) {
+            return entry.external && entry.external->presentMode == 2;
+        });
+        if (api->frameTimeline && frame.frameTimeline >= 0)
+            api->frameTimeline(transaction, frame.frameTimeline);
+        if (api->presentTime && config.presentAtRefreshRate && !wrapperFifo &&
+            (!api->frameTimeline || frame.frameTimeline < 0)) {
             const auto now = std::chrono::steady_clock::now();
             target = std::max(target, now);
             if (config.precisePresentation && target == now) {

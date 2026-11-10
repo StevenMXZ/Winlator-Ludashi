@@ -33,16 +33,19 @@ struct DisplayXPresentRequest {
     Window* window{};
     uint32_t presentMode{1};
     uint32_t imageIndex{};
+    uint32_t colorSpace{UINT32_MAX};
+    std::array<float, 12> hdr{};
+    bool hasHdr{};
     std::shared_ptr<DisplayXPeer> peer;
 };
 
-inline bool displayXCompletion(const DisplayXPresentRequest& request, std::array<uint8_t, 17>& packet) {
+inline bool displayXCompletion(const DisplayXPresentRequest& request, std::array<uint8_t, 25>& packet) {
     if (request.clientFd < 0 || (request.presentId == UINT64_MAX && request.presentMode != 2)) return false;
-    const uint32_t code = 4;
-    memcpy(packet.data(), &code, 4);
-    memcpy(packet.data() + 4, &request.swapchainId, 1);
-    memcpy(packet.data() + 5, &request.presentId, 8);
-    memcpy(packet.data() + 13, &request.imageIndex, 4);
+    const uint32_t code = 4, count = 1;
+    memcpy(packet.data(), &code, 4); memcpy(packet.data() + 4, &count, 4);
+    memcpy(packet.data() + 8, &request.swapchainId, 1);
+    memcpy(packet.data() + 9, &request.presentId, 8);
+    memcpy(packet.data() + 17, &count, 4); memcpy(packet.data() + 21, &request.imageIndex, 4);
     return true;
 }
 
@@ -133,6 +136,16 @@ public:
         }
     }
 
+    void clear() {
+        for (auto& entry : pending)
+            for (auto& request : entry.second.requests) discard(std::move(request));
+        pending.clear(); order.clear();
+    }
+    bool hasFifo() const {
+        for (const auto& entry : pending)
+            for (const auto& item : entry.second.requests) if (item->presentMode == 2) return true;
+        return false;
+    }
     bool empty() const { return pending.empty(); }
 
 private:

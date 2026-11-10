@@ -1,3 +1,4 @@
+#include <cassert>
 #include "native_screen.h"
 #include "native_displayx_bridge.h"
 #include "core/xserver.h"
@@ -139,10 +140,47 @@ int main(int argc, char** argv) {
     if (argc != 2 && argc != 3) return 2;
     signal(SIGTERM, [](int) { quit = 1; }); signal(SIGINT, [](int) { quit = 1; });
     xorg::NativeRendererConfig config;
-    if (std::getenv("LUDASHI_HOST_DISPLAYX")) config.backend = xorg::NativeRendererConfig::Backend::DisplayX;
+    if (std::getenv("LUDASHI_HOST_DISPLAYX") || std::string(argv[1]) == "--displayx-timeline") config.backend = xorg::NativeRendererConfig::Backend::DisplayX;
     xorg::XServer server(nullptr, xorg::ScreenInfo(1280, 720, 4), false, config);
     std::unique_ptr<xorg::NativeDisplayXBridge> displayX;
     if (std::getenv("LUDASHI_HOST_DISPLAYX")) displayX = std::make_unique<xorg::NativeDisplayXBridge>(server);
+    if (std::string(argv[1]) == "--displayx-timeline") {
+        int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+        xorg::XClient client(server, sockets[0]);
+        auto& wm = server.GetWindowManager();
+        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
+        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
+                                      0, InputOutput, 24, 0, nullptr);
+        screen.SetFrameTimeline(42);
+        wm.MapWindow(&client, window.get());
+        screen.UpdateSurface(new ANativeWindow);
+        auto await = [&](uint64_t count) {
+            const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (screen.presentedCount < count && std::chrono::steady_clock::now() < until)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            assert(screen.presentedCount == count);
+            screen.WaitIdle();
+        };
+        await(1);
+        auto* image = static_cast<xorg::NativeDrawable*>(window->GetDrawable());
+        screen.MutateDrawable(image, [&] { image->FillRect(0, 0, 1, 1, 0xff123456); });
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        assert(screen.presentedCount == 1); // One submission per timeline for paced DRI3/mailbox.
+        screen.SetFrameTimeline(43); await(2);
+        auto external = std::make_shared<xorg::NativeExternalFrame>();
+        external->drawable = std::make_shared<xorg::NativeDrawable>(32, 32, 32);
+        external->presentMode = 2;
+        screen.UpdateExternal(window->id, window->generation, external);
+        await(3); // FIFO uses compositor backpressure instead of a second refresh gate.
+        screen.RemoveExternal(window->id, window->generation, external);
+        screen.MutateDrawable(image, [&] { image->FillRect(0, 0, 1, 1, 0xff654321); });
+        screen.SetFrameTimeline(-1); // Older Android uses the existing presentation fallback.
+        await(4);
+        screen.UpdateSurface(nullptr);
+        close(sockets[1]);
+        std::cout << "PASS: DisplayX native timeline pacing, FIFO bypass and older-Android fallback\n";
+        return 0;
+    }
     if (std::string(argv[1]) == "--pending-cow") {
         int sockets[2]; if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) return 2;
         xorg::XClient client(server, sockets[0]);

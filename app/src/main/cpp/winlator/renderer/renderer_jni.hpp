@@ -113,8 +113,8 @@ class JNICache {
         }
         
         void detachEnv(JNIEnv *env) {
+            (void)env; // JNIEnv is owned by the JVM.
             vm->DetachCurrentThread();
-            delete env;
         }
         
         void init (JavaVM *vm, JNIEnv *env) {

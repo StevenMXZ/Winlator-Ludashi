@@ -24,7 +24,7 @@ public final class ShortcutPresetManager {
     private static final String[][] KEYS = {
         {"graphicsDriver","graphicsDriverConfig","renderer","rendererNative","rendererDriver",
          "rendererPresentMode","rendererFilterMode","surfaceFormat","useDisplayX","trueDisplayX",
-         "displayXPerformanceMode","displayXPresentAtRefreshRate","displayXPresentMode",
+         "displayXPerformanceMode","displayXPresentAtRefreshRate","displayXPresentMode","displayXDynamicRange",
          "displayXPrecisePresentation","displayServer","blacklistedExtensions"},
         {"dxwrapper","dxwrapperConfig","wincomponents"},
         {"emulator","box64Version","box64Preset","fexcoreVersion","fexcorePreset","forceSsbs"},

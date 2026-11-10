@@ -87,6 +87,7 @@ internal fun ContainerRuntimePane(
     var displayXPerformance by remember { mutableStateOf(container.getDisplayXPerformanceMode()) }
     var displayXRefresh by remember { mutableStateOf(container.getDisplayXPresentAtRefreshRate()) }
     var displayXMode by remember { mutableStateOf(container.getDisplayXPresentMode()) }
+    var displayXRange by remember { mutableStateOf(container.getDisplayXDynamicRange()) }
     var displayXPrecise by remember { mutableStateOf(container.getDisplayXPrecisePresentation()) }
     var presentMode by remember { mutableStateOf(container.getRendererPresentMode()) }
     var rendererDriverId by remember { mutableStateOf(container.getRendererDriverId()) }
@@ -192,15 +193,17 @@ internal fun ContainerRuntimePane(
                 }
                 if (renderer == "DisplayX") {
                     SettingsDivider()
-                    SettingToggle(uiStr(R.string.ui_bypass_x11), displayXBypass) { displayXBypass = it; container.setTrueDisplayX(it); container.saveData() }
+                    SettingChoice(uiStr(R.string.ui_displayx_backend), if (displayXBypass) "DisplayX+" else "X11", listOf("X11", "DisplayX+")) { displayXBypass = it == "DisplayX+"; container.setTrueDisplayX(displayXBypass); container.saveData() }
                     SettingsDivider()
                     SettingToggle(uiStr(R.string.ui_performance_mode), displayXPerformance) { displayXPerformance = it; container.setDisplayXPerformanceMode(it); container.saveData() }
                     SettingsDivider()
                     SettingToggle(uiStr(R.string.ui_present_at_refresh_rate), displayXRefresh) { displayXRefresh = it; container.setDisplayXPresentAtRefreshRate(it); container.saveData() }
                     SettingsDivider()
-                    SettingChoice(uiStr(R.string.ui_present_mode), displayXMode, listOf("mailbox", "fifo")) { displayXMode = it; container.setDisplayXPresentMode(it); container.saveData() }
+                    SettingChoice(uiStr(R.string.ui_present_mode), displayXMode, listOf("auto", "mailbox", "fifo")) { displayXMode = it; container.setDisplayXPresentMode(it); container.saveData() }
                     SettingsDivider()
-                    SettingToggle(uiStr(R.string.ui_precise_presentation), displayXPrecise) { displayXPrecise = it; container.setDisplayXPrecisePresentation(it); container.saveData() }
+                    if (displayXBypass) {
+                    SettingChoice(uiStr(R.string.ui_dynamic_range), displayXRange.uppercase(), listOf("SDR", "HDR")) { displayXRange = it.lowercase(); container.setDisplayXDynamicRange(displayXRange); container.saveData() }
+                    }
                 } else {
                     if (renderer == "Vulkan") {
                         SettingsDivider()

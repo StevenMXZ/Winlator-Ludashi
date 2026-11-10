@@ -191,14 +191,14 @@
   <string name="ui_path_settings">"CONFIGURAÇÕES DE CAMINHOS"</string>
   <string name="ui_presets">"PREDEFINIÇÕES"</string>
   <string name="ui_path">"Caminho"</string>
-  <string name="ui_performance_mode">"Modo de desempenho"</string>
+  <string name="ui_performance_mode">"Aumentar CPU ao apresentar"</string>
   <string name="ui_pick_the_look_you_prefer_you_can_change_it_later_in_settings">"Escolha o visual que preferir. Você pode alterá-lo depois nas configurações."</string>
   <string name="ui_precise_presentation">"Apresentação precisa"</string>
   <string name="ui_preparing_winlator_core_in_the_background">"Preparando o núcleo do Winlator em segundo plano"</string>
   <string name="ui_preparing_environment">"Preparando ambiente"</string>
   <string name="ui_preparing">"Preparando…"</string>
   <string name="ui_present_mode">"Modo de apresentação"</string>
-  <string name="ui_present_at_refresh_rate">"Apresentar na taxa de atualização"</string>
+  <string name="ui_present_at_refresh_rate">"Enviar pedidos na taxa de atualização"</string>
   <string name="ui_present_mode_driver_filter_and_color_channels">"Modo de apresentação, driver, filtro e canais de cor"</string>
   <string name="ui_preset_actions">"Ações da predefinição"</string>
   <string name="ui_properties">"Propriedades"</string>
@@ -310,4 +310,6 @@
   <string name="ui_preset_cannot_access_desktop">"Não foi possível acessar a pasta de atalhos"</string>
   <string name="ui_preset_imported_shortcut_name">"Atalho importado"</string>
   <string name="ui_preset_shortcut_imported">"Atalho importado"</string>
+  <string name="ui_displayx_backend">"Backend DisplayX"</string>
+  <string name="ui_dynamic_range">"Faixa dinâmica"</string>
 </resources>

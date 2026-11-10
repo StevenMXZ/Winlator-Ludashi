@@ -162,6 +162,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeInit(JNIEnv *env, jobject thiz, 
     env->DeleteLocalRef(inputDeviceManagerObj);
     
     effectComposer.init();
+
     if (xserver.isDisplayX() && windowManager.getRootWindow()->drawable->format == AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM)
         effectComposer.setColorSwapEnabled(true);
     
@@ -179,8 +180,8 @@ Java_com_winlator_cmod_widget_XServerView_nativeInit(JNIEnv *env, jobject thiz, 
     if (xserver.isDisplayX()) {
         displayX.setPerformanceMode(env->GetBooleanField(context, cache.performanceMode));
         displayX.setPresentRR(env->GetBooleanField(context, cache.presentRR));
-        displayX.setPrecisePresentation(env->GetBooleanField(context, cache.precisePresentation));
-    } else {
+    }
+    else {
         renderer.setTextureFilter(env->GetIntField(context, cache.textureFilter));
     }
     
@@ -244,9 +245,8 @@ Java_com_winlator_cmod_widget_XServerView_nativeCreateWindow(JNIEnv *env, jobjec
         parent->children.push_back(window.get());
     }
     
-    if (xserver.isDisplayX()) {
-        displayX.queueEvent([ptr = window.get()] { displayX.createWindowControl(ptr); });
-    }
+    if (xserver.isDisplayX())
+        displayX.createWindowControl(window.get());
     
     windowManager.addWindow(window->id, std::move(window));
 }
@@ -259,7 +259,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeMapWindow(JNIEnv *env, jobject t
     window->mapped = true;
     
     if (xserver.isDisplayX()) {
-        displayX.queueEvent([window] { displayX.mapWindow(window); });
+        displayX.queueWindowEvent([window] { displayX.mapWindow(window); });
     }    
     else { 
         renderer.queueEvent([]{ renderer.updateScene(); });
@@ -275,7 +275,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeUnmapWindow(JNIEnv *env, jobject
     window->mapped = false;
     
     if (xserver.isDisplayX()) {
-        displayX.queueEvent([window] { displayX.unmapWindow(window); });
+        displayX.queueWindowEvent([window] { displayX.unmapWindow(window); });
     } else {   
         renderer.queueEvent([]{ renderer.updateScene(); });
         renderer.requestRenderer();
@@ -288,7 +288,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeDestroyWindow(JNIEnv *env, jobje
     if (!window) return;
     
     if (xserver.isDisplayX()) {
-        displayX.queueEvent([id] { displayX.destroyWindow(id); });
+        displayX.queueWindowEvent([id] { displayX.destroyWindow(id); });
     }    
     else {
         renderer.queueEvent([window] { 
@@ -343,15 +343,25 @@ Java_com_winlator_cmod_widget_XServerView_nativeFreeCursor(JNIEnv *env, jobject 
                 
             jobject pointWindowObj = env->CallObjectMethod(xserver.inputDeviceManager, cache.getPointWindow);
             jint id = env->GetIntField(pointWindowObj, cache.windowID);
+
             auto pointWindow = windowManager.getWindow(id);
-            if (pointWindow && pointWindow->cursor == cursor) pointWindow->cursor = nullptr;     
+            if (pointWindow && pointWindow->cursor == cursor)
+                pointWindow->cursor = nullptr;
                 
             cursorManager.removeCursor(env, cursor);
         });
     }
     else {
-        displayX.queueEvent([cursor] {
+        displayX.queueCursorEvent([cursor] {
             JNIEnv *env = cache.getEnv();
+
+            jobject pointWindowObj = env->CallObjectMethod(xserver.inputDeviceManager, cache.getPointWindow);
+            jint id = env->GetIntField(pointWindowObj, cache.windowID);
+
+            auto pointWindow = windowManager.getWindow(id);
+            if (pointWindow && pointWindow->cursor == cursor)
+                pointWindow->cursor = nullptr;
+
             displayX.updateCursor(nullptr);
             cursorManager.removeCursor(env, cursor);
         });
@@ -374,7 +384,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeBindCursor(JNIEnv *env, jobject 
     if (!xserver.isDisplayX())    
         renderer.requestRenderer();
     else
-        displayX.queueEvent([window] { displayX.updateCursor(window->cursor); });
+        displayX.queueCursorEvent([window] { displayX.updateCursor(window->cursor); });
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -403,7 +413,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeChangeWindowZOrder(JNIEnv *env, 
         renderer.requestRenderer();
     }
     else {
-        displayX.queueEvent([window] { displayX.changeZOrder(window);});
+        displayX.queueWindowEvent([window] { displayX.changeZOrder(window);});
     }
 }
 
@@ -432,7 +442,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeUpdateWindowGeometry(JNIEnv *env
     }
     
     if (xserver.isDisplayX()) {
-        displayX.queueEvent([window, resized] { displayX.changeGeometry(window, resized); });
+        displayX.queueWindowEvent([window, resized] { displayX.changeGeometry(window, resized); });
     } else {
         if (resized) {
             renderer.queueEvent([]{ renderer.updateScene(); });
@@ -471,7 +481,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeReparentWindow(JNIEnv *env, jobj
     windowManager.reparentWindow(window, parent);
     
     if (xserver.isDisplayX()) {
-        displayX.queueEvent([window, parent] {  displayX.reparentWindow(window, parent); });
+        displayX.queueWindowEvent([window, parent] {  displayX.reparentWindow(window, parent); });
     }    
     else {
         renderer.queueEvent([window]{ renderer.updateWindowPosition(window); });
@@ -485,10 +495,11 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_winlator_cmod_widget_XServerView_nativeToggleFullscreen(JNIEnv *env, jobject thiz) {
     renderer.toggleFullscreen = true;
     
-    if (!xserver.isDisplayX())
-        renderer.requestRenderer();
+    if (xserver.isDisplayX())
+        displayX.queueWindowEvent([] { displayX.toggleFullscreen(); });
     else
-        displayX.queueEvent([] { displayX.toggleFullscreen(); });
+        renderer.requestRenderer();
+
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -496,10 +507,10 @@ Java_com_winlator_cmod_widget_XServerView_nativeSetCursorVisible(JNIEnv *env, jo
     renderer.cursorVisible = visible;
     displayX.cursorVisible = visible;
     
-    if (!xserver.isDisplayX())
-        renderer.requestRenderer();
+    if (xserver.isDisplayX())
+        displayX.queueCursorEvent([] { displayX.showCursor(); });
     else
-        displayX.queueEvent([] { displayX.showCursor(); });
+        renderer.requestRenderer();
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -567,26 +578,26 @@ Java_com_winlator_cmod_widget_XServerView_nativeChangeSurface(JNIEnv *env, jobje
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_winlator_cmod_widget_XServerView_nativePause(JNIEnv *env, jobject thiz) {
-    if (!xserver.isDisplayX())
-        renderer.pause();
+    if (xserver.isDisplayX())
+        displayX.pause();
     else
-        displayX.pause();     
+        renderer.pause();
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_winlator_cmod_widget_XServerView_nativeResume(JNIEnv *env, jobject thiz) {
-    if (!xserver.isDisplayX())
-        renderer.resume();
+    if (xserver.isDisplayX())
+        displayX.resume();
     else
-        displayX.resume();       
+        renderer.resume();
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_winlator_cmod_widget_XServerView_nativeStop(JNIEnv *env, jobject thiz) {
-    if (!xserver.isDisplayX())
-        renderer.stop();
-    else    
+    if (xserver.isDisplayX())
         displayX.stop();
+    else
+        renderer.stop();
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -674,8 +685,8 @@ Java_com_winlator_cmod_widget_XServerView_criticalCompositeRedirect(jint srcDraw
         }    
         
         if (xserver.isDisplayX()) {
-            if (positionChanged) displayX.queueEvent([sibling] { displayX.changeGeometry(sibling, false); });
-            if (zOrderChanged) displayX.queueEvent([sibling] { displayX.changeZOrder(sibling); });
+            if (positionChanged) displayX.queueWindowEvent([sibling] { displayX.changeGeometry(sibling, false); });
+            if (zOrderChanged) displayX.queueWindowEvent([sibling] { displayX.changeZOrder(sibling); });
         }     
         else {
             if (positionChanged || zOrderChanged)  {

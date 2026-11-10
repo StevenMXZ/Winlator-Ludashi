@@ -161,7 +161,11 @@ public class Container {
     }
 
     public boolean getTrueDisplayX() {
-        return "1".equals(getExtra("trueDisplayX", "0"));
+        String value = getExtra("trueDisplayX", null);
+        if (value != null) return "1".equals(value);
+        String backend = legacyDisplayXValue(getExtra("displayxConfig", null), "backend");
+        if (backend != null) return "displayx".equalsIgnoreCase(backend);
+        return "1".equals(legacyDisplayXValue(getExtra("displayxConfig", null), "trueDisplayX"));
     }
     public void setTrueDisplayX(boolean v) {
         putExtra("trueDisplayX", v ? "1" : "0");
@@ -184,7 +188,9 @@ public class Container {
     }
 
     public boolean getDisplayXPresentAtRefreshRate() {
-        return "1".equals(getExtra("displayXPresentAtRefreshRate", "1"));
+        String value = getExtra("displayXPresentAtRefreshRate", null);
+        if (value == null) value = legacyDisplayXValue(getExtra("displayxConfig", null), "presentRR");
+        return "1".equals(value);
     }
     public void setDisplayXPresentAtRefreshRate(boolean v) {
         putExtra("displayXPresentAtRefreshRate", v ? "1" : "0");
@@ -198,12 +204,27 @@ public class Container {
         String value = getExtra("displayXPresentMode", null);
         if (value == null || value.isEmpty())
             value = legacyDisplayXValue(getExtra("displayxConfig", null), "presentMode");
-        if (value == null || value.isEmpty()) return getDisplayXBackPressure() ? "fifo" : "mailbox";
-        return "fifo".equalsIgnoreCase(value) ? "fifo" : "mailbox";
+        if (value == null || value.isEmpty()) {
+            String previous = getExtra("displayXBackPressure", null);
+            return previous != null ? ("1".equals(previous) ? "fifo" : "mailbox") : "auto";
+        }
+        return normalizeDisplayXPresentMode(value);
     }
 
     public void setDisplayXPresentMode(String value) {
-        putExtra("displayXPresentMode", "fifo".equalsIgnoreCase(value) ? "fifo" : "mailbox");
+        putExtra("displayXPresentMode", normalizeDisplayXPresentMode(value));
+    }
+
+    static String normalizeDisplayXPresentMode(String value) {
+        return "fifo".equalsIgnoreCase(value) ? "fifo" : "mailbox".equalsIgnoreCase(value) ? "mailbox" : "auto";
+    }
+    public String getDisplayXDynamicRange() {
+        String value = getExtra("displayXDynamicRange", null);
+        if (value == null) value = legacyDisplayXValue(getExtra("displayxConfig", null), "dynamicRange");
+        return "hdr".equalsIgnoreCase(value) ? "hdr" : "sdr";
+    }
+    public void setDisplayXDynamicRange(String value) {
+        putExtra("displayXDynamicRange", "hdr".equalsIgnoreCase(value) ? "hdr" : "sdr");
     }
 
     static String legacyDisplayXValue(String config, String key) {

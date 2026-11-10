@@ -554,6 +554,8 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         String enabledLayers = execEnvVars.get("VK_INSTANCE_LAYERS");
         if (useDisplayX && trueDisplayX) {
             execEnvVars.put("VK_INSTANCE_LAYERS", displayXLayer);
+            String range = shortcut != null ? shortcut.getDisplayXDynamicRange() : container.getDisplayXDynamicRange();
+            if ("hdr".equals(range)) execEnvVars.put("DXVK_HDR", "1");
         } else {
             StringBuilder filteredLayers = new StringBuilder();
             if (enabledLayers != null && !enabledLayers.isEmpty()) {

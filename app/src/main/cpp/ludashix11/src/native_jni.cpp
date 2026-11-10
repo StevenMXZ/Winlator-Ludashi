@@ -66,6 +66,10 @@ extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeSurface)(JNIEnv* env, jclass, j
     auto* window = surface ? ANativeWindow_fromSurface(env, surface) : nullptr;
     server->UpdateSurface(window);
 }
+extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeFrameTimeline)(JNIEnv*, jclass, jlong handle, jlong id) {
+    auto server = session(handle);
+    if (server) static_cast<xorg::NativeScreen&>(server->GetScreen()).SetFrameTimeline(id);
+}
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeInput)(JNIEnv* env, jclass, jlong handle, jint kind, jint a, jint b) {
     auto server = session(handle); if (!server) return;
     try {

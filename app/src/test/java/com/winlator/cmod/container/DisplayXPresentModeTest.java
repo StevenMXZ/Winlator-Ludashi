@@ -24,7 +24,7 @@ public class DisplayXPresentModeTest {
 
     @Test public void containerMigratesTheOldToggleAndKeepsNewModeIndependentOfVulkan() {
         Container container = new Container(1);
-        assertEquals("mailbox", container.getDisplayXPresentMode());
+        assertEquals("auto", container.getDisplayXPresentMode());
         container.setDisplayXBackPressure(true);
         assertEquals("fifo", container.getDisplayXPresentMode());
         container.setRendererPresentMode("fifo");
@@ -59,4 +59,26 @@ public class DisplayXPresentModeTest {
         game.setDisplayXPresentMode("fifo");
         assertEquals("fifo", game.getDisplayXPresentMode());
     }
+    @Test public void newDefaultsAndLegacyBackendsMigrateWithoutDroppingOverrides() throws Exception {
+        Container container = new Container(1);
+        container.setRootDir(temporary.newFolder());
+        assertEquals("auto", container.getDisplayXPresentMode());
+        assertFalse(container.getDisplayXPresentAtRefreshRate());
+        assertEquals("sdr", container.getDisplayXDynamicRange());
+        container.putExtra("displayxConfig", "backend=displayx,presentMode=fifo,dynamicRange=hdr,presentRR=1");
+        assertTrue(container.getTrueDisplayX());
+        assertTrue(container.getDisplayXPresentAtRefreshRate());
+        assertEquals("hdr", container.getDisplayXDynamicRange());
+        Shortcut shortcut = new Shortcut(container, temporary.newFile("hdr.desktop"));
+        assertEquals("hdr", shortcut.getDisplayXDynamicRange());
+        shortcut.putExtra("displayxConfig", "backend=x11,presentMode=auto,dynamicRange=sdr");
+        assertFalse(shortcut.getTrueDisplayX());
+        assertEquals("auto", shortcut.getDisplayXPresentMode());
+        assertEquals("sdr", shortcut.getDisplayXDynamicRange());
+        shortcut.setTrueDisplayX(true);
+        shortcut.setDisplayXDynamicRange("hdr");
+        assertTrue(shortcut.getTrueDisplayX());
+        assertEquals("hdr", shortcut.getDisplayXDynamicRange());
+    }
+
 }

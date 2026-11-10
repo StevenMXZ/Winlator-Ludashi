@@ -167,6 +167,34 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         getHolder().addCallback(this);
         updateOptions();
     }
+    private Object displayTimeline;
+    private void startDisplayTimeline() {
+        if (backend == 2 && !paused && !destroyed && displayTimeline == null && Build.VERSION.SDK_INT >= 33)
+            displayTimeline = new DisplayTimeline33(this);
+    }
+    private void stopDisplayTimeline() {
+        if (displayTimeline != null && Build.VERSION.SDK_INT >= 33) {
+            ((DisplayTimeline33) displayTimeline).stop();
+            displayTimeline = null;
+        }
+        if (handle != 0) nativeFrameTimeline(handle, -1);
+    }
+    @androidx.annotation.RequiresApi(33)
+    private static final class DisplayTimeline33 implements android.view.Choreographer.VsyncCallback {
+        final NativeX11View view;
+        final android.view.Choreographer choreographer = android.view.Choreographer.getInstance();
+        boolean running = true;
+        DisplayTimeline33(NativeX11View view) { this.view = view; choreographer.postVsyncCallback(this); }
+        public void onVsync(android.view.Choreographer.FrameData frame) {
+            synchronized (view) {
+                if (!running || view.destroyed || view.paused || view.handle == 0) return;
+                nativeFrameTimeline(view.handle, frame.getPreferredFrameTimeline().getVsyncId());
+                choreographer.postVsyncCallback(this);
+            }
+        }
+        void stop() { running = false; choreographer.removeVsyncCallback(this); }
+    }
+
     public boolean isVulkanBackend() { return backend == 0; }
     public String getBackendName() { return backend == 2 ? "DisplayX" : backend == 1 ? "EGL" : "Vulkan"; }
     public synchronized void setReadyCallback(Runnable callback) { readyCallback = callback; if (ready) callback.run(); }
@@ -251,18 +279,20 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
             if (frameGenRequested) applyVisualOptions();
         }
     }
-    @Override public synchronized void surfaceCreated(SurfaceHolder holder) { updateOptions(); }
+    @Override public synchronized void surfaceCreated(SurfaceHolder holder) { updateOptions(); startDisplayTimeline(); }
     @Override public synchronized void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
         viewTransformation.update(w, h, xServer.screenInfo.width, xServer.screenInfo.height);
         if (handle != 0) nativeSurface(handle, holder.getSurface());
         updateOptions();
     }
     @Override public synchronized void surfaceDestroyed(SurfaceHolder holder) {
+        stopDisplayTimeline();
         votedSurface = null; votedRate = 0f;
         if (handle != 0) nativeSurface(handle, null);
     }
     @Override public synchronized void onPause() {
         paused = true;
+        stopDisplayTimeline();
         stopDisplayListener();
         removeCallbacks(hudCheck);
         removeCallbacks(frameGenCheck);
@@ -270,6 +300,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     }
     @Override public synchronized void onResume() {
         paused = false;
+        startDisplayTimeline();
         startDisplayListener(); updateOptions(); setHudMode(hudMode);
         if (frameGenRequested || frameGenEnabled) { removeCallbacks(frameGenCheck); post(frameGenCheck); }
     }
@@ -277,6 +308,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     public synchronized void close() {
         if (destroyed) return;
         destroyed = true;
+        stopDisplayTimeline();
         stopDisplayListener();
         removeCallbacks(startupCheck);
         removeCallbacks(hudCheck);
@@ -424,6 +456,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     private static native void nativeDestroy(long handle);
     private static native void nativeSurface(long handle, Surface surface);
     private static native void nativeInput(long handle, int kind, int a, int b);
+    private static native void nativeFrameTimeline(long handle, long id);
     private static native void nativeOptions(long handle, boolean fullscreen, boolean cursor, int fps, float refresh);
     private static native void nativeMagnifierZoom(long handle, float zoom);
     private static native void nativeRefreshRates(long handle, int[] rates);

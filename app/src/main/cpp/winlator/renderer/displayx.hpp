@@ -9,8 +9,13 @@
 #include <dlfcn.h>
 #include <unordered_set>
 #include <condition_variable>
+
 #include <android/choreographer.h>
 #include <android/performance_hint.h>
+#include <android/hdr_metadata.h>
+#include <android/data_space.h>
+
+#include <sys/eventfd.h>
 
 #include "renderer_jni.hpp"
 #include "view_transformation.hpp"
@@ -18,6 +23,23 @@
 #include "effect_composer.hpp"
 #include "cursor.hpp"
 #include "displayx_present_queue.hpp"
+#include "displayx_protocol.hpp"
+
+#define VK_COLOR_SPACE_SRGB_NONLINEAR_KHR 0
+#define VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT 1000104002
+#define VK_COLOR_SPACE_HDR10_ST2084_EXT 1000104008
+
+#define VK_PRESENT_MODE_MAILBOX_KHR 1
+#define VK_PRESENT_MODE_FIFO_KHR 2
+
+namespace DisplayXCodes {
+    static constexpr int CREATE_SWAPCHAIN = 1;
+    static constexpr int DESTROY_SWAPCHAIN = 2;
+    static constexpr int PRESENT = 3;
+    static constexpr int PRESENT_COMPLETE = 4;
+    static constexpr int RESET_STATE = 5;
+    static constexpr int HDR_METADATA = 6;
+}
 
 class DisplayX {
     private:
@@ -48,52 +70,59 @@ class DisplayX {
            }
         };
         
-        using PresentRequest = DisplayXPresentRequest;
-        using PresentQueue = DisplayXPresentQueue;
-        
         struct DisplayXSwapchain {
             uint8_t id;
             Window *window;
             uint32_t windowId;
             uint64_t windowGeneration;
-            int clientFd;
             uint32_t imageCount;
             uint32_t presentMode;
             uint32_t format;
+            uint32_t colorSpace;
+            std::array<float, 12> hdr{};
+            bool hasHdr{};
             uint32_t width;
             uint32_t height;
+            int fd;
             std::vector<std::unique_ptr<Drawable>> images;
             ~DisplayXSwapchain() {
                 for (auto& image : images) if (image && image->ahb) AHardwareBuffer_release(image->ahb);
             }
         };
         
+        using PresentRequest = DisplayXPresentRequest;
+        using PresentQueue = DisplayXPresentQueue;
         struct OnCompleteContext {
             std::vector<std::unique_ptr<PresentRequest>> requests;
         };
-        
         JNIEnv *env;
         int surfaceWidth;
         int surfaceHeight;
         AChoreographer *choreographer;
         ViewTransformation viewTransformation;
         ANativeWindow *native_window;
-        
         APerformanceHintManager *performanceHintManager = nullptr;
         APerformanceHintSession *performanceHintSession = nullptr;
-        
-        DisplayXLock eventLock;
-        DisplayXLock presentLock;
-        
         ASurfaceTransaction *windowTransaction;
         ASurfaceTransaction *cursorTransaction;
+
+        DisplayXLock windowLock;
+        std::queue<std::function<void()>> windowQueue;
         PresentQueue presentRequests;
-        std::queue<std::function<void()>> eventQueue;
+        std::thread windowThread;
         
-        std::thread eventThread;
+        int stopFd{-1};
+        int serverFd{-1};
+        int epollFd{-1};
+        std::unordered_map<uint64_t, std::unique_ptr<DisplayXSwapchain>> clientSwapchains;
         std::thread networkThread;
-        std::thread presentThread;
         
+        DisplayXLock cursorLock;
+        std::queue<std::function<void()>> cursorQueue;
+        std::thread cursorThread;
+
+        struct FrameCallback { DisplayX* self; uint64_t generation; };
+        std::atomic<uint64_t> frameGeneration{0};
         State state = State::NONE;
         std::atomic_bool paused{false};
         std::atomic_bool stopped{false};
@@ -101,18 +130,18 @@ class DisplayX {
         std::atomic_bool cursorUpdate{false};
         std::atomic_bool surfaceChanged{false};
         std::atomic_bool perfMode{true};
-        std::atomic_bool presentRR{true};
-        std::atomic_bool precisePresentation{false};
+        std::atomic_bool presentRR{false};
+        std::atomic_bool defaultRR{false};
         
         bool requestUpdate = false;
         
         bool fullscreen = false;
-        int eventsPending = 0;
         AVsyncId vsyncId = -1;
         
-        void eventThreadLoop();
+        void windowThreadLoop();
         void networkThreadLoop();
-        void presentThreadLoop();
+        void cursorThreadLoop();
+
         static void onFrameCallback64(int64_t frameTimeNanos, void *data);
         static void onVsyncCallback(const AChoreographerFrameCallbackData* callbackData, void* data);
         static void onCompleteCallback(void *context, ASurfaceTransactionStats *stats);
@@ -120,12 +149,12 @@ class DisplayX {
         bool isPerformanceHintAPIAvailable();
         
         void createRootWindowControl();
+        void createWindowControlLocked(Window* window);
         void createRootCursorControl();
         void resizeRootWindow();
         void destroyRootWindowControl();
         void destroyRootCursorControl();
         void restoreControlState();
-        void releaseWindowControls(Window* window);
         
     public:
         WindowManager *windowManager;
@@ -144,12 +173,14 @@ class DisplayX {
         void pause();
         void resume();
         
-        void queueEvent(std::function<void()> func);
+        void queueWindowEvent(std::function<void()> func);
         void requestWindowUpdate(Window *window);
+
+        void queueCursorEvent(std::function<void()> func);
         void requestCursorUpdate();
-        void updateCursorPosition();
         
         void createWindowControl(Window *window);
+        void releaseWindowControls(Window *window);
         void destroyWindow(int id);
         void mapWindow(Window *window);
         void unmapWindow(Window *window);
@@ -161,5 +192,5 @@ class DisplayX {
         void toggleFullscreen();
         void setPerformanceMode(bool perfMode);
         void setPresentRR(bool presentRR);
-        void setPrecisePresentation(bool precisePresentation);
+        void setPrecisePresentation(bool) {}
 };

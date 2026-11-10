@@ -13,35 +13,32 @@ from test_wire import Client, exact
 
 
 def connect():
-    peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    peer = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     peer.settimeout(3)
     peer.connect('\0displayx')
-    peer.sendall(struct.pack('<I', 0))
     return peer
 
 
 def swapchain(peer, window, mode=2):
-    peer.sendall(struct.pack('<IBIIIIII', 1, 7, 3, window, mode, 37, 32, 32))
+    peer.sendall(struct.pack('<IBIIIII', 1, 7, 3, window, mode, 37, 0))
     # The host AHB shim uses a descriptor in place of Android's handle transfer.
     for _ in range(3):
         peer.sendall(struct.pack('<IIIIQIIQ', 32, 32, 1, 1, 0, 32, 0, 0))
 
 
 def present(peer, index, serial):
-    peer.sendall(struct.pack('<IBI', 2, 7, index))
     read_fd, write_fd = os.pipe()
     try:
         os.write(write_fd, b'1')
-        peer.sendmsg([b'f'], [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array('i', [read_fd]))])
+        peer.sendmsg([struct.pack('<IBIQ', 3, 7, index, serial)], [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array('i', [read_fd]))])
     finally:
         os.close(read_fd)
         os.close(write_fd)
-    peer.sendall(struct.pack('<Q', serial))
 
 
 def completion(peer):
-    opcode, chain, serial, index = struct.unpack('<IBQI', exact(peer, 17))
-    assert opcode == 4 and chain == 7
+    opcode, count, chain, serial, indexes, index = struct.unpack('<IIBQII', peer.recv(65536))
+    assert opcode == 4 and count == 1 and chain == 7 and indexes == 1
     return serial, index
 
 
@@ -78,14 +75,14 @@ def run(binary):
                 present(peer, 0, 104)
                 peer.settimeout(.05)
                 try:
-                    peer.recv(17)
+                    peer.recv(65536)
                     raise AssertionError('hidden FIFO frame was acknowledged before it could be presented')
                 except socket.timeout:
                     pass
                 peer.settimeout(3)
                 client.send(8, payload=struct.pack('<I', window)); client.barrier()
                 assert completion(peer) == (104, 0)
-                peer.sendall(struct.pack('<IB', 3, 7))
+                peer.sendall(struct.pack('<IB', 2, 7))
                 swapchain(peer, window, 1)
                 for serial in range(200, 218):
                     present(peer, serial % 3, serial)

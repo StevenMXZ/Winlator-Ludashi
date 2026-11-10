@@ -38,7 +38,10 @@ XServer::~XServer() {
     // Join presentation before any scene/resource objects are destroyed.
     screen.reset();
 }
-void XServer::UpdateSurface(ANativeWindow* window) const { screen->UpdateSurface(window); }
+void XServer::UpdateSurface(ANativeWindow* window) const {
+    screen->UpdateSurface(window);
+    if (window && displayXBridge) displayXBridge->ResetState();
+}
 void XServer::SetBoolean(u32 item, bool value) { (void)item; (void)value; }
 void XServer::SetInteger(u32 item, u32 value) { (void)item; (void)value; }
 void XServer::Start(const std::string& path, const std::string& shm_path) {
