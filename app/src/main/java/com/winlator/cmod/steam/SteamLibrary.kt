@@ -51,11 +51,9 @@ object SteamLibrary {
         }
     }
     @JvmStatic fun showMenu(context: Context) {
-        android.app.AlertDialog.Builder(context).setTitle("Steam")
-            .setItems(arrayOf("Manage Steam games", "Manage downloads")) { _, tab ->
-                context.startActivity(Intent(context, SteamActivity::class.java).putExtra("steam_tab", tab))
-            }.show()
+        SteamSheets.menu(context)
     }
+
     fun open(context: Context, path: String) {
         val id = appId(path)
         if (id != null && File(context.filesDir, "steam-library/$id.json").isFile && context is com.winlator.cmod.MainActivity) {
@@ -64,6 +62,6 @@ object SteamLibrary {
                 .addToBackStack("steam-game").commit()
             return
         }
-        appId(path)?.let { context.startActivity(Intent(context, SteamActivity::class.java).putExtra("steam_app_id", it)) }
+        appId(path)?.let { SteamSheets.game(context, it) }
     }
 }

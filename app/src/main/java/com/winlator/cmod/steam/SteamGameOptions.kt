@@ -1,6 +1,7 @@
 package com.winlator.cmod.steam
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -17,6 +18,7 @@ import kotlinx.coroutines.withContext
     val scope = rememberCoroutineScope()
     var mode by remember { mutableStateOf(SteamSettings.mode(context, id)) }
     var exe by remember { mutableStateOf(shortcut.getExtra("steamExecutable")) }
+    var modeExpanded by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -32,11 +34,15 @@ import kotlinx.coroutines.withContext
     }
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Steam launch", style = MaterialTheme.typography.titleMedium)
-            Text("Choose a launch method and executable, then save before playing.", style = MaterialTheme.typography.bodySmall)
-            listOf("RealSteam" to "SteamLudashi / Real Steam", "Goldberg" to "Goldberg (offline)", "Raw" to "Executable only").forEach { (value, title) ->
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    RadioButton(mode == value, enabled = !busy && !SteamSession.gameActive, onClick = { mode = value }); Text(title)
+            val modes = listOf("RealSteam" to "SteamLudashi / Real Steam", "Goldberg" to "Goldberg (offline)", "Raw" to "Executable only")
+            Box {
+                OutlinedButton(enabled = !busy && !SteamSession.gameActive, onClick = { modeExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Steam launch", Modifier.weight(1f))
+                    Text(modes.first { it.first == mode }.second, style = MaterialTheme.typography.bodySmall)
+                    Icon(androidx.compose.material.icons.Icons.Outlined.ArrowDropDown, null)
+                }
+                DropdownMenu(modeExpanded, { modeExpanded = false }) {
+                    modes.forEach { (value, title) -> DropdownMenuItem(text = { Text(title) }, onClick = { mode = value; modeExpanded = false }) }
                 }
             }
             Box {
@@ -61,7 +67,7 @@ import kotlinx.coroutines.withContext
                     SteamGames.changed()
                 }
             }) { Text(if (busy) "Preparing…" else "Save Steam launch") }
-            Text(message, style = MaterialTheme.typography.bodySmall)
+            if (message.isNotEmpty()) Text(message, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

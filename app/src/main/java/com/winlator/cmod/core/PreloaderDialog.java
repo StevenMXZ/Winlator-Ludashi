@@ -224,7 +224,7 @@ public class PreloaderDialog {
             }
         }
 
-        return TextUtils.isEmpty(title) ? activity.getString(R.string.app_name) : title;
+        return TextUtils.isEmpty(title) ? activity.getString(R.string.app_name) : com.winlator.cmod.steam.SteamGames.launchTitle(activity, shortcutPath, title);
     }
 
     private String resolveLaunchBaseName() {

@@ -8,12 +8,12 @@ import org.junit.Test
 
 class SteamLibraryFilterTest {
     private fun item(path: String, favorite: Boolean = true) = LibraryItem(path, path, path, "", null, null, null, null, favorite, 0)
-    @Test fun steamGamesAppearOnlyInTheirDedicatedTab() {
+    @Test fun uninstalledSteamGamesStayOutOfAllButCanBeFavorited() {
         val local = item("/game.desktop")
         val steam = item("steam://42")
         val items = listOf(local, steam)
         assertEquals(listOf(local), filterLibraryItems(items, LibraryFilter.All))
-        assertEquals(listOf(local), filterLibraryItems(items, LibraryFilter.Favorites))
+        assertEquals(listOf(local, steam), filterLibraryItems(items, LibraryFilter.Favorites))
         assertEquals(listOf(local), filterLibraryItems(items, LibraryFilter.Recent))
         assertEquals(listOf(steam), filterLibraryItems(items, LibraryFilter.Steam))
     }

@@ -75,7 +75,7 @@ class SteamActivity : AppCompatActivity() {
                         Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Library") })
                         Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Downloads") })
                     }
-                    if (!state.downloading) Text(state.status, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
+                    if (!state.downloading && state.signedIn) Text(state.status, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
                     if (tab == 1) {
                         SteamDownloadPanel(state)
                         if (!state.downloading) Column(Modifier.padding(24.dp)) {
@@ -91,7 +91,7 @@ class SteamActivity : AppCompatActivity() {
                         OutlinedTextField(query, { query = it }, label = { Text("Search your Steam games") },
                             leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true,
                             modifier = Modifier.fillMaxWidth().padding(16.dp))
-                        if (state.libraryLoading) {
+                        if (state.signedIn && state.libraryLoading) {
                             LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                             if (apps.isEmpty()) Text(state.status, Modifier.padding(24.dp))
                         } else if (state.libraryError.isNotEmpty()) {

@@ -10,6 +10,13 @@ import java.nio.file.Files
 
 object SteamGames {
     private val revision = mutableIntStateOf(0)
+    @JvmStatic fun displayName(shortcut: Shortcut): String = cleanTitle(shortcut.name, shortcut.getExtra("steamAppId"))
+    fun cleanTitle(title: String, id: String): String = if (id.toIntOrNull() != null) title.removeSuffix(" [$id]") else title
+    @JvmStatic fun launchTitle(context: Context, path: String?, title: String): String = runCatching {
+        val lines = File(path ?: return title).readLines()
+        val id = lines.firstOrNull { it.startsWith("steamAppId=") }?.substringAfter('=') ?: return title
+        cleanTitle(title, id)
+    }.getOrDefault(title)
     fun changed() { revision.intValue++ }
     fun info(context: Context, id: Int) = JSONObject(File(context.filesDir, "steam-library/$id.json").readText())
     fun directory(context: Context, id: Int): File = File(context.filesDir, "steam-library/common/${SteamCatalog.installName(info(context, id))}").canonicalFile
@@ -24,7 +31,8 @@ object SteamGames {
         container.desktopDir.mkdirs()
         val name = info(context, id).optJSONObject("common")?.optString("name").orEmpty()
             .replace(Regex("[^\\p{L}\\p{N} ._-]"), "_").take(100).ifBlank { "Steam" }
-        val file = File(container.desktopDir, "$name [$id].desktop")
+        val preferred = File(container.desktopDir, "$name.desktop")
+        val file = if (!preferred.exists() || Shortcut(container, preferred).getExtra("steamAppId") == id.toString()) preferred else File(container.desktopDir, "$name [$id].desktop")
         if (!file.exists()) file.writeText("[Desktop Entry]\nName=Steam-$id\nExec=wine C:\\\\unconfigured.exe\nType=Application\n\n[Extra Data]\nsteamAppId=$id\n")
         return Shortcut(container, file)
     }

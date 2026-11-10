@@ -3,6 +3,7 @@ package com.winlator.cmod.steam
 /** Bounded reconnects; a brief successful logon must not reset an endless retry loop. */
 class SteamSessionRecovery {
     private var attempts = 0
+    val attemptNumber get() = attempts
     private var deadline = Long.MAX_VALUE
     private var stableSince: Long? = null
     private var wasLoggedOn = false

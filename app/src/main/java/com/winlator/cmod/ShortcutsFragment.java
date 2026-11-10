@@ -265,9 +265,10 @@ public class ShortcutsFragment extends Fragment {
 
         MenuItem searchItem = menu.add(0, MENU_SEARCH, 1, "Search");
         searchItem.setIcon(R.drawable.ui_ic_search);
-        searchItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM |
+        searchItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS |
                 MenuItem.SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW);
         SearchView searchView = new SearchView(requireContext());
+        ((android.widget.ImageView) searchView.findViewById(androidx.appcompat.R.id.search_button)).setImageResource(R.drawable.ui_ic_search);
         searchView.setQueryHint(com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_search_games));
         searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
             @Override

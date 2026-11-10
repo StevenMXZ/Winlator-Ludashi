@@ -176,7 +176,7 @@ internal fun filterLibraryItems(items: List<LibraryItem>, filter: LibraryFilter)
     val local = items.filter { SteamLibrary.appId(it.shortcutPath) == null || it.containerName == "Steam · Installed" }
     return when (filter) {
         LibraryFilter.All -> local
-        LibraryFilter.Favorites -> local.filter { it.favorite }
+        LibraryFilter.Favorites -> items.filter { it.favorite }
         LibraryFilter.Recent -> local.sortedByDescending { it.lastRunAt }
         LibraryFilter.Steam -> items.filter { SteamLibrary.appId(it.shortcutPath) != null }
     }

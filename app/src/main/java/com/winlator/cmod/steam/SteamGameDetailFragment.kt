@@ -28,7 +28,7 @@ class SteamGameDetailFragment : Fragment() {
                 if (shortcut == null || !SteamGames.configured(context, appId)) { notice("Configure the launch method and executable first"); return }
                 if (!SteamLaunch.canLaunch(context, shortcut)) { notice("Enable Steam and sign in before playing"); return }
                 startActivity(Intent(context, XServerDisplayActivity::class.java).putExtra("container_id", shortcut.container.id)
-                    .putExtra("shortcut_path", shortcut.file.path).putExtra("shortcut_name", shortcut.name))
+                    .putExtra("shortcut_path", shortcut.file.path).putExtra("shortcut_name", title))
             }
             override fun onConfigure() {
                 if (SteamSession.gameActive) { notice("Exit the game before configuring"); return }

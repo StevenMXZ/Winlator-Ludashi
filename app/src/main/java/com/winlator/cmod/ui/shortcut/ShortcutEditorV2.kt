@@ -170,7 +170,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     val container: Container = shortcut.container
     val arm64 = container.getWineVersion().contains("arm64ec", true)
 
-    var name by mutableStateOf(shortcut.name)
+    var name by mutableStateOf(com.winlator.cmod.steam.SteamGames.displayName(shortcut))
     var screen by mutableStateOf(normalizeResolution(shortcut.getExtra("screenSize", container.getScreenSize())))
     var displayServer by mutableStateOf(
         if (shortcut.getExtra("displayServer", container.getExtra("displayServer", "java")) == "native")
