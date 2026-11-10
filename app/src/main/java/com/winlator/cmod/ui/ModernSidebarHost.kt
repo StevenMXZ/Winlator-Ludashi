@@ -12,6 +12,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -140,7 +144,7 @@ private fun Sidebar(state: ModernSidebarController) {
                     Modifier.fillMaxSize()
                         .then(if (panel == R.id.LLSubTaskManager) Modifier
                               else Modifier.verticalScroll(rememberScrollState()))
-                        .padding(14.dp),
+                        .padding(if (panel == R.id.LLSubFPS) 10.dp else 14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     val revision = state.revision
@@ -376,39 +380,60 @@ private fun RuntimeStatusCard(rows: Array<out Array<out String>>) {
     }
 }
 
-/** Keep the original two-column metric checkboxes instead of converting them to switches. */
+/** Compact metric grid: the full cell is the tap target, not an oversized checkbox. */
 @Composable
 private fun HudCheckboxGrid(group: ViewGroup, revision: Int, refresh: () -> Unit) {
     @Suppress("UNUSED_VARIABLE") val snapshot = revision
-    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             for (i in 0 until group.childCount) {
                 val row = group.getChildAt(i)
                 if (row is android.widget.Switch) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(row.text.toString(), Modifier.weight(1f))
-                        Switch(row.isChecked, { row.isChecked = it; refresh() })
+                    HorizontalDivider(Modifier.padding(top = 4.dp, bottom = 6.dp), color = dividerColor())
+                    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                        .toggleable(row.isChecked, role = Role.Switch, onValueChange = {
+                            row.isChecked = it; refresh()
+                        }), verticalAlignment = Alignment.CenterVertically) {
+                        Text(row.text.toString(), Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 17.sp),
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        // Scale only the track; the enclosing row remains an easy tap target.
+                        Box(Modifier.width(42.dp), contentAlignment = Alignment.Center) {
+                            Switch(row.isChecked, null, Modifier.graphicsLayer { scaleX = .75f; scaleY = .75f })
+                        }
                     }
                 } else {
                     val fields = if (row is ViewGroup)
                         (0 until row.childCount).map { row.getChildAt(it) }
                     else listOf(row)
-                    Row(Modifier.fillMaxWidth()) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         fields.filterIsInstance<android.widget.CheckBox>().forEach { field ->
-                            Row(Modifier.weight(1f).heightIn(min = 56.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(field.isChecked, { field.isChecked = it; refresh() },
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = MaterialTheme.colorScheme.onSurface,
-                                        checkmarkColor = MaterialTheme.colorScheme.surface))
-                                Text(field.text.toString(), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                            }
+                            HudMetricCell(field, Modifier.weight(1f), refresh)
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HudMetricCell(field: android.widget.CheckBox, modifier: Modifier, refresh: () -> Unit) {
+    Row(modifier.heightIn(min = 44.dp)
+        .toggleable(field.isChecked, enabled = field.isEnabled, role = Role.Checkbox,
+            onValueChange = { field.isChecked = it; refresh() }),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Checkbox(field.isChecked, null, Modifier.size(20.dp), enabled = field.isEnabled,
+            colors = CheckboxDefaults.colors(
+                checkedColor = MaterialTheme.colorScheme.onSurface,
+                checkmarkColor = MaterialTheme.colorScheme.surface,
+                uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant))
+        Text(field.text.toString(), Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 17.sp),
+            softWrap = field.text.contains(' '), maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
