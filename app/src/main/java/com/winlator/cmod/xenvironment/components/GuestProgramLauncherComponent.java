@@ -109,6 +109,11 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         if (shortcut != null)
             box64Version = shortcut.getExtra("box64Version", shortcut.container.getBox64Version());
 
+        // The retired bundled Box64 archive is no longer shipped. Migrate the
+        // standard Box64 path only; ARM64EC/WOWBox64 has its own installer.
+        boolean retiredBundledBox64 = "0.4.2".equals(box64Version);
+        if (retiredBundledBox64) box64Version = com.winlator.cmod.core.DefaultVersion.BOX64;
+
         Log.d("GuestProgramLauncherComponent", "box64Version: " + box64Version);
 
         File rootDir = imageFs.getRootDir();
@@ -126,6 +131,15 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             } else {
                 Log.e("GuestProgramLauncherComponent", "Unable to apply Box64 version " + box64Version);
             }
+        }
+
+        if (retiredBundledBox64 && box64Version.equals(container.getExtra("box64Version"))) {
+            if ("0.4.2".equals(container.getBox64Version())) container.setBox64Version(box64Version);
+            if (shortcut != null && "0.4.2".equals(shortcut.getExtra("box64Version", null))) {
+                shortcut.putExtra("box64Version", box64Version);
+                shortcut.saveData();
+            }
+            container.saveData();
         }
 
         File box64File = new File(rootDir, "/usr/bin/box64");

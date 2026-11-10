@@ -1,7 +1,7 @@
 package com.winlator.cmod.core;
 
 public abstract class DefaultVersion {
-    public static final String BOX64 = "0.4.2";
+    public static final String BOX64 = "0.4.5";
     public static final String WOWBOX64 = "0.4.2";
     public static final String FEXCORE = "2601";
     public static final String WRAPPER = "System";
