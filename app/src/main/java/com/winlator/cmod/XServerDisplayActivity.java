@@ -442,6 +442,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
             return;
         }
 
+        if (!com.winlator.cmod.core.ContainerSessionGate.start(container.id)) {
+            android.widget.Toast.makeText(this, "This container is busy applying components.", android.widget.Toast.LENGTH_LONG).show();
+            finish(); return;
+        }
+        ownsPrefixLease = true;
         containerManager.activateContainer(container);
 
         if (shortcutPath != null && !shortcutPath.isEmpty()) {
@@ -918,6 +923,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
             winHandler.stop();
         if (wineRequestHandler != null)
             wineRequestHandler.stop();
+        if (ownsPrefixLease) {
+            com.winlator.cmod.core.ContainerSessionGate.stop(container.id);
+            ownsPrefixLease = false;
+        }
 
         Executors.newSingleThreadExecutor().execute(() -> {
 
@@ -963,6 +972,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
             winlatorLogcatLogger = null;
         }
         if (taskManagerSidebar != null) taskManagerSidebar.stop();
+        if (ownsPrefixLease && environment == null && container != null) {
+            com.winlator.cmod.core.ContainerSessionGate.stop(container.id);
+            ownsPrefixLease = false;
+        }
         super.onDestroy();
     }
 
@@ -983,6 +996,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
     }
 
+    private boolean ownsPrefixLease;
     private boolean exclusiveInputBusy;
 
     public boolean isExclusiveInputEnabled() {

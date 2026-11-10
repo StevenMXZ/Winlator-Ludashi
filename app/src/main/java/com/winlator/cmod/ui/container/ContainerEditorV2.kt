@@ -1110,6 +1110,7 @@ private fun ContainerCategoryV2(
                 SettingsDivider()
                 CpuSelectorRow("Processor Affinity (32-bit apps)", s.cpu32) { index, checked -> s.cpu32[index] = checked }
             }
+            SettingsCard { com.winlator.cmod.components.WindowsComponentsEntry(s.editing) }
             SettingsCard {
                 containerComponentRowsV2.forEachIndexed { index, (key, label) ->
                     val entries = listOf("Builtin (Wine)", "Native (Windows)")

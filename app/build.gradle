@@ -86,10 +86,44 @@ tasks.register("downloadProton") {
 }
 
 tasks.register("prepareKotlinBuildScriptModel"){}
+tasks.register("downloadComponentTools") {
+    def nativeTools = layout.buildDirectory.dir("generated/component-tools/arm64-v8a")
+    outputs.dir(nativeTools)
+    inputs.file(rootProject.file("scripts/component-tools.json"))
+    doLast {
+        def manifest = new groovy.json.JsonSlurper().parse(rootProject.file("scripts/component-tools.json"))
+        File directory = nativeTools.get().asFile
+        directory.mkdirs()
+        manifest.each { name, expected ->
+            File target = new File(directory, name)
+            def hash = { File f ->
+                def digest = MessageDigest.getInstance("SHA-256")
+                f.withInputStream { input ->
+                    byte[] buffer = new byte[65536]
+                    int count
+                    while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count)
+                }
+                digest.digest().encodeHex().toString()
+            }
+            if (!target.isFile() || hash(target) != expected) {
+                File part = new File(directory, name + ".part")
+                try {
+                    new URL("https://raw.githubusercontent.com/The412Banner/Bannerlator/b74261e699d725de804064d891aa68640c0f9431/app/src/main/jniLibs/arm64-v8a/" + name).withInputStream { input ->
+                        part.withOutputStream { output -> output << input }
+                    }
+                    if (hash(part) != expected) throw new GradleException("Component tool checksum mismatch: " + name)
+                    java.nio.file.Files.move(part.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                } finally { part.delete() }
+            }
+        }
+    }
+}
 downloadProton.dependsOn(downloadImageFS)
 preBuild.dependsOn(downloadProton)
+preBuild.dependsOn(downloadComponentTools)
 
 android {
+    sourceSets.main.jniLibs.srcDir(layout.buildDirectory.dir("generated/component-tools"))
     namespace 'com.winlator.cmod'
     // Keep compileSdk from your current config. If you want to match Termux-X11, you could set to 34.
     compileSdk 35
@@ -157,6 +191,7 @@ android {
     packagingOptions {
         jniLibs {
             useLegacyPackaging = true
+            pickFirsts += ['**/libc++_shared.so']
         }
         resources {
             pickFirsts += ["assets/dexopt/baseline.prof", "assets/dexopt/baseline.profm"]

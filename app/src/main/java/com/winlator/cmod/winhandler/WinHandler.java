@@ -649,7 +649,7 @@ public void setVibrationEnabledForSlot(int slot, boolean enabled) {
             writers[i] = null;
         }
         new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-            if (activity.isFinishing() || activity.isDestroyed()) { finished.run(); return; }
+            if (!running || activity.isFinishing() || activity.isDestroyed()) { finished.run(); return; }
             for (int slot : new HashSet<>(deviceToSlot.values())) {
                 writers[slot] = new FakeInputWriter(fakeInputBasePath, slot);
                 writers[slot].open();

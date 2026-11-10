@@ -1240,6 +1240,7 @@ private fun ShortcutCategoryV2(
                 SettingsDivider()
                 CpuSelectorRow("Processor Affinity", s.cpu) { index, checked -> s.cpu[index] = checked; s.saveCpu() }
             }
+            SettingsCard { com.winlator.cmod.components.WindowsComponentsEntry(s.container) }
             SettingsCard {
                 SettingChoice("Sharpness Effect", s.sharpnessEffect, listOf("None", "CAS", "DLS")) {
                     s.sharpnessEffect = it; s.extra("sharpnessEffect", it)
