@@ -246,6 +246,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var fullscreen by mutableStateOf(shortcut.getExtra("fullscreenStretched", "0") == "1")
     private var inputType by mutableIntStateOf(shortcut.getExtra("inputType", container.getInputType().toString()).toIntOrNull() ?: container.getInputType())
     var exclusive by mutableStateOf(shortcut.getExtra("exclusiveXInput").let { if (it.isBlank()) container.isExclusiveXInput() else it == "1" })
+    var forceSsbs by mutableStateOf(shortcut.getExtra("forceSsbs", ""))
     var xinput by mutableStateOf((inputType and WinHandler.FLAG_INPUT_TYPE_XINPUT.toInt()) != 0)
     var dinput by mutableStateOf((inputType and WinHandler.FLAG_INPUT_TYPE_DINPUT.toInt()) != 0)
     var disableXInput by mutableStateOf(shortcut.getExtra("disableXinput", "0") == "1")
@@ -1179,6 +1180,15 @@ private fun ShortcutCategoryV2(
                     }
                     SettingsDivider()
                     SettingMappedChoice("FEXCore Preset", s.fexPreset, fexPresets) { s.fexPreset = it; s.extra("fexcorePreset", it) }
+                    SettingsDivider()
+                    val ssbsDefault = "Container default (${if (s.container.isForceSsbs) "On" else "Off"})"
+                    val ssbsOptions = listOf(ssbsDefault, "On", "Off")
+                    SettingChoice("Force SSBS (CPU speed fix)", when (s.forceSsbs) {
+                        "1" -> "On"; "0" -> "Off"; else -> ssbsDefault
+                    }, ssbsOptions) {
+                        s.forceSsbs = when (it) { "On" -> "1"; "Off" -> "0"; else -> "" }
+                        s.extra("forceSsbs", s.forceSsbs.ifEmpty { null })
+                    }
                 }
                 if (!s.arm64 || s.emulator == "WOWBox64") {
                     catalog?.let { c ->

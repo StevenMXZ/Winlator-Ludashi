@@ -1011,6 +1011,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (!canChangeExclusiveInput() || enabled == isExclusiveInputEnabled()) return;
         boolean previous = isExclusiveInputEnabled();
         boolean dinput = (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_DINPUT) != 0;
+        // cmd/regedit can activate a console. Restore the original Wine HWND, not a
+        // guessed executable (launchers and games may be different processes).
+        Window focused = xServer.windowManager.getFocusedWindow();
+        while (focused != null && focused.getHandle() == 0) focused = focused.getParent();
+        final Window focusTarget = focused;
+        final long focusHandle = focused != null ? focused.getHandle() : 0;
         File driveC = new File(container.getRootDir(), ".wine/drive_c");
         exclusiveInputBusy = true;
         refreshed.run();
@@ -1018,11 +1024,17 @@ public class XServerDisplayActivity extends AppCompatActivity {
         com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC, dinput, enabled, ok -> {
             if (isFinishing() || isDestroyed()) return;
             Runnable finish = () -> winHandler.reconnectGamepads(() -> {
+                if (isFinishing() || isDestroyed()) return;
                 if (ok) {
                     if (shortcut != null) { shortcut.putExtra("exclusiveXInput", enabled ? "1" : "0"); shortcut.saveData(); }
                     else { container.setExclusiveXInput(enabled); container.saveData(); }
                 }
                 exclusiveInputBusy = false;
+                if (focusTarget != null && focusTarget.attributes.isMapped()
+                        && xServer.windowManager.getWindow(focusTarget.id) == focusTarget
+                        && focusTarget.getHandle() == focusHandle) {
+                    winHandler.bringToFront("", focusHandle);
+                }
                 refreshed.run();
                 android.widget.Toast.makeText(this, ok ? "Exclusive Input applied. Some games may need a restart."
                         : "Could not apply Exclusive Input. Previous setting restored.", android.widget.Toast.LENGTH_LONG).show();

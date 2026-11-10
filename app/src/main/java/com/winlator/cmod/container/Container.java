@@ -80,6 +80,7 @@ public class Container {
     private String box64Version;
     private String emulator;
     private boolean exclusiveXInput = true;
+    private boolean forceSsbs = true;
     private ContainerManager containerManager;
 
 
@@ -453,6 +454,10 @@ public class Container {
         this.exclusiveXInput = exclusiveXInput;
     }
 
+    public boolean isForceSsbs() { return forceSsbs; }
+
+    public void setForceSsbs(boolean forceSsbs) { this.forceSsbs = forceSsbs; }
+
 
     public Iterable<String[]> drivesIterator() {
         return drivesIterator(drives);
@@ -516,6 +521,7 @@ public class Container {
             data.put("primaryController", primaryController);
             data.put("controllerMapping", controllerMapping);
             data.put("exclusiveXInput", exclusiveXInput);
+            data.put("forceSsbs", forceSsbs);
             if (!WineInfo.isMainWineVersion(wineVersion)) data.put("wineVersion", wineVersion);
             FileUtils.writeString(getConfigFile(), data.toString());
         }
@@ -636,6 +642,9 @@ public class Container {
                     break;
                 case "exclusiveXInput" :
                     setExclusiveXInput(data.getBoolean(key));
+                    break;
+                case "forceSsbs":
+                    setForceSsbs(data.getBoolean(key));
                     break;
             }
         }

@@ -460,6 +460,14 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             execEnvVars.putAll(this.envVars);
         }
 
+        // Apply after custom environment variables so the saved compatibility option wins.
+        // Older Wine builds simply ignore this; the correction lives in ARM64 ntdll.
+        if (wineInfo.isArm64EC() && container != null) {
+            boolean ssbs = com.winlator.cmod.core.SsbsSettings.resolve(container.isForceSsbs(),
+                    shortcut != null ? shortcut.getExtra("forceSsbs") : "");
+            execEnvVars.put("WINE_FORCE_SSBS", ssbs ? "1" : "0");
+        }
+
         boolean useDisplayX = shortcut != null
                 ? shortcut.getUseDisplayX()
                 : container != null && container.getUseDisplayX();

@@ -234,6 +234,7 @@ private class ContainerEditorStateV2(
     var boxPreset by mutableStateOf(editing?.box64Preset ?: Box64Preset.COMPATIBILITY)
 
     var exclusive by mutableStateOf(editing?.isExclusiveXInput ?: true)
+    var forceSsbs by mutableStateOf(editing?.isForceSsbs ?: true)
     var xinput by mutableStateOf(editing?.let { (it.inputType and WinHandler.FLAG_INPUT_TYPE_XINPUT.toInt()) != 0 } ?: true)
     var dinput by mutableStateOf(editing?.let { (it.inputType and WinHandler.FLAG_INPUT_TYPE_DINPUT.toInt()) != 0 } ?: false)
     var syncCpu by mutableStateOf(editing?.isSyncCpuTopology ?: false)
@@ -328,7 +329,7 @@ private class ContainerEditorStateV2(
         displayXPrecisePresentation, frameGenEnabled, frameGenMultiplier,
         frameGenTargetRate, frameGenFlowScale, graphicsDriver, graphicsConfig,
         wrapper, wrapperConfig, emulator, fexVersion, boxVersion, fexPreset, boxPreset, exclusive, xinput, dinput,
-        syncCpu, startup, openGlDefaultInitialized, autoMesaGlVersionOverride, envVars,
+        forceSsbs, syncCpu, startup, openGlDefaultInitialized, autoMesaGlVersionOverride, envVars,
         cpu64.joinToString(), cpu32.joinToString(), components.entries.sortedBy { it.key }.joinToString()
     ).joinToString("|")
 }
@@ -488,6 +489,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.setShowFPS(state.hudMode != 0)
         container.setFullscreenStretched(state.fullscreen)
         container.setExclusiveXInput(state.exclusive)
+        container.setForceSsbs(state.forceSsbs)
         var inputType = 0
         if (state.xinput) inputType = inputType or WinHandler.FLAG_INPUT_TYPE_XINPUT.toInt()
         if (state.dinput) inputType = inputType or WinHandler.FLAG_INPUT_TYPE_DINPUT.toInt()
@@ -544,6 +546,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                 put("showFPS", state.hudMode != 0)
                 put("fullscreenStretched", state.fullscreen)
                 put("exclusiveXInput", state.exclusive)
+                put("forceSsbs", state.forceSsbs)
                 var inputType = 0
                 if (state.xinput) inputType = inputType or WinHandler.FLAG_INPUT_TYPE_XINPUT.toInt()
                 if (state.dinput) inputType = inputType or WinHandler.FLAG_INPUT_TYPE_DINPUT.toInt()
@@ -1046,6 +1049,8 @@ private fun ContainerCategoryV2(
                     }
                     SettingsDivider()
                     SettingMappedChoice("FEXCore Preset", s.fexPreset, fexPresets) { s.fexPreset = it }
+                    SettingsDivider()
+                    SettingToggle("Force SSBS (CPU speed fix)", s.forceSsbs) { s.forceSsbs = it }
                 }
                 if (!arm64 || s.emulator == "WOWBox64") {
                     catalog?.let { c ->
