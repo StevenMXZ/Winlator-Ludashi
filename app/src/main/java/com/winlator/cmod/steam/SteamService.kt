@@ -18,14 +18,34 @@ class SteamService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("steam", "Steam", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 0, Intent(this, SteamActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        startForeground(310, Notification.Builder(this, "steam").setSmallIcon(R.drawable.icon_shortcut)
+        startForeground(NOTIFICATION_ID, Notification.Builder(this, "steam").setSmallIcon(R.drawable.ic_steam)
             .setContentTitle("Steam").setContentText("Steam session active").setContentIntent(open).build())
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         SteamSession.open(applicationContext)
         return START_NOT_STICKY
     }
-    override fun onDestroy() { SteamSession.close(); super.onDestroy() }
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        SteamSession.close()
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+    override fun onDestroy() {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+        SteamSession.close()
+        super.onDestroy()
+    }
+    companion object {
+        const val NOTIFICATION_ID = 310
+        @JvmStatic fun shutdown(context: Context) {
+            // Remove the visible notification before app exit can kill the process.
+            context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+            context.stopService(Intent(context, SteamService::class.java))
+            SteamSession.close()
+        }
+    }
 }
 
 object SteamSession {
@@ -183,7 +203,7 @@ object SteamSession {
         if (restoring && (restoreDeadline == 0L || recoveryBlocked)) startRestoreDeadline()
         val previous = session
         session = null
-        ++authAttempt; guard.cancel(); signingIn = false; connected = false; signedIn = false
+        ++authAttempt; guard.cancel(); signingIn = false; qrUrl = ""; connected = false; signedIn = false
         previous?.let { it.cancelDownload(); it.cancelLogin(); it.disconnect(); it.close() }
         if (downloading) status = "Pausing download after session loss…"
         librarySync.reset(); licensesReceived = false; libraryLoading = true; libraryProgress = 0; libraryError = ""
@@ -269,7 +289,12 @@ object SteamSession {
                         if (previousCodeWasIncorrect) "Incorrect code. Enter a new Steam Guard code" else "Enter your Steam Guard code")
                     override fun getEmailCode(email: String?, previousCodeWasIncorrect: Boolean) = if (session !== s || attempt != authAttempt) java.util.concurrent.CompletableFuture.completedFuture("") else guard.request(
                         if (previousCodeWasIncorrect) "Incorrect code. Enter the new email code" else "Enter the Steam Guard code sent to ${email ?: "your email"}")
-                }, LudashiAuthCallback { result ->
+                }, authCallback(context, s, attempt)
+                )
+            } catch (e: Exception) { signingIn = false; throw e }
+        }
+    }
+    private fun authCallback(context: Context, s: LudashiSteamSession, attempt: Int): LudashiAuthCallback = LudashiAuthCallback { result ->
                     if (session === s && attempt == authAttempt) {
                         if (result.success && result.refreshToken.isNotBlank()) work {
                             if (session !== s || attempt != authAttempt) return@work
@@ -289,8 +314,23 @@ object SteamSession {
                             work { if (session === s) replaceSession(context, false) }
                         }
                     }
-                })
-            } catch (e: Exception) { signingIn = false; throw e }
+        }
+    fun loginQr() {
+        if (gameActive || signingIn || app?.let { !SteamSettings.enabled(it) } != false) return
+        signingIn = true; authError = ""; qrUrl = ""; recoveryBlocked = false
+        SteamSocial.reset()
+        work {
+            try {
+                val context = app ?: error("Steam is starting")
+                val s = session ?: error("Steam is starting")
+                check(!downloading && s.state() == 2) { "Wait for the Steam connection before signing in" }
+                guard.cancel(); s.cancelLogin()
+                val attempt = ++authAttempt
+                status = "Scan the QR code with the Steam mobile app"
+                s.startLoginWithQr(LudashiQrCallback { url ->
+                    if (session === s && attempt == authAttempt) qrUrl = url
+                }, authCallback(context, s, attempt))
+            } catch (error: Exception) { signingIn = false; qrUrl = ""; throw error }
         }
     }
     fun retryLibrary() = work {
@@ -307,7 +347,7 @@ object SteamSession {
         try { replaceSession(context) } catch (error: Exception) { restoreFailure(error) }
     }
     fun cancelLogin() {
-        ++authAttempt; guard.cancel(); signingIn = false
+        ++authAttempt; guard.cancel(); signingIn = false; qrUrl = ""
         work { session?.cancelLogin(); status = "Sign-in cancelled" }
     }
     fun info(id: Int): JSONObject {
@@ -434,7 +474,7 @@ object SteamSession {
     }
     fun close() {
         closing = true; savedAccount = false; restoring = false; recoveryBlocked = true
-        ++generation; ++authAttempt; guard.cancel(); signingIn = false; signedIn = false; connected = false
+        ++generation; ++authAttempt; guard.cancel(); signingIn = false; qrUrl = ""; signedIn = false; connected = false
         main.removeCallbacks(poll); main.removeCallbacks(restoreWatch)
         restoreDeadline = 0L
         work {

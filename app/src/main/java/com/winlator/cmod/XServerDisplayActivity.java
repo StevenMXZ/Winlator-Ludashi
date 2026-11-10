@@ -697,7 +697,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 .setContentText("Winlator is running, do not kill or swipe this notification")
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setContentIntent(pendingIntent)
-                .setAutoCancel(false);
+                .setAutoCancel(false)
+                .setOngoing(true)
+                .addAction(R.drawable.icon_exit, "Exit", com.winlator.cmod.services.NotificationService.exitPendingIntent(this));
 
         NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, builder.build());
 
@@ -1008,6 +1010,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
         runtimeStatusProbeStopped = true;
         if (runtimeStatusProbeThread != null) runtimeStatusProbeThread.interrupt();
         if (winlatorLogcatLogger != null) {

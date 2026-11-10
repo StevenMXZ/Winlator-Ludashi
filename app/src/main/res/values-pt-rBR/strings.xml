@@ -613,7 +613,7 @@
     <string name="steam_default_folder">Usar padrão</string>
     <string name="steam_folder_help">Vale para novos downloads. Jogos existentes e downloads pausados mantêm a pasta original. Uma subpasta LudashiSteam é criada.</string>
     <string name="steam_folder_unavailable">Escolha uma pasta local gravável. Provedores de nuvem/documentos não oferecem caminhos executáveis.</string>
-    <string name="steam_friends">Amigos / chat Steam</string>
+    <string name="steam_friends">Amigos</string>
     <string name="steam_social_disabled">Ative amigos/chat nas configurações da loja.</string>
     <string name="steam_friends_empty">Conecte à Steam para carregar os amigos. O chat no jogo exige Steam Client. Offline não inicia uma segunda conexão.</string>
     <string name="steam_friend_ingame">Jogando</string>

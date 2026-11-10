@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class NotificationService extends Service {
     private static final String TAG = "WinlatorNotification";
-    private static final String ACTION_EXIT = "com.winlator.cmod.action.EXIT";
+    public static final String ACTION_EXIT = "com.winlator.cmod.action.EXIT";
     private static boolean isRunning = false;
     private final AtomicBoolean exiting = new AtomicBoolean(false);
     public static PowerManager.WakeLock wakeLock = null;
@@ -55,9 +55,7 @@ public class NotificationService extends Service {
         PendingIntent contentIntent = PendingIntent.getActivity(
                 this, 0, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        Intent exitIntent = new Intent(this, NotificationService.class).setAction(ACTION_EXIT);
-        PendingIntent exitPendingIntent = PendingIntent.getService(
-                this, 1, exitIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent exitPendingIntent = exitPendingIntent(this);
 
         Notification notification = new NotificationCompat.Builder(this, MainActivity.NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(R.drawable.winlator_mark)
@@ -80,9 +78,17 @@ public class NotificationService extends Service {
         return START_NOT_STICKY;
     }
 
+    public static PendingIntent exitPendingIntent(android.content.Context context) {
+        return PendingIntent.getService(context, 1,
+                new Intent(context, NotificationService.class).setAction(ACTION_EXIT),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
     private void exitApplication() {
         if (!exiting.compareAndSet(false, true)) return;
 
+        com.winlator.cmod.steam.SteamService.shutdown(this);
+        androidx.core.app.NotificationManagerCompat.from(this).cancel(com.winlator.cmod.XServerDisplayActivity.NOTIFICATION_ID);
         // Do not block the service main thread while terminating Wine processes.
         new Thread(() -> {
             try {
@@ -116,6 +122,8 @@ public class NotificationService extends Service {
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
+        com.winlator.cmod.steam.SteamService.shutdown(this);
+        androidx.core.app.NotificationManagerCompat.from(this).cancel(com.winlator.cmod.XServerDisplayActivity.NOTIFICATION_ID);
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
         isRunning = false;

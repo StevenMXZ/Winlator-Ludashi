@@ -31,11 +31,11 @@ class SteamResponsiveSettingsTest {
         val context = RuntimeEnvironment.getApplication()
         val portuguese = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.forLanguageTag("pt-BR")) })
         val english = context.createConfigurationContext(Configuration(context.resources.configuration).apply { setLocale(Locale.ENGLISH) })
-        assertEquals("Steam / Lojas", portuguese.getString(R.string.steam_ui_stores))
+        assertEquals("Lojas", portuguese.getString(R.string.steam_ui_stores))
         assertEquals("Carregando biblioteca Steam… 50%", portuguese.getString(R.string.steam_ui_loading_library, 50))
         assertEquals("Entrar na Steam", portuguese.getString(R.string.steam_ui_login_title))
         assertEquals("Conectado", portuguese.getString(R.string.steam_ui_connected))
-        assertEquals("Steam / Stores", english.getString(R.string.steam_ui_stores))
+        assertEquals("Stores", english.getString(R.string.steam_ui_stores))
     }
     @Suppress("DEPRECATION")
     @Test fun immersiveFlagsAreRestoredAfterReturningFromAnotherWindow() {

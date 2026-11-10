@@ -273,6 +273,7 @@ dependencies {
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
     implementation 'com.squareup.okhttp3:okhttp:4.9.3'
     implementation 'com.google.code.gson:gson:2.8.8'
+    implementation 'com.google.zxing:core:3.5.3'
     implementation 'org.conscrypt:conscrypt-android:2.5.2'
     implementation 'org.bouncycastle:bcprov-jdk15on:1.68'
     implementation 'org.openjsse:openjsse:1.1.7'

@@ -4,6 +4,7 @@ import com.winlator.cmod.R
 import com.winlator.cmod.ui.uiStr
 
 private val statuses = mapOf(
+    "Scan the QR code with the Steam mobile app" to R.string.steam_qr_help,
     "Connected — sign in to Steam" to R.string.steam_ui_connected_login,
     "Connecting…" to R.string.steam_ui_connecting,
     "Disconnected" to R.string.steam_ui_disconnected,

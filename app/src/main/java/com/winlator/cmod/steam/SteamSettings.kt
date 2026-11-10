@@ -14,8 +14,7 @@ object SteamSettings {
         check(!SteamSession.gameActive) { "Exit the running Steam game before changing this setting" }
         context.getSharedPreferences("steam-settings", 0).edit().putBoolean("enabled", enabled).commit()
         if (!enabled) {
-            SteamSession.close()
-            context.stopService(Intent(context, SteamService::class.java))
+            SteamService.shutdown(context)
         }
         revision.intValue++
     }

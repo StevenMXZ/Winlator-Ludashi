@@ -69,37 +69,79 @@ class SteamActivity : ImmersiveSteamActivity() {
     }
     @Composable private fun LoginForm(state: SteamUiSnapshot) {
         var username by rememberSaveable { mutableStateOf("") }
-        // Passwords and Guard codes are kept only in memory, never saved in instance state.
         var password by remember { mutableStateOf("") }
         var visible by remember { mutableStateOf(false) }
         var code by remember { mutableStateOf("") }
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primary.copy(alpha = .10f), Color.Transparent))), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Icon(Icons.Outlined.SportsEsports, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
-                Text(uiStr(R.string.steam_ui_login_title), style = MaterialTheme.typography.headlineMedium)
-                Text(uiStr(R.string.steam_ui_login_intro), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (state.guard.isNotEmpty()) {
-                    Text(steamStatusText(state.guard), style = MaterialTheme.typography.titleSmall)
-                    OutlinedTextField(code, { code = it }, singleLine = true, label = { Text(uiStr(R.string.steam_ui_guard_code)) }, modifier = Modifier.fillMaxWidth())
-                    Button(onClick = { SteamSession.guard.submit(code); code = "" }, enabled = code.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(uiStr(R.string.steam_ui_confirm_code)) }
-                } else {
-                    OutlinedTextField(username, { username = it }, label = { Text(uiStr(R.string.steam_ui_account_name)) },
-                        leadingIcon = { Icon(Icons.Outlined.Person, null) }, singleLine = true, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(password, { password = it }, label = { Text(uiStr(R.string.steam_ui_password)) },
-                        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, uiStr(R.string.steam_ui_show_password)) } },
-                        singleLine = true, enabled = !state.busy, modifier = Modifier.fillMaxWidth())
-                    Button(onClick = { SteamSession.login(username, password); password = ""; visible = false },
-                        enabled = state.ready && !state.busy && username.isNotBlank() && password.isNotEmpty(), modifier = Modifier.fillMaxWidth().height(50.dp)) {
-                        if (state.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Text(uiStr(R.string.steam_ui_sign_in))
+        var qr by rememberSaveable { mutableStateOf(false) }
+        DisposableEffect(Unit) {
+            onDispose { if (!SteamSession.savedAccount && SteamSession.signingIn) SteamSession.cancelLogin() }
+        }
+        LaunchedEffect(qr, state.ready) {
+            if (qr && state.ready && !SteamSession.signingIn) SteamSession.loginQr()
+        }
+        StoreTheme {
+            Box(Modifier.fillMaxSize().storeBackground(), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = 440.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    if (!qr) {
+                        Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_steam), null, Modifier.size(64.dp), tint = Color.White)
+                        Text(uiStr(R.string.steam_ui_login_title), style = MaterialTheme.typography.headlineSmall)
+                        Text(uiStr(R.string.steam_ui_login_intro), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                    OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(3.dp)) {
+                            listOf(false to R.string.steam_login_account, true to R.string.steam_login_qr).forEach { (value, label) ->
+                                val choose = {
+                                    if (qr != value) { SteamSession.cancelLogin(); password = ""; code = ""; qr = value }
+                                }
+                                if (qr == value) Button(onClick = choose, modifier = Modifier.weight(1f), shape = RoundedCornerShape(11.dp)) {
+                                    Icon(if (value) Icons.Outlined.QrCodeScanner else Icons.Outlined.PersonOutline, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp)); Text(uiStr(label))
+                                } else TextButton(onClick = choose, modifier = Modifier.weight(1f)) {
+                                    Icon(if (value) Icons.Outlined.QrCodeScanner else Icons.Outlined.PersonOutline, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp)); Text(uiStr(label))
+                                }
+                            }
+                        }
+                    }
+                    if (qr) {
+                        SteamQrCode(SteamSession.qrUrl)
+                        Text(uiStr(R.string.steam_qr_scan), style = MaterialTheme.typography.titleLarge)
+                        Text(uiStr(R.string.steam_qr_help), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(onClick = { SteamSession.cancelLogin(); SteamSession.loginQr() }, enabled = state.ready && !state.gameActive,
+                            modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Outlined.Refresh, null); Spacer(Modifier.width(8.dp)); Text(uiStr(R.string.steam_qr_refresh))
+                        }
+                    } else if (state.guard.isNotEmpty()) {
+                        Text(steamStatusText(state.guard), style = MaterialTheme.typography.titleSmall)
+                        OutlinedTextField(code, { code = it }, singleLine = true, label = { Text(uiStr(R.string.steam_ui_guard_code)) }, modifier = Modifier.fillMaxWidth())
+                        Button(onClick = { SteamSession.guard.submit(code); code = "" }, enabled = code.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text(uiStr(R.string.steam_ui_confirm_code)) }
+                    } else {
+                        OutlinedTextField(username, { username = it }, placeholder = { Text(uiStr(R.string.steam_ui_account_name)) },
+                            leadingIcon = { Icon(Icons.Outlined.PersonOutline, null) }, singleLine = true, enabled = !state.busy,
+                            shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(password, { password = it }, placeholder = { Text(uiStr(R.string.steam_ui_password)) },
+                            leadingIcon = { Icon(Icons.Outlined.Lock, null) },
+                            visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, uiStr(R.string.steam_ui_show_password)) } },
+                            singleLine = true, enabled = !state.busy, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth())
+                        Button(onClick = { SteamSession.login(username, password); password = ""; visible = false },
+                            enabled = state.ready && !state.busy && username.isNotBlank() && password.isNotEmpty(),
+                            shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                            if (state.busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Text(uiStr(R.string.steam_ui_sign_in))
+                        }
+                    }
+                    if (state.authError.isNotEmpty()) Text(steamStatusText(state.authError), color = MaterialTheme.colorScheme.error)
+                    Text(steamStatusText(state.status), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!state.gameActive && !state.ready && !state.busy) TextButton(onClick = { SteamSession.reconnect() }) { Text(uiStr(R.string.steam_ui_reconnect)) }
+                    if (!qr && (state.busy || state.guard.isNotEmpty())) TextButton(onClick = { SteamSession.cancelLogin() }) { Text(uiStr(R.string.steam_ui_cancel_login)) }
+                    if (!qr) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Outlined.Info, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(uiStr(R.string.steam_ui_password_help), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                if (state.authError.isNotEmpty()) Text(steamStatusText(state.authError), color = MaterialTheme.colorScheme.error)
-                Text(steamStatusText(state.status), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (!state.gameActive && !state.ready && !state.busy) TextButton(onClick = { SteamSession.reconnect() }) { Text(uiStr(R.string.steam_ui_reconnect)) }
-                if (state.busy || state.guard.isNotEmpty()) TextButton(onClick = { SteamSession.cancelLogin() }) { Text(uiStr(R.string.steam_ui_cancel_login)) }
-                Text(uiStr(R.string.steam_ui_password_help), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -108,7 +150,7 @@ class SteamActivity : ImmersiveSteamActivity() {
         if (SteamSession.downloading) { Toast.makeText(this, uiStr(R.string.steam_ui_pause_logout), Toast.LENGTH_SHORT).show(); return }
         SteamCredentials.clear(this)
         File(filesDir, "steam-library-cache.json").delete()
-        stopService(Intent(this, SteamService::class.java)); finish()
+        SteamService.shutdown(this); finish()
     }
     private fun showDetail(id: Int) {
         supportFragmentManager.beginTransaction().replace(android.R.id.content, SteamGameDetailFragment.newInstance(id)).commit()

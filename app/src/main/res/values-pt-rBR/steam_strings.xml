@@ -1,5 +1,5 @@
 <resources>
-    <string name="steam_ui_stores">Steam / Lojas</string>
+    <string name="steam_ui_stores">Lojas</string>
     <string name="steam_ui_back">Voltar</string>
     <string name="steam_ui_integration">Integração com a Steam</string>
     <string name="steam_ui_account_downloads">Biblioteca, conta e downloads</string>
@@ -125,4 +125,15 @@
     <string name="steam_ui_exit_configure">Feche o jogo antes de configurar</string>
     <string name="steam_ui_create_container">Crie um container primeiro</string>
     <string name="steam_ui_choose_container">Escolha um container em Configurar primeiro</string>
+    <string name="steam_login_account">Conta</string>
+    <string name="steam_login_qr">QR Code</string>
+    <string name="steam_qr_scan">Escaneie para entrar</string>
+    <string name="steam_qr_help">Abra o aplicativo Steam no celular, toque no ícone de leitura e escaneie este QR Code.</string>
+    <string name="steam_qr_refresh">Atualizar QR Code</string>
+    <string name="steam_integration_short">Ativar os recursos da Steam</string>
+    <string name="steam_store_library">Biblioteca</string>
+    <string name="steam_store_library_help">Jogos e itens instalados</string>
+    <string name="steam_store_downloads_help">Downloads ativos e pausados</string>
+    <string name="steam_store_location">Local de download</string>
+    <string name="steam_store_features">Recursos</string>
 </resources>

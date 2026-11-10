@@ -69,6 +69,15 @@ public abstract class AppUtils {
     }
 
     public static void restartApplication(Context context, int selectedMenuItemId) {
+        // A restart exits the process without service teardown callbacks. Clear its
+        // foreground notifications before launching the replacement task.
+        com.winlator.cmod.steam.SteamService.shutdown(context);
+        context.stopService(new Intent(context, com.winlator.cmod.services.NotificationService.class));
+        android.app.NotificationManager notifications = (android.app.NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (notifications != null) {
+            notifications.cancel(com.winlator.cmod.MainActivity.NOTIFICATION_ID);
+            notifications.cancel(com.winlator.cmod.XServerDisplayActivity.NOTIFICATION_ID);
+        }
         Intent intent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         Intent mainIntent = Intent.makeRestartActivityTask(intent.getComponent());
         if (selectedMenuItemId > 0) mainIntent.putExtra("selected_menu_item_id", selectedMenuItemId);
