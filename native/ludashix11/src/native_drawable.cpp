@@ -65,6 +65,33 @@ void NativeDrawable::WritePixels(const u8* src, s16 sx, s16 sy, s16 dx, s16 dy,
                src + (size_t(sy + y - dy) * src_stride + sx + left - dx) * 4,
                size_t(right - left) * 4);
 }
+void NativeDrawable::CopyAreaFrom(NativeDrawable& source, s16 sx, s16 sy, s16 dx, s16 dy, u16 w, u16 h) {
+    // Keep the source validation and destination clipping of ReadPixels + WritePixels.
+    if (sx < 0 || sy < 0 || u32(sx) + w > source.width || u32(sy) + h > source.height)
+        throw BadMatchError();
+    if (!w || !h) throw BadMatchError(); // Preserve the previous zero-size request result.
+    if (buffer || source.buffer) {
+        // Preserve the existing AHB mapping/synchronization path. The fast path
+        // is strictly for CPU storage; no new mapping or GPU wait is introduced.
+        std::vector<u8> copy(size_t(w) * h * 4);
+        source.ReadPixels(copy.data(), sx, sy, w, h, w);
+        WritePixels(copy.data(), 0, 0, dx, dy, w, h, w);
+        return;
+    }
+    const int left = std::max(0, int(dx)), top = std::max(0, int(dy));
+    const int right = std::min(int(width), int(dx) + w), bottom = std::min(int(height), int(dy) + h);
+    if (right <= left || bottom <= top) return;
+    Writable(); // Fork once if a scene/GPU frame still owns the old snapshot.
+    const int sourceX = int(sx) + left - dx, sourceY = int(sy) + top - dy;
+    const int rows = bottom - top;
+    const bool backwards = &source == this && top > sourceY && top < sourceY + rows;
+    const size_t bytes = size_t(right - left) * 4;
+    for (int n = 0; n < rows; ++n) {
+        const int row = backwards ? rows - n - 1 : n;
+        std::memmove(pixels->data() + size_t(top + row) * stride + size_t(left) * 4,
+                     source.pixels->data() + size_t(sourceY + row) * source.stride + size_t(sourceX) * 4, bytes);
+    }
+}
 void NativeDrawable::FillRect(s16 x, s16 y, u16 w, u16 h, u32 color) {
     Writable(); auto* dst = static_cast<u8*>(Map());
     for (int row = std::max(0, int(y)); row < std::min(int(height), int(y) + h); ++row) {
@@ -101,3 +128,4 @@ void NativeDrawable::DrawPolySegments(const PolySegment* p, u32 n, u32 color, u3
     for (u32 i = 0; i < n; ++i) Line(p[i].p1, p[i].p2, color, width);
 }
 }
+

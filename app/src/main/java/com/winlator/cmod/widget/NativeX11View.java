@@ -107,11 +107,14 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     };
     static { System.loadLibrary("ludashix11"); }
     public NativeX11View(Context context, XServer inputProxy) {
+        this(context, inputProxy, false);
+    }
+    public NativeX11View(Context context, XServer inputProxy, boolean validationEnabled) {
         super(context, inputProxy);
         highRefreshRate = PreferenceManager.getDefaultSharedPreferences(context)
                 .getBoolean("high_refresh_rate_mode", false);
         displayManager = (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
-        handle = nativeCreate(inputProxy.screenInfo.width, inputProxy.screenInfo.height);
+        handle = nativeCreate(inputProxy.screenInfo.width, inputProxy.screenInfo.height, validationEnabled);
         inputProxy.setXServerView(this);
         inputProxy.cursorLocker.setEnabled(false);
         inputProxy.pointer.addOnPointerMotionListener(this);
@@ -122,9 +125,12 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     }
     public synchronized void setReadyCallback(Runnable callback) { readyCallback = callback; if (ready) callback.run(); }
     public synchronized void setDiagnosticsEnabled(boolean enabled) {
+        setDiagnosticsEnabled(enabled, true);
+    }
+    public synchronized void setDiagnosticsEnabled(boolean enabled, boolean commandCacheEnabled) {
         diagnosticsEnabled = enabled;
         if (enabled) reportedRefresh = reportedRequest = -1f;
-        if (handle != 0) nativeDiagnostics(handle, enabled);
+        if (handle != 0) nativeDiagnostics(handle, enabled, commandCacheEnabled);
     }
     private synchronized void startDisplayListener() {
         if (!destroyed && !displayListenerRegistered && displayManager != null && isAttachedToWindow()) {
@@ -278,18 +284,19 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     }
     private static native void nativeHudEnabled(long handle, boolean enabled);
     private static native String[] nativeHudSnapshot(long handle);
-    private static native long nativeCreate(int width, int height);
+    private static native long nativeCreate(int width, int height, boolean validationEnabled);
     private static native void nativeStart(long handle, String socket, String shm);
     private static native void nativeDestroy(long handle);
     private static native void nativeSurface(long handle, Surface surface);
     private static native void nativeInput(long handle, int kind, int a, int b);
     private static native void nativeOptions(long handle, boolean fullscreen, boolean cursor, int fps, float refresh);
     private static native void nativeRefreshRates(long handle, int[] rates);
-    private static native void nativeDiagnostics(long handle, boolean enabled);
+    private static native void nativeDiagnostics(long handle, boolean enabled, boolean commandCacheEnabled);
     private static native void nativeUnviewableWMClasses(long handle, String[] values);
     private static native String nativeError(long handle);
     private static native boolean nativeHasContent(long handle);
     private static native long nativeFocusHandle(long handle);
     private static native boolean nativeHasWindow(long handle, long hwnd);
 }
+
 

@@ -16,8 +16,8 @@
 #include "native_screen.h"
 
 namespace xorg {
-XServer::XServer(jobject instance, ScreenInfo info)
-    : java_instance(instance), screen_info(info), resource_ids(128) {
+XServer::XServer(jobject instance, ScreenInfo info, bool validation)
+    : java_instance(instance), validationEnabled(validation), screen_info(info), resource_ids(128) {
     start_time = GetSystemTime();
     // NativeScreen starts workers during construction. Their notification fd
     // must already exist and remain immutable until those workers are joined.
@@ -90,7 +90,9 @@ void XServer::NotifyScreen() {
 void XServer::SetWritable(int fd, bool enabled) {
     if (!epoll_fd.IsValid()) return;
     epoll_event e{}; e.data.fd = fd;
-    e.events = EPOLLIN | EPOLLRDHUP | (enabled ? EPOLLOUT : 0);
+    const auto client = clients.find(fd);
+    const bool suspended = client != clients.end() && client->second->IsInputSuspended();
+    e.events = (suspended ? 0 : EPOLLIN) | EPOLLRDHUP | (enabled ? EPOLLOUT : 0);
     int result;
     do { result = epoll_ctl(epoll_fd.Handle(), EPOLL_CTL_MOD, fd, &e); }
     while (result < 0 && errno == EINTR);
@@ -125,7 +127,11 @@ void XServer::RunLoop() {
             }
         }
         for (int i = 0; i < count; ++i) {
+            auto& nativeScreen = static_cast<NativeScreen&>(*screen);
+            const bool trace = nativeScreen.DiagnosticsEnabled();
+            const auto lockStart = trace ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
             auto lock = Lock();
+            if (trace) nativeScreen.RecordServerLock(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - lockStart).count());
             int fd = events[i].data.fd;
             if (fd == shutdown_fd.Handle()) { clients.clear(); return; }
             if (fd == server_fd.Handle()) {
@@ -183,6 +189,9 @@ void XServer::AddResource(const sp<XResource>& r) {
 XResource* XServer::GetResource(u32 id) const {
     auto it = resources.find(id); return it == resources.end() ? nullptr : it->second.get();
 }
+sp<XResource> XServer::ShareResource(u32 id) const {
+    auto it = resources.find(id); return it == resources.end() ? nullptr : it->second;
+}
 void XServer::RemoveResource(u32 id) {
     auto* resource = GetResource(id);
     if (resource && resource->GetType() == XResourceType::Window) {
@@ -196,4 +205,5 @@ u64 XServer::GetSystemTime() const {
 }
 u32 XServer::GetTimestamp() const { return std::max<u32>(1, GetSystemTime() - start_time); }
 }
+
 

@@ -2,6 +2,7 @@
 
 #include <list>
 #include <X11/X.h>
+#include <X11/Xproto.h>
 #include "base/2d.h"
 #include "core/property.h"
 #include "core/xresource.h"
@@ -28,7 +29,7 @@ struct WindowAttributes {
     u32 bit_gravity{CenterGravity};
     u32 event_mask{};
     u16 dont_propagate_mask{};
-    Cursor* cursor{};
+    sp<Cursor> cursor;
 
     bool Update(Window* window, u32 mask, const u32* values, XClient* client);
 };
@@ -51,7 +52,7 @@ public:
 
     Cursor* GetCursor() const {
         if (attributes.cursor) {
-            return attributes.cursor;
+            return attributes.cursor.get();
         }
         return parent ? parent->GetCursor() : nullptr;
     }
@@ -63,6 +64,7 @@ public:
     bool IsInputOnly() const { return is_input_only; }
 
     bool IsMapped() const { return attributes.mapped; }
+    bool IsCompositeRedirected() const { return composite_redirected; }
 
     Drawable* GetDrawable() const { return drawable.get(); }
     const sp<Drawable>& SharedDrawable() const { return drawable; }
@@ -130,6 +132,10 @@ public:
         }
         return mask;
     }
+    u32 GetEventMask(XClient* client) const {
+        auto i = client_masks.find(client);
+        return i == client_masks.end() ? 0 : i->second;
+    }
 
     void PutClientMask(XClient* client, u32 mask) { client_masks[client] = mask; }
 
@@ -157,7 +163,7 @@ public:
 
     void PointerMotionNotify(s32 x, s32 y, u32 button_mask, XClient* grab_client);
 
-    Window* ButtonNotify(bool down, s32 x, s32 y, u32 button, XClient* grab_client);
+    Window* ButtonNotify(bool down, s32 x, s32 y, u32 button, XClient* grab_client, XClient** recipient = nullptr);
 
     bool KeyNotify(bool down, s32 x, s32 y, u32 keycode, XClient* grab_client);
 
@@ -184,11 +190,13 @@ public:
 
 private:
     friend class WindowManager;
+    bool RouteGrabEvent(xEvent& event, u32 mask, XClient* client);
 
     WindowManager& window_manager;
     sp<Drawable> drawable{};
 
     bool is_input_only{};
+    bool composite_redirected{};
     Rect out_rect{};
     Rect in_rect{};
     u16 border_width{};

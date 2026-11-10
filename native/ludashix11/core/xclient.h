@@ -29,6 +29,7 @@ public:
     void FlushOutput();
     bool IsWaiting() const { return !await_fences.empty(); }
     bool HasPendingRequests() const { return requestsPending; }
+    bool IsInputSuspended() const { return inputSuspended; }
     void SendPacket(const void* data, size_t size) { WriteImmediately(data, size); }
     u16 Sequence() const { return sequence; }
     int Socket() const { return socket_fd; }
@@ -36,6 +37,7 @@ public:
     void SendEvent(xEvent& event);
 
     XResource* GetResource(u32 id) const;
+    sp<XResource> ShareResource(u32 id) const;
 
     Drawable* GetDrawable(u32 id) const;
     // DRI3 clients may address a GLXWindow wrapper rather than its core X window.
@@ -64,6 +66,8 @@ public:
 private:
     friend class ExtensionManager;
     void ProcGLX();
+    void ProcComposite();
+    void ProcRender();
     void ProcDRI3();
     void ProcPresent();
     void ProcSync();
@@ -72,6 +76,7 @@ private:
     std::vector<u8> pending_output;
     size_t output_offset{};
     bool outputWritable{};
+    bool inputSuspended{};
     XServer& server;
     int socket_fd{};
     bool is_dead{};
@@ -217,3 +222,4 @@ private:
 };
 
 }  // namespace xorg
+

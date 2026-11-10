@@ -18,6 +18,7 @@ enum class XResourceType {
     PresentSubscription,
     GLXContext,
     GLXDrawable,
+    RenderPicture,
 };
 
 class XResource {
@@ -48,4 +49,5 @@ private:
 };
 
 }  // namespace xorg
+
 

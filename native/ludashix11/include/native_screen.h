@@ -2,6 +2,7 @@
 #include <condition_variable>
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <map>
 #include "core/xscreen.h"
 #include "core/xresource.h"
@@ -41,18 +42,22 @@ struct NativeEntry {
 };
 struct NativeFrame {
     bool diagnostics{};
+    bool commandCacheEnabled{true};
     std::vector<NativeEntry> entries;
     std::vector<sp<PresentTicket>> requests;
     sp<NativeDrawable> cursor;
     sp<const std::vector<u8>> cursorPixels;
     int cursorX{}, cursorY{};
     std::chrono::steady_clock::time_point diagnosticSubmit{};
+    std::chrono::steady_clock::time_point diagnosticSelected{};
 };
+using NativeFrameLatch = std::function<void(NativeFrame&)>;
 class NativeRenderer {
 public:
     virtual ~NativeRenderer() = default;
     virtual void Surface(ANativeWindow*) = 0;
-    virtual bool Draw(const NativeFrame&) = 0;
+    // Refresh the retained scene only after the swapchain acquire has finished.
+    virtual bool Draw(NativeFrame&, const NativeFrameLatch& latch = {}) = 0;
     virtual bool ReadyToDraw() const = 0;
     // May run alongside Draw. Only consume submissions already registered by
     // NativeScreen; Draw can publish its fence before returning its frame.
@@ -64,7 +69,7 @@ public:
     virtual size_t Drain() = 0;
     virtual void Options(bool fullscreen, bool cursor, int fps, float refresh) = 0;
 };
-std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 width, u16 height);
+std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 width, u16 height, bool validation = false);
 
 class NativeScreen final : public XScreen {
 public:
@@ -75,6 +80,7 @@ public:
     void UpdateSurface(ANativeWindow*) override;
     void UpdateCursor(Drawable*, s16, s16) override;
     void PostInvalidate() override;
+    void DrawableChanged(Drawable* drawable);
     void WaitIdle() override;
     void SetUpScalerEnabled(bool) override {}
     void SetPostProcessingEnabled(bool) override {}
@@ -82,11 +88,13 @@ public:
     void Subscribe(sp<Subscription>);
     void RemoveClient(XClient*);
     void WindowDestroyed(u32);
+    void WindowGeometryChanged(Window*, u32 pixmapFlags = 0);
     void DispatchCompletions();
     // epoll timeout for delayed producer IDLE notifications (negative = infinite).
     int IdleTimeoutMs() const;
     void ResumeWaitingClients();
     bool FenceTriggered(u32 id) const;
+    void FenceSignaled();
     void SetOptions(bool fullscreen, bool cursor, int fps, float refresh);
     u64 MSC() const;
     float RefreshRate() const { return refresh; }
@@ -100,6 +108,19 @@ public:
     void SetUnviewableWMClasses(std::vector<std::string> classes);
     void WindowPropertyChanged(Window* window, u32 atom);
     void SetDiagnostics(bool enabled);
+    void SetCommandCacheEnabled(bool enabled) { commandCacheEnabled.store(enabled, std::memory_order_relaxed); }
+    void RecordInputRead(u64 ns) { metricInputRead.Record(ns); }
+    void RecordRequest(u64 ns, size_t bytes) {
+        metricDispatch.Record(ns);
+        metricRequests.fetch_add(1, std::memory_order_relaxed);
+        metricRequestBytes.fetch_add(bytes, std::memory_order_relaxed);
+    }
+    void RecordServerLock(u64 ns) { metricServerLock.Record(ns); }
+    void RecordOutputBackpressure(size_t bytes) {
+        metricOutputBlocked.fetch_add(1, std::memory_order_relaxed);
+        u64 old = metricOutputPeak.load(std::memory_order_relaxed);
+        while (old < bytes && !metricOutputPeak.compare_exchange_weak(old, bytes, std::memory_order_relaxed)) {}
+    }
     void ProtocolError(int client, u8 opcode, u8 minor, u8 code, u32 resource);
     bool DiagnosticsEnabled() const { return diagnostics.load(std::memory_order_relaxed); }
     std::string LastError();
@@ -134,7 +155,7 @@ private:
         }
     };
     void Collect(Window*, Scene&, bool ancestorsMapped);
-    bool PatchPresent(const sp<PresentTicket>&);
+    bool PatchPresent(const sp<PresentTicket>&, const sp<PresentTicket>& previousDirect);
     bool IsWindowFiltered(Window*) const;
     void Worker();
     bool PrepareIdle(const sp<PresentTicket>&);
@@ -153,9 +174,13 @@ private:
     std::atomic<u16> randrRate{60};
     std::vector<std::string> unviewableWMClasses;
     std::atomic<bool> diagnostics{false};
+    std::atomic<bool> commandCacheEnabled{true};
     std::atomic<u64> metricPresents{0}, metricIdles{0}, metricCoalesced{0}, metricErrors{0};
-    std::atomic<u64> metricScenePatches{0}, metricSceneBuilds{0}, metricCursorPatches{0};
+    std::atomic<u64> metricScenePatches{0}, metricSceneBuilds{0}, metricCursorPatches{0}, metricDrawablePatches{0}, metricOffscreenWrites{0};
+    std::atomic<u64> metricOffscreenPresents{0};
     Timing metricCompleteDelay, metricIdleDelay;
+    Timing metricInputRead, metricDispatch, metricServerLock;
+    std::atomic<u64> metricRequests{0}, metricRequestBytes{0}, metricOutputBlocked{0}, metricOutputPeak{0};
     ANativeWindow* surface{};
     std::thread worker;
     Scene latest;
@@ -166,11 +191,12 @@ private:
     std::vector<sp<PresentTicket>> deferredIdles;
     std::map<u32, std::chrono::steady_clock::time_point> limiterDeadlines;
     int lastProducerLimit{};
-    std::vector<sp<Subscription>> subscriptions;
+    std::unordered_map<u32, std::vector<sp<Subscription>>> subscriptions;
     sp<NativeDrawable> cursor;
     int cursorX{}, cursorY{};
     u64 cursorSource{}, cursorRevision{};
     std::string error;
 };
 }
+
 

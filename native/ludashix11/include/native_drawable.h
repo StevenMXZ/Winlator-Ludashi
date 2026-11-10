@@ -10,6 +10,7 @@ public:
     void ReadPixels(u8*, s16, s16, u16, u16, u16) override;
     void WritePixels(const u8*, s16, s16, s16, s16, u16, u16, u16) override;
     void WriteBinaryPixels(const u8*, u16, u16, u32, u32) override;
+    void CopyAreaFrom(NativeDrawable& source, s16 sx, s16 sy, s16 dx, s16 dy, u16 w, u16 h);
     void FillRect(s16, s16, u16, u16, u32) override;
     void DrawLines(const Point*, u32, u32, u32) override;
     void DrawPolySegments(const PolySegment*, u32, u32, u32) override;
@@ -29,3 +30,4 @@ private:
     bool locked{};
 };
 }
+

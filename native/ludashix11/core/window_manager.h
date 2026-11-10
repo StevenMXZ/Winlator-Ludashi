@@ -47,10 +47,14 @@ public:
                             const u32* values);
 
     bool ConfigureWindow(XClient* caller_client, Window* window, u32 mask, const u32* values);
+    void RedirectComposite(XClient*, Window*, u8 update, bool redirect);
+    void RemoveCompositeClient(XClient*);
+    void RemoveCompositeWindow(Window*);
+    void CompositeCopy(Window* source, Window* destination, s16 x, s16 y);
 
     void MapWindow(const XClient* caller_client, Window* window);
 
-    void UnmapWindow(Window* window);
+    void UnmapWindow(Window* window, bool invalidate = true);
 
     void FocusInOutNotify(Window* wlose, Window* wgain, Window* wp, Window* wroot, u32 mode) const;
 
@@ -103,12 +107,14 @@ private:
     XClient* grab_keyboard_client{};
     Window* grab_confine_window{};
     Window* grab_pointer_window{};
-    Cursor* grab_cursor{};
+    sp<Cursor> grab_cursor;
     bool grab_pointer_passive{};
     bool grab_pointer_synchronous{};
     bool grab_pointer_owner_events{};
     bool grab_keyboard_synchronous{};
     u32 grab_event_mask{};
+    struct CompositeRedirect { XClient* client; Window* window; u8 update; };
+    std::vector<CompositeRedirect> composite_redirects;
 };
 
 }  // namespace xorg

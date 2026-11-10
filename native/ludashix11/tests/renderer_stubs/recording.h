@@ -69,6 +69,8 @@ struct RecordingDispatch {
 class VulkanRendererContext {
 public:
     struct DrawEntry { VkImage img{}; uint64_t ds{}; VkBuffer upload{}; int x{},y{},w{},h{}; bool isAHB{},needsTransition{}; };
+    void beginNativeGpuTiming(VkCommandBuffer) {}
+    void endNativeGpuTiming(VkCommandBuffer) {}
     RecordingDispatch vk_;
     uint64_t renderPass{1}, nativeNoClearPass{2}, pipeline{3}, opaquePipeline{4}, pipeLayout{5};
     uint64_t sgsrPipeline{6},fsr1Pipeline{7},postfxPipeline{8},stretchPipeline{9};
@@ -98,3 +100,4 @@ public:
 inline VkPipeline VulkanRendererGetOpaquePipeline(VulkanRendererContext* context) {
     return context->opaquePipeline ? context->opaquePipeline : context->pipeline;
 }
+

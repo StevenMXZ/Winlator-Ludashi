@@ -1250,7 +1250,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
                         UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.SYSVSHM_SERVER_PATH)));
         if (isNativeX11Enabled()) {
             ((com.winlator.cmod.widget.NativeX11View) xServerView).setDiagnosticsEnabled(
-                    "1".equals(envVars.get("WINLATOR_X11")));
+                    "1".equals(envVars.get("WINLATOR_X11")),
+                    !"0".equals(envVars.get("WINLATOR_X11_CMD_CACHE")));
             environment.addComponent(new com.winlator.cmod.xenvironment.components.NativeX11Component(
                     (com.winlator.cmod.widget.NativeX11View) xServerView));
             envVars.put("WINLATOR_NATIVE_X11", "1");
@@ -1337,8 +1338,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 : (container != null && container.getRendererNative()));
 
         if (isNativeX11Enabled()) {
+            EnvVars nativeStartupVars = new EnvVars();
+            if (container != null) nativeStartupVars.putAll(container.getEnvVars());
+            if (shortcut != null) nativeStartupVars.putAll(shortcut.getExtra("envVars"));
+            String nativeValidation = nativeStartupVars.get("WINLATOR_VULKAN_VALIDATION");
+            boolean validationEnabled = "1".equals(nativeValidation)
+                    || "true".equalsIgnoreCase(nativeValidation)
+                    || "yes".equalsIgnoreCase(nativeValidation);
             com.winlator.cmod.widget.NativeX11View nativeView =
-                    new com.winlator.cmod.widget.NativeX11View(this, xServer);
+                    new com.winlator.cmod.widget.NativeX11View(this, xServer, validationEnabled);
             nativeView.setReadyCallback(() -> {
                 preloaderDialog.closeOnUiThread();
                 if (!simulateTouchScreen) nativeView.setCursorVisible(true);
@@ -3333,6 +3341,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 registryEditor.removeValue(x11DriverKey, "EmulateModelist");
                 registryEditor.removeValue(x11DriverKey, "EmulateModeset");
             }
+            // Native RENDER provides the libXcursor subset, as in Ludashi
+            // 2da9fba1. Keep Wine GDI on its existing core drawing path.
+            if (isNativeX11Enabled())
+                registryEditor.setStringValue(x11DriverKey, "ClientSideWithRender", "N");
         }
 
         Log.d("XServerDisplayActivity", "RandR Wine mode emulation: "
@@ -3512,5 +3524,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
 }
+
 
 

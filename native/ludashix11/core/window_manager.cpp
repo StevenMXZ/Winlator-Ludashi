@@ -11,6 +11,7 @@
 #include "core/window_manager.h"
 #include "core/xclient.h"
 #include "core/xscreen.h"
+#include "native_screen.h"
 
 namespace xorg {
 
@@ -34,7 +35,7 @@ WindowManager::WindowManager(XServer& server, Mouse& mouse, ScreenInfo screen_in
     const auto cursor =
             std::make_shared<Cursor>(server.GetScreen(), GenerateID(), 0, 1, 0x000000, 0xffffff);
     server.AddResource(cursor);
-    root_window->attributes.cursor = cursor.get();
+    root_window->attributes.cursor = cursor;
 
     focus_window = root_window.get();
     motion_window = root_window.get();
@@ -91,6 +92,53 @@ sp<Window> WindowManager::CreateWindow(XClient* client,
     return window;
 }
 
+void WindowManager::RedirectComposite(XClient* client, Window* window, u8 update, bool redirect) {
+    if (update > 1) throw BadValueError(update);
+    if (window->IsRoot() || window->IsInputOnly()) throw BadMatchError();
+    auto same = [&](const CompositeRedirect& r) {
+        return r.client == client && r.window == window && r.update == update;
+    };
+    if (redirect) {
+        if (std::ranges::any_of(composite_redirects, same)) return;
+        if (update == 1 && std::ranges::any_of(composite_redirects, [&](const auto& r) {
+            return r.window == window && r.update == 1;
+        })) throw BadAccessError();
+        composite_redirects.push_back({client, window, update});
+    } else if (!std::erase_if(composite_redirects, same)) throw BadValueError(window->id);
+    window->composite_redirected = std::ranges::any_of(composite_redirects,
+        [&](const auto& r) { return r.window == window; });
+}
+void WindowManager::RemoveCompositeClient(XClient* client) {
+    // Only redirected windows are visited; no resource-tree scan per request.
+    for (const auto& r : composite_redirects) if (r.client == client) r.window->composite_redirected = false;
+    std::erase_if(composite_redirects, [&](const auto& r) { return r.client == client; });
+    for (const auto& r : composite_redirects) r.window->composite_redirected = true;
+    if (grab_pointer_client == client) UngrabPointer(client, 0);
+}
+void WindowManager::RemoveCompositeWindow(Window* window) {
+    std::erase_if(composite_redirects, [&](const auto& r) { return r.window == window; });
+    window->composite_redirected = false;
+}
+void WindowManager::CompositeCopy(Window* source, Window* destination, s16 x, s16 y) {
+    // Same policy as public 4.1 VulkanXServerView.nativeCompositeRedirect.
+    if (destination->IsAncestorOf(source)) return;
+    Window* sibling = source;
+    while (sibling && sibling->parent != destination->parent) sibling = sibling->parent;
+    if (!sibling || sibling == destination || !sibling->parent) return;
+    auto& children = sibling->parent->children;
+    auto src = std::ranges::find(children, sibling), dst = std::ranges::find(children, destination);
+    if (src == children.end() || dst == children.end()) return;
+    const s32 newX = destination->out_rect.left - destination->parent->in_rect.left + x;
+    const s32 newY = destination->out_rect.top - destination->parent->in_rect.top + y;
+    const bool moved = sibling->out_rect.left - sibling->parent->in_rect.left != newX ||
+                       sibling->out_rect.top - sibling->parent->in_rect.top != newY;
+    bool below = false;
+    for (auto it = src; it != children.end(); ++it) if (it == dst) { below = true; break; }
+    if (!moved && !below) return; // Repeated copies do no pixel or scene work.
+    std::array<u32, 4> values{u32(newX), u32(newY), destination->id, Above};
+    ConfigureWindow(nullptr, sibling, CWX | CWY | CWSibling | CWStackMode, values.data());
+}
+
 bool WindowManager::ConfigureWindow(XClient* caller_client,
                                     Window* window,
                                     u32 mask,
@@ -101,6 +149,7 @@ bool WindowManager::ConfigureWindow(XClient* caller_client,
     const s32 old_height = window->in_rect.bottom - window->in_rect.top;
     const s32 old_x = window->out_rect.left - window->parent->in_rect.left;
     const s32 old_y = window->out_rect.top - window->parent->in_rect.top;
+    const u32 old_border_width = window->border_width;
 
     s32 width = old_width;
     s32 height = old_height;
@@ -131,8 +180,10 @@ bool WindowManager::ConfigureWindow(XClient* caller_client,
                 border_width = value;
                 break;
             case CWSibling:
-                sibling = caller_client->GetResource(value)->As<Window>();
-                if (!sibling) {
+                if (auto* resource = server.GetResource(value);
+                    resource && resource->GetType() == XResourceType::Window) {
+                    sibling = resource->As<Window>();
+                } else {
                     throw BadWindowError(value);
                 }
                 break;
@@ -144,7 +195,11 @@ bool WindowManager::ConfigureWindow(XClient* caller_client,
         }
     }
 
-    if (!window->GetAttributes().override_redirect) {
+    if (sibling && (sibling == window || sibling->parent != window->parent)) throw BadMatchError();
+    if ((mask & CWStackMode) && stack_mode > Opposite) throw BadValueError(stack_mode);
+    if (width <= 0 || height <= 0 || width > 65535 || height > 65535) throw BadValueError(0);
+    if (caller_client && !window->GetAttributes().override_redirect) {
+        bool redirected = false;
         xEvent event{};
         event.u.configureRequest.window = window->id;
         event.u.configureRequest.sibling =
@@ -159,22 +214,26 @@ bool WindowManager::ConfigureWindow(XClient* caller_client,
         event.u.u.type = ConfigureRequest;
         event.u.u.detail = (mask & CWStackMode) ? stack_mode : Above;
         window->parent->ForeachEventListeners(SubstructureRedirectMask, [&](XClient* client) {
-            if (client != window->owner_client) {
+            if (client != caller_client) {
                 client->SendEvent(event);
+                redirected = true;
                 return true;
             }
             return false;
         });
+        if (redirected) return false;
     }
-    if (width != old_width || height != old_height) {
+    if (caller_client && (width != old_width || height != old_height)) {
         window->ForeachEventListeners(ResizeRedirectMask, [&](XClient* client) {
-            if (client != window->owner_client) {
+            if (client != caller_client) {
                 xEvent event{};
                 event.u.resizeRequest.window = window->id;
                 event.u.resizeRequest.width = static_cast<CARD16>(width);
                 event.u.resizeRequest.height = static_cast<CARD16>(height);
                 event.u.u.type = ResizeRequest;
                 client->SendEvent(event);
+                width = old_width;
+                height = old_height;
                 return true;
             }
             return false;
@@ -301,6 +360,7 @@ bool WindowManager::ConfigureWindow(XClient* caller_client,
     }
     if (changed) {
         xEvent event{};
+        event.u.configureNotify.event = window->id;
         event.u.configureNotify.window = window->id;
         event.u.configureNotify.aboveSibling = sibling ? sibling->id : None;
         event.u.configureNotify.x = x;
@@ -313,7 +373,7 @@ bool WindowManager::ConfigureWindow(XClient* caller_client,
         window->ForeachEventListeners(StructureNotifyMask,
                                       [&](XClient* client) { client->SendEvent(event); });
 
-        event.u.configureNotify.window = window->parent->id;
+        event.u.configureNotify.event = window->parent->id;
         window->parent->ForeachEventListeners(SubstructureNotifyMask,
                                               [&](XClient* client) { client->SendEvent(event); });
         if (window->in_rect.left != old_left || window->in_rect.top != old_top ||
@@ -327,6 +387,8 @@ bool WindowManager::ConfigureWindow(XClient* caller_client,
         }
 
         window->UpdateAffectedVisibility();
+        if (x != old_x || y != old_y || width != old_width || height != old_height || border_width != old_border_width)
+            static_cast<NativeScreen&>(server.GetScreen()).WindowGeometryChanged(window);
     }
     window->MakeExposure();
     UpdatePointer(NotifyNormal);
@@ -382,7 +444,7 @@ void WindowManager::MapWindow(const XClient* caller_client, Window* window) {
     }
 }
 
-void WindowManager::UnmapWindow(Window* window) {
+void WindowManager::UnmapWindow(Window* window, bool invalidate) {
     if (!window->IsMapped()) {
         return;
     }
@@ -403,7 +465,11 @@ void WindowManager::UnmapWindow(Window* window) {
                                           [&](XClient* client) { client->SendEvent(event); });
     RevertFocus(window);
     window->UpdateAffectedVisibility();
+    if ((grab_pointer_window && (grab_pointer_window == window || window->IsAncestorOf(grab_pointer_window))) ||
+        (grab_confine_window && (grab_confine_window == window || window->IsAncestorOf(grab_confine_window))))
+        UngrabPointer(grab_pointer_client, 0);
     UpdatePointer(NotifyNormal);
+    if (invalidate) server.GetScreen().PostInvalidate(ScreenDirtyFlags::kWindow);
 }
 
 void WindowManager::FocusInOutNotify(
@@ -654,8 +720,9 @@ void WindowManager::RemoveAllSubWindows(Window* window, std::vector<Window*>& wi
     if (window->IsRoot()) {
         return;
     }
+    RemoveCompositeWindow(window);
     if (window->IsMapped()) {
-        UnmapWindow(window);
+        UnmapWindow(window, false); // DestroyWindow publishes the complete tree once.
     }
     for (const auto w : window->children) {
         RemoveAllSubWindows(w, windows_to_remove);
@@ -724,7 +791,7 @@ u32 WindowManager::GrabPointer(XClient* client,
     }
     grab_pointer_window = grab_window;
     grab_confine_window = confine_window;
-    grab_cursor = cursor;
+    grab_cursor = cursor ? std::static_pointer_cast<Cursor>(server.ShareResource(cursor->id)) : nullptr;
     grab_pointer_client = client;
     grab_event_mask = event_mask;
     grab_pointer_passive = false;
@@ -744,6 +811,7 @@ void WindowManager::UngrabPointer(const XClient* client, u32 time) {
     grab_confine_window = nullptr;
     grab_cursor = nullptr;
     grab_pointer_client = nullptr;
+    grab_pointer_passive = false;
     UpdatePointer(NotifyUngrab);
 }
 
@@ -775,7 +843,7 @@ Cursor* WindowManager::UpdatePointerPosition(s32 x, s32 y, u32 mode, bool notify
         window = GetPointerWindow(x, y);
     }
     if (grab_cursor) {
-        cursor = grab_cursor;
+        cursor = grab_cursor.get();
     } else {
         cursor = window->GetCursor();
     }
@@ -804,7 +872,16 @@ void WindowManager::UpdatePointerButton(u16 button, bool down) {
     const s32 y = mouse.GetY();
     if (!grab_pointer_window) {
         Window* w = GetPointerWindow(x, y);
-        w->ButtonNotify(down, x, y, button, nullptr);
+        XClient* recipient = nullptr;
+        Window* target = w->ButtonNotify(down, x, y, button, nullptr, &recipient);
+        // X11 starts an implicit active grab after a delivered ButtonPress.
+        // A drag must keep receiving motion/release after leaving the window.
+        if (down && target && recipient) {
+            const u32 mask = target->GetEventMask(recipient);
+            GrabPointer(recipient, target, nullptr, nullptr, 0, mask,
+                        bool(mask & OwnerGrabButtonMask), false, false);
+            grab_pointer_passive = true;
+        }
     } else {
         ASSERT(!grab_pointer_synchronous);
         grab_pointer_window->GrabButtonNotify(down,
@@ -815,6 +892,8 @@ void WindowManager::UpdatePointerButton(u16 button, bool down) {
                                               grab_event_mask,
                                               grab_pointer_owner_events);
     }
+    if (!down && grab_pointer_passive && mouse.GetButtons() == 0)
+        UngrabPointer(grab_pointer_client, 0);
 }
 
 void WindowManager::OnPointerMove(s32 x, s32 y) {
@@ -851,3 +930,4 @@ u32 WindowManager::GetButtonMasks() const {
 XScreen& WindowManager::GetScreen() const { return server.GetScreen(); }
 
 }  // namespace xorg
+

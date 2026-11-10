@@ -107,6 +107,9 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
     if (vk_.BeginCommandBuffer(cb, &bi) != VK_SUCCESS)
         throw std::runtime_error("begin cb");
 
+#ifdef LUDASHI_NATIVE_X11
+    beginNativeGpuTiming(cb);
+#endif
     ahbTransitions.clear();
     preUpload.clear();
     postUpload.clear();
@@ -408,6 +411,9 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
         }
     }
 
+#ifdef LUDASHI_NATIVE_X11
+    endNativeGpuTiming(cb);
+#endif
     VkResult endStatus = vk_.EndCommandBuffer(cb);
     if (endStatus != VK_SUCCESS) {
         RLOG_E("recordCmdBuf: EndCommandBuffer failed status=%d draws=%zu mode=%d",
@@ -415,6 +421,7 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
         throw std::runtime_error("end cb");
     }
 }
+
 
 
 

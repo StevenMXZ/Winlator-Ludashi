@@ -350,7 +350,7 @@ void XClient::ProcShmRequest() {
             throw BadMatchError();
         d->WritePixels(static_cast<const u8*>(entry.addr) + r->offset, r->srcX, r->srcY,
                        r->dstX, r->dstY, r->srcWidth, r->srcHeight, r->totalWidth);
-        server.GetScreen().PostInvalidate();
+        static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(d);
         static_cast<NativeScreen&>(server.GetScreen()).HudFrame(r->drawable);
         if (r->sendEvent) {
             xShmCompletionEvent event{};
@@ -820,6 +820,10 @@ void XClient::ProcConfigureWindow() {
     if (!window) {
         throw BadWindowError(req->window);
     }
+    if (req->mask & ~u16(CWX | CWY | CWWidth | CWHeight | CWBorderWidth | CWSibling | CWStackMode))
+        throw BadValueError(req->mask);
+    if (request_size != sizeof(*req) + std::popcount(req->mask) * 4u) throw BadLengthError();
+    if (window->IsRoot()) return;
     server.GetWindowManager().ConfigureWindow(
             this, window, req->mask, reinterpret_cast<const u32*>(req + 1));
 }
@@ -977,7 +981,7 @@ void XClient::ProcPolyFillRectangle() {
                            rectangles[i].height,
                            background);
     }
-    server.GetScreen().PostInvalidate();
+    static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(drawable);
 }
 
 void XClient::ProcPolyLine() {
@@ -994,7 +998,7 @@ void XClient::ProcPolyLine() {
     const auto points = reinterpret_cast<const Point*>(req + 1);
     const u32 count = (request_size - sizeof(xPolyLineReq)) / sizeof(xPoint);
     drawable->DrawLines(points, count, gc->GetForeground() | 0xff000000, gc->GetLineWidth());
-    server.GetScreen().PostInvalidate();
+    static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(drawable);
 }
 
 void XClient::ProcPolySegment() {
@@ -1012,7 +1016,7 @@ void XClient::ProcPolySegment() {
     const u32 count = (request_size - sizeof(xPolySegmentReq)) / sizeof(xSegment);
     drawable->DrawPolySegments(
             segments, count, gc->GetForeground() | 0xff000000, gc->GetLineWidth());
-    server.GetScreen().PostInvalidate();
+    static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(drawable);
 }
 
 void XClient::ProcPutImage() {
@@ -1063,7 +1067,7 @@ void XClient::ProcPutImage() {
         throw BadMatchError();
     }
     static_cast<NativeScreen&>(server.GetScreen()).HudFrame(req->drawable);
-    server.GetScreen().PostInvalidate();
+    static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(drawable);
 }
 
 void XClient::ProcGetImage() {
@@ -1179,3 +1183,4 @@ void XClient::ProcWarpPointer() {
 }
 
 }  // namespace xorg
+

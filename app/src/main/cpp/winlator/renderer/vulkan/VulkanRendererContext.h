@@ -4,6 +4,7 @@
 #include <list>
 #ifdef LUDASHI_NATIVE_X11
 #include "native_composition.h"
+#include "native_command_cache.h"
 #endif
 #include <cstddef>
 #include <vulkan/vulkan_android.h>
@@ -99,6 +100,13 @@ struct VkTable {
     PFN_vkResetFences ResetFences;
     PFN_vkGetFenceStatus GetFenceStatus;
 
+#ifdef LUDASHI_NATIVE_X11
+    PFN_vkCreateQueryPool CreateQueryPool;
+    PFN_vkDestroyQueryPool DestroyQueryPool;
+    PFN_vkGetQueryPoolResults GetQueryPoolResults;
+    PFN_vkCmdResetQueryPool CmdResetQueryPool;
+    PFN_vkCmdWriteTimestamp CmdWriteTimestamp;
+#endif
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID GetAndroidHardwareBufferPropertiesANDROID;
 };
 
@@ -197,6 +205,20 @@ public:
     NativeVulkanMetrics nativeMetrics;
     VkRenderPass nativeNoClearPass = VK_NULL_HANDLE;
     void reportNativeMetrics();
+    void prepareNativeGpuTiming(uint32_t slot);
+    void beginNativeGpuTiming(VkCommandBuffer cb);
+    void endNativeGpuTiming(VkCommandBuffer cb);
+    VkQueryPool nativeGpuQueries = VK_NULL_HANDLE;
+    bool nativeGpuAttempted{};
+    bool nativeCommandCacheEnabled{true};
+    // Native adapter only; invoked after acquire/image waits, before scene reads.
+    void (*nativeFrameReady)(void*){};
+    void* nativeFrameReadyData{};
+    uint32_t nativeTimestampBits{};
+    float nativeTimestampPeriod{};
+    std::array<bool, MAX_FRAMES_IN_FLIGHT> nativeGpuPending{};
+    NativeCommandCache<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> nativeCommands;
+    uint64_t nativeTextureEpoch{};
 #endif
     void removeWindow(int64_t id);
     void clearBackbuffer() {}
@@ -556,5 +578,6 @@ public:
                                VkPipelineStageFlags srcS, VkPipelineStageFlags dstS);
     VkShaderModule  makeShader(const uint32_t* code, size_t sz);
 };
+
 
 

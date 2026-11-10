@@ -5,6 +5,7 @@
 #include "base/log.h"
 #include "core/exceptions.h"
 #include "core/window.h"
+#include "core/window_manager.h"
 #include "core/xclient.h"
 #include "core/xclient_dispatch.h"
 #include "native_screen.h"
@@ -25,6 +26,8 @@ XClient::XClient(XServer& server, int fd) : server(server), socket_fd(fd), input
 
 XClient::~XClient() {
     is_dead = true;
+    if (!await_fences.empty()) server.RemoveSyncWaiter();
+    server.GetWindowManager().RemoveCompositeClient(this);
     server.GetSelectionManager().RemoveClient(this);
     static_cast<NativeScreen&>(server.GetScreen()).RemoveClient(this);
     server.GetResourceIDs().Recycle(rid_base);
@@ -41,7 +44,15 @@ void XClient::HandleRequest() {
     // the next request, so explicitly reschedule it even without socket EPOLLIN.
     requestsPending = false;
     size_t handled{};
-    while (handled < 64 && !is_dead && ReadRequestBuffer()) {
+    auto& screen = static_cast<NativeScreen&>(server.GetScreen());
+    const bool trace = screen.DiagnosticsEnabled();
+    using Clock = std::chrono::steady_clock;
+    while (handled < 64 && !is_dead) {
+        const auto readStart = trace ? Clock::now() : Clock::time_point{};
+        const bool ready = ReadRequestBuffer();
+        if (trace) screen.RecordInputRead(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - readStart).count());
+        if (!ready) break;
+        const auto dispatchStart = trace ? Clock::now() : Clock::time_point{};
         if (!authenticated) {
             ProcAuthenticateRequest();
         } else {
@@ -62,10 +73,18 @@ void XClient::HandleRequest() {
                 WriteImmediately(&error, sizeof(error));
             }
         }
+        if (trace) screen.RecordRequest(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - dispatchStart).count(), request_size);
         ConsumeRequestBuffer();
         ++handled;
     }
     requestsPending = handled == 64 && !is_dead && !IsWaiting();
+    const bool suspended = IsWaiting();
+    if (inputSuspended != suspended) {
+        inputSuspended = suspended;
+        // Level-triggered EPOLLIN would otherwise spin on unread requests
+        // queued behind AwaitFence. Completion resumes this client explicitly.
+        server.SetWritable(socket_fd, outputWritable);
+    }
 }
 
 void XClient::SendEvent(xEvent& event) {
@@ -103,6 +122,8 @@ void XClient::WriteImmediately(const void* data, size_t size) {
         }
     }
     pending_output.insert(pending_output.end(), bytes, bytes + size);
+    auto& screen = static_cast<NativeScreen&>(server.GetScreen());
+    if (screen.DiagnosticsEnabled()) screen.RecordOutputBackpressure(pending_output.size() - output_offset);
     // Queue only the unsent tail after a partial write. Already-blocked sockets
     // are flushed by EPOLLOUT instead of retrying send for every new packet.
     if (!outputWritable) {
@@ -166,6 +187,7 @@ void XClient::AddResource(const sp<XResource>& resource) {
 }
 
 XResource* XClient::GetResource(u32 id) const { return server.GetResource(id); }
+sp<XResource> XClient::ShareResource(u32 id) const { return server.ShareResource(id); }
 
 Drawable* XClient::GetDrawable(u32 id) const {
     const auto res = GetResource(id);
@@ -205,6 +227,7 @@ bool XClient::ReadRequestBuffer() {
         bool any = std::ranges::any_of(await_fences, [&](u32 id) { return screen.FenceTriggered(id); });
         if (!any) return false;
         await_fences.clear();
+        server.RemoveSyncWaiter();
     }
     auto fill = [this](size_t size) {
         if (size > 16 * 1024 * 1024 || size < request_size)
@@ -241,4 +264,5 @@ bool XClient::ReadRequestBuffer() {
 }
 
 } // namespace xorg
+
 

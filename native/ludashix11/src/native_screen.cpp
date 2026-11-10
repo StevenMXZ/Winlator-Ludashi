@@ -62,8 +62,9 @@ void NativeScreen::UpdateCursor(Drawable* d, s16 x, s16 y) {
             latest.cursor = cursor;
             latest.cursorPixels = cursor ? cursor->Pixels() : nullptr;
             latest.cursorX = x; latest.cursorY = y;
-            dirty = true;
-            cv.notify_one();
+            // One pending scene needs one wake, even during a burst of input.
+            // Retirement separately wakes the worker when a GPU slot becomes free.
+            if (!std::exchange(dirty, true)) cv.notify_one();
             if (DiagnosticsEnabled()) metricCursorPatches.fetch_add(1, std::memory_order_relaxed);
             return;
         }
@@ -141,6 +142,28 @@ void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
     // game windows can be parented beneath the filtered Explorer desktop.
     for (auto* child : w->GetChildren()) Collect(child, frame, viewable);
 }
+void NativeScreen::DrawableChanged(Drawable* drawable) {
+    // Called under XServer::Lock: pixels changed, but geometry/visibility did not.
+    auto* image = static_cast<NativeDrawable*>(drawable);
+    {
+        std::lock_guard lock(state);
+        if (sceneCurrent) {
+            bool visible = false;
+            for (auto& entry : latest.entries) if (entry.drawable.get() == image) {
+                entry.pixels = image->Pixels();
+                entry.revision = image->Revision();
+                visible = true;
+            }
+            if (visible) {
+                if (!std::exchange(dirty, true)) cv.notify_one();
+                if (DiagnosticsEnabled()) metricDrawablePatches.fetch_add(1, std::memory_order_relaxed);
+            } else if (DiagnosticsEnabled()) metricOffscreenWrites.fetch_add(1, std::memory_order_relaxed);
+            // Offscreen/occluded content will be collected if later made visible.
+            return;
+        }
+    }
+    PostInvalidate();
+}
 void NativeScreen::PostInvalidate() {
     if (DiagnosticsEnabled()) metricSceneBuilds.fetch_add(1, std::memory_order_relaxed);
     Scene frame;
@@ -177,14 +200,24 @@ void NativeScreen::PostInvalidate() {
     requests.clear();
     latest = std::move(frame);
     sceneCurrent = true;
-    dirty = true;
-    cv.notify_one();
+    // A pending scene is replaced in place; it needs no additional wake.
+    if (!std::exchange(dirty, true)) cv.notify_one();
 }
-bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket) {
+bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket, const sp<PresentTicket>& previousDirect) {
     std::lock_guard lock(state);
     if (!sceneCurrent) return false;
     auto previous = latest.tickets.find(ticket->window);
-    if (previous == latest.tickets.end()) return false;
+    if (previous == latest.tickets.end()) {
+        // A hidden/filtered/occluded window has no selected entry. Content-only
+        // Presents cannot change visibility when extent and offsets are stable.
+        // Retain its newest buffer in direct, acknowledge normally, and avoid a
+        // full tree walk/composite that would repaint an unrelated foreground.
+        if (!previousDirect || previousDirect->x != ticket->x || previousDirect->y != ticket->y ||
+            previousDirect->drawable->GetWidth() != ticket->drawable->GetWidth() ||
+            previousDirect->drawable->GetHeight() != ticket->drawable->GetHeight()) return false;
+        if (DiagnosticsEnabled()) metricOffscreenPresents.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
     const auto old = previous->second;
     // Size/offset changes can alter fullscreen culling. Rebuild in those cases,
     // and when the window is absent/occluded in the current scene snapshot.
@@ -207,8 +240,9 @@ bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket) {
         } else ++i;
     }
     latest.requests.push_back(ticket);
-    dirty = true;
-    cv.notify_one();
+    // Do not wake a slot-blocked worker for every producer Present. It will
+    // consume the newest snapshot after retirement notifies cv, or after Draw.
+    if (!std::exchange(dirty, true)) cv.notify_one();
     if (DiagnosticsEnabled()) metricScenePatches.fetch_add(1, std::memory_order_relaxed);
     return true;
 }
@@ -279,8 +313,9 @@ void NativeScreen::Present(sp<PresentTicket> ticket) {
         deadline = std::max(deadline, now) + std::chrono::nanoseconds(1000000000LL / limit);
         ticket->releaseAfter = deadline;
     }
-    direct[ticket->window] = ticket;
-    if (!PatchPresent(ticket)) {
+    auto& selected = direct[ticket->window];
+    auto previousDirect = std::exchange(selected, ticket);
+    if (!PatchPresent(ticket, previousDirect)) {
         requests.push_back(ticket);
         PostInvalidate();
     }
@@ -295,14 +330,19 @@ void NativeScreen::Present(sp<PresentTicket> ticket) {
     }
 }
 void NativeScreen::Subscribe(sp<Subscription> sub) {
-    subscriptions.erase(std::remove_if(subscriptions.begin(), subscriptions.end(),
-        [&](auto& s) { return s->id == sub->id && s->client == sub->client; }), subscriptions.end());
-    if (sub->mask) subscriptions.push_back(std::move(sub));
+    auto i = subscriptions.find(sub->window);
+    if (i != subscriptions.end()) {
+        std::erase_if(i->second, [&](const auto& s) { return s->id == sub->id && s->client == sub->client; });
+        if (i->second.empty() && !sub->mask) subscriptions.erase(i);
+    }
+    if (sub->mask) subscriptions[sub->window].push_back(std::move(sub));
 }
 void NativeScreen::RemoveClient(XClient* client) {
     { std::lock_guard lock(state); sceneCurrent = false; }
-    subscriptions.erase(std::remove_if(subscriptions.begin(), subscriptions.end(),
-        [client](auto& s) { return s->client == client; }), subscriptions.end());
+    for (auto i = subscriptions.begin(); i != subscriptions.end();) {
+        std::erase_if(i->second, [client](const auto& s) { return s->client == client; });
+        if (i->second.empty()) i = subscriptions.erase(i); else ++i;
+    }
     for (auto i = direct.begin(); i != direct.end();) {
         auto* w = server.GetResource(i->first);
         if (!w || (w->GetType() == XResourceType::Window && w->As<Window>()->GetClient() == client))
@@ -310,13 +350,38 @@ void NativeScreen::RemoveClient(XClient* client) {
         else ++i;
     }
 }
+void NativeScreen::WindowGeometryChanged(Window* window, u32 pixmapFlags) {
+    // Match Java 40cfb9c8: Mesa DRI3/Freedreno listens to Present's GenericEvent,
+    // independently of core StructureNotifyMask/ConfigureNotify subscriptions.
+    auto selected = subscriptions.find(window->id);
+    if (selected == subscriptions.end()) return;
+    const auto* extension = server.GetExtensionManager().FindExtension("Present");
+    const auto& rect = window->GetOutRect();
+    const auto* parent = window->GetParent();
+    for (const auto& sub : selected->second) if (sub->mask & PresentConfigureNotifyMask) {
+        xPresentConfigureNotify event{};
+        static_assert(sizeof(event) == 40);
+        event.type = GenericEvent; event.extension = extension->base;
+        event.sequenceNumber = sub->client->Sequence();
+        event.length = (sizeof(event) - 32) / 4; event.evtype = PresentConfigureNotify;
+        event.eid = sub->id; event.window = window->id;
+        event.x = rect.left - (parent ? parent->GetInRect().left : 0);
+        event.y = rect.top - (parent ? parent->GetInRect().top : 0);
+        event.width = event.pixmap_width = window->GetWidth();
+        event.height = event.pixmap_height = window->GetHeight();
+        event.pixmap_flags = pixmapFlags;
+        sub->client->SendPacket(&event, sizeof(event));
+    }
+}
 void NativeScreen::WindowDestroyed(u32 id) {
+    if (auto* resource = server.GetResource(id); resource && resource->GetType() == XResourceType::Window)
+        WindowGeometryChanged(resource->As<Window>(), 1); // Java PIXMAP_FLAG_WINDOW_DESTROYED.
     if (hudWindow == id) { hudWindow = 0; hudFrames = 0; }
     { std::lock_guard lock(state); sceneCurrent = false; }
     direct.erase(id);
     limiterDeadlines.erase(id);
     waiting.erase(std::remove_if(waiting.begin(), waiting.end(), [id](auto& t) { return t->window == id; }), waiting.end());
-    subscriptions.erase(std::remove_if(subscriptions.begin(), subscriptions.end(), [id](auto& sub) { return sub->window == id; }), subscriptions.end());
+    subscriptions.erase(id);
 }
 bool NativeScreen::FenceTriggered(u32 id) const {
     if (!id) return true;
@@ -346,14 +411,18 @@ bool NativeScreen::PrepareIdle(const sp<PresentTicket>& t) {
             metricIdleDelay.Record(std::chrono::duration_cast<std::chrono::nanoseconds>(now - t->diagnosticQueued).count());
     }
     if (auto* f = server.GetResource(t->idleFence); f && f->GetType() == XResourceType::Fence) {
-        f->As<NativeFence>()->triggered = true;
-        server.NotifyScreen();
+        if (!std::exchange(f->As<NativeFence>()->triggered, true)) FenceSignaled();
     }
     return true;
 }
+void NativeScreen::FenceSignaled() {
+    if (server.HasSyncWaiters() || !waiting.empty()) server.NotifyScreen();
+}
 void NativeScreen::Idle(const sp<PresentTicket>& t) {
     if (!PrepareIdle(t)) return;
-    for (auto& sub : subscriptions) if (sub->window == t->window && (sub->mask & PresentIdleNotifyMask)) {
+    auto selected = subscriptions.find(t->window);
+    if (selected == subscriptions.end()) return;
+    for (auto& sub : selected->second) if (sub->mask & PresentIdleNotifyMask) {
         xPresentIdleNotify e{};
         e.type = GenericEvent; e.extension = t->opcode; e.sequenceNumber = sub->client->Sequence();
         e.length = (sizeof(e) - 32) / 4; e.evtype = PresentIdleNotify;
@@ -387,6 +456,8 @@ void NativeScreen::Complete(const sp<PresentTicket>& t, bool idleFirst) {
     if (t->complete) return;
     const bool sendIdle = idleFirst && PrepareIdle(t);
     t->complete = true;
+    auto selected = subscriptions.find(t->window);
+    if (selected == subscriptions.end() && !DiagnosticsEnabled()) return;
     auto now = std::chrono::steady_clock::now().time_since_epoch();
     if (DiagnosticsEnabled() && t->diagnosticQueued != std::chrono::steady_clock::time_point{})
         metricCompleteDelay.Record(std::chrono::duration_cast<std::chrono::nanoseconds>(now - t->diagnosticQueued.time_since_epoch()).count());
@@ -394,7 +465,8 @@ void NativeScreen::Complete(const sp<PresentTicket>& t, bool idleFirst) {
     // Use the same timestamp for UST and MSC instead of another clock read for
     // every subscriber. MSC retains the configured physical refresh rate.
     const u64 msc = u64(ust * double(refresh.load(std::memory_order_relaxed)) / 1000000.0);
-    for (auto& sub : subscriptions) if (sub->window == t->window) {
+    if (selected == subscriptions.end()) return;
+    for (auto& sub : selected->second) {
         const bool idleEvent = sendIdle && (sub->mask & PresentIdleNotifyMask);
         const bool completeEvent = sub->mask & PresentCompleteNotifyMask;
         if (!idleEvent && !completeEvent) continue;
@@ -445,7 +517,7 @@ void NativeScreen::ProtocolError(int client, u8 opcode, u8 minor, u8 code, u32 r
 }
 void NativeScreen::Worker() {
     const auto info = server.GetScreenInfo();
-    auto renderer = CreateNativeRenderer(info.width, info.height);
+    auto renderer = CreateNativeRenderer(info.width, info.height, server.ValidationEnabled());
     // Frames retain the AHBs until the corresponding GPU sampling fences signal.
     // Draw owns context changes. A separate worker retires previously published
     // submissions while Draw may be blocked in acquire/present for another slot.
@@ -512,6 +584,45 @@ void NativeScreen::Worker() {
             }
         }
     });
+    // Reuse the temporary vectors. Never release stale drawable/AHB references
+    // while holding state: resource destruction must not block X11 requests.
+    NativeFrame refreshed;
+    const NativeFrameLatch latch = [&](NativeFrame& frame) {
+        // Recover the reusable temporary after an allocation failure as well.
+        refreshed.entries.clear(); refreshed.requests.clear();
+        refreshed.cursor.reset(); refreshed.cursorPixels.reset();
+        bool changed = false;
+        {
+            std::lock_guard lock(state);
+            if (dirty && sceneCurrent && !surfaceDirty && !optionsDirty && !stop) {
+                refreshed.entries = latest.entries;
+                refreshed.requests.swap(latest.requests);
+                for (const auto& request : frame.requests) {
+                    const bool selected = std::ranges::any_of(refreshed.entries,
+                        [&](const auto& entry) { return entry.ticket == request; });
+                    if (selected) {
+                        if (std::ranges::find(refreshed.requests, request) == refreshed.requests.end())
+                            refreshed.requests.push_back(request);
+                    } else if (frame.diagnostics) metricCoalesced.fetch_add(1, std::memory_order_relaxed);
+                }
+                refreshed.cursor = latest.cursor;
+                refreshed.cursorPixels = latest.cursorPixels;
+                refreshed.cursorX = latest.cursorX; refreshed.cursorY = latest.cursorY;
+                dirty = false;
+                changed = true;
+            }
+        }
+        if (changed) {
+            frame.entries.swap(refreshed.entries);
+            frame.requests.swap(refreshed.requests);
+            frame.cursor.swap(refreshed.cursor);
+            frame.cursorPixels.swap(refreshed.cursorPixels);
+            frame.cursorX = refreshed.cursorX; frame.cursorY = refreshed.cursorY;
+            refreshed.entries.clear(); refreshed.requests.clear();
+            refreshed.cursor.reset(); refreshed.cursorPixels.reset();
+        }
+        if (frame.diagnostics) frame.diagnosticSelected = Clock::now();
+    };
     for (;;) {
         {
             std::unique_lock lock(state);
@@ -549,7 +660,9 @@ void NativeScreen::Worker() {
         bool submitted = false;
         const bool trace = DiagnosticsEnabled();
         frame.diagnostics = trace;
+        frame.commandCacheEnabled = commandCacheEnabled.load(std::memory_order_relaxed);
         const auto drawStart = trace ? Clock::now() : Clock::time_point{};
+        frame.diagnosticSelected = drawStart;
         try {
             if (changeSurface) {
                 // Resizing/detaching is rare. Finish all previous sampling before
@@ -564,7 +677,7 @@ void NativeScreen::Worker() {
             if (changeOptions) renderer->Options(fs, visible, limit, rate);
             // IDLE is a Java-compatible producer acknowledgement, not an
             // eligibility flag. Already-acknowledged scenes remain drawable.
-            if (hasSurface) submitted = renderer->Draw(frame);
+            if (hasSurface) submitted = renderer->Draw(frame, latch);
         } catch (const std::exception& e) {
             std::lock_guard lock(state);
             error = e.what();
@@ -579,7 +692,7 @@ void NativeScreen::Worker() {
             if (submitted) {
                 ++metricSubmits; frame.diagnosticSubmit = now;
                 for (const auto& t : frame.requests) if (t->diagnosticQueued != Clock::time_point{}) {
-                    const u64 queued = nanoseconds(t->diagnosticQueued, drawStart);
+                    const u64 queued = nanoseconds(t->diagnosticQueued, frame.diagnosticSelected);
                     metricQueueNs += queued; metricQueueMaxNs = std::max(metricQueueMaxNs, queued); ++metricQueued;
                 }
             }
@@ -612,7 +725,7 @@ void NativeScreen::Worker() {
                      "draw_us(avg/max)={:.1f}/{:.1f} fence_retire_us(avg/max)={:.1f}/{:.1f} fence_wait_us_avg={:.1f} "
                      "queue_us(avg/max)={:.1f}/{:.1f} "
                      "present_to_complete_us(avg/max)={:.1f}/{:.1f} present_to_idle_us(avg/max)={:.1f}/{:.1f} "
-                     "scene_patch={} scene_build={} cursor_patch={} "
+                     "scene_patch={} scene_build={} cursor_patch={} drawable_patch={} offscreen_write={} offscreen_present={} "
                      "virtual_hz={} panel_hz={:.1f} limiter={} protocol_errors={}",
                      seconds, metricPresents.exchange(0), metricSubmits, metricRetired.exchange(0), metricIdles.exchange(0),
                      metricCoalesced.exchange(0), metricBusy,
@@ -621,8 +734,19 @@ void NativeScreen::Worker() {
                      metricQueueNs / 1000.0 / std::max<u64>(1, metricQueued), metricQueueMaxNs / 1000.0,
                      completeAvg, completeMax, idleAvg, idleMax,
                      metricScenePatches.exchange(0), metricSceneBuilds.exchange(0), metricCursorPatches.exchange(0),
+                     metricDrawablePatches.exchange(0), metricOffscreenWrites.exchange(0),
+                     metricOffscreenPresents.exchange(0),
                      RandrRate(), refresh.load(),
                      producerLimit.load(), metricErrors.exchange(0));
+                const auto [readAvg, readMax] = metricInputRead.TakeMicroseconds();
+                const auto [dispatchAvg, dispatchMax] = metricDispatch.TakeMicroseconds();
+                const auto [lockAvg, lockMax] = metricServerLock.TakeMicroseconds();
+                LOGI("X11RequestMetrics seconds={:.2f} requests={} bytes={} "
+                     "input_read_us(avg/max)={:.1f}/{:.1f} dispatch_us(avg/max)={:.1f}/{:.1f} "
+                     "event_lock_us(avg/max)={:.1f}/{:.1f} output_blocked={} output_peak_bytes={}",
+                     seconds, metricRequests.exchange(0), metricRequestBytes.exchange(0),
+                     readAvg, readMax, dispatchAvg, dispatchMax, lockAvg, lockMax,
+                     metricOutputBlocked.exchange(0), metricOutputPeak.exchange(0));
                 metricWindow = now;
                 metricSubmits = metricBusy = metricDrawNs = metricDrawMaxNs = 0;
                 metricDraws = 0;
@@ -646,4 +770,5 @@ void NativeScreen::Worker() {
     }
 }
 }
+
 

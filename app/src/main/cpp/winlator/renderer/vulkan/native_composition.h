@@ -5,6 +5,14 @@
 #include <cmath>
 #include <cstdint>
 
+// A frame-slot fence is recycled across different swapchain images. Once it is
+// known complete, drop all old image associations before resetting/reusing it;
+// otherwise an old image can wait for an unrelated, newer submission.
+template<class Images, class Fence>
+inline void NativeForgetCompletedImageFence(Images& images, Fence completed) {
+    for (auto& owner : images) if (owner == completed) owner = Fence{};
+}
+
 // Conservative coverage test in logical NDC. Android pre-rotation is restricted
 // to quarter turns, which preserve a complete [-1,1] square.
 inline bool NativeCoversOutput(float x0, float y0, float x1, float y1) {
@@ -22,9 +30,12 @@ struct NativeVulkanMetrics {
         double MaximumUs() const { return maximum / 1000.0; }
     };
     std::array<Timing, Count> stages{};
-    uint64_t frames{}, opaque{}, noClear{};
+    Timing gpu;
+    uint64_t frames{}, opaque{}, noClear{}, cacheHits{}, cacheMisses{}, cacheBypass{}, gpuUnavailable{};
+    uint64_t bypassLayers{}, bypassUploads{}, bypassTransitions{}, bypassEffects{}, bypassNonAHB{};
     Clock::time_point window{};
     void RecordStage(Stage stage, Clock::time_point start) {
         stages[stage].Add(std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start).count());
     }
 };
+

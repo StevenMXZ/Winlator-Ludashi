@@ -92,6 +92,9 @@ VulkanRendererContext::~VulkanRendererContext() {
     if (frameGenRenderPass != VK_NULL_HANDLE)
         vk_.DestroyRenderPass(device, frameGenRenderPass, nullptr);
     vk_.DestroyRenderPass(device, renderPass, nullptr);
+#ifdef LUDASHI_NATIVE_X11
+    if (nativeGpuQueries != VK_NULL_HANDLE) vk_.DestroyQueryPool(device, nativeGpuQueries, nullptr);
+#endif
     vk_.DestroyDevice(device, nullptr);
     vk_.DestroySurfaceKHR(instance, surface, nullptr);
     if (validationMessenger != VK_NULL_HANDLE) {
@@ -196,6 +199,13 @@ void VulkanRendererContext::loadDeviceDispatch() {
     LOAD_D2(WaitForFences);
     LOAD_D2(ResetFences);
     LOAD_D2(GetFenceStatus);
+#ifdef LUDASHI_NATIVE_X11
+    LOAD_D2(CreateQueryPool);
+    LOAD_D2(DestroyQueryPool);
+    LOAD_D2(GetQueryPoolResults);
+    LOAD_D2(CmdResetQueryPool);
+    LOAD_D2(CmdWriteTimestamp);
+#endif
 
     vk_.GetAndroidHardwareBufferPropertiesANDROID =
         (PFN_vkGetAndroidHardwareBufferPropertiesANDROID)d("vkGetAndroidHardwareBufferPropertiesANDROID");
@@ -220,12 +230,17 @@ void VulkanRendererContext::createInstance() {
     VkApplicationInfo ai{}; ai.sType=VK_STRUCTURE_TYPE_APPLICATION_INFO;
     ai.pApplicationName="Winlator"; ai.apiVersion=VK_API_VERSION_1_3;
     const char* ext[]={"VK_KHR_surface","VK_KHR_android_surface",
-                       VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
+                       VK_EXT_DEBUG_UTILS_EXTENSION_NAME, nullptr};
     VkInstanceCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     ci.pApplicationInfo=&ai; ci.enabledExtensionCount=2; ci.ppEnabledExtensionNames=ext;
 
     const char* validationLayer = "VK_LAYER_KHRONOS_validation";
     bool enableValidation = false;
+    bool enableDebugUtils = false;
+#ifdef LUDASHI_NATIVE_X11
+    const VkValidationFeatureEnableEXT syncFeature = VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
+    VkValidationFeaturesEXT validationFeatures{};
+#endif
     VkDebugUtilsMessengerCreateInfoEXT debugInfo{};
     if (validationRequested) {
         auto enumerateLayers = reinterpret_cast<PFN_vkEnumerateInstanceLayerProperties>(
@@ -246,18 +261,20 @@ void VulkanRendererContext::createInstance() {
 
             auto enumerateExtensions = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
                 gipa(nullptr, "vkEnumerateInstanceExtensionProperties"));
-            auto hasDebugUtils = [&](const char* layerName) {
+            auto hasExtension = [&](const char* layerName, const char* name) {
                 uint32_t extensionCount = 0;
                 if (!enumerateExtensions ||
                     enumerateExtensions(layerName, &extensionCount, nullptr) != VK_SUCCESS)
                     return false;
                 std::vector<VkExtensionProperties> extensions(extensionCount);
                 return enumerateExtensions(layerName, &extensionCount, extensions.data()) == VK_SUCCESS &&
-                    std::any_of(extensions.begin(), extensions.end(), [](const VkExtensionProperties& e) {
-                        return strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0;
+                    std::any_of(extensions.begin(), extensions.end(), [&](const VkExtensionProperties& e) {
+                        return strcmp(e.extensionName, name) == 0;
                     });
             };
-            if (hasDebugUtils(nullptr) || hasDebugUtils(validationLayer)) {
+            if (hasExtension(nullptr, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) ||
+                hasExtension(validationLayer, VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
+                enableDebugUtils = true;
                 ci.enabledExtensionCount = 3;
                 debugInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
                 debugInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
@@ -268,6 +285,19 @@ void VulkanRendererContext::createInstance() {
                 debugInfo.pfnUserCallback = logValidationMessage;
                 ci.pNext = &debugInfo;
             }
+#ifdef LUDASHI_NATIVE_X11
+            // Explicit validation opt-in only. Core validation alone does not
+            // enable the read/write hazard checks needed for stale-frame diagnosis.
+            if (hasExtension(validationLayer, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME) ||
+                hasExtension(nullptr, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME)) {
+                ext[ci.enabledExtensionCount++] = VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME;
+                validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+                validationFeatures.pNext = ci.pNext;
+                validationFeatures.enabledValidationFeatureCount = 1;
+                validationFeatures.pEnabledValidationFeatures = &syncFeature;
+                ci.pNext = &validationFeatures;
+            }
+#endif
         } else {
             RLOG_E("WINLATOR_VULKAN_VALIDATION requested, but VK_LAYER_KHRONOS_validation is unavailable");
         }
@@ -277,6 +307,7 @@ void VulkanRendererContext::createInstance() {
     if (result != VK_SUCCESS && enableValidation) {
         RLOG_E("validation instance creation failed (%d), retrying without the layer", result);
         enableValidation = false;
+        enableDebugUtils = false;
         ci.enabledLayerCount = 0;
         ci.ppEnabledLayerNames = nullptr;
         ci.enabledExtensionCount = 2;
@@ -288,8 +319,8 @@ void VulkanRendererContext::createInstance() {
     loadInstanceDispatch();
     if (enableValidation) {
         RLOG_E("VK_LAYER_KHRONOS_validation enabled for Vulkan renderer (debug_utils=%d)",
-               ci.pNext ? 1 : 0);
-        if (ci.pNext) {
+               enableDebugUtils ? 1 : 0);
+        if (enableDebugUtils) {
             auto createMessenger = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
                 gipa(instance, "vkCreateDebugUtilsMessengerEXT"));
             if (!createMessenger ||
@@ -919,6 +950,11 @@ void VulkanRendererContext::createSyncObjects() {
 }
 
 void VulkanRendererContext::cleanupSwapchain() {
+#ifdef LUDASHI_NATIVE_X11
+    // All callers drain GPU work before destroying the swapchain.
+    nativeCommands.Clear([&](VkCommandBuffer cb) { vk_.FreeCommandBuffers(device, cmdPool, 1, &cb); });
+    nativeGpuPending.fill(false);
+#endif
     for (auto& semaphores : frameGenAcquireSems)
         for (auto& semaphore : semaphores) {
             if (semaphore != VK_NULL_HANDLE) vk_.DestroySemaphore(device, semaphore, nullptr);
@@ -1405,6 +1441,9 @@ void VulkanRendererContext::ensureCursorTex(short w, short h) {
 }
 
 void VulkanRendererContext::cleanupCursorTex() {
+#ifdef LUDASHI_NATIVE_X11
+    ++nativeTextureEpoch;
+#endif
     if (cursorView!=VK_NULL_HANDLE){vk_.DestroyImageView(device,cursorView,nullptr);cursorView=VK_NULL_HANDLE;}
     if (cursorImg!=VK_NULL_HANDLE){vk_.DestroyImage(device,cursorImg,nullptr);cursorImg=VK_NULL_HANDLE;}
     if (cursorMem!=VK_NULL_HANDLE){vk_.FreeMemory(device,cursorMem,nullptr);cursorMem=VK_NULL_HANDLE;}
@@ -1651,6 +1690,11 @@ void VulkanRendererContext::flushDeleteQueue() {
 }
 
 void VulkanRendererContext::destroyTexNow(RetiredTex& retired) {
+#ifdef LUDASHI_NATIVE_X11
+    // Handle values may be reused after destruction. Never reuse an executable
+    // command buffer recorded against the previous lifetime of that handle.
+    ++nativeTextureEpoch;
+#endif
     WinTex& wt=retired.wt;
     if (wt.ds  !=VK_NULL_HANDLE) vk_.FreeDescriptorSets(device,winTexPool,1,&wt.ds);
     if (wt.view!=VK_NULL_HANDLE) vk_.DestroyImageView(device,wt.view,nullptr);
@@ -1661,6 +1705,59 @@ void VulkanRendererContext::destroyTexNow(RetiredTex& retired) {
 }
 
 #ifdef LUDASHI_NATIVE_X11
+void VulkanRendererContext::prepareNativeGpuTiming(uint32_t slot) {
+    if (!nativeGpuAttempted) {
+        nativeGpuAttempted = true;
+        VkPhysicalDeviceProperties properties{};
+        vk_.GetPhysicalDeviceProperties(physicalDevice, &properties);
+        nativeTimestampPeriod = properties.limits.timestampPeriod;
+        uint32_t count{};
+        vk_.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, nullptr);
+        std::vector<VkQueueFamilyProperties> queues(count);
+        vk_.GetPhysicalDeviceQueueFamilyProperties(physicalDevice, &count, queues.data());
+        if (graphicsQueueFamilyIndex < count)
+            nativeTimestampBits = queues[graphicsQueueFamilyIndex].timestampValidBits;
+        if (nativeTimestampBits && nativeTimestampPeriod > 0.f &&
+            vk_.CreateQueryPool && vk_.DestroyQueryPool && vk_.GetQueryPoolResults &&
+            vk_.CmdResetQueryPool && vk_.CmdWriteTimestamp) {
+            VkQueryPoolCreateInfo info{};
+            info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+            info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            info.queryCount = MAX_FRAMES_IN_FLIGHT * 2;
+            if (vk_.CreateQueryPool(device, &info, nullptr, &nativeGpuQueries) != VK_SUCCESS)
+                nativeGpuQueries = VK_NULL_HANDLE;
+        }
+        __android_log_print(ANDROID_LOG_INFO, "Winlator_NativeX11",
+            "X11GpuTiming supported=%d timestamp_bits=%u period_ns=%.3f mode=nonblocking device=%s driver=%u",
+            nativeGpuQueries != VK_NULL_HANDLE, nativeTimestampBits, nativeTimestampPeriod, properties.deviceName, properties.driverVersion);
+    }
+    if (!nativeGpuPending[slot]) return;
+    nativeGpuPending[slot] = false;
+    // Slot fence has already signaled. Never add WAIT_BIT or a driver wait for
+    // diagnostics, including when a driver returns an unavailable query.
+    uint64_t values[4]{}; // timestamp, availability for each query
+    const VkResult result = vk_.GetQueryPoolResults(device, nativeGpuQueries, slot * 2, 2,
+        sizeof(values), values, sizeof(uint64_t) * 2,
+        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+    if (result == VK_SUCCESS && values[1] && values[3]) {
+        const uint64_t mask = nativeTimestampBits >= 64 ? UINT64_MAX :
+            ((uint64_t(1) << nativeTimestampBits) - 1);
+        const double ns = double((values[2] - values[0]) & mask) * nativeTimestampPeriod;
+        if (std::isfinite(ns) && ns >= 0. && ns < double(UINT64_MAX))
+            nativeMetrics.gpu.Add(uint64_t(ns));
+        else ++nativeMetrics.gpuUnavailable;
+    } else ++nativeMetrics.gpuUnavailable;
+}
+void VulkanRendererContext::beginNativeGpuTiming(VkCommandBuffer cb) {
+    if (!nativeDiagnosticsEnabled || nativeGpuQueries == VK_NULL_HANDLE) return;
+    vk_.CmdResetQueryPool(cb, nativeGpuQueries, currentFrame * 2, 2);
+    vk_.CmdWriteTimestamp(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, nativeGpuQueries, currentFrame * 2);
+}
+void VulkanRendererContext::endNativeGpuTiming(VkCommandBuffer cb) {
+    if (!nativeDiagnosticsEnabled || nativeGpuQueries == VK_NULL_HANDLE) return;
+    vk_.CmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, nativeGpuQueries, currentFrame * 2 + 1);
+}
+
 void VulkanRendererContext::reportNativeMetrics() {
     auto& m = nativeMetrics;
     const auto now = NativeVulkanMetrics::Clock::now();
@@ -1672,12 +1769,21 @@ void VulkanRendererContext::reportNativeMetrics() {
         "X11VulkanMetrics seconds=%.2f frames=%llu opaque=%llu no_clear=%llu "
         "slot_us(avg/max)=%.1f/%.1f acquire_us(avg/max)=%.1f/%.1f "
         "image_wait_us(avg/max)=%.1f/%.1f prepare_us(avg/max)=%.1f/%.1f record_us(avg/max)=%.1f/%.1f "
-        "submit_us(avg/max)=%.1f/%.1f present_us(avg/max)=%.1f/%.1f",
+        "submit_us(avg/max)=%.1f/%.1f present_us(avg/max)=%.1f/%.1f "
+        "gpu_span_us(avg/max)=%.1f/%.1f gpu_samples=%llu gpu_unavailable=%llu "
+        "cmd_cache_hit=%llu cmd_cache_miss=%llu cmd_cache_bypass=%llu cmd_cache_enabled=%d "
+        "cache_layers=%llu cache_upload=%llu cache_transition=%llu cache_non_ahb=%llu cache_effect=%llu cache_layer_limit=4",
         seconds, (unsigned long long)m.frames, (unsigned long long)m.opaque, (unsigned long long)m.noClear,
         s[0].AverageUs(), s[0].MaximumUs(), s[1].AverageUs(), s[1].MaximumUs(),
         s[2].AverageUs(), s[2].MaximumUs(), s[3].AverageUs(), s[3].MaximumUs(),
         s[4].AverageUs(), s[4].MaximumUs(), s[5].AverageUs(), s[5].MaximumUs(),
-        s[6].AverageUs(), s[6].MaximumUs());
+        s[6].AverageUs(), s[6].MaximumUs(),
+        m.gpu.AverageUs(), m.gpu.MaximumUs(), (unsigned long long)m.gpu.count,
+        (unsigned long long)m.gpuUnavailable, (unsigned long long)m.cacheHits,
+        (unsigned long long)m.cacheMisses, (unsigned long long)m.cacheBypass, nativeCommandCacheEnabled,
+        (unsigned long long)m.bypassLayers, (unsigned long long)m.bypassUploads,
+        (unsigned long long)m.bypassTransitions, (unsigned long long)m.bypassNonAHB,
+        (unsigned long long)m.bypassEffects);
     m = {};
     m.window = now;
 }
@@ -1744,7 +1850,11 @@ void VulkanRendererContext::renderFrame() {
         currentFenceWaited = true;
     } else if (fenceState!=VK_SUCCESS) throw std::runtime_error("frame fence status");
 #ifdef LUDASHI_NATIVE_X11
-    if (nativeTrace) nativeMetrics.RecordStage(NativeVulkanMetrics::Slot, nativeSlotStart);
+    NativeForgetCompletedImageFence(imgInFlight, inFlightFences[currentFrame]);
+    if (nativeTrace) {
+        nativeMetrics.RecordStage(NativeVulkanMetrics::Slot, nativeSlotStart);
+        prepareNativeGpuTiming(currentFrame);
+    } else nativeGpuPending[currentFrame] = false;
 #endif
     completedSerial=std::max(completedSerial,slotSerial[currentFrame]);
     if (retirePending.load(std::memory_order_acquire)) {
@@ -1803,8 +1913,23 @@ void VulkanRendererContext::renderFrame() {
 #ifdef LUDASHI_NATIVE_X11
     if (nativeTrace) nativeMetrics.RecordStage(NativeVulkanMetrics::ImageWait, nativeImageWaitStart);
     const auto nativePrepareStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
+    // Java updates its scene while acquire blocks. The native adapter must also
+    // bind the newest retained scene here, rather than pinning a producer buffer
+    // throughout a potentially whole-refresh acquire wait.
+    try {
+        if (nativeFrameReady) nativeFrameReady(nativeFrameReadyData);
+    } catch (...) {
+        // Acquire already signaled its semaphore. Recover through the existing
+        // swapchain path before another acquire can reuse it after an import error.
+        fbResized.store(true);
+        swapchainRetryPending.store(true);
+        throw;
+    }
 #endif
+#ifndef LUDASHI_NATIVE_X11
     vk_.ResetCommandBuffer(cmdBufs[currentFrame],0);
+#endif
+    // Native command reset is deferred until cache selection.
 
     float ox,oy,sx,sy,cw,ch;
     short ptrX,ptrY,curHotX,curHotY,curW,curH; bool curVis;
@@ -1883,11 +2008,84 @@ void VulkanRendererContext::renderFrame() {
     if (nativeTrace) nativeMetrics.RecordStage(NativeVulkanMetrics::Prepare, nativePrepareStart);
     const auto nativeRecordStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
 #endif
-    recordCmdBuf(cmdBufs[currentFrame],imgIdx,frameDraws,
-        frameAhbTransitions,framePreUpload,framePostUpload,
-        curUpload,hasCurUpload,
-        ox,oy,sx,sy,cw,ch,ptrX,ptrY,curHotX,curHotY,curW,curH,curVis,
-        effectiveScissor, generatedCount, useFrameGeneration);
+    VkCommandBuffer selectedCommand = cmdBufs[currentFrame];
+    bool reuseCommand = false;
+#ifdef LUDASHI_NATIVE_X11
+    // A game may have static CPU-origin desktop/overlay textures behind it.
+    // Reuse their read-only GPU commands too, but never cache uploads/transitions.
+    const bool cacheLayers = !frameDraws.empty() && frameDraws.size() <= NATIVE_COMMAND_MAX_LAYERS;
+    const bool cacheHasAHB = cacheLayers && std::any_of(frameDraws.begin(), frameDraws.end(), [](const auto& d) { return d.isAHB; });
+    const bool cacheTexturesReady = cacheLayers && std::all_of(frameDraws.begin(), frameDraws.end(), [](const auto& d) {
+        return d.img != VK_NULL_HANDLE && d.ds != VK_NULL_HANDLE && !d.needsTransition && d.upload == VK_NULL_HANDLE;
+    });
+    const bool cacheEligible = nativeCommandCacheEnabled && !useFrameGeneration && cacheLayers && cacheHasAHB &&
+        cacheTexturesReady && !hasCurUpload && (filterMode == 0 || filterMode == 1) && postFXMode == 0 && stretchMode == 0;
+    NativeCommandKey commandKey;
+    NativeCommandCache<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT>::Entry* cacheEntry = nullptr;
+    if (cacheEligible) {
+        commandKey.Add(nativeTextureEpoch); commandKey.Add(imgIdx);
+        commandKey.Add(frameDraws.size());
+        for (const auto& d : frameDraws) {
+            commandKey.Add(d.img); commandKey.Add(d.ds); commandKey.Add(d.isAHB);
+            commandKey.Add(d.x); commandKey.Add(d.y); commandKey.Add(d.w); commandKey.Add(d.h);
+        }
+        commandKey.Add(filterMode);
+        commandKey.Add(ox); commandKey.Add(oy); commandKey.Add(sx); commandKey.Add(sy);
+        commandKey.Add(cw); commandKey.Add(ch);
+        commandKey.Add(effectiveScissor.offset.x); commandKey.Add(effectiveScissor.offset.y);
+        commandKey.Add(effectiveScissor.extent.width); commandKey.Add(effectiveScissor.extent.height);
+        commandKey.Add(pipeline); commandKey.Add(opaquePipeline); commandKey.Add(renderPass);
+        commandKey.Add(nativeNoClearPass); commandKey.Add(swapRB);
+        const auto queryPool = nativeTrace ? nativeGpuQueries : VK_NULL_HANDLE;
+        commandKey.Add(queryPool);
+        const bool drawsCursor = curVis && cursorImg != VK_NULL_HANDLE && cursorDS != VK_NULL_HANDLE;
+        commandKey.Add(drawsCursor);
+        if (drawsCursor) {
+            commandKey.Add(cursorImg); commandKey.Add(cursorDS);
+            commandKey.Add(ptrX); commandKey.Add(ptrY); commandKey.Add(curHotX); commandKey.Add(curHotY);
+            commandKey.Add(curW); commandKey.Add(curH);
+        }
+        const auto cached = nativeCommands.Find(currentFrame, commandKey);
+        if (cached != VK_NULL_HANDLE) {
+            selectedCommand = cached; reuseCommand = true;
+            if (nativeTrace) ++nativeMetrics.cacheHits;
+        } else {
+            cacheEntry = &nativeCommands.Replace(currentFrame);
+            if (cacheEntry->command == VK_NULL_HANDLE) {
+                VkCommandBufferAllocateInfo allocation{};
+                allocation.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+                allocation.commandPool = cmdPool; allocation.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+                allocation.commandBufferCount = 1;
+                if (vk_.AllocateCommandBuffers(device, &allocation, &cacheEntry->command) != VK_SUCCESS) {
+                    cacheEntry->command = VK_NULL_HANDLE;
+                    cacheEntry = nullptr; // Allocation failure retains the general path.
+                }
+            }
+            if (cacheEntry) selectedCommand = cacheEntry->command;
+            if (nativeTrace) ++nativeMetrics.cacheMisses;
+        }
+    } else if (nativeTrace) {
+        ++nativeMetrics.cacheBypass;
+        nativeMetrics.bypassLayers += !cacheLayers;
+        nativeMetrics.bypassUploads += hasCurUpload || std::any_of(frameDraws.begin(), frameDraws.end(), [](const auto& d) { return d.upload != VK_NULL_HANDLE; });
+        nativeMetrics.bypassTransitions += std::any_of(frameDraws.begin(), frameDraws.end(), [](const auto& d) { return d.needsTransition; });
+        nativeMetrics.bypassNonAHB += !std::any_of(frameDraws.begin(), frameDraws.end(), [](const auto& d) { return d.isAHB; });
+        nativeMetrics.bypassEffects += useFrameGeneration || (filterMode != 0 && filterMode != 1) || postFXMode != 0 || stretchMode != 0;
+    }
+#endif
+    if (!reuseCommand) {
+#ifdef LUDASHI_NATIVE_X11
+        vk_.ResetCommandBuffer(selectedCommand, 0);
+#endif
+        recordCmdBuf(selectedCommand,imgIdx,frameDraws,
+            frameAhbTransitions,framePreUpload,framePostUpload,
+            curUpload,hasCurUpload,
+            ox,oy,sx,sy,cw,ch,ptrX,ptrY,curHotX,curHotY,curW,curH,curVis,
+            effectiveScissor, generatedCount, useFrameGeneration);
+#ifdef LUDASHI_NATIVE_X11
+        if (cacheEntry) { cacheEntry->key = commandKey; cacheEntry->valid = true; }
+#endif
+    }
 #ifdef LUDASHI_NATIVE_X11
     if (nativeTrace) nativeMetrics.RecordStage(NativeVulkanMetrics::Record, nativeRecordStart);
 #endif
@@ -1902,7 +2100,7 @@ void VulkanRendererContext::renderFrame() {
     VkPipelineStageFlags wStage[]={waitStage};
     VkSubmitInfo si{}; si.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO;
     si.waitSemaphoreCount=1; si.pWaitSemaphores=wSem; si.pWaitDstStageMask=wStage;
-    si.commandBufferCount=1; si.pCommandBuffers=&cmdBufs[currentFrame];
+    si.commandBufferCount=1; si.pCommandBuffers=&selectedCommand;
     si.signalSemaphoreCount=1; si.pSignalSemaphores=sSem;
 
     vk_.ResetFences(device,1,&inFlightFences[currentFrame]);
@@ -1925,6 +2123,9 @@ void VulkanRendererContext::renderFrame() {
         swapchainRetryPending.store(true);
         return;
     }
+#ifdef LUDASHI_NATIVE_X11
+    nativeGpuPending[currentFrame] = nativeTrace && nativeGpuQueries != VK_NULL_HANDLE;
+#endif
     {
         std::lock_guard<std::mutex> lk(renderMutex);
         slotSerial[currentFrame]=pendingFrameSerial;
@@ -2375,6 +2576,9 @@ void VulkanRendererContext::rebuildRenderListFromTree() {
 }
 
 void VulkanRendererContext::cleanupAllAHBCache() {
+#ifdef LUDASHI_NATIVE_X11
+    ++nativeTextureEpoch;
+#endif
     for (auto& [ahb, wt] : ahbImportCache) {
         if (wt.ds   != VK_NULL_HANDLE) vk_.FreeDescriptorSets(device, winTexPool, 1, &wt.ds);
         if (wt.view != VK_NULL_HANDLE) vk_.DestroyImageView(device, wt.view, nullptr);
@@ -2416,6 +2620,11 @@ void VulkanRendererContext::setFilterMode(int mode) {
     if (mode == 3 && fsr1Pipeline == VK_NULL_HANDLE) createFsr1Pipeline();
     if (mode == 5 && postfxPipeline == VK_NULL_HANDLE) createPostFXPipeline();
     vk_.DeviceWaitIdle(device);
+#ifdef LUDASHI_NATIVE_X11
+    // Updating a descriptor without UPDATE_AFTER_BIND invalidates recordings
+    // that used it, even after their submissions have finished.
+    ++nativeTextureEpoch;
+#endif
     if (sampler!=VK_NULL_HANDLE){vk_.DestroySampler(device,sampler,nullptr);sampler=VK_NULL_HANDLE;}
     createSampler();
     auto updateDS=[&](VkDescriptorSet ds, VkImageView view){
@@ -2580,5 +2789,6 @@ void VulkanRendererContext::clearCustomScissor() {
 }
 
 #pragma GCC diagnostic pop
+
 
 

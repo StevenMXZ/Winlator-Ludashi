@@ -5,9 +5,15 @@
 
 int main() {
     using namespace std::chrono_literals;
-    auto renderer = xorg::CreateNativeRenderer(1280, 720);
+    {
+        auto defaults = xorg::CreateNativeRenderer(1280, 720);
+        defaults->Surface(new ANativeWindow);
+        if (VulkanRendererContext::instance->validationRequested) return 13;
+    }
+    auto renderer = xorg::CreateNativeRenderer(1280, 720, true);
     renderer->Surface(new ANativeWindow);
     auto* context = VulkanRendererContext::instance;
+    if (!context->validationRequested) return 12;
     xorg::NativeFrame frame;
     if (!renderer->Draw(frame)) return 1;
 
@@ -36,5 +42,48 @@ int main() {
     if (renderer->WaitCompleted(1) != 0 || renderer->ReadyToDraw()) return 8;
     context->fences[0].Signal(); context->fences[1].Signal();
     if (renderer->Drain() != 2 || !renderer->ReadyToDraw()) return 9;
+    frame.commandCacheEnabled = false;
+    if (!renderer->Draw(frame) || context->nativeCommandCacheEnabled) return 10;
+    context->fences[0].Signal(); context->fences[1].Signal(); renderer->Drain();
+    frame.commandCacheEnabled = true;
+    if (!renderer->Draw(frame) || !context->nativeCommandCacheEnabled) return 11;
+    context->fences[0].Signal(); context->fences[1].Signal(); renderer->Drain();
     std::cout << "PASS: native Vulkan adapter concurrent wait/Draw, registration cap, timeout, slot reuse and drain\n";
+    auto imported = [] {
+        auto* buffer = new AHardwareBuffer;
+        buffer->desc = {16,16,1,5,0,16}; buffer->pixels.resize(16*16*4);
+        auto image = std::make_shared<xorg::NativeDrawable>(16,16,32,buffer);
+        AHardwareBuffer_release(buffer); return image;
+    };
+    auto oldImage = imported(), newestImage = imported();
+    frame.commandCacheEnabled = false; // Late selection also applies with replay disabled.
+    frame.entries.push_back({oldImage, nullptr, oldImage->Pixels(), oldImage->Revision(), 0, 0, true});
+    context->acquireEntered = false; context->acquireBlocked = true;
+    const auto callsBefore = context->boundImages;
+    std::atomic<unsigned> latches{};
+    const xorg::NativeFrameLatch latch = [&](xorg::NativeFrame& selected) {
+        ++latches;
+        selected.entries[0] = {newestImage, nullptr, newestImage->Pixels(), newestImage->Revision(), 0,0,true};
+    };
+    auto acquired = std::async(std::launch::async, [&] { return renderer->Draw(frame, latch); });
+    const auto acquireDeadline = std::chrono::steady_clock::now() + 1s;
+    while (!context->acquireEntered && std::chrono::steady_clock::now() < acquireDeadline) std::this_thread::yield();
+    if (!context->acquireEntered || latches || context->boundImages != callsBefore) std::abort();
+    context->acquireBlocked = false;
+    if (!acquired.get() || latches != 1 || context->boundImages != std::vector<int64_t>{int64_t(newestImage->ID())}) return 14;
+    if (context->texMap.contains(oldImage->ID()) || !context->texMap.at(newestImage->ID()).isAHB) return 16;
+    if (context->nativeCommandCacheEnabled || frame.commandCacheEnabled) return 19;
+    if (context->nativeFrameReady || context->nativeFrameReadyData) return 15;
+    context->fences[0].Signal(); context->fences[1].Signal(); renderer->Drain();
+    std::cout << "PASS: native adapter binds newest scene after blocked acquire, retains chosen frame and clears callback\n";
+    context->acquireFails = true;
+    if (renderer->Draw(frame, latch) || latches != 1 || context->nativeFrameReady || context->nativeFrameReadyData) return 17;
+    context->acquireFails = false;
+    bool failed = false;
+    try {
+        renderer->Draw(frame, [](xorg::NativeFrame&) { throw std::runtime_error("mock latch failure"); });
+    } catch (const std::runtime_error&) { failed = true; }
+    if (!failed || context->nativeFrameReady || context->nativeFrameReadyData) return 18;
+    std::cout << "PASS: failed acquire does not latch; failed preparation cannot leave a dangling callback\n";
 }
+

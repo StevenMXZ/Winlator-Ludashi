@@ -2,16 +2,17 @@
 #include "VulkanRendererContext.h"
 
 
+
 namespace xorg {
 class LudashiRenderer final : public NativeRenderer {
 public:
-    LudashiRenderer(u16 w, u16 h) : width(w), height(h) {}
+    LudashiRenderer(u16 w, u16 h, bool validate) : width(w), height(h), validation(validate) {}
     ~LudashiRenderer() override { if (context) context->detachSurface(); context.reset(); }
     void Surface(ANativeWindow* window) override {
         if (!window) { if (context) context->detachSurface(); return; }
         if (!context) {
             try {
-                context = std::make_unique<VulkanRendererContext>(window, width, height);
+                context = std::make_unique<VulkanRendererContext>(window, width, height, nullptr, validation);
                 // This session has its own scene worker. Prevent a second renderer thread
                 // from sampling a producer buffer before native Present has retained it.
                 context->isRunning.store(false); context->dirtyCV.notify_all();
@@ -88,13 +89,42 @@ public:
         return std::none_of(pending.begin(), pending.end(),
                             [slot](const Submission& item) { return item.slot == slot; });
     }
-    bool Draw(const NativeFrame& frame) override {
+    bool Draw(NativeFrame& frame, const NativeFrameLatch& latch) override {
         if (!context || context->surfaceDetached.load()) return false;
         context->setNativeDiagnostics(frame.diagnostics);
+        context->nativeCommandCacheEnabled = frame.commandCacheEnabled;
         // Never enter renderFrame's slot wait while the prior submission is still
         // running. Let the producer continue and retain the last valid scene.
         if (!ReadyToDraw()) return false;
         const uint32_t slot = context->currentFrame;
+        struct Binding {
+            LudashiRenderer* renderer;
+            NativeFrame* frame;
+            const NativeFrameLatch* latch;
+        } binding{this, &frame, &latch};
+        context->nativeFrameReadyData = &binding;
+        context->nativeFrameReady = [](void* value) {
+            auto& b = *static_cast<Binding*>(value);
+            if (*b.latch) (*b.latch)(*b.frame);
+            b.renderer->UpdateScene(*b.frame);
+        };
+        struct ClearBinding {
+            VulkanRendererContext* context;
+            ~ClearBinding() { context->nativeFrameReady = nullptr; context->nativeFrameReadyData = nullptr; }
+        } clearBinding{context.get()};
+        const u64 serial = context->slotSerial[slot];
+        context->renderFrame();
+        if (context->slotSerial[slot] == serial) return false;
+        // Retain precisely the scene sampled after acquire, through its GPU fence.
+        {
+            std::lock_guard lock(pendingMutex);
+            pending.push_back({slot, context->device, context->inFlightFences[slot],
+                               context->vk_.GetFenceStatus, context->vk_.WaitForFences});
+        }
+        return true;
+    }
+private:
+    void UpdateScene(const NativeFrame& frame) {
         ids.clear(); xs.clear(); ys.clear();
         ids.reserve(frame.entries.size()); xs.reserve(frame.entries.size()); ys.reserve(frame.entries.size());
         for (const auto& entry : frame.entries) {
@@ -138,19 +168,7 @@ public:
         }
         context->setCursorVisible(cursor && bool(frame.cursor));
         context->updatePointerPosition(frame.cursorX, frame.cursorY);
-        const u64 serial = context->slotSerial[slot];
-        context->renderFrame();
-        if (context->slotSerial[slot] == serial) return false;
-        // Keep the Present ticket alive until the GPU fence signals. Do not wait
-        // synchronously after every submit (the old path stalled the producer).
-        {
-            std::lock_guard lock(pendingMutex);
-            pending.push_back({slot, context->device, context->inFlightFences[slot],
-                               context->vk_.GetFenceStatus, context->vk_.WaitForFences});
-        }
-        return true;
     }
-private:
     void UpdateTransform() {
         if (!context) return;
         float aspect = std::min(float(context->surfaceWidth) / width, float(context->surfaceHeight) / height);
@@ -171,6 +189,7 @@ private:
     mutable std::mutex pendingMutex;
     std::deque<Submission> pending;
     int width, height;
+    const bool validation;
     bool fullscreen{}, cursor{true};
     float refresh{60};
     u64 cursorID{};
@@ -181,8 +200,9 @@ private:
     std::vector<int64_t> ids;
     std::vector<int> xs, ys;
 };
-std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 w, u16 h) {
-    return std::make_unique<LudashiRenderer>(w, h);
+std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 w, u16 h, bool validation) {
+    return std::make_unique<LudashiRenderer>(w, h, validation);
 }
 }
+
 

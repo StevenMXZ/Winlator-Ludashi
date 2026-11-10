@@ -125,7 +125,9 @@ void XClient::ProcPresent() {
         if (existing) {
             if (existing->GetType() != XResourceType::PresentSubscription ||
                 existing->As<Subscription>()->client != this) throw BadIdChoiceError(r->eid);
+            if (existing->As<Subscription>()->window != r->window) throw BadMatchError();
             existing->As<Subscription>()->mask = r->eventMask;
+            screen.Subscribe(std::static_pointer_cast<Subscription>(ShareResource(r->eid)));
             return;
         }
         CheckResourceID(r->eid);
@@ -190,8 +192,13 @@ void XClient::ProcSync() {
         else if (req->data == X_SyncQueryFence) {
             xSyncQueryFenceReply reply{}; reply.type = X_Reply; reply.sequenceNumber = sequence;
             reply.triggered = f->triggered; WriteImmediately(&reply, sizeof(reply));
-        } else f->triggered = req->data == X_SyncTriggerFence;
-        server.NotifyScreen(); return;
+        } else {
+            const bool triggered = req->data == X_SyncTriggerFence;
+            const bool changed = f->triggered != triggered;
+            f->triggered = triggered;
+            if (changed && triggered) static_cast<NativeScreen&>(server.GetScreen()).FenceSignaled();
+        }
+        return;
     }
     case X_SyncAwaitFence: {
         if (request_size < 8 || request_size % 4) throw BadLengthError();
@@ -200,10 +207,11 @@ void XClient::ProcSync() {
             u32 id; memcpy(&id, request_buffer.data() + offset, 4);
             any |= get(id)->triggered; ids.push_back(id);
         }
-        if (!any) await_fences = std::move(ids);
+        if (!any) { await_fences = std::move(ids); server.AddSyncWaiter(); }
         return;
     }
     default: throw BadRequestError();
     }
 }
 }
+

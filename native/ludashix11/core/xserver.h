@@ -25,13 +25,15 @@ class ShmManager;
 
 class XServer {
 public:
-    explicit XServer(jobject java_instance, ScreenInfo screen_info);
+    explicit XServer(jobject java_instance, ScreenInfo screen_info, bool validation = false);
 
     ~XServer();
 
     std::unique_lock<std::recursive_mutex> Lock() { return std::unique_lock(mutex); }
 
     jobject GetJavaInstance() const { return java_instance; }
+
+    bool ValidationEnabled() const { return validationEnabled; }
 
     Visual* GetRootVisual() const { return root_visual.get(); }
 
@@ -61,14 +63,24 @@ public:
 
     void Start(const std::string& path, const std::string& shm_path);
     void NotifyScreen();
+    // All accessed under XServer::Lock. Producer fence signaling needs an
+    // eventfd wake only when a protocol client or queued Present is waiting.
+    void AddSyncWaiter() { ++syncWaiters; }
+    void RemoveSyncWaiter() { --syncWaiters; }
+    bool HasSyncWaiters() const { return syncWaiters != 0; }
 #ifdef LUDASHI_HOST_TEST
     void StartTest(int channel, int shm_channel = -1);
+    u64 TakeTestNotifications() {
+        u64 value{};
+        return read(completion_fd.Handle(), &value, sizeof(value)) == sizeof(value) ? value : 0;
+    }
 #endif
     void SetWritable(int fd, bool enabled);
 
     void AddResource(const sp<XResource>& resource);
 
     XResource* GetResource(u32 id) const;
+    sp<XResource> ShareResource(u32 id) const;
 
     void RemoveResource(u32 id);
 
@@ -84,7 +96,9 @@ private:
     u64 GetSystemTime() const;
 
     jobject java_instance;
+    const bool validationEnabled;
     u64 start_time{};
+    size_t syncWaiters{};
     std::recursive_mutex mutex;
     base::ScopedFD server_fd{};
     base::ScopedFD epoll_fd{};
@@ -108,3 +122,4 @@ private:
 };
 
 }  // namespace xorg
+

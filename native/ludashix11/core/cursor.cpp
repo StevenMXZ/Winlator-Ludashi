@@ -71,6 +71,26 @@ Cursor::Cursor(XScreen& screen, u32 id, u32 source_char, u32 mask_char, u32 fg_c
 
 Cursor::~Cursor() {}
 
+Cursor::Cursor(XScreen& screen, u32 id, u16 hotX, u16 hotY, Drawable& image, bool premultiplied)
+    : XResource(XResourceType::Cursor, id), screen(screen), hotspot_x(hotX), hotspot_y(hotY) {
+    cursorWidth = image.GetWidth(); cursorHeight = image.GetHeight();
+    drawable = screen.CreateDrawable(cursorWidth, cursorHeight, 32);
+    std::vector<u32> pixels(size_t(cursorWidth) * cursorHeight);
+    image.ReadPixels(reinterpret_cast<u8*>(pixels.data()), 0, 0, cursorWidth, cursorHeight, cursorWidth);
+    // RENDER ARGB32 is premultiplied. The existing cursor Vulkan pipeline uses
+    // SRC_ALPHA, so normalize once here, without changing the Java pipeline.
+    if (premultiplied) for (auto& pixel : pixels) {
+        const u32 alpha = pixel >> 24;
+        if (!alpha) { pixel = 0; continue; }
+        if (alpha == 255) continue;
+        const auto channel = [alpha](u32 c) { return std::min(255u, (c * 255 + alpha / 2) / alpha); };
+        pixel = (alpha << 24) | (channel((pixel >> 16) & 255) << 16) |
+                (channel((pixel >> 8) & 255) << 8) | channel(pixel & 255);
+    }
+    drawable->WritePixels(reinterpret_cast<const u8*>(pixels.data()), 0, 0, 0, 0,
+                          cursorWidth, cursorHeight, cursorWidth);
+}
+
 void Cursor::UpdateCursorDrawable(u32 width,
                                   u32 height,
                                   u32 source_stride,
@@ -88,6 +108,7 @@ void Cursor::UpdateCursorDrawable(u32 width,
     Recolor(fg_color, bg_color);
 }
 void Cursor::Recolor(u32 fg, u32 bg) {
+    if (shape.empty()) return; // Core RecolorCursor does not recolor ARGB cursors.
     // A new drawable also invalidates the cached native cursor snapshot.
     drawable = screen.CreateDrawable(cursorWidth, cursorHeight, 32);
     auto* bitmap = static_cast<u32*>(drawable->Map());
@@ -99,3 +120,4 @@ void Cursor::Recolor(u32 fg, u32 bg) {
 }
 
 }  // namespace xorg
+

@@ -10,6 +10,7 @@
 #include "core/xclient.h"
 #include "core/xscreen.h"
 #include "core/xserver.h"
+#include "native_screen.h"
 
 namespace xorg {
 
@@ -60,9 +61,9 @@ bool WindowAttributes::Update(Window* window, u32 mask, const u32* values, XClie
             case CWCursor: {
                 if (!value && window->IsRoot()) break;
                 const auto new_cursor = client->GetResourceAs<Cursor>(value);
-                if (cursor != new_cursor) {
-                    cursor = new_cursor;
+                if (cursor.get() != new_cursor) {
                     if (value && !new_cursor) throw BadCursorError(value);
+                    cursor = new_cursor ? std::static_pointer_cast<Cursor>(client->ShareResource(value)) : nullptr;
                     redraw = true;
                 }
                 break;
@@ -206,6 +207,7 @@ void Window::DeleteProperty(u32 atom) {
 }
 
 void Window::Move(s32 dx, s32 dy, s32 dw, s32 dh) {
+    const s32 parent_dx = dx, parent_dy = dy;
     if (dw != 0 || dh != 0) {
         switch (attributes.win_gravity) {
             case UnmapGravity:
@@ -262,6 +264,8 @@ void Window::Move(s32 dx, s32 dy, s32 dw, s32 dh) {
                                       [&](XClient* client) { client->SendEvent(event); });
     }
     if (dx == 0 && dy == 0) {
+        if (parent_dx != 0 || parent_dy != 0)
+            static_cast<NativeScreen&>(window_manager.GetScreen()).WindowGeometryChanged(this);
         return;
     }
 
@@ -277,15 +281,19 @@ void Window::Move(s32 dx, s32 dy, s32 dw, s32 dh) {
     for (const auto child : children) {
         child->Move(dx, dy, 0, 0);
     }
+    if (dx != parent_dx || dy != parent_dy)
+        static_cast<NativeScreen&>(window_manager.GetScreen()).WindowGeometryChanged(this);
 }
 
 void Window::Reparent(XClient* caller_client, Window* new_parent, s32 x, s32 y) {
+    const bool geometryChanged = parent != new_parent || x != out_rect.left - parent->in_rect.left ||
+                                 y != out_rect.top - parent->in_rect.top;
     const bool mapped = IsMapped();
     if (mapped) {
         window_manager.UnmapWindow(this);
     }
-    const s32 dx = parent->in_rect.left - out_rect.left + x;
-    const s32 dy = parent->in_rect.top - out_rect.top + y;
+    const s32 dx = new_parent->in_rect.left - out_rect.left + x;
+    const s32 dy = new_parent->in_rect.top - out_rect.top + y;
     if (dx != 0 || dy != 0) {
         out_rect.left += dx;
         out_rect.right += dx;
@@ -322,6 +330,8 @@ void Window::Reparent(XClient* caller_client, Window* new_parent, s32 x, s32 y) 
                                       [&](XClient* client) { client->SendEvent(event); });
 
     parent = new_parent;
+    if (geometryChanged)
+        static_cast<NativeScreen&>(window_manager.GetScreen()).WindowGeometryChanged(this);
     if (mapped) {
         window_manager.MapWindow(caller_client, this);
     }
@@ -583,7 +593,7 @@ void Window::PointerMotionNotify(s32 x, s32 y, u32 button_mask, XClient* grab_cl
     });
 }
 
-Window* Window::ButtonNotify(bool down, s32 x, s32 y, u32 button, XClient* grab_client) {
+Window* Window::ButtonNotify(bool down, s32 x, s32 y, u32 button, XClient* grab_client, XClient** recipient) {
     u32 mask = down ? ButtonPressMask : ButtonReleaseMask;
     auto event_window = this;
     const Window* child{};
@@ -618,6 +628,7 @@ Window* Window::ButtonNotify(bool down, s32 x, s32 y, u32 button, XClient* grab_
         }
         client->SendEvent(event);
         sent_window = event_window;
+        if (recipient) *recipient = client;
     });
     return sent_window;
 }
@@ -659,6 +670,27 @@ bool Window::KeyNotify(bool down, s32 x, s32 y, u32 keycode, XClient* grab_clien
     return true;
 }
 
+bool Window::RouteGrabEvent(xEvent& event, u32 mask, XClient* client) {
+    Window* child = nullptr;
+    auto* target = window_manager.GetPointerWindow(event.u.keyButtonPointer.rootX, event.u.keyButtonPointer.rootY);
+    while (target) {
+        if (target->IsMapped() && target->HasEventListenerFor(mask)) {
+            auto selected = target->client_masks.find(client);
+            if (selected == target->client_masks.end() || !(selected->second & mask)) return false;
+            event.u.keyButtonPointer.event = target->id;
+            event.u.keyButtonPointer.child = child ? child->id : 0;
+            event.u.keyButtonPointer.eventX = event.u.keyButtonPointer.rootX - target->in_rect.left;
+            event.u.keyButtonPointer.eventY = event.u.keyButtonPointer.rootY - target->in_rect.top;
+            client->SendEvent(event);
+            return true;
+        }
+        if (target->attributes.dont_propagate_mask & mask) return false;
+        child = target;
+        target = target->parent;
+    }
+    return false;
+}
+
 void Window::GrabButtonNotify(bool down,
                               s32 x,
                               s32 y,
@@ -666,15 +698,7 @@ void Window::GrabButtonNotify(bool down,
                               XClient* grab_client,
                               u32 event_mask,
                               bool owner_events) {
-    if (owner_events) {
-        Window* w = window_manager.GetPointerWindow(x, y);
-        w->ButtonNotify(down, x, y, button, grab_client);
-        return;
-    }
     const u32 mask = down ? ButtonPressMask : ButtonReleaseMask;
-    if ((event_mask & mask) == 0) {
-        return;
-    }
     xEvent event{};
     const auto timestamp = window_manager.GetServer().GetTimestamp();
     event.u.keyButtonPointer.time = timestamp;
@@ -689,7 +713,8 @@ void Window::GrabButtonNotify(bool down,
     event.u.keyButtonPointer.sameScreen = true;
     event.u.u.detail = button;
     event.u.u.type = down ? ButtonPress : ButtonRelease;
-    grab_client->SendEvent(event);
+    if (owner_events && RouteGrabEvent(event, mask, grab_client)) return;
+    if (event_mask & mask) grab_client->SendEvent(event);
 }
 
 void Window::GrabKeyNotify(
@@ -724,15 +749,8 @@ void Window::GrabKeyNotify(
 
 void Window::GrabPointerMoveNotify(
         s32 x, s32 y, u32 button_mask, XClient* grab_client, u32 event_mask, bool owner_events) {
-    if (owner_events) {
-        const auto w = window_manager.GetPointerWindow(x, y);
-        w->PointerMotionNotify(x, y, button_mask, grab_client);
-        return;
-    }
-    const u32 mask = ButtonEventMask(button_mask) & event_mask;
-    if (mask == 0) {
-        return;
-    }
+    const u32 normalMask = ButtonEventMask(button_mask);
+    const u32 mask = normalMask & event_mask;
     u32 detail = NotifyNormal;
     if ((mask & PointerMotionHintMask) != 0 && (mask & PointerMotionMask) == 0) {
         detail = NotifyHint;
@@ -751,7 +769,8 @@ void Window::GrabPointerMoveNotify(
     event.u.keyButtonPointer.sameScreen = true;
     event.u.u.detail = detail;
     event.u.u.type = MotionNotify;
-    grab_client->SendEvent(event);
+    if (owner_events && RouteGrabEvent(event, normalMask, grab_client)) return;
+    if (mask) grab_client->SendEvent(event);
 }
 
 Window* Window::WindowAtPoint(s16 x, s16 y) {
@@ -811,4 +830,5 @@ u32 Window::CalculateVisibility() const {
 }
 
 }  // namespace xorg
+
 

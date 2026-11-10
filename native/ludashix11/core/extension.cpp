@@ -25,6 +25,10 @@ ExtensionManager::ExtensionManager() {
     AddExtension("SYNC", [](XClient* c) { c->ProcSync(); }, 0, 1);
     AddExtension("RANDR", [](XClient* c) { c->ProcRandR(); }, 2, 0);
     AddExtension("GLX", [](XClient* c) { c->ProcGLX(); }, 0, 14);
+    // Match public Ludashi's Composite 0.1 window-redirection subset.
+    AddExtension("Composite", [](XClient* c) { c->ProcComposite(); }, 0, 0);
+    // RENDER cursor subset; Wine GDI is kept on its existing core path.
+    AddExtension("RENDER", [](XClient* c) { c->ProcRender(); }, 0, 5);
 }
 
 ExtensionManager::~ExtensionManager() {}
@@ -70,3 +74,4 @@ Extension* ExtensionManager::GetExtension(u8 opcode) {
 }
 
 }  // namespace xorg
+

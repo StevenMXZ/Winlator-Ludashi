@@ -27,11 +27,11 @@ struct JavaString {
 };
 }
 #define JNI_NAME(name) Java_com_winlator_cmod_widget_NativeX11View_##name
-extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeCreate)(JNIEnv* env, jclass, jint width, jint height) {
+extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeCreate)(JNIEnv* env, jclass, jint width, jint height, jboolean validation) {
     try {
         if (width < 1 || height < 1 || width > 16384 || height > 16384)
             throw std::runtime_error("Invalid native X11 resolution");
-        auto server = std::make_shared<xorg::XServer>(nullptr, xorg::ScreenInfo(width, height, 4));
+        auto server = std::make_shared<xorg::XServer>(nullptr, xorg::ScreenInfo(width, height, 4), validation == JNI_TRUE);
         std::lock_guard lock(sessions_mutex); jlong handle = next_session++;
         sessions.emplace(handle, std::move(server)); return handle;
     } catch (const std::exception& e) { fail(env, e.what()); return 0; }
@@ -75,9 +75,11 @@ extern "C" JNIEXPORT jstring JNICALL JNI_NAME(nativeError)(JNIEnv* env, jclass, 
     auto message = static_cast<xorg::NativeScreen&>(server->GetScreen()).LastError();
     return env->NewStringUTF(message.c_str());
 }
-extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeDiagnostics)(JNIEnv*, jclass, jlong handle, jboolean enabled) {
+extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeDiagnostics)(JNIEnv*, jclass, jlong handle, jboolean enabled, jboolean commandCacheEnabled) {
     auto server = session(handle); if (!server) return;
-    static_cast<xorg::NativeScreen&>(server->GetScreen()).SetDiagnostics(enabled);
+    auto& screen = static_cast<xorg::NativeScreen&>(server->GetScreen());
+    screen.SetCommandCacheEnabled(commandCacheEnabled);
+    screen.SetDiagnostics(enabled);
 }
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeUnviewableWMClasses)(JNIEnv* env, jclass, jlong handle, jobjectArray values) {
     auto server = session(handle); if (!server) return;
@@ -180,3 +182,4 @@ extern "C" JNIEXPORT jobjectArray JNICALL JNI_NAME(nativeHudSnapshot)(JNIEnv* en
     }
     return result;
 }
+

@@ -22,6 +22,7 @@ public:
            u32 bg_color);
 
     Cursor(XScreen& screen, u32 id, u32 source_char, u32 mask_char, u32 fg_color, u32 bg_color);
+    Cursor(XScreen& screen, u32 id, u16 hotX, u16 hotY, Drawable& image, bool premultiplied = true);
 
     ~Cursor() override;
     void Recolor(u32 foreground, u32 background);
@@ -51,3 +52,4 @@ private:
 };
 
 }  // namespace xorg
+

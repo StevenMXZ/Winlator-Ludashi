@@ -11,19 +11,28 @@
 #include "core/extension.h"
 #include "core/xscreen.h"
 #include "core/cursor.h"
+#include "native_drawable.h"
+#include "native_screen.h"
 
 namespace xorg {
 void XClient::ProcCompat() {
     const auto* req = GetRequestData<xReq>();
     auto send = [this](auto& r) { r.type = X_Reply; r.sequenceNumber = sequence; WriteImmediately(&r, sizeof(r)); };
     switch (req->reqType) {
-    case X_ChangeSaveSet: case X_CloseFont: case X_FreeCursor:
+    case X_ChangeSaveSet: case X_CloseFont:
     case X_GrabButton: case X_UngrabButton: case X_GrabKey: case X_UngrabKey:
     case X_GrabServer: case X_UngrabServer: case X_AllowEvents:
     case X_ChangeKeyboardControl: case X_ChangePointerControl:
     case X_SetCloseDownMode: case X_SetScreenSaver: case X_InstallColormap:
     case X_UninstallColormap: case X_FreeColors:
         return;
+    case X_FreeCursor: {
+        CHECK_REQUEST_SIZE_STRICT(xResourceReq);
+        const auto id = GetRequestData<xResourceReq>()->id;
+        if (!GetResourceAs<Cursor>(id)) throw BadCursorError(id);
+        // Window attributes and active grabs retain their own references.
+        RemoveResource(id); return;
+    }
     case X_RecolorCursor: {
         CHECK_REQUEST_SIZE_STRICT(xRecolorCursorReq); const auto* q = GetRequestData<xRecolorCursorReq>();
         auto* cursor = GetResourceAs<Cursor>(q->cursor); if (!cursor) throw BadCursorError(q->cursor);
@@ -41,11 +50,18 @@ void XClient::ProcCompat() {
         auto* source = GetDrawable(r->srcDrawable); auto* target = GetDrawable(r->dstDrawable);
         auto* gc = GetResourceAs<GraphicsContext>(r->gc);
         if (!source || !target) throw BadDrawableError(!source ? r->srcDrawable : r->dstDrawable);
+        // Public 4.1 uses redirected-window CopyArea as a composition/stacking
+        // request. Keep ordinary pixmaps on the real copy path.
+        auto* srcWindow = GetResourceAs<Window>(r->srcDrawable);
+        if (srcWindow && srcWindow->IsCompositeRedirected()) {
+            if (auto* dstWindow = GetResourceAs<Window>(r->dstDrawable))
+                server.GetWindowManager().CompositeCopy(srcWindow, dstWindow, r->dstX, r->dstY);
+            return;
+        }
         if (!gc) throw BadGCError(r->gc);
-        std::vector<u8> copy(size_t(r->width) * r->height * 4);
-        source->ReadPixels(copy.data(), r->srcX, r->srcY, r->width, r->height, r->width);
-        target->WritePixels(copy.data(), 0, 0, r->dstX, r->dstY, r->width, r->height, r->width);
-        server.GetScreen().PostInvalidate();
+        static_cast<NativeDrawable*>(target)->CopyAreaFrom(*static_cast<NativeDrawable*>(source),
+                r->srcX, r->srcY, r->dstX, r->dstY, r->width, r->height);
+        static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(target);
         if (gc->GetAttribute(GCGraphicsExposures)) {
             xEvent event{}; event.u.u.type = NoExpose; event.u.noExposure.drawable = r->dstDrawable;
             event.u.noExposure.majorEvent = X_CopyArea; SendEvent(event);
@@ -58,7 +74,7 @@ void XClient::ProcCompat() {
         auto* d = w->GetDrawable(); if (!d) return;
         d->FillRect(r->x, r->y, r->width ? r->width : w->GetWidth() - r->x,
                     r->height ? r->height : w->GetHeight() - r->y, w->GetAttributes().back_pixel);
-        if (r->exposures) w->MakeExposure(); server.GetScreen().PostInvalidate(); return;
+        if (r->exposures) w->MakeExposure(); static_cast<NativeScreen&>(server.GetScreen()).DrawableChanged(d); return;
     }
     case X_QueryKeymap: {
         xQueryKeymapReply r{}; r.length = 2; send(r); return;
@@ -136,4 +152,5 @@ void XClient::ProcCompat() {
     }
 }
 }
+
 

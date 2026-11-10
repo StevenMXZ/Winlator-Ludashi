@@ -22,7 +22,14 @@ public:
     inline static VulkanRendererContext* instance{};
     inline static std::atomic<unsigned> waits{};
     inline static bool holdWait{};
-    VulkanRendererContext(ANativeWindow* w, int, int) : window(w) { instance = this; }
+    bool nativeCommandCacheEnabled{true};
+    void (*nativeFrameReady)(void*){};
+    void* nativeFrameReadyData{};
+    std::atomic<bool> acquireBlocked{}, acquireEntered{};
+    bool acquireFails{};
+    std::vector<int64_t> boundImages;
+    bool validationRequested{};
+    VulkanRendererContext(ANativeWindow* w, int, int, void* = nullptr, bool validation = false) : validationRequested(validation), window(w) { instance = this; }
     ~VulkanRendererContext() { ANativeWindow_release(window); instance = nullptr; }
     void detachSurface() { surfaceDetached = true; }
     bool reattachSurface(ANativeWindow* w) {
@@ -40,8 +47,14 @@ public:
     void updateWindowContentAHB(int64_t id, AHardwareBuffer* b, int, int, int, int) { texMap[id] = {true, b}; }
     void updateWindowContent(int64_t id, void*, int, int, int, int, int) { texMap[id] = {}; }
     void removeWindow(int64_t id) { texMap.erase(id); }
-    void setExternalRenderList(const int64_t*, const int*, const int*, int) {}
+    void setExternalRenderList(const int64_t* ids, const int*, const int*, int count) {
+        if (count) boundImages.assign(ids, ids + count); else boundImages.clear();
+    }
     void renderFrame() {
+        if (acquireFails) return;
+        acquireEntered = true;
+        while (acquireBlocked.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (nativeFrameReady) nativeFrameReady(nativeFrameReadyData);
         auto& fence = fences[currentFrame];
         { std::lock_guard lock(fence.mutex); fence.signaled = false; }
         slotSerial[currentFrame] = ++serial;
@@ -70,3 +83,4 @@ public:
     std::condition_variable dirtyCV;
     std::thread renderThread;
 };
+
