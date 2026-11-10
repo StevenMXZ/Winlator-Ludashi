@@ -2,6 +2,9 @@ package com.winlator.cmod.ui.library
 
 import android.content.Context
 import android.graphics.Bitmap
+import java.io.File
+import java.nio.file.Files
+import org.json.JSONObject
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -112,13 +115,27 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
-    val stats by produceState(GameStats(), shortcut?.file?.path, resumeSerial) {
-        if (shortcut == null) return@produceState
-        val loaded = withContext(Dispatchers.IO) { GameStatsLoader.load(context, shortcut) }
-        value = loaded
+    val steamDataRevision = if (steamId != null) com.winlator.cmod.steam.SteamUserData.contentRevision.intValue else 0
+    val stats by produceState(GameStats(), shortcut?.file?.path, steamId, steamDataRevision, resumeSerial) {
+        val loaded = withContext(Dispatchers.IO) {
+            shortcut?.let { GameStatsLoader.load(context, it) } ?: GameStats()
+        }
+        val steamPlay = withContext(Dispatchers.IO) {
+            steamId?.let { com.winlator.cmod.steam.SteamUserData.game(context, it) }
+        }
+        val basic = loaded.copy(
+            playtimeMillis = maxOf(loaded.playtimeMillis,
+                steamPlay?.optLong("playtimeForever")?.coerceAtLeast(0L)?.times(60000L) ?: 0L),
+            lastPlayedMillis = maxOf(loaded.lastPlayedMillis,
+                steamPlay?.optLong("rtimeLastPlayed")?.coerceAtLeast(0L)?.times(1000L) ?: 0L)
+        )
+        value = basic
         value = withContext(Dispatchers.IO) {
-            val cached = GameStatsLoader.cachedSize(context, shortcut)
-            loaded.copy(sizeText = if (cached?.fresh == true) cached.text else GameStatsLoader.sizeText(context, shortcut))
+            val cached = shortcut?.let { GameStatsLoader.cachedSize(context, it) }
+            val existingSize = shortcut?.let {
+                if (cached?.fresh == true) cached.text else GameStatsLoader.sizeText(context, it)
+            }
+            basic.copy(sizeText = existingSize ?: steamId?.let { installedSteamSizeText(context, it) })
         }
     }
     var favorite by remember(initialFavorite) { mutableStateOf(initialFavorite) }
@@ -172,31 +189,29 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
                 shape = WinZShapes.ExtraLarge, color = Color.Black.copy(.48f), border = BorderStroke(1.dp, Color.White.copy(.18f))) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
-                    if (LocalSteamDetail.current) {
-                        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LandscapeAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), Modifier.weight(1f), callbacks::onConfigure)
-                            LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
-                            LandscapeAction(Icons.Outlined.Backup, savesLabel(), Modifier.weight(1f), callbacks::onSaves)
-                            LandscapeAction(Icons.Outlined.Home, stringResource(R.string.ui_home), Modifier.weight(1f), callbacks::onHome)
-                        }
-                        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LandscapeAction(Icons.Outlined.DeleteOutline, stringResource(R.string.steam_ui_uninstall), Modifier.weight(1f), callbacks::onRemove, true)
-                            Box(Modifier.weight(2f)) {
-                                LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it, landscape = true) }
-                            }
-                        }
-                    } else {
-                        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LandscapeAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), Modifier.weight(1f), callbacks::onConfigure)
-                            LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
-                            LandscapeAction(Icons.Outlined.Backup, savesLabel(), Modifier.weight(1f), callbacks::onSaves)
-                            LandscapeAction(Icons.Outlined.Home, stringResource(R.string.ui_home), Modifier.weight(1f), callbacks::onHome)
-                            LandscapeAction(Icons.Outlined.DeleteOutline, stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
-                        }
+                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LandscapeAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), Modifier.weight(1f), callbacks::onConfigure)
+                        LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
+                        LandscapeAction(Icons.Outlined.Backup, savesLabel(), Modifier.weight(1f), callbacks::onSaves)
+                        LandscapeAction(Icons.Outlined.Home, stringResource(R.string.ui_home), Modifier.weight(1f), callbacks::onHome)
+                        LandscapeAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall) else stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
                     }
                 }
             }
-            if (stats.hasAny) StatsGrid(stats, Modifier.align(Alignment.BottomStart).padding(18.dp).width(statsWidth).heightIn(max = (maxHeight - 128.dp).coerceAtLeast(80.dp)).verticalScroll(rememberScrollState()), onArtwork = true)
+            if (stats.hasAny || LocalSteamDetail.current) {
+                Column(
+                    Modifier.align(Alignment.BottomStart).padding(18.dp)
+                        .width(minOf(statsWidth, 440.dp))
+                        .heightIn(max = (maxHeight - 128.dp).coerceAtLeast(80.dp))
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth(), onArtwork = true)
+                    LocalSteamInfoId.current?.let {
+                        com.winlator.cmod.steam.SteamGameInfoPanel(it, landscape = true, onArtwork = true)
+                    }
+                }
+            }
         }
     }
 }
@@ -215,13 +230,13 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
         }
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth())
+            LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
             PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
             DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)
             DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
             DetailAction(Icons.Outlined.Backup, savesLabel(), callbacks::onSaves)
             DetailAction(Icons.Outlined.Home, stringResource(R.string.ui_add_to_home), callbacks::onHome)
             DetailAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall) else stringResource(R.string.remove), callbacks::onRemove, true)
-            LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -317,3 +332,18 @@ private fun StatsGrid(stats: GameStats, modifier: Modifier = Modifier, onArtwork
         }
     }
 }
+
+private fun installedSteamSizeText(context: Context, id: Int): String? = runCatching {
+    val record = File(context.filesDir, "steam-library/$id.json")
+    if (!record.isFile) return@runCatching null
+    val dir = com.winlator.cmod.steam.SteamStorage.directory(context, JSONObject(record.readText()))
+    if (!dir.isDirectory || Files.isSymbolicLink(dir.toPath())) return@runCatching null
+    val deadline = android.os.SystemClock.uptimeMillis() + 3000L
+    var size = 0L
+    var examined = 0
+    for (file in dir.walkTopDown().onEnter { !Files.isSymbolicLink(it.toPath()) }) {
+        if (++examined > 150000 || android.os.SystemClock.uptimeMillis() > deadline) break
+        if (file.isFile && !Files.isSymbolicLink(file.toPath())) size += file.length()
+    }
+    if (size > 0) formatBinarySize(size) else null
+}.getOrNull()

@@ -11,8 +11,15 @@ import androidx.compose.ui.unit.dp
 import com.winlator.cmod.container.Container
 import com.winlator.cmod.R
 import com.winlator.cmod.ui.uiStr
-import com.winlator.cmod.ui.theme.ThemedDialog
-import com.winlator.cmod.ui.theme.ThemedDialogTitle
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import com.winlator.cmod.ui.theme.WinZShapes
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.Dispatchers
@@ -51,8 +58,26 @@ fun SteamNativeCloudPanel(id: Int, container: Container, close: () -> Unit, onBa
         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
     }
 
-    ThemedDialog(onDismissRequest = { if (!working) close() }) {
-        ThemedDialogTitle(uiStr(R.string.steam_cloud_saves))
+    Dialog(onDismissRequest = { if (!working) close() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        val view = LocalView.current
+        DisposableEffect(view) {
+            (view.parent as? DialogWindowProvider)?.window?.apply {
+                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+                clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                setDimAmount(0f)
+            }
+            onDispose { }
+        }
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .12f)), contentAlignment = Alignment.Center) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(.90f).widthIn(max = 360.dp),
+                shape = WinZShapes.Large,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = .80f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(uiStr(R.string.steam_cloud_saves), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(10.dp))
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (direction == null) {
                 OutlinedButton(onClick = { direction = SteamNativeCloud.Direction.Download }, modifier = Modifier.fillMaxWidth()) {
@@ -119,6 +144,9 @@ fun SteamNativeCloudPanel(id: Int, container: Container, close: () -> Unit, onBa
                     }) {
                         Text(uiStr(if (direction == SteamNativeCloud.Direction.Download) R.string.steam_cloud_apply_download else R.string.steam_cloud_confirm_upload))
                     }
+                }
+            }
+        }
                 }
             }
         }

@@ -2,34 +2,53 @@ package com.winlator.cmod.steam
 
 import android.content.Context
 import com.winlator.cmod.core.TarCompressorUtils
-import org.json.JSONObject
 import java.io.File
 import java.net.URL
 import java.security.MessageDigest
 
-/** Optional upstream Goldberg regular mode. Never modifies an original without keeping a backup. */
+/** Optional Goldberg regular mode. Never modifies an original without keeping a backup. */
 object SteamGoldberg {
     private fun root(context: Context) = File(context.filesDir, "steam-components/goldberg")
+    private const val downloadUrl = "https://github.com/Other-backup/winlator-imagefs-v2/releases/download/ludashi-goldberg-v1/goldberg.tzst"
+    private const val expectedSha256 = "5b4cefb163cec0388411d13277a1ebf3bedeee462436e78717ce31fafdfdbb66"
+
     @Synchronized fun ensureInstalled(context: Context) {
-        if (File(root(context), "regular/x64/steam_api64.dll").isFile) return
-        val catalog = JSONObject(readUrl("https://raw.githubusercontent.com/The412Banner/winlator-contents/main/goldberg.json").toString(Charsets.UTF_8))
-        val url = catalog.getString("url")
-        require(url.startsWith("https://github.com/The412Banner/winlator-contents/releases/download/"))
-        val expected = catalog.getString("file_checksum")
-        require(expected.matches(Regex("[a-fA-F0-9]{32}"))) { "Goldberg catalog has no valid checksum" }
+        if (File(root(context), "regular/x64/steam_api64.dll").isFile &&
+            File(root(context), "regular/x86/steam_api.dll").isFile) return
         val archive = File(context.cacheDir, "goldberg-download.tzst")
         try {
-            val connection = URL(url).openConnection().apply { connectTimeout = 15000; readTimeout = 60000 }
-            connection.getInputStream().use { input -> archive.outputStream().use { input.copyTo(it) } }
-            val digest = MessageDigest.getInstance("MD5")
-            archive.inputStream().use { input -> val buffer = ByteArray(65536); var count = input.read(buffer); while (count >= 0) { digest.update(buffer, 0, count); count = input.read(buffer) } }
-            check(digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }.equals(expected, true)) { "Goldberg checksum mismatch" }
+            val connection = URL(downloadUrl).openConnection().apply {
+                connectTimeout = 15000
+                readTimeout = 60000
+            }
+            connection.getInputStream().use { input ->
+                archive.outputStream().use { output -> input.copyTo(output) }
+            }
+            val digest = MessageDigest.getInstance("SHA-256")
+            archive.inputStream().use { input ->
+                val bytes = ByteArray(65536)
+                while (true) {
+                    val count = input.read(bytes)
+                    if (count == -1) break
+                    digest.update(bytes, 0, count)
+                }
+            }
+            check(digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+                .equals(expectedSha256, true)) { "The downloaded Goldberg component failed integrity verification." }
             root(context).mkdirs()
-            check(TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, archive, root(context), null)) { "Goldberg extraction failed" }
-            check(File(root(context), "regular/x64/steam_api64.dll").isFile) { "Goldberg component layout is unsupported" }
-        } finally { archive.delete() }
+            check(TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, archive, root(context), null)) {
+                "Goldberg extraction failed."
+            }
+            check(File(root(context), "regular/x64/steam_api64.dll").isFile &&
+                File(root(context), "regular/x86/steam_api.dll").isFile) {
+                "Goldberg files are incomplete."
+            }
+        } catch (error: java.io.IOException) {
+            throw IllegalStateException("Unable to download Goldberg from Other-backup. Check your connection and retry.", error)
+        } finally {
+            archive.delete()
+        }
     }
-    private fun readUrl(url: String): ByteArray = URL(url).openConnection().apply { connectTimeout = 15000; readTimeout = 15000 }.getInputStream().use { it.readBytes() }
     private val dllIndex = java.util.concurrent.ConcurrentHashMap<String, List<File>>()
     fun invalidate(game: File) { dllIndex.remove(game.canonicalPath) }
     private fun apiDlls(game: File): List<File> {

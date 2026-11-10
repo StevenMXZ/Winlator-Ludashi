@@ -73,16 +73,40 @@ tasks.register("downloadProton") {
         if (!valid) {
             if (protonARM64EC.exists()) protonARM64EC.delete()
             println("Proton 11 ARM64EC was not present or failed validation, downloading...\n")
-            new URL(protonURL).withInputStream { input ->
-                protonARM64EC.withOutputStream { output -> output << input }
+            String protonApiURL = "https://api.github.com/repos/Other-backup/winlator-imagefs-v2/releases/assets/695820250"
+            File partial = new File(assetDir, protonARM64EC.name + ".part")
+            Exception lastFailure = null
+            for (int attempt = 1; attempt <= 4 && !valid; attempt++) {
+                for (String candidate : [protonApiURL, protonURL]) {
+                    try {
+                        partial.delete()
+                        def connection = new URL(candidate).openConnection()
+                        connection.setConnectTimeout(30000)
+                        connection.setReadTimeout(120000)
+                        connection.setRequestProperty("Accept", "application/octet-stream")
+                        connection.setRequestProperty("User-Agent", "Winlator-Ludashi-build")
+                        if (candidate == protonApiURL && System.getenv("GITHUB_TOKEN")) {
+                            connection.setRequestProperty("Authorization", "Bearer " + System.getenv("GITHUB_TOKEN"))
+                        }
+                        connection.getInputStream().withCloseable { input ->
+                            partial.withOutputStream { output -> output << input }
+                        }
+                        if (!partial.isFile() || partial.length() != protonSize || !fileSHA256(partial).equalsIgnoreCase(protonSHA256)) {
+                            throw new GradleException("Proton 11 ARM64EC size/SHA-256 verification failed")
+                        }
+                        java.nio.file.Files.move(partial.toPath(), protonARM64EC.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                        valid = true
+                        break
+                    } catch (Exception error) {
+                        lastFailure = error
+                        println("Proton 11 download attempt ${attempt} failed; trying another endpoint.")
+                    } finally {
+                        partial.delete()
+                    }
+                }
+                if (!valid && attempt < 4) Thread.sleep(4000L * attempt)
             }
-            valid = protonARM64EC.isFile()
-                    && protonARM64EC.length() == protonSize
-                    && fileSHA256(protonARM64EC).equalsIgnoreCase(protonSHA256)
-            if (!valid) {
-                protonARM64EC.delete()
-                throw new GradleException("Downloaded Proton 11 ARM64EC archive failed size/SHA-256 validation")
-            }
+            if (!valid) throw new GradleException("Could not download the verified Proton 11 ARM64EC archive after retries", lastFailure)
         }
     }
 }

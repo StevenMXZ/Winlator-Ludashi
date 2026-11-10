@@ -25,7 +25,7 @@ import java.text.DateFormat
 import java.util.Date
 
 /** Compact summary; detailed lists are lazy and only composed when requested. */
-@Composable fun SteamGameInfoPanel(id: Int, landscape: Boolean = false) {
+@Composable fun SteamGameInfoPanel(id: Int, landscape: Boolean = false, onArtwork: Boolean = false) {
     val context = LocalContext.current
     val state = observeSteam()
     val data = rememberSteamGameSnapshot(context, id)
@@ -42,11 +42,11 @@ import java.util.Date
         }
     }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        SteamInfoAction(Icons.Outlined.Info, uiStr(R.string.steam_ui_game_info), landscape, Modifier.weight(1f)) { showInfo = true }
+        SteamInfoAction(Icons.Outlined.Info, uiStr(R.string.steam_ui_game_info), landscape, onArtwork, Modifier.weight(1f)) { showInfo = true }
         SteamInfoAction(
             Icons.Outlined.EmojiEvents,
             achievements?.let { "${it.count { a -> a.unlocked }} / ${it.size}" } ?: uiStr(R.string.steam_ui_achievements),
-            landscape, Modifier.weight(1f)
+            landscape, onArtwork, Modifier.weight(1f)
         ) { showAchievements = true }
     }
     if (showInfo) AlertDialog(onDismissRequest = { showInfo = false }, title = { Text(uiStr(R.string.steam_ui_game_info)) }, text = {
@@ -103,6 +103,7 @@ private fun SteamInfoAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     landscape: Boolean,
+    onArtwork: Boolean,
     modifier: Modifier,
     onClick: () -> Unit
 ) {
@@ -110,9 +111,9 @@ private fun SteamInfoAction(
         onClick = onClick,
         modifier = modifier.heightIn(min = if (landscape) 60.dp else 48.dp),
         shape = WinZShapes.Medium,
-        color = if (landscape) Color.White.copy(alpha = .10f) else MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = if (landscape) Color.White else MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(1.dp, if (landscape) Color.White.copy(alpha = .16f) else MaterialTheme.colorScheme.outlineVariant)
+        color = if (onArtwork) Color.Black.copy(alpha = .58f) else if (landscape) Color.White.copy(alpha = .10f) else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (landscape || onArtwork) Color.White else MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, if (landscape || onArtwork) Color.White.copy(alpha = .16f) else MaterialTheme.colorScheme.outlineVariant)
     ) {
         if (landscape) {
             Column(Modifier.padding(horizontal = 3.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally,
