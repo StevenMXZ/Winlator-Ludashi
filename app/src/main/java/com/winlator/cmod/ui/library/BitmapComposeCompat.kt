@@ -86,7 +86,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.winlator.cmod.MainActivity
-import com.winlator.cmod.steam.StoreSettingsActivity
+import com.winlator.cmod.steam.SteamActivity
 import com.winlator.cmod.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -134,7 +134,7 @@ internal fun LibraryRoot(
             ) {
                 LibraryAddGamesChoice("Stores", Icons.Outlined.Storefront) {
                     showAddGames.value = false
-                    activity?.startActivity(Intent(activity, StoreSettingsActivity::class.java))
+                    activity?.startActivity(Intent(activity, SteamActivity::class.java).putExtra("steam_tab", 0))
                 }
                 LibraryAddGamesChoice("File Manager", Icons.Outlined.FolderOpen) {
                     showAddGames.value = false
