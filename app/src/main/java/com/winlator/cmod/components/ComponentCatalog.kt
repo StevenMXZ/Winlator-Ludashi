@@ -23,12 +23,9 @@ data class Component(
     val ready: Boolean get() = status == "ready"
 }
 
-/**
- * Reads the system-library component catalog (components.json) hosted on winlator-contents.
- * Same source BannerHub's Component Manager uses.
- */
+
 object ComponentCatalog {
-    const val URL = "https://raw.githubusercontent.com/The412Banner/winlator-contents/main/components.json"
+    const val URL = "https://raw.githubusercontent.com/Other-backup/winlator-imagefs-v2/ludashi-components/components.json"
 
     /** The last catalog [load] read, by name: what an install looks dependencies up in. */
     @Volatile

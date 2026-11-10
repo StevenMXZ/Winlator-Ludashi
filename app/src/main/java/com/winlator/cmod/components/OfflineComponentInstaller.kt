@@ -22,26 +22,7 @@ import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 
-/**
- * Installs Windows components into a container's prefix without opening the container: the way
- * DroidDeck does it (its WinComponents + droiddeck-msi-install + droiddeck-wincomponents), so a
- * component lands the same in both apps.
- *
- *  - A component with a recording (the catalog's "snapshot": what its own installer leaves in a
- *    prefix, made on an x86 runner by winlator-contents' tools/snapshot/record.py) is laid out from
- *    it: the files from the archive beside the recording, or out of the vendor's installer by the
- *    paths (and fingerprints) the recording maps, and the recorded registry values.
- *  - A Windows Installer package (.msi), or an installer .exe that wraps packages (WiX bundles,
- *    self-extracting cabinets, 7-Zip SFX: Visual C++, .NET Framework 4.x, XNA, PhysX...), is read
- *    and laid out the way Wine's msiexec would, without running it ([PackageInstaller]).
- *  - The file steps (archives, DLL copies, cabinets, DLL overrides, registry values, the Windows
- *    version) are done straight on the prefix's files.
- *
- * Everything is put together in a staging folder first and only then moved into the prefix, with
- * the registry values written into system.reg/user.reg - so Wine never has to run, and a failed
- * install leaves the prefix as it was. Components that are their own setup program and have no
- * recording yet still go through [ComponentExecInstaller] (a container session).
- */
+
 object OfflineComponentInstaller {
     private const val TAG = "OfflineComponents"
     private const val DLL_OVERRIDES = "Software\\Wine\\DllOverrides"
@@ -439,7 +420,7 @@ object OfflineComponentInstaller {
     private fun globRegex(pattern: String) =
         Regex("^" + pattern.split("*").joinToString(".*") { Regex.escape(it) } + "$", RegexOption.IGNORE_CASE)
 
-    /** Ludashi's rule: files are found by name anywhere in the unpacked tree, preferring the matching win32/win64 folder. */
+
     private fun copyMatching(srcRoot: File, pattern: String, dest: File, arch: String?) {
         if (pattern.isEmpty()) return
         val rx = globRegex(pattern)

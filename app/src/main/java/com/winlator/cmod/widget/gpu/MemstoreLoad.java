@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Adapted from The412Banner/Ludashi 0ab047311ccc55b2911d984727d2d57ac6c0ebf7.
+
 package com.winlator.cmod.widget.gpu;
 
 import java.util.ArrayDeque;
 
-/**
- * GPU busy share over about the last {@link #windowMs} from {@link KgslBusy} running totals (busy samples, samples,
- * samples in which a ringbuffer or context started new work). No reading until new work has been seen; {@link #failed}
- * once {@link #GIVE_UP_SAMPLES} samples passed without any. Several HUDs may ask at different rates, so the window is
- * time-based. Ported from DroidDeck's GpuStatsComponent.MemstoreLoad.
- */
+
 final class MemstoreLoad {
     static final long GIVE_UP_SAMPLES = 5_000L;
 

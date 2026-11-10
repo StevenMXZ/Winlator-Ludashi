@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Adapted from The412Banner/Ludashi 0ab047311ccc55b2911d984727d2d57ac6c0ebf7.
-// Ported from DroidDeck (github.com/Droid-Deck/DroidDeck, PRs #1969 and #1981).
 #ifndef LUDASHI_KGSL_BUSY_H
 #define LUDASHI_KGSL_BUSY_H
 // kgsl lets any client map its memstore read-only (KGSL_PROP_DEVICE_SHADOW). The CP writes a ringbuffer's

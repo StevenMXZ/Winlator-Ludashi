@@ -13,13 +13,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * One of a prefix's registry files (system.reg, user.reg) as Wine keeps them - [key] sections of
- * name=value lines - edited in place without Wine running (DroidDeck's droiddeck-wincomponents
- * RegistryFile, ported). Keys that are links (the 32-bit view's Software\Wow6432Node\Classes leads
- * to Software\Classes\Wow6432Node) are followed, so a value lands where Wine reads it. Read and
- * written byte for byte (ISO-8859-1): everything not touched stays exactly as it was.
- */
+
 public final class WineRegistryFile {
     private static final class Section {
         String header;

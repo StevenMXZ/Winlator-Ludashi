@@ -7,11 +7,7 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Windows Installer's condition language, enough of it for what packages ask at install time
- * (a port of droiddeck-msi-install's Conditions). A condition that cannot be read gives the
- * caller's default.
- */
+
 final class MsiConditions {
     private static final Pattern TOKEN = Pattern.compile(
             "\\s*(?:(\"[^\"]*\")|(-?\\d+)(?![\\w.])|(~?(?:<>|<=|>=|><|<<|>>|=|<|>))|([()])|([%$?&!]?[A-Za-z_][\\w.]*))");

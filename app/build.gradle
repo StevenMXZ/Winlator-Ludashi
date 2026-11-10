@@ -111,7 +111,7 @@ tasks.register("downloadComponentTools") {
             if (!target.isFile() || hash(target) != expected) {
                 File part = new File(directory, name + ".part")
                 try {
-                    new URL("https://raw.githubusercontent.com/The412Banner/Bannerlator/b74261e699d725de804064d891aa68640c0f9431/app/src/main/jniLibs/arm64-v8a/" + name).withInputStream { input ->
+                    new URL("https://raw.githubusercontent.com/Other-backup/winlator-imagefs-v2/ludashi-components/component-tools/arm64-v8a/" + name).withInputStream { input ->
                         part.withOutputStream { output -> output << input }
                     }
                     if (hash(part) != expected) throw new GradleException("Component tool checksum mismatch: " + name)

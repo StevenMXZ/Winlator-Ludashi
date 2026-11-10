@@ -3354,8 +3354,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 registryEditor.removeValue(x11DriverKey, "EmulateModelist");
                 registryEditor.removeValue(x11DriverKey, "EmulateModeset");
             }
-            // Native RENDER provides the libXcursor subset, as in Ludashi
-            // 2da9fba1. Keep Wine GDI on its existing core drawing path.
+            // Keep Wine GDI on its existing core drawing path.
             if (isNativeX11Enabled())
                 registryEditor.setStringValue(x11DriverKey, "ClientSideWithRender", "N");
         }

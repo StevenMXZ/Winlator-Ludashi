@@ -1,4 +1,3 @@
-// RENDER cursor subset, based on Ludashi's 2da9fba1 protocol approach.
 // Wine GDI remains on the core path through ClientSideWithRender=N.
 #include "core/xclient.h"
 #include "core/xclient_dispatch.h"

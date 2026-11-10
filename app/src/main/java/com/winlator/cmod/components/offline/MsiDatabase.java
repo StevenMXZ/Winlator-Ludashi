@@ -14,12 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
-/**
- * A Windows Installer package's database, read straight from its streams: the string pool, the
- * table catalogue (_Tables, _Columns), each table's rows and the summary information. What
- * msitools' msiinfo gives droiddeck-msi-install on DroidDeck, with no tool to run: rows come back
- * as column name -> text, integers as decimal text and a null cell as "".
- */
+
 public final class MsiDatabase implements Closeable {
     private static final String CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz._";
     private static final int TYPE_VALID = 0x0100, TYPE_STRING = 0x0800, TYPE_NULLABLE = 0x1000;

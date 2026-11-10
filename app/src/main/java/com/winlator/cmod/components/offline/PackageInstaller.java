@@ -17,19 +17,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Lays out a component's installer without running it (DroidDeck's droiddeck-msi-install, ported):
- * a Windows Installer package directly, or an installer .exe that is a wrapper around packages -
- * a WiX bundle (Visual C++ 2012 and later, the .NET Core and 5+ runtimes: the packages sit in
- * cabinets the bundle's own header locates, named in its manifest), a self-extracting cabinet
- * (Visual C++ 2005 to 2010) or a self-extracting 7-Zip archive (.NET Framework 4.0 to 4.8). The
- * packages inside are laid out one after the other into the same folder, the 32- and 64-bit ones
- * both, an ARM64 one never. An .exe that is its own setup program (NSIS, InnoSetup) holds no
- * package: that is an error naming it.
- *
- * Also opens an installer for a component recording to take files out of ([unpackOnly]), the way
- * the recorder opened it: archives inside opened in place, two levels deep.
- */
+
 public final class PackageInstaller {
     private static final int BURN_MAGIC = 0x00F14300;
     private static final String[] NESTED_SUFFIXES = {".7z", ".zip", ".cab", ".exe", ".msi", ".rar", ".xz", ".gz", ".tar"};
@@ -174,10 +162,7 @@ public final class PackageInstaller {
         if (all != null) for (File f : all) OfflineTools.deleteTree(f);
     }
 
-    /**
-     * Every cabinet inside [path] (one file that is a cabinet, or a self-extracting one carrying
-     * them after its program), each opened into [dest]; what cabextract does for DroidDeck.
-     */
+
     private boolean unpackCabinets(File path, File dest) throws IOException {
         boolean any = false;
         try (RandomAccessFile f = new RandomAccessFile(path, "r")) {
@@ -408,11 +393,7 @@ public final class PackageInstaller {
         return chosen;
     }
 
-    /**
-     * Opens an archive a catalog step downloads (DirectX's redistributable, a self-extracting
-     * cabinet) for its files to be picked out: the way DroidDeck's --unpack does - the installer
-     * opened, then the archives inside it, two levels deep.
-     */
+
     public void unpackForSteps(File path, File dest, OfflineTools.Progress progress) throws IOException {
         if (!dest.isDirectory() && !dest.mkdirs()) throw new IOException("could not make " + dest);
         unpackInstaller(path, dest, progress);

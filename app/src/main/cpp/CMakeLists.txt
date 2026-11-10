@@ -8,7 +8,6 @@ add_subdirectory(OpenXR-SDK)
 add_subdirectory(patchelf)
 add_subdirectory(adrenotools)
 
-# Optional, read-only KGSL HUD load fallback (Ludashi / DroidDeck).
 add_library(gpuusage SHARED gpuusage/kgsl_busy.c)
 
 # Shaders for Winlator Labs' offscreen rotating 3D cube benchmark.

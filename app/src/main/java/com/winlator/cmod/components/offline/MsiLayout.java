@@ -18,16 +18,7 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Installs a Windows Installer package (.msi) the way Wine's own msiexec would, without running
- * it: reads the package's tables, unpacks its cabinets and lays the files out under
- * [out]/drive_c at the paths they get on 64-bit Windows, with the registry values the package
- * writes collected in [registry]. A port of DroidDeck's droiddeck-msi-install (Installer), so a
- * component lays out the same on both.
- *
- * What a package does by running its own code (custom actions such as DXSETUP, self-registering
- * DLLs) cannot be done this way; each is named in [notes], so nothing is left out silently.
- */
+
 public final class MsiLayout {
     /** A package that, for this prefix, places nothing at all. */
     public static final class NothingToInstall extends IOException {
@@ -69,10 +60,7 @@ public final class MsiLayout {
     private final Set<String> setByAction = new HashSet<>();
     private final MsiConditions conditions;
 
-    /**
-     * [user] is the prefix's Windows user (Ludashi's containers run as "xuser"); [span] maps
-     * this package's 0..1 progress into the caller's.
-     */
+
     public MsiLayout(MsiDatabase pkg, File out, String user, OfflineTools tools, OfflineTools.Progress span) throws IOException {
         this.pkg = pkg; this.out = out; this.tools = tools; this.span = span;
         String u = "C:\\users\\" + user + "\\";

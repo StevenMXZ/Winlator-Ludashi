@@ -12,26 +12,7 @@ import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import java.util.Locale
 
-/**
- * What a component changed in a container's prefix, kept so it can be taken back out: the way
- * DroidDeck's droiddeck-wincomponents keeps .droiddeck-wincomponents.json and its backup folder (the
- * files it placed, the originals of the ones it replaced, the registry values as they were before).
- *
- * One journal per component per container, under <container>/.ludashi-component-undo/<name>/:
- * journal.json, and backup/ with the originals it replaced. Paths are relative to the .wine folder.
- *
- *  - Laid out without Wine ([OfflineComponentInstaller], the catalog's file steps): each file is
- *    noted, and the one it replaces kept, just before it is written; the registry is compared before
- *    and after.
- *  - Run by its own installer in a container session ([ComponentExecInstaller]): the prefix's files
- *    and registry are listed before the session and compared once the install finishes. What the
- *    installer added can go again; a file it changed in place has no original to put back and stays.
- *
- * Reinstalling adds to the same journal and keeps the first originals. Taking one out ([revert])
- * touches only what its journal holds. Where a component that went in later changed the same file or
- * value, that one's journal is handed the original instead, so removing the other one later still
- * ends at the state from before both. A file or value changed since (by the user, a game) is left.
- */
+
 object ComponentUndo {
     private const val TAG = "ComponentUndo"
     private const val DIR = ".ludashi-component-undo"

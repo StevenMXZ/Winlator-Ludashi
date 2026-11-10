@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Adapted from The412Banner/Ludashi 0ab0473 (original port: DroidDeck #1969/#1981).
+
 package com.winlator.cmod.widget.gpu
 
 internal object KgslErrors {

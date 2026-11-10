@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Adapted from The412Banner/Ludashi 0ab047311ccc55b2911d984727d2d57ac6c0ebf7.
+
 package com.winlator.cmod.widget.gpu
 
 import android.util.Log
 
-/**
- * Whole-GPU busy share for Adreno devices whose kgsl load nodes are SELinux-blocked for apps
- * (app/src/main/cpp/gpuusage/kgsl_busy.c). Ported from DroidDeck. It covers every process's GPU work, Android's own composition included.
- */
+
 object KgslBusy {
     private const val TAG = "HudGpu"
 

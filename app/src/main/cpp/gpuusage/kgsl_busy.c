@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Adapted from The412Banner/Ludashi 0ab047311ccc55b2911d984727d2d57ac6c0ebf7.
-// Ported from DroidDeck (github.com/Droid-Deck/DroidDeck, PRs #1969 and #1981).
 // Whole-GPU busy share without root on Adreno (KGSL) devices whose kgsl sysfs is blocked for apps: a thread
 // samples the memstore timestamps (kgsl_busy.h) once a millisecond while running. Ringbuffer entries are used where
 // the kernel writes them; on hardware-scheduled kernels, which leave them at 0, the contexts' own entries are used.
