@@ -201,6 +201,20 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
             (uint32_t)postUpload.size(), postUpload.data());
     }
 
+    const bool useSgsr = filterMode == 2 && sgsrPipeline != VK_NULL_HANDLE;
+    const bool useFsr = filterMode == 3 && fsr1Pipeline != VK_NULL_HANDLE;
+    const bool useLanczos = filterMode == 4 && lanczosPipeline != VK_NULL_HANDLE;
+    const bool useColorBoost = filterMode == 5 && postfxPipeline != VK_NULL_HANDLE;
+    const bool usePostFX = postFXMode > 0 && postfxPipeline != VK_NULL_HANDLE;
+    const bool useStretch = stretchMode == 1 && stretchPipeline != VK_NULL_HANDLE;
+
+    VkPipeline activePipeline = useSgsr ? sgsrPipeline
+                              : useFsr ? fsr1Pipeline
+                              : useLanczos ? lanczosPipeline
+                              : useColorBoost ? postfxPipeline
+                              : usePostFX ? postfxPipeline
+                              : useStretch ? stretchPipeline
+                              : VulkanRendererGetOpaquePipeline(this);
     VkRenderPassBeginInfo rpi{};
     rpi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     rpi.renderPass = useFrameGeneration ? frameGenRenderPass : renderPass;
@@ -211,6 +225,28 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
     VkClearValue clear = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
     rpi.clearValueCount = 1;
     rpi.pClearValues = &clear;
+#ifdef LUDASHI_NATIVE_X11
+    // This is the recorder linked by CMake. The legacy definition in Context
+    // is disabled in the generated translation unit, for both Java and native.
+    const bool useOpaque = !useSgsr && !useFsr && !useLanczos && !useColorBoost &&
+        !usePostFX && !useStretch && opaquePipeline != VK_NULL_HANDLE && activePipeline == opaquePipeline;
+    if (!useFrameGeneration && useOpaque && nativeNoClearPass != VK_NULL_HANDLE && draws.size() == 1 &&
+        draws[0].img != VK_NULL_HANDLE && draws[0].ds != VK_NULL_HANDLE &&
+        cw > 0.f && ch > 0.f && sx > 0.f && sy > 0.f &&
+        scissorRect.offset.x == 0 && scissorRect.offset.y == 0 &&
+        scissorRect.extent.width >= swapchainExt.width && scissorRect.extent.height >= swapchainExt.height) {
+        const auto& d = draws[0];
+        if (NativeCoversOutput((ox + float(d.x) * sx) / cw * 2.f - 1.f,
+                              (oy + float(d.y) * sy) / ch * 2.f - 1.f,
+                              (ox + (float(d.x) + d.w) * sx) / cw * 2.f - 1.f,
+                              (oy + (float(d.y) + d.h) * sy) / ch * 2.f - 1.f))
+            rpi.renderPass = nativeNoClearPass;
+    }
+    if (nativeDiagnosticsEnabled) {
+        nativeMetrics.opaque += useOpaque;
+        nativeMetrics.noClear += rpi.renderPass == nativeNoClearPass;
+    }
+#endif
     vk_.CmdBeginRenderPass(cb, &rpi, VK_SUBPASS_CONTENTS_INLINE);
 
     VkViewport viewport{0, 0, (float)swapchainExt.width, (float)swapchainExt.height, 0, 1};
@@ -227,20 +263,6 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
     float rotCosR, rotSinR;
     getPreRotationCosSin(rotCosR, rotSinR);
 
-    const bool useSgsr = filterMode == 2 && sgsrPipeline != VK_NULL_HANDLE;
-    const bool useFsr = filterMode == 3 && fsr1Pipeline != VK_NULL_HANDLE;
-    const bool useLanczos = filterMode == 4 && lanczosPipeline != VK_NULL_HANDLE;
-    const bool useColorBoost = filterMode == 5 && postfxPipeline != VK_NULL_HANDLE;
-    const bool usePostFX = postFXMode > 0 && postfxPipeline != VK_NULL_HANDLE;
-    const bool useStretch = stretchMode == 1 && stretchPipeline != VK_NULL_HANDLE;
-
-    VkPipeline activePipeline = useSgsr ? sgsrPipeline
-                              : useFsr ? fsr1Pipeline
-                              : useLanczos ? lanczosPipeline
-                              : useColorBoost ? postfxPipeline
-                              : usePostFX ? postfxPipeline
-                              : useStretch ? stretchPipeline
-                              : VulkanRendererGetOpaquePipeline(this);
     vk_.CmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, activePipeline);
 
     for (auto& d : draws) {
@@ -393,5 +415,6 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
         throw std::runtime_error("end cb");
     }
 }
+
 
 

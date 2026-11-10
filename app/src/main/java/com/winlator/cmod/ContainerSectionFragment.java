@@ -201,6 +201,8 @@ public class ContainerSectionFragment extends Fragment {
                 description,
                 rendererEntries,
                 container.isRendererNative() ? "EGL" : "Vulkan",
+                "native".equals(container.getExtra("displayServer", "java"))
+                        ? "Ludashi X11 (Native Vulkan)" : "Java X11",
                 screenEntries,
                 findScreenEntry(screenEntries, container.getScreenSize()),
                 container.getScreenSize(),
@@ -260,6 +262,7 @@ public class ContainerSectionFragment extends Fragment {
                     @Override
                     public void onSave(
                             @NonNull String renderer,
+                            @NonNull String displayServer,
                             @NonNull String screenSize,
                             @NonNull String graphicsDriver,
                             @NonNull String graphicsDriverConfig,
@@ -277,6 +280,7 @@ public class ContainerSectionFragment extends Fragment {
                             @NonNull String fexcorePreset
                     ) {
                         if (section == VIDEO) {
+                            container.putExtra("displayServer", displayServer.startsWith("Ludashi") ? "native" : "java");
                             container.setScreenSize(normalizeScreenSize(screenSize));
                             container.setGraphicsDriver(StringUtils.parseIdentifier(graphicsDriver));
                             container.setGraphicsDriverConfig(graphicsDriverConfig);
@@ -438,3 +442,4 @@ public class ContainerSectionFragment extends Fragment {
         ((AppCompatActivity) requireActivity()).getSupportActionBar().setTitle(title);
     }
 }
+

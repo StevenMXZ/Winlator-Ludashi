@@ -28,6 +28,7 @@ public class FrameRating extends FrameLayout implements Runnable {
     private long lastTime = 0;
     private int frameCount = 0;
     private float lastFPS = 0;
+    private long nativeFrameCount, nativeElapsedMs;
     private String totalRAM = null;
     private final TextView tvFPS;
     private final TextView tvRenderer;
@@ -110,6 +111,7 @@ public class FrameRating extends FrameLayout implements Runnable {
     }
 
     public void reset() {
+        nativeFrameCount = nativeElapsedMs = 0;
         generatedCounterPrimed = false;
         lastGeneratedFrames = 0;
         frameGenerationActive = false;
@@ -169,6 +171,17 @@ public class FrameRating extends FrameLayout implements Runnable {
         tvFPS.setTextColor(frameGenerationActive ? C_FPS_FG : defaultFpsColor);
         tvFPS.setText(String.format(Locale.ENGLISH, "%.1f", lastFPS));
         tvRAM.setText(getAvailableRAM() + " GB Used / " + totalRAM + " Total");
+    }
+
+    public void updateNativeFrames(long frames, long elapsedMs) {
+        if (!userEnabled || elapsedMs <= 0) return;
+        frameGenerationActive = false;
+        nativeFrameCount += frames;
+        nativeElapsedMs += elapsedMs;
+        if (nativeElapsedMs < 500) return;
+        lastFPS = nativeFrameCount * 1000f / nativeElapsedMs;
+        nativeFrameCount = nativeElapsedMs = 0;
+        run();
     }
 
     public void setFrameGenerationSource(VulkanXServerView source) {

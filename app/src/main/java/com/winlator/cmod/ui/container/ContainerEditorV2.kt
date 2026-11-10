@@ -166,6 +166,10 @@ private class ContainerEditorStateV2(
     var mouseWarp by mutableStateOf(editing?.getExtra("mouseWarpOverride", "disable") ?: "disable")
     var drives by mutableStateOf(editing?.drives ?: Container.DEFAULT_DRIVES)
 
+    var displayServer by mutableStateOf(
+        if (editing?.getExtra("displayServer", "java") == "native") "Ludashi X11 (Native Vulkan)"
+        else "Java X11"
+    )
     var renderer by mutableStateOf(
         when {
             editing?.getUseDisplayX() == true -> "DisplayX"
@@ -324,7 +328,7 @@ private class ContainerEditorStateV2(
     fun fingerprint(): String = listOf(
         name, screen, audio, oboeProfile, oboeApi, oboeAdaptive, oboeExclusive, hudMode, locale, soundFont,
         fullscreen, desktopTheme, desktopBackground, wallpaperStamp, mouseWarp, drives,
-        renderer, rendererPresentMode, rendererDriver, filterMode, surfaceFormat, trueDisplayX,
+        displayServer, renderer, rendererPresentMode, rendererDriver, filterMode, surfaceFormat, trueDisplayX,
         displayXPerformanceMode, displayXPresentAtRefreshRate, displayXBackPressure,
         displayXPrecisePresentation, frameGenEnabled, frameGenMultiplier,
         frameGenTargetRate, frameGenFlowScale, graphicsDriver, graphicsConfig,
@@ -462,6 +466,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.setSyncCpuTopology(state.syncCpu)
         container.setGraphicsDriver(state.graphicsDriver)
         container.setGraphicsDriverConfig(state.graphicsConfig)
+        container.putExtra("displayServer", if (state.displayServer.startsWith("Ludashi")) "native" else "java")
         container.setRendererNative(state.renderer == "EGL")
         container.setRendererPresentMode(state.rendererPresentMode)
         container.setRendererDriverId(state.rendererDriver)
@@ -563,6 +568,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                 put("extraData", JSONObject()
                     .put("hudMode", state.hudMode.toString())
                     .put("mouseWarpOverride", state.mouseWarp)
+                    .put("displayServer", if (state.displayServer.startsWith("Ludashi")) "native" else "java")
                     .put("useDisplayX", if (state.renderer == "DisplayX") "1" else "0")
                     .put("surfaceFormat", state.surfaceFormat)
                     .put("trueDisplayX", if (state.trueDisplayX) "1" else "0")
@@ -857,7 +863,11 @@ private fun ContainerCategoryV2(
                     SettingText("Custom resolution", s.screen) { s.screen = it }
                 }
                 SettingsDivider()
-                SettingChoice("Renderer", s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
+                SettingChoice("Display Server", s.displayServer,
+                    listOf("Java X11", "Ludashi X11 (Native Vulkan)")) { s.displayServer = it }
+                if (s.displayServer == "Java X11") {
+                    SettingsDivider()
+                    SettingChoice("Renderer", s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
                     s.renderer = it
                     s.surfaceFormat = if (it == "DisplayX") "rgba8" else "bgra8"
                     if (it == "EGL" && s.filterMode > 1) s.filterMode = 0
@@ -916,8 +926,13 @@ private fun ContainerCategoryV2(
                         s.filterMode = filters.indexOf(it).coerceAtLeast(0)
                     }
                 }
+                } else {
+                    Text("Native X11 protocol with the Ludashi Vulkan renderer.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-            if (s.renderer == "Vulkan") {
+            if (s.displayServer == "Java X11" && s.renderer == "Vulkan") {
                 FrameGenerationSettings(
                     enabled = s.frameGenEnabled,
                     multiplier = s.frameGenMultiplier,
@@ -1223,5 +1238,6 @@ private fun containerDesktopThemeValueV2(theme: String, background: String, wall
     else
         "$themeId,$backgroundId,#0277bd"
 }
+
 
 

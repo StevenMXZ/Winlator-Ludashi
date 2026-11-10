@@ -42,6 +42,16 @@ VulkanRendererContext::VulkanRendererContext(ANativeWindow* win, int cW, int cH,
     createInstance(); createSurface(); pickPhysicalDevice(); createLogicalDevice();
     createSwapchain(); createRenderPass(); createDSLayout();
     createPipeline(true, pipeline);
+#ifdef LUDASHI_NATIVE_X11
+    // Compile once at startup, never while processing a game frame. Keep the
+    // blended pipeline for the alpha cursor and as a driver-error fallback.
+    try { createPipeline(false, opaquePipeline); }
+    catch (const std::exception& e) {
+        opaquePipeline = VK_NULL_HANDLE;
+        RLOG_E("Native opaque pipeline unavailable: %s", e.what());
+    }
+    opaquePipelineAttempted = true;
+#endif
     createFramebuffers(); createCmdPool(); createSampler();
     createWinTexPool(); createCursorDS(); createCmdBufs(); createSyncObjects();
     isRunning = true;
@@ -68,6 +78,10 @@ VulkanRendererContext::~VulkanRendererContext() {
     if (stretchPipeline != VK_NULL_HANDLE) vk_.DestroyPipeline(device, stretchPipeline, nullptr);
     if (postfxPipeline != VK_NULL_HANDLE) vk_.DestroyPipeline(device, postfxPipeline, nullptr);
     vk_.DestroyPipeline(device, pipeline, nullptr);
+#ifdef LUDASHI_NATIVE_X11
+    if (opaquePipeline != VK_NULL_HANDLE) vk_.DestroyPipeline(device, opaquePipeline, nullptr);
+    if (nativeNoClearPass != VK_NULL_HANDLE) vk_.DestroyRenderPass(device, nativeNoClearPass, nullptr);
+#endif
     vk_.DestroyPipelineLayout(device, pipeLayout, nullptr);
     vk_.DestroyDescriptorSetLayout(device, dsLayout, nullptr);
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -596,7 +610,15 @@ void VulkanRendererContext::createRenderPass() {
     ci.attachmentCount=1; ci.pAttachments=&att; ci.subpassCount=1; ci.pSubpasses=&sub;
     ci.dependencyCount=1; ci.pDependencies=&dep;
     if (vk_.CreateRenderPass(device,&ci,nullptr,&renderPass)!=VK_SUCCESS) throw std::runtime_error("renderpass");
-
+#ifdef LUDASHI_NATIVE_X11
+    // Load/store operations do not affect render-pass compatibility. The same
+    // framebuffers/pipelines can use this pass when an opaque draw covers them.
+    att.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    if (vk_.CreateRenderPass(device,&ci,nullptr,&nativeNoClearPass)!=VK_SUCCESS) {
+        nativeNoClearPass = VK_NULL_HANDLE;
+        RLOG_E("Native no-clear render pass unavailable; using CLEAR");
+    }
+#endif
 }
 
 void VulkanRendererContext::createFrameGenRenderPass() {
@@ -679,8 +701,9 @@ void VulkanRendererContext::createPipeline(bool blend, VkPipeline& out) {
     pi.stageCount=2; pi.pStages=stages; pi.pVertexInputState=&vi; pi.pInputAssemblyState=&ia;
     pi.pViewportState=&vp; pi.pRasterizationState=&rast; pi.pMultisampleState=&ms;
     pi.pColorBlendState=&cb; pi.pDynamicState=&ds; pi.layout=pipeLayout; pi.renderPass=renderPass; pi.subpass=0;
-    if (vk_.CreateGraphicsPipelines(device,VK_NULL_HANDLE,1,&pi,nullptr,&out)!=VK_SUCCESS) throw std::runtime_error("pipeline");
+    const VkResult pipelineResult = vk_.CreateGraphicsPipelines(device,VK_NULL_HANDLE,1,&pi,nullptr,&out);
     vk_.DestroyShaderModule(device,frag,nullptr); vk_.DestroyShaderModule(device,vert,nullptr);
+    if (pipelineResult!=VK_SUCCESS) throw std::runtime_error("pipeline");
 }
 
 void VulkanRendererContext::createCursorPipeline() {  }
@@ -1637,8 +1660,35 @@ void VulkanRendererContext::destroyTexNow(RetiredTex& retired) {
     if (retired.ahb) AHardwareBuffer_release(retired.ahb);
 }
 
+#ifdef LUDASHI_NATIVE_X11
+void VulkanRendererContext::reportNativeMetrics() {
+    auto& m = nativeMetrics;
+    const auto now = NativeVulkanMetrics::Clock::now();
+    if (m.window == NativeVulkanMetrics::Clock::time_point{}) m.window = now;
+    const double seconds = std::chrono::duration<double>(now - m.window).count();
+    if (seconds < 1.) return;
+    const auto& s = m.stages;
+    __android_log_print(ANDROID_LOG_INFO, "Winlator_NativeX11",
+        "X11VulkanMetrics seconds=%.2f frames=%llu opaque=%llu no_clear=%llu "
+        "slot_us(avg/max)=%.1f/%.1f acquire_us(avg/max)=%.1f/%.1f "
+        "image_wait_us(avg/max)=%.1f/%.1f prepare_us(avg/max)=%.1f/%.1f record_us(avg/max)=%.1f/%.1f "
+        "submit_us(avg/max)=%.1f/%.1f present_us(avg/max)=%.1f/%.1f",
+        seconds, (unsigned long long)m.frames, (unsigned long long)m.opaque, (unsigned long long)m.noClear,
+        s[0].AverageUs(), s[0].MaximumUs(), s[1].AverageUs(), s[1].MaximumUs(),
+        s[2].AverageUs(), s[2].MaximumUs(), s[3].AverageUs(), s[3].MaximumUs(),
+        s[4].AverageUs(), s[4].MaximumUs(), s[5].AverageUs(), s[5].MaximumUs(),
+        s[6].AverageUs(), s[6].MaximumUs());
+    m = {};
+    m.window = now;
+}
+#endif
+
 void VulkanRendererContext::renderFrame() {
     std::shared_lock<std::shared_mutex> frameLock(frameMutex);
+#ifdef LUDASHI_NATIVE_X11
+    using NativeClock = NativeVulkanMetrics::Clock;
+    const bool nativeTrace = nativeDiagnosticsEnabled;
+#endif
 
     needsRender.store(false,std::memory_order_relaxed);
     cursorMoved.store(false,std::memory_order_relaxed);
@@ -1684,12 +1734,18 @@ void VulkanRendererContext::renderFrame() {
         return;
     }
     bool currentFenceWaited = false;
+#ifdef LUDASHI_NATIVE_X11
+    const auto nativeSlotStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
+#endif
     VkResult fenceState=vk_.GetFenceStatus ? vk_.GetFenceStatus(device,inFlightFences[currentFrame]) : VK_NOT_READY;
     if (fenceState==VK_NOT_READY) {
         if (vk_.WaitForFences(device,1,&inFlightFences[currentFrame],VK_TRUE,UINT64_MAX)!=VK_SUCCESS)
             throw std::runtime_error("frame fence wait");
         currentFenceWaited = true;
     } else if (fenceState!=VK_SUCCESS) throw std::runtime_error("frame fence status");
+#ifdef LUDASHI_NATIVE_X11
+    if (nativeTrace) nativeMetrics.RecordStage(NativeVulkanMetrics::Slot, nativeSlotStart);
+#endif
     completedSerial=std::max(completedSerial,slotSerial[currentFrame]);
     if (retirePending.load(std::memory_order_acquire)) {
         std::lock_guard<std::mutex> lk(renderMutex);
@@ -1718,7 +1774,13 @@ void VulkanRendererContext::renderFrame() {
     const uint32_t generatedCount = useFrameGeneration ? plannedGenerations : 0;
 
     uint32_t imgIdx;
+#ifdef LUDASHI_NATIVE_X11
+    const auto nativeAcquireStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
+#endif
     VkResult res=vk_.AcquireNextImageKHR(device,swapchain,UINT64_MAX,imgAvailSems[currentFrame],VK_NULL_HANDLE,&imgIdx);
+#ifdef LUDASHI_NATIVE_X11
+    if (nativeTrace) nativeMetrics.RecordStage(NativeVulkanMetrics::Acquire, nativeAcquireStart);
+#endif
     if (res==VK_ERROR_OUT_OF_DATE_KHR||res==VK_ERROR_SURFACE_LOST_KHR){fbResized.store(true);return;}
     if (res!=VK_SUCCESS&&res!=VK_SUBOPTIMAL_KHR) return;
     if (imgIdx >= swapchainFBs.size() || imgIdx >= swapchainImages.size()) {
@@ -1727,6 +1789,9 @@ void VulkanRendererContext::renderFrame() {
         return;
     }
 
+#ifdef LUDASHI_NATIVE_X11
+    const auto nativeImageWaitStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
+#endif
     if (imgInFlight.size()!=swapchainImages.size()) imgInFlight.assign(swapchainImages.size(),VK_NULL_HANDLE);
     if (imgInFlight[imgIdx]!=VK_NULL_HANDLE &&
         (!currentFenceWaited || imgInFlight[imgIdx] != inFlightFences[currentFrame])) {
@@ -1735,6 +1800,10 @@ void VulkanRendererContext::renderFrame() {
     }
     imgInFlight[imgIdx]=inFlightFences[currentFrame];
 
+#ifdef LUDASHI_NATIVE_X11
+    if (nativeTrace) nativeMetrics.RecordStage(NativeVulkanMetrics::ImageWait, nativeImageWaitStart);
+    const auto nativePrepareStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
+#endif
     vk_.ResetCommandBuffer(cmdBufs[currentFrame],0);
 
     float ox,oy,sx,sy,cw,ch;
@@ -1810,11 +1879,18 @@ void VulkanRendererContext::renderFrame() {
         curW=cursorTexW; curH=cursorTexH;
     }
 
+#ifdef LUDASHI_NATIVE_X11
+    if (nativeTrace) nativeMetrics.RecordStage(NativeVulkanMetrics::Prepare, nativePrepareStart);
+    const auto nativeRecordStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
+#endif
     recordCmdBuf(cmdBufs[currentFrame],imgIdx,frameDraws,
         frameAhbTransitions,framePreUpload,framePostUpload,
         curUpload,hasCurUpload,
         ox,oy,sx,sy,cw,ch,ptrX,ptrY,curHotX,curHotY,curW,curH,curVis,
         effectiveScissor, generatedCount, useFrameGeneration);
+#ifdef LUDASHI_NATIVE_X11
+    if (nativeTrace) nativeMetrics.RecordStage(NativeVulkanMetrics::Record, nativeRecordStart);
+#endif
 
     VkSemaphore wSem[]={imgAvailSems[currentFrame]};
     VkSemaphore sSem[]={useFrameGeneration ? frameGenRenderDoneSems[imgIdx] : renderDoneSems[imgIdx]};
@@ -1830,7 +1906,14 @@ void VulkanRendererContext::renderFrame() {
     si.signalSemaphoreCount=1; si.pSignalSemaphores=sSem;
 
     vk_.ResetFences(device,1,&inFlightFences[currentFrame]);
-    if (vk_.QueueSubmit(graphicsQueue,1,&si,inFlightFences[currentFrame])!=VK_SUCCESS) {
+#ifdef LUDASHI_NATIVE_X11
+    const auto nativeSubmitStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
+#endif
+    const VkResult submitResult = vk_.QueueSubmit(graphicsQueue,1,&si,inFlightFences[currentFrame]);
+#ifdef LUDASHI_NATIVE_X11
+    if (nativeTrace) nativeMetrics.RecordStage(NativeVulkanMetrics::Submit, nativeSubmitStart);
+#endif
+    if (submitResult!=VK_SUCCESS) {
         { std::lock_guard<std::mutex> lk(renderMutex);
           pendingFrameSerial=0;
           if (hasCurUpload) isCursorImageDirty.store(true);
@@ -1861,7 +1944,17 @@ void VulkanRendererContext::renderFrame() {
     VkPresentInfoKHR pi{}; pi.sType=VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     pi.waitSemaphoreCount=1; pi.pWaitSemaphores=sSem; pi.swapchainCount=1; pi.pSwapchains=scs; pi.pImageIndices=&imgIdx;
 
+#ifdef LUDASHI_NATIVE_X11
+    const auto nativePresentStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
+#endif
     res = vk_.QueuePresentKHR(graphicsQueue, &pi);
+#ifdef LUDASHI_NATIVE_X11
+    if (nativeTrace) {
+        nativeMetrics.RecordStage(NativeVulkanMetrics::Present, nativePresentStart);
+        ++nativeMetrics.frames;
+        reportNativeMetrics();
+    }
+#endif
 
     bool recreateSwapchain = res==VK_ERROR_OUT_OF_DATE_KHR || res==VK_ERROR_SURFACE_LOST_KHR || res==VK_SUBOPTIMAL_KHR;
     const bool firstPresented = res==VK_SUCCESS || res==VK_SUBOPTIMAL_KHR;
@@ -2487,4 +2580,5 @@ void VulkanRendererContext::clearCustomScissor() {
 }
 
 #pragma GCC diagnostic pop
+
 

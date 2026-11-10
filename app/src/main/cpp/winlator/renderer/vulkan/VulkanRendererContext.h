@@ -2,6 +2,9 @@
 #include <vulkan/vulkan.h>
 #include <array>
 #include <list>
+#ifdef LUDASHI_NATIVE_X11
+#include "native_composition.h"
+#endif
 #include <cstddef>
 #include <vulkan/vulkan_android.h>
 
@@ -176,6 +179,25 @@ public:
     void updateCursorImage(void* pixels, short w, short h, short stride, short hotX, short hotY);
     void setCursorVisible(bool visible);
     void setRenderList(const int64_t* ids, const int* xs, const int* ys, int count);
+    // Native X11 supplies a complete scene snapshot without Java window-tree callbacks.
+    // This entry point is unused by the existing Java renderer.
+    void setExternalRenderList(const int64_t* ids, const int* xs, const int* ys, int count) {
+        std::lock_guard<std::mutex> lock(renderMutex);
+        renderList.resize(count);
+        for (int i = 0; i < count; ++i) renderList[i] = {ids[i], xs[i], ys[i]};
+        treeDirty = false;
+    }
+#ifdef LUDASHI_NATIVE_X11
+    void setNativeDiagnostics(bool enabled) {
+        if (nativeDiagnosticsEnabled == enabled) return;
+        nativeDiagnosticsEnabled = enabled;
+        nativeMetrics = {};
+    }
+    bool nativeDiagnosticsEnabled{};
+    NativeVulkanMetrics nativeMetrics;
+    VkRenderPass nativeNoClearPass = VK_NULL_HANDLE;
+    void reportNativeMetrics();
+#endif
     void removeWindow(int64_t id);
     void clearBackbuffer() {}
     void beginBatch() {}
@@ -534,4 +556,5 @@ public:
                                VkPipelineStageFlags srcS, VkPipelineStageFlags dstS);
     VkShaderModule  makeShader(const uint32_t* code, size_t sz);
 };
+
 

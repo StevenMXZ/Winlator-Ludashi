@@ -57,6 +57,10 @@ internal fun ContainerRuntimePane(
     val fexPresets = remember { FEXCorePresetManager.getPresets(context).associate { it.id to it.name } }
     val boxPresets = remember { Box64PresetManager.getPresets("box64", context).associate { it.id to it.name } }
 
+    var displayServer by remember(containerId) {
+        mutableStateOf(if (container.getExtra("displayServer", "java") == "native")
+            "Ludashi X11 (Native Vulkan)" else "Java X11")
+    }
     var renderer by remember { mutableStateOf(if (container.isRendererNative()) "EGL" else "Vulkan") }
     var screen by remember { mutableStateOf(normalizeResolution(container.getScreenSize())) }
     var screenChoice by remember {
@@ -160,6 +164,14 @@ internal fun ContainerRuntimePane(
 
         ContainerOverviewComposeHost.SECTION_VIDEO -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsCard {
+                SettingChoice("Display Server", displayServer,
+                    listOf("Java X11", "Ludashi X11 (Native Vulkan)")) {
+                    displayServer = it
+                    container.putExtra("displayServer", if (it.startsWith("Ludashi")) "native" else "java")
+                    container.saveData()
+                }
+                if (displayServer == "Java X11") {
+                SettingsDivider()
                 SettingChoice("Renderer", renderer, listOf("Vulkan", "EGL")) {
                     renderer = it; container.setRendererNative(it == "EGL"); container.saveData()
                 }
@@ -180,6 +192,11 @@ internal fun ContainerRuntimePane(
                 }
                 SettingsDivider()
                 SettingToggle("Swap red/blue channels", swapRB) { swapRB = it; container.setRendererSwapRB(it); container.saveData() }
+                } else {
+                    Text("Native X11 protocol with the Ludashi Vulkan renderer.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             SettingsCard {
                 SettingChoice("Screen Size", screenChoice, screenEntries) {
@@ -266,3 +283,4 @@ internal fun ContainerRuntimePane(
         }
     }
 }
+

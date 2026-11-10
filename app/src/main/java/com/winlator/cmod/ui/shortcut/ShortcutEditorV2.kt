@@ -165,6 +165,10 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
 
     var name by mutableStateOf(shortcut.name)
     var screen by mutableStateOf(normalizeResolution(shortcut.getExtra("screenSize", container.getScreenSize())))
+    var displayServer by mutableStateOf(
+        if (shortcut.getExtra("displayServer", container.getExtra("displayServer", "java")) == "native")
+            "Ludashi X11 (Native Vulkan)" else "Java X11"
+    )
     var renderer by mutableStateOf(if (shortcut.getUseDisplayX()) "DisplayX" else if (shortcut.getRendererNative()) "EGL" else "Vulkan")
     var presentMode by mutableStateOf(shortcut.getRendererPresentMode())
     var rendererDriver by mutableStateOf(shortcut.getRendererDriverId())
@@ -976,7 +980,13 @@ private fun ShortcutCategoryV2(
                     }
                 }
                 SettingsDivider()
-                SettingChoice("Renderer", s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
+                SettingChoice("Display Server", s.displayServer,
+                    listOf("Java X11", "Ludashi X11 (Native Vulkan)")) {
+                    s.displayServer = it
+                    s.extra("displayServer", if (it.startsWith("Ludashi")) "native" else "java")
+                }
+                SettingsDivider()
+                SettingChoice("Renderer (Java X11)", s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
                     s.renderer = it
                     s.surfaceFormat = if (it == "DisplayX") "rgba8" else "bgra8"
                     if (it == "EGL" && s.filterMode > 1) s.filterMode = 0
@@ -1419,5 +1429,6 @@ private fun renameShortcutV2(shortcut: Shortcut, requested: String) {
         if (!newLink.exists()) oldLink.renameTo(newLink)
     }
 }
+
 
 

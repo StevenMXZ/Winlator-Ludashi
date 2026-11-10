@@ -288,6 +288,18 @@
             </LinearLayout>
 
             <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingTop="8dp"
+                android:text="Display Server" />
+            <Spinner
+                android:id="@+id/SPDisplayServer"
+                style="@style/ComboBoxCompact"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:background="@drawable/combo_box_no_arrow_dark"
+                android:spinnerMode="dropdown" />
+            <TextView
                 android:id="@+id/TVRendererLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

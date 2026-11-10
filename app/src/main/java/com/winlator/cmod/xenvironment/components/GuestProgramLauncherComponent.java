@@ -468,9 +468,10 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             execEnvVars.put("WINE_FORCE_SSBS", ssbs ? "1" : "0");
         }
 
-        boolean useDisplayX = shortcut != null
+        boolean nativeX11 = "1".equals(execEnvVars.get("WINLATOR_NATIVE_X11"));
+        boolean useDisplayX = !nativeX11 && (shortcut != null
                 ? shortcut.getUseDisplayX()
-                : container != null && container.getUseDisplayX();
+                : container != null && container.getUseDisplayX());
         boolean trueDisplayX = shortcut != null
                 ? shortcut.getTrueDisplayX()
                 : container != null && container.getTrueDisplayX();

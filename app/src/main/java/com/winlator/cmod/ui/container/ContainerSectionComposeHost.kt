@@ -72,6 +72,7 @@ interface ContainerSectionCallbacks {
 
     fun onSave(
         renderer: String,
+        displayServer: String,
         screenSize: String,
         graphicsDriver: String,
         graphicsDriverConfig: String,
@@ -98,6 +99,7 @@ object ContainerSectionComposeHost {
         description: String,
         rendererEntries: Array<String>,
         selectedRenderer: String,
+        selectedDisplayServer: String,
         screenEntries: Array<String>,
         selectedScreen: String,
         customScreenSize: String,
@@ -147,6 +149,7 @@ object ContainerSectionComposeHost {
                     description = description,
                     rendererEntries = rendererEntries,
                     initialRenderer = selectedRenderer,
+                    initialDisplayServer = selectedDisplayServer,
                     screenEntries = screenEntries,
                     initialScreen = selectedScreen,
                     initialCustomScreen = customScreenSize,
@@ -199,6 +202,7 @@ private fun ContainerSectionScreen(
     description: String,
     rendererEntries: Array<String>,
     initialRenderer: String,
+    initialDisplayServer: String,
     screenEntries: Array<String>,
     initialScreen: String,
     initialCustomScreen: String,
@@ -241,6 +245,7 @@ private fun ContainerSectionScreen(
     callbacks: ContainerSectionCallbacks
 ) {
     var renderer by remember(initialRenderer) { mutableStateOf(initialRenderer) }
+    var displayServer by remember(initialDisplayServer) { mutableStateOf(initialDisplayServer) }
     var screen by remember(initialScreen) { mutableStateOf(initialScreen) }
     var graphics by remember(initialGraphics) { mutableStateOf(initialGraphics) }
     val initialGraphicsValues = remember(initialGraphicsDriverConfig) { parseSemicolonConfig(initialGraphicsDriverConfig) }
@@ -302,6 +307,7 @@ private fun ContainerSectionScreen(
                         } else screen
                         callbacks.onSave(
                             renderer,
+                            displayServer,
                             savedScreen,
                             graphics,
                             mergeSemicolonConfig(
@@ -394,7 +400,14 @@ private fun ContainerSectionScreen(
                         1 -> {
                             ChoiceSetting(
                                 Icons.Outlined.DesktopWindows,
-                                "Renderer",
+                                "Display Server",
+                                displayServer,
+                                arrayOf("Java X11", "Ludashi X11 (Native Vulkan)")
+                            ) { displayServer = it }
+                            GroupDivider()
+                            ChoiceSetting(
+                                Icons.Outlined.DesktopWindows,
+                                "Renderer (Java X11)",
                                 renderer,
                                 rendererEntries
                             ) { renderer = it }
@@ -1196,3 +1209,4 @@ private fun mergeSemicolonConfig(data: String, updates: Map<String, String>): St
     updates.forEach { (key, value) -> values[key] = value }
     return values.entries.joinToString(";") { (key, value) -> "$key=$value" }
 }
+

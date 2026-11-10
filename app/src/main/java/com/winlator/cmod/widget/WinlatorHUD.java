@@ -432,6 +432,10 @@ public class WinlatorHUD extends View {
         frameAccum.incrementAndGet();
     }
 
+    public void onNativeFrames(long count) {
+        if (userEnabled && count > 0) frameAccum.addAndGet((int) Math.min(count, Integer.MAX_VALUE));
+    }
+
     public void update() {
         onFrame();
     }

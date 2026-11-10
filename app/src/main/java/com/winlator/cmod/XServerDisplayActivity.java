@@ -580,7 +580,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
         displayxConfig.put("presentRR", presentRR ? "1" : "0");
         displayxConfig.put("backPressure", backPressure ? "1" : "0");
         displayxConfig.put("precisePresentation", precisePresentation ? "1" : "0");
-        xServer = new XServer(new ScreenInfo(screenSize), useDisplayX ? "displayx" : "egl", displayxConfig);
+        xServer = isNativeX11Enabled()
+                ? new com.winlator.cmod.widget.NativeX11InputProxy(new ScreenInfo(screenSize), displayxConfig)
+                : new XServer(new ScreenInfo(screenSize), useDisplayX ? "displayx" : "egl", displayxConfig);
         xServer.setWinHandler(winHandler);
         xServer.setRelativeMouseMovement(isRelativeMouseMovement);
         advertisePanelRefreshRates();
@@ -698,6 +700,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     setupXEnvironment();
                 } catch (PackageManager.NameNotFoundException e) {
                     throw new RuntimeException(e);
+                } catch (IllegalStateException e) {
+                    Log.e("LudashiX11", "Display startup failed", e);
+                    runOnUiThread(() -> {
+                        android.widget.Toast.makeText(this, e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                        exit();
+                    });
                 }
             });
         };
@@ -1016,7 +1024,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
         Window focused = xServer.windowManager.getFocusedWindow();
         while (focused != null && focused.getHandle() == 0) focused = focused.getParent();
         final Window focusTarget = focused;
-        final long focusHandle = focused != null ? focused.getHandle() : 0;
+        final com.winlator.cmod.widget.NativeX11View nativeFocus = xServerView instanceof com.winlator.cmod.widget.NativeX11View
+                ? (com.winlator.cmod.widget.NativeX11View) xServerView : null;
+        final long focusHandle = nativeFocus != null ? nativeFocus.getFocusedWindowHandle()
+                : focused != null ? focused.getHandle() : 0;
         File driveC = new File(container.getRootDir(), ".wine/drive_c");
         exclusiveInputBusy = true;
         refreshed.run();
@@ -1030,7 +1041,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     else { container.setExclusiveXInput(enabled); container.saveData(); }
                 }
                 exclusiveInputBusy = false;
-                if (focusTarget != null && focusTarget.attributes.isMapped()
+                if (nativeFocus != null && nativeFocus.hasWindowHandle(focusHandle)) {
+                    winHandler.bringToFront("", focusHandle);
+                } else if (focusTarget != null && focusTarget.attributes.isMapped()
                         && xServer.windowManager.getWindow(focusTarget.id) == focusTarget
                         && focusTarget.getHandle() == focusHandle) {
                     winHandler.bringToFront("", focusHandle);
@@ -1229,10 +1242,16 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 new SysVSharedMemoryComponent(
                         xServer,
                         UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.SYSVSHM_SERVER_PATH)));
-        environment.addComponent(
-                new XServerComponent(
-                        xServer,
-                        UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.XSERVER_PATH)));
+        if (isNativeX11Enabled()) {
+            ((com.winlator.cmod.widget.NativeX11View) xServerView).setDiagnosticsEnabled(
+                    "1".equals(envVars.get("WINLATOR_X11")));
+            environment.addComponent(new com.winlator.cmod.xenvironment.components.NativeX11Component(
+                    (com.winlator.cmod.widget.NativeX11View) xServerView));
+            envVars.put("WINLATOR_NATIVE_X11", "1");
+        } else {
+            environment.addComponent(new XServerComponent(xServer,
+                    UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.XSERVER_PATH)));
+        }
 
         if (audioDriver.equals("alsa")) {
             envVars.put("ANDROID_ALSA_SERVER", rootPath + UnixSocketConfig.ALSA_SERVER_PATH);
@@ -1287,7 +1306,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
         scriptFile.setExecutable(true);
     }
 
+    private boolean isNativeX11Enabled() {
+        String base = container != null ? container.getExtra("displayServer", "java") : "java";
+        return "native".equals(shortcut != null ? shortcut.getExtra("displayServer", base) : base);
+    }
+
     private boolean isDisplayXEnabled() {
+        if (isNativeX11Enabled()) return false;
         if (shortcut != null) return shortcut.getUseDisplayX();
         return container != null && container.getUseDisplayX();
     }
@@ -1305,7 +1330,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
         boolean useEGL = !useDisplayX && (shortcut != null ? shortcut.getRendererNative()
                 : (container != null && container.getRendererNative()));
 
-        if (useDisplayX || useEGL) {
+        if (isNativeX11Enabled()) {
+            com.winlator.cmod.widget.NativeX11View nativeView =
+                    new com.winlator.cmod.widget.NativeX11View(this, xServer);
+            nativeView.setReadyCallback(() -> {
+                preloaderDialog.closeOnUiThread();
+                if (!simulateTouchScreen) nativeView.setCursorVisible(true);
+            });
+            xServerView = nativeView;
+        } else if (useDisplayX || useEGL) {
             xServerView = new XServerView(this, xServer);
         } else {
             VulkanXServerView.loadNativeLibrary();
@@ -1731,7 +1764,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     public String[][] getSidebarRuntimeStatusRows() {
         boolean displayX = xServer != null && xServer.isDisplayX();
-        String renderer = xServerView instanceof VulkanXServerView ? "Vulkan" : displayX ? "DisplayX" : "EGL";
+        String renderer = xServerView instanceof com.winlator.cmod.widget.NativeX11View
+                ? "Native X11 (Vulkan)"
+                : xServerView instanceof VulkanXServerView ? "Vulkan" : displayX ? "DisplayX" : "EGL";
         boolean trueDisplayX = shortcut != null ? shortcut.getTrueDisplayX() : container != null && container.getTrueDisplayX();
         Switch upscaler = findViewById(R.id.SWEnableFSR);
         Spinner mode = findViewById(R.id.SPUpscalerMode);
@@ -1989,6 +2024,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
         final XServerRendererView renderer = xServerView;
 
         boolean rendererAlreadyActive = (activeRendererWindowId != -1);
+        if (renderer instanceof com.winlator.cmod.widget.NativeX11View)
+            ((com.winlator.cmod.widget.NativeX11View) renderer).setHudMode(style);
 
         if (style == 2) {
             if (modernHud == null) {
@@ -2043,6 +2080,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
         container.putExtra("hudMode", String.valueOf(mode));
         container.setShowFPS(mode != 0);
         container.saveData();
+        if (xServerView instanceof com.winlator.cmod.widget.NativeX11View) {
+            ((com.winlator.cmod.widget.NativeX11View) xServerView).setHudMode(mode);
+        }
         if (xServerView instanceof XServerView) {
             ((XServerView) xServerView).setShowFPS(mode != 0);
         }
@@ -3466,4 +3506,5 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
 }
+
 
