@@ -54,12 +54,16 @@ object WindowsComponents {
     var query by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var removing by remember { mutableStateOf<Component?>(null) }
+    var removingAll by remember { mutableStateOf(false) }
+    var managed by remember { mutableStateOf<List<String>>(emptyList()) }
     val prefs = remember { context.getSharedPreferences("component_installs", Context.MODE_PRIVATE) }
     fun refreshInstalled() {
+        managed = ComponentUndo.installedNames(container.rootDir)
         installed = prefs.getStringSet("c${container.id}", emptySet()).orEmpty().toSet() +
-            catalog.filter { ComponentUndo.journalsFor(container.rootDir, it.name).isNotEmpty() }.map { it.name }
+            managed.map { it.removeSuffix("_dll") }
     }
     LaunchedEffect(Unit) {
+        refreshInstalled()
         catalog = withContext(Dispatchers.IO) { ComponentCatalog.load() }
         refreshInstalled(); loading = false
         if (catalog.isEmpty()) message = "Could not load the component catalog. Check your connection and reopen this page."
@@ -94,10 +98,34 @@ object WindowsComponents {
             finally { ContainerSessionGate.edited(container.id); refreshInstalled(); busy = null }
         }
     }
+    fun removeAll() {
+        if (busy != null) return
+        if (!ContainerSessionGate.edit(container.id)) { message = "Close this container's Wine session before changing components."; return }
+        busy = "Remove all"; progress = 0f; stage = "Restoring files and registry"
+        scope.launch {
+            try {
+                val notes = withContext(Dispatchers.IO) {
+                    ComponentUndo.revertAll(container.rootDir, onRemoved = { name ->
+                        val key = "c${container.id}"
+                        // Clear only the names whose journals were successfully reverted.
+                        val have = prefs.getStringSet(key, emptySet()).orEmpty()
+                        val base = name.removeSuffix("_dll")
+                        val removed = if (ComponentUndo.journalsFor(container.rootDir, base).isEmpty())
+                            setOf(base, "${base}_dll") else setOf(name)
+                        prefs.edit().putStringSet(key, have - removed).commit()
+                    }, onProgress = { value -> scope.launch { progress = value } })
+                }
+                message = if (notes.isEmpty()) "Components removed. Original files and registry restored." else notes.joinToString("\n")
+            } catch (e: Exception) { message = e.message ?: "Component removal failed" }
+            finally { ContainerSessionGate.edited(container.id); refreshInstalled(); busy = null }
+        }
+    }
     androidx.activity.compose.BackHandler { if (busy == null) close() }
     Scaffold(topBar = {
         TopAppBar(title = { Text("Windows Components") }, navigationIcon = {
             TextButton(onClick = close, enabled = busy == null) { Text("Back") }
+        }, actions = {
+            TextButton(onClick = { removingAll = true }, enabled = busy == null && managed.isNotEmpty()) { Text("Remove all") }
         })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -137,4 +165,8 @@ object WindowsComponents {
         text = { Text("Restore the files and registry recorded for this component in ${container.name}. Every game in this container is affected.") },
         confirmButton = { TextButton(onClick = { removing = null; operate(component, true) }) { Text("Remove") } },
         dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } }) }
+    if (removingAll) AlertDialog(onDismissRequest = { removingAll = false }, title = { Text("Remove all?") },
+        text = { Text("Remove the components installed by this manager in ${container.name} and restore their recorded files and registry. All games in this container are affected.") },
+        confirmButton = { TextButton(onClick = { removingAll = false; removeAll() }) { Text("Remove all") } },
+        dismissButton = { TextButton(onClick = { removingAll = false }) { Text("Cancel") } })
 }

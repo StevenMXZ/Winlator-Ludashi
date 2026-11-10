@@ -68,4 +68,48 @@ class ComponentRestoreTest {
         assertEquals("\"added\"=\"user\"", restored.get(key, "added"))
         root.deleteRecursively()
     }
+
+    @Test fun removeAllUsesJournalsWithoutCatalogAndKeepsUnmanagedFiles() {
+        val root = prefix()
+        val base = File(root, ".wine/drive_c/windows/system32/test.dll")
+        base.writeText("original")
+        val manual = File(root, ".wine/drive_c/windows/system32/manual.dll").apply { writeText("manual install") }
+        place(root, "dependency_dll", "dependency")
+        place(root, "runtime-no-longer-in-catalog", "runtime")
+        assertEquals(listOf("runtime-no-longer-in-catalog", "dependency_dll"), ComponentUndo.installedNames(root))
+        val removed = ArrayList<String>()
+        val progress = ArrayList<Float>()
+        assertTrue(ComponentUndo.revertAll(root, { removed += it }, { progress += it }).isEmpty())
+        assertEquals(listOf("runtime-no-longer-in-catalog", "dependency_dll"), removed)
+        assertEquals("original", base.readText())
+        assertEquals("manual install", manual.readText())
+        assertTrue(ComponentUndo.installedNames(root).isEmpty())
+        assertEquals(1f, progress.last(), 0f)
+        assertTrue(progress.zipWithNext().all { (a, b) -> a <= b })
+        assertTrue(ComponentUndo.revertAll(root).isEmpty())
+        root.deleteRecursively()
+    }
+
+    @Test fun removeAllPreservesLaterUserFileAndRegistryChanges() {
+        val root = prefix()
+        val reg = File(root, ".wine/user.reg")
+        val key = "Software\\LudashiBulkRestoreTest"
+        com.winlator.cmod.components.offline.WineRegistryFile(reg).apply {
+            put(key, "value", "\"value\"=\"base\""); save()
+        }
+        val journal = ComponentUndo.open(root, "settings")
+        com.winlator.cmod.components.offline.WineRegistryFile(reg).apply {
+            put(key, "value", "\"value\"=\"component\""); save()
+        }
+        journal.close()
+        place(root, "runtime", "component")
+        File(root, ".wine/drive_c/windows/system32/test.dll").writeText("user")
+        com.winlator.cmod.components.offline.WineRegistryFile(reg).apply {
+            put(key, "value", "\"value\"=\"user\""); save()
+        }
+        assertTrue(ComponentUndo.revertAll(root).isNotEmpty())
+        assertEquals("user", File(root, ".wine/drive_c/windows/system32/test.dll").readText())
+        assertEquals("\"value\"=\"user\"", com.winlator.cmod.components.offline.WineRegistryFile(reg).get(key, "value"))
+        root.deleteRecursively()
+    }
 }

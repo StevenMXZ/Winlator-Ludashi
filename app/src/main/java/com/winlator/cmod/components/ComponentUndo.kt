@@ -51,6 +51,23 @@ object ComponentUndo {
             .sortedByDescending { it.second }.map { it.first }
     }
 
+    /** Only this manager's restore journals, independent of the downloaded catalog or preferences. */
+    fun installedNames(root: File): List<String> = all(root).sortedByDescending { it.optLong("seq") }
+        .map { it.getString("name") }
+
+    /** Undo the latest changes first, including dependencies and internal `_dll` entries. */
+    @Synchronized
+    fun revertAll(root: File, onRemoved: (String) -> Unit = {}, onProgress: (Float) -> Unit = {}): List<String> {
+        val names = installedNames(root)
+        val notes = ArrayList<String>()
+        names.forEachIndexed { index, name ->
+            notes += revert(root, name) { part -> onProgress((index + part) / names.size) }
+            onRemoved(name)
+            onProgress((index + 1f) / names.size)
+        }
+        return notes
+    }
+
     /** Whether installs of [name] are journaled: a catalog component, or one already under way. */
     fun tracks(root: File, name: String): Boolean =
         ComponentCatalog.byName.containsKey(name) || File(dirOf(root, name), JOURNAL).isFile || hasSession(root, name)
