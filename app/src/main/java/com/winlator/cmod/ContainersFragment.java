@@ -24,6 +24,32 @@ import java.util.ArrayList;
 
 public class ContainersFragment extends Fragment {
     private ContainersComposeHost composeHost;
+    private static final int MENU_ADD_CONTAINER = 0x434e01;
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setHasOptionsMenu(true);
+    }
+
+    @Override
+    public void onCreateOptionsMenu(@NonNull android.view.Menu menu, @NonNull android.view.MenuInflater inflater) {
+        super.onCreateOptionsMenu(menu, inflater);
+        if (getResources().getConfiguration().orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+            menu.add(android.view.Menu.NONE, MENU_ADD_CONTAINER, 0, R.string.add)
+                    .setIcon(R.drawable.ui_ic_add)
+                    .setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_ALWAYS);
+        }
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(@NonNull android.view.MenuItem item) {
+        if (item.getItemId() == MENU_ADD_CONTAINER) {
+            openEditor(new ContainerCreateComposeFragment());
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
 
     @Nullable
     @Override
@@ -81,18 +107,19 @@ public class ContainersFragment extends Fragment {
             }
 
             @Override
-            public void onInfo(int containerId) {
-                getParentFragmentManager().beginTransaction()
-                        .replace(R.id.FLFragmentContainer, new ContainerOverviewFragment(containerId))
-                        .addToBackStack(null)
-                        .commit();
+            public void onStorage(int containerId) {
+                Container container = new ContainerManager(requireContext()).getContainerById(containerId);
+                if (container != null) com.winlator.cmod.ui.containers.ContainerStorageDialog.show((AppCompatActivity) requireActivity(), container);
             }
+
+
         });
         return composeHost.createView();
     }
 
     private void openEditor(Fragment editor) {
         getParentFragmentManager().beginTransaction()
+                        .setCustomAnimations(R.anim.winz_screen_enter, R.anim.winz_screen_exit, R.anim.winz_screen_enter, R.anim.winz_screen_exit)
                 .replace(R.id.FLFragmentContainer, editor)
                 .addToBackStack(null)
                 .commit();
@@ -126,8 +153,11 @@ public class ContainersFragment extends Fragment {
                     container.id,
                     container.getName(),
                     container.getWineVersion(),
-                    container.getScreenSize()));
+                    container.getScreenSize(),
+                    container.getUseDisplayX() ? "DisplayX" : container.isRendererNative() ? "EGL" : "Vulkan",
+                    container.getRootDir().getPath()));
         }
         composeHost.submitList(items);
     }
 }
+

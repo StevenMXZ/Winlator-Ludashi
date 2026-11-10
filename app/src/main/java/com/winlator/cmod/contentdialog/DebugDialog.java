@@ -20,11 +20,28 @@ import java.io.IOException;
 
 public class DebugDialog extends ContentDialog implements Callback<String> {
     private final LogView logView;
+    private android.app.Activity hostActivity;
     private static boolean paused = false;
     private BufferedWriter writer;
+    private final com.winlator.cmod.ui.DebugLogState composeState = new com.winlator.cmod.ui.DebugLogState();
+    private View composeOverlay;
+    @Override public void show() {
+        if (composeOverlay != null) return;
+        android.app.Activity activity = hostActivity;
+        composeOverlay = com.winlator.cmod.ui.DebugLogDialogHost.show(activity, composeState, () -> composeOverlay = null);
+    }
+    @Override public void dismiss() {
+        if (composeOverlay != null && composeOverlay.getParent() instanceof android.view.ViewGroup)
+            ((android.view.ViewGroup) composeOverlay.getParent()).removeView(composeOverlay);
+        composeOverlay = null;
+        super.dismiss();
+    }
+    @Override public boolean isShowing() { return composeOverlay != null && composeOverlay.getParent() != null; }
+
 
     public DebugDialog(@NonNull Context context) {
         super(context, R.layout.debug_dialog);
+        hostActivity = (android.app.Activity) context;
         setIcon(R.drawable.icon_debug);
         setTitle(context.getString(R.string.logs));
         logView = findViewById(R.id.LogView);
@@ -53,7 +70,7 @@ public class DebugDialog extends ContentDialog implements Callback<String> {
 
     @Override
     public void call(final String line) {
-        if (!getPaused()) logView.append(line+"\n");
+        if (!getPaused()) new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> composeState.append(line));
         try {
             writer.write(line + "\n");
             writer.flush();
@@ -71,3 +88,4 @@ public class DebugDialog extends ContentDialog implements Callback<String> {
         return paused;
     }
 }
+

@@ -45,6 +45,7 @@ public class ContentDialog extends Dialog {
 
     public ContentDialog(@NonNull Context context, int layoutResId) {
         super(context, getDialogStyle(context));
+        if (getWindow() != null) getWindow().setWindowAnimations(R.style.WinZDialogAnimation);
         contentView = LayoutInflater.from(context).inflate(R.layout.content_dialog, null);
 
 
@@ -149,34 +150,33 @@ public class ContentDialog extends Dialog {
         }
     }
 
-    public static void alert(Context context, int msgResId, Runnable callback) {
-        ContentDialog dialog = new ContentDialog(context);
-        dialog.setMessage(msgResId);
-        dialog.setOnConfirmCallback(callback);
-        dialog.findViewById(R.id.BTCancel).setVisibility(View.GONE);
-        dialog.show();
+    private static androidx.appcompat.app.AppCompatActivity activityOf(Context context) {
+        while (context instanceof android.content.ContextWrapper) {
+            if (context instanceof androidx.appcompat.app.AppCompatActivity) return (androidx.appcompat.app.AppCompatActivity) context;
+            context = ((android.content.ContextWrapper) context).getBaseContext();
+        }
+        return null;
     }
-
-    public static void alert(Context context, String msg, Runnable callback) {
+    public static void alert(Context context, int message, Runnable callback) { alert(context, context.getString(message), callback); }
+    public static void alert(Context context, String message, Runnable callback) {
+        androidx.appcompat.app.AppCompatActivity activity = activityOf(context);
+        if (activity != null) {
+            com.winlator.cmod.ui.ThemedAlertHost.info(activity, "", message, callback);
+            return;
+        }
         ContentDialog dialog = new ContentDialog(context);
-        dialog.setMessage(msg);
-        dialog.setOnConfirmCallback(callback);
-        dialog.findViewById(R.id.BTCancel).setVisibility(View.GONE);
-        dialog.show();
+        dialog.setMessage(message); dialog.setOnConfirmCallback(callback);
+        dialog.findViewById(R.id.BTCancel).setVisibility(View.GONE); dialog.show();
     }
-
-    public static void confirm(Context context, int msgResId, Runnable callback) {
+    public static void confirm(Context context, int message, Runnable callback) { confirm(context, context.getString(message), callback); }
+    public static void confirm(Context context, String message, Runnable callback) {
+        androidx.appcompat.app.AppCompatActivity activity = activityOf(context);
+        if (activity != null) {
+            com.winlator.cmod.ui.ThemedAlertHost.confirm(activity, "", message, context.getString(R.string.ok), callback != null ? callback : () -> {});
+            return;
+        }
         ContentDialog dialog = new ContentDialog(context);
-        dialog.setMessage(msgResId);
-        dialog.setOnConfirmCallback(callback);
-        dialog.show();
-    }
-
-    public static void confirm(Context context, String msg, Runnable callback) {
-        ContentDialog dialog = new ContentDialog(context);
-        dialog.setMessage(msg);
-        dialog.setOnConfirmCallback(callback);
-        dialog.show();
+        dialog.setMessage(message); dialog.setOnConfirmCallback(callback); dialog.show();
     }
 
     public static void prompt(Context context, int titleResId, String defaultText, Callback<String> callback) {
@@ -256,3 +256,4 @@ public class ContentDialog extends Dialog {
         dialog.show();
     }
 }
+

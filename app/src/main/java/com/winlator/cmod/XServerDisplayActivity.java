@@ -179,11 +179,16 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private OnExtractFileListener onExtractFileListener;
     private WinHandler winHandler;
     private TaskManagerSidebar taskManagerSidebar;
+    private com.winlator.cmod.ui.ModernSidebarController modernSidebar;
     private WineRequestHandler wineRequestHandler;
     private float globalCursorSpeed = 1.0f;
     private float refreshRate = 60.0f;
     private MagnifierView magnifierView;
     private boolean softStretchEnabled = false;
+    private volatile com.winlator.cmod.core.RuntimeBackendProbe.FexMode runtimeFexMode = com.winlator.cmod.core.RuntimeBackendProbe.FexMode.NA;
+    private volatile boolean runtimeStatusProbeRunning;
+    private volatile boolean runtimeStatusProbeStopped;
+    private Thread runtimeStatusProbeThread;
     private DebugDialog debugDialog;
     private WinlatorLogcatLogger winlatorLogcatLogger;
     private String rendererLogPath;
@@ -360,7 +365,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
         drawerLayout.addDrawerListener(new DrawerLayout.SimpleDrawerListener() {
             @Override
             public void onDrawerOpened(View drawerView) {
-                openSidebarPanel(activeSidebarItemId, activeSidebarPanelId);
+                if (modernSidebar != null) modernSidebar.onOpened(isPaused);
+                else openSidebarPanel(activeSidebarItemId, activeSidebarPanelId);
             }
 
             @Override
@@ -374,6 +380,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         boolean enableWinlatorLogs = preferences.getBoolean("enable_winlator_logs", false);
 
         wireSidebarListeners(enableLogs);
+        modernSidebar = com.winlator.cmod.ui.ModernSidebarHost.attach(this);
 
         imageFs = ImageFs.find(this);
 
@@ -947,6 +954,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        runtimeStatusProbeStopped = true;
+        if (runtimeStatusProbeThread != null) runtimeStatusProbeThread.interrupt();
         if (winlatorLogcatLogger != null) {
             ProcessHelper.removeDebugCallback(winlatorLogcatLogger);
             winlatorLogcatLogger.stop();
@@ -1581,6 +1590,68 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 exit();
             });
         }
+    }
+
+    // Read-only diagnostics adapted from squalle0nhart's Ludashi Plus.
+    // The bounded probe runs away from the UI thread and stops with the Activity.
+    public void requestSidebarRuntimeStatus() {
+        if (runtimeStatusProbeRunning || runtimeStatusProbeStopped || container == null) return;
+        runtimeStatusProbeRunning = true;
+        final java.io.File root = container.getRootDir();
+        runtimeStatusProbeThread = new Thread(() -> {
+            try {
+                for (int i = 0; i < 15 && !runtimeStatusProbeStopped; i++) {
+                    runtimeFexMode = com.winlator.cmod.core.RuntimeBackendProbe.detect(root);
+                    runOnUiThread(() -> {
+                        if (!isFinishing() && !isDestroyed() && modernSidebar != null) modernSidebar.onRuntimeStatusChanged();
+                    });
+                    if (wineInfo == null || !wineInfo.isArm64EC()
+                            || !"fexcore".equalsIgnoreCase(emulator)
+                            || runtimeFexMode != com.winlator.cmod.core.RuntimeBackendProbe.FexMode.NA) break;
+                    Thread.sleep(1000L);
+                }
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } finally {
+                runtimeStatusProbeRunning = false;
+            }
+        }, "runtime-status-probe");
+        runtimeStatusProbeThread.setDaemon(true);
+        runtimeStatusProbeThread.start();
+    }
+
+    public String[][] getSidebarRuntimeStatusRows() {
+        boolean displayX = xServer != null && xServer.isDisplayX();
+        String renderer = xServerView instanceof VulkanXServerView ? "Vulkan" : displayX ? "DisplayX" : "EGL";
+        boolean trueDisplayX = shortcut != null ? shortcut.getTrueDisplayX() : container != null && container.getTrueDisplayX();
+        Switch upscaler = findViewById(R.id.SWEnableFSR);
+        Spinner mode = findViewById(R.id.SPUpscalerMode);
+        boolean upscalerAvailable = xServerView instanceof VulkanXServerView || xServerView instanceof XServerView && !displayX;
+        boolean upscalerActive = upscalerAvailable && upscaler != null && upscaler.isChecked();
+        boolean arm64ec = wineInfo != null && wineInfo.isArm64EC();
+        boolean fex = arm64ec && "fexcore".equalsIgnoreCase(emulator);
+        String version = container == null ? "" : shortcut != null
+                ? shortcut.getExtra("fexcoreVersion", container.getFEXCoreVersion()) : container.getFEXCoreVersion();
+        boolean detected = runtimeFexMode != com.winlator.cmod.core.RuntimeBackendProbe.FexMode.NA;
+        boolean unixlibs = runtimeFexMode == com.winlator.cmod.core.RuntimeBackendProbe.FexMode.UNIXLIB;
+        return new String[][] {
+                {"Renderer", xServerView == null ? "Starting" : renderer + " active", xServerView == null ? "off" : "active"},
+                {"DisplayX", !displayX ? "Off" : trueDisplayX ? "True DisplayX active" : "DRI3 active", displayX ? "active" : "off"},
+                {"Upscaler", !upscalerAvailable ? "Unavailable" : upscalerActive && mode != null ? mode.getSelectedItem() + " active" : "Off", upscalerActive ? "active" : "off"},
+                {"FEXCore", !arm64ec ? "Not applicable" : !fex ? "Off · " + emulator
+                        : (version == null ? "" : version + " ") + (detected ? "active" : "not detected"), fex ? detected ? "active" : "warning" : "off"},
+                {"Unixlibs", !fex ? "Not applicable" : unixlibs ? "Active" : detected ? "Off · DLL mode" : "Not detected", unixlibs ? "active" : fex && !detected ? "warning" : "off"}
+        };
+    }
+
+    public boolean isSidebarFullscreenStretched() {
+        return xServerView != null && xServerView.isFullscreen();
+    }
+
+    public void setSidebarFullscreenStretched(boolean stretch) {
+        if (xServerView == null || xServerView.isFullscreen() == stretch) return;
+        xServerView.toggleFullscreen();
+        if (touchpadView != null) touchpadView.toggleFullscreen();
     }
 
     private int activeSidebarItemId = R.id.BTItemFPS;
@@ -2549,7 +2620,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
-        if (isPaused && (drawerLayout == null || !drawerLayout.isDrawerOpen(GravityCompat.START))) return true;
+        if (isPaused && (drawerLayout == null || !drawerLayout.isDrawerOpen(GravityCompat.START))
+                && !com.winlator.cmod.ui.ThemedAlertHost.isShowing()
+                && (debugDialog == null || !debugDialog.isShowing())) return true;
         return super.dispatchTouchEvent(event);
     }
 
@@ -3095,3 +3168,4 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
 }
+

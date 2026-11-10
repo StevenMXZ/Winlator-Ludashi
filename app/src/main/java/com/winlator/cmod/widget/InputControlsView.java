@@ -151,6 +151,12 @@ public class InputControlsView extends View {
 
     private Runnable onEditBackgroundTapListener;
 
+    private Runnable onEditStartListener, onEditEndListener, onEditSelectionChangedListener;
+    public void setOnEditStartListener(Runnable listener) { onEditStartListener = listener; }
+    public void setOnEditEndListener(Runnable listener) { onEditEndListener = listener; }
+    public void setOnEditSelectionChangedListener(Runnable listener) { onEditSelectionChangedListener = listener; }
+    public void selectEditorElement(ControlElement element) { if (editMode) selectElement(element); }
+
     public void setOnEditBackgroundTapListener(Runnable listener) {
         onEditBackgroundTapListener = listener;
     }
@@ -359,6 +365,7 @@ public class InputControlsView extends View {
             selectedElement.setSelected(true);
         }
         invalidate();
+        if (editMode && onEditSelectionChangedListener != null) onEditSelectionChangedListener.run();
     }
 
     public synchronized ControlsProfile getProfile() {
@@ -606,6 +613,7 @@ public class InputControlsView extends View {
         if (editMode && readyToDraw) {
             switch (event.getAction()) {
                 case MotionEvent.ACTION_DOWN: {
+                    if (onEditStartListener != null) onEditStartListener.run();
                     float x = event.getX();
                     float y = event.getY();
 
@@ -629,8 +637,10 @@ public class InputControlsView extends View {
                     }
                     break;
                 }
+                case MotionEvent.ACTION_CANCEL:
                 case MotionEvent.ACTION_UP: {
                     if (selectedElement != null && profile != null) profile.save();
+                    if (onEditEndListener != null) onEditEndListener.run();
                     if (moveCursor) cursor.set((int)Mathf.roundTo(event.getX(), snappingSize), (int)Mathf.roundTo(event.getY(), snappingSize));
                     invalidate();
                     break;
@@ -997,3 +1007,4 @@ public class InputControlsView extends View {
         return cached;
     }
 }
+

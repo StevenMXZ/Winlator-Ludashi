@@ -162,6 +162,8 @@ android {
         }
     }
 
+    testOptions { unitTests.includeAndroidResources = true }
+
     buildFeatures {
         prefab = true
         compose = true
@@ -169,6 +171,9 @@ android {
 }
 
 dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'org.conscrypt:conscrypt-openjdk-uber:2.5.2'
     implementation platform('androidx.compose:compose-bom:2025.08.00')
     implementation 'androidx.activity:activity-compose:1.10.1'
     implementation 'androidx.compose.ui:ui'
@@ -200,4 +205,12 @@ dependencies {
     implementation 'com.kohlschutter.junixsocket:junixsocket-common:2.6.0'
     implementation 'com.kohlschutter.junixsocket:junixsocket-native-common:2.6.0'
     annotationProcessor 'com.github.bumptech.glide:compiler:4.11.0'
+}
+
+
+// Robolectric runs on the host JVM; its TLS provider needs host, rather than Android, JNI.
+configurations.configureEach {
+    if (name.endsWith('UnitTestRuntimeClasspath')) {
+        exclude group: 'org.conscrypt', module: 'conscrypt-android'
+    }
 }

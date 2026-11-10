@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.Icon
@@ -37,6 +38,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.getValue
+import android.text.format.Formatter
+import com.winlator.cmod.core.ProtonPackageManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
@@ -56,7 +64,9 @@ class ContainerUiModel(
     val id: Int,
     val name: String,
     val wineVersion: String,
-    val screenSize: String
+    val screenSize: String,
+    val renderer: String,
+    val rootPath: String
 )
 
 interface ContainersCallbacks {
@@ -65,7 +75,7 @@ interface ContainersCallbacks {
     fun onEdit(containerId: Int)
     fun onDuplicate(containerId: Int)
     fun onRemove(containerId: Int)
-    fun onInfo(containerId: Int)
+    fun onStorage(containerId: Int)
 }
 
 class ContainersComposeHost(
@@ -125,17 +135,6 @@ private fun ContainersScreen(
             )
         }
 
-        if (!landscape) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = callbacks::onAdd) {
-                    Icon(Icons.Outlined.Add, "Add container")
-                }
-            }
-        }
 
         if (containers.isEmpty()) {
             Box(
@@ -235,21 +234,24 @@ private fun ContainerCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (!compact) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Windows 10, 64-bit",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Spacer(Modifier.height(4.dp))
+                    val context = LocalContext.current
+                    val storage by produceState("…", container.rootPath) {
+                        value = withContext(Dispatchers.IO) {
+                            Formatter.formatFileSize(context, ContainerStorageUsage.measure(File(container.rootPath)).total)
+                        }
                     }
+                    val runtime = ProtonPackageManager.getPackage(container.wineVersion)?.title ?: container.wineVersion
                     Text(
-                        container.wineVersion + "  •  " + container.screenSize,
+                        container.renderer + "  •  " + runtime,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
+                    Text(container.screenSize + "  •  " + storage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Surface(
                     onClick = { callbacks.onRun(container.id) },
@@ -282,9 +284,7 @@ private fun ContainerCard(
                     ContainerAction(Icons.Outlined.ContentCopy, "Duplicate") { callbacks.onDuplicate(container.id) }
                     ContainerAction(Icons.Outlined.DeleteOutline, "Remove") { callbacks.onRemove(container.id) }
                 }
-                IconButton(onClick = { callbacks.onInfo(container.id) }) {
-                    Icon(Icons.Outlined.Info, "Container info")
-                }
+                IconButton(onClick = { callbacks.onStorage(container.id) }) { Icon(Icons.Outlined.Storage, "Storage usage") }
             }
         }
     }
@@ -312,3 +312,4 @@ private fun ContainerAction(
         }
     }
 }
+

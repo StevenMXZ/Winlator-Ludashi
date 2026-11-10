@@ -181,6 +181,7 @@ public class ControlsEditorActivity extends AppCompatActivity {
     @Override
     public void onBackPressed() {
         super.onBackPressed();
-        overridePendingTransition(R.anim.slide_in_down, R.anim.slide_out_up);
+        overridePendingTransition(R.anim.winz_screen_enter, R.anim.winz_screen_exit);
     }
 }
+

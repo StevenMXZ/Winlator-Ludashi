@@ -2,69 +2,38 @@ package com.winlator.cmod.ui.library
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Star
-import androidx.compose.material.icons.outlined.StarBorder
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.platform.*
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.winlator.cmod.MainActivity
+import com.winlator.cmod.R
+import com.winlator.cmod.container.Shortcut
 import com.winlator.cmod.ui.KeepLandscapeChromeHidden
 import com.winlator.cmod.ui.applyAppFullscreen
-import com.winlator.cmod.ui.theme.WinZTheme
+import com.winlator.cmod.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
 interface GameDetailCallbacks {
     fun onPlay()
@@ -73,166 +42,200 @@ interface GameDetailCallbacks {
     fun onSaves()
     fun onFavorite(favorite: Boolean)
     fun onRemove()
+    fun onHome()
 }
 
+// Layout and statistics adapted from teldommm/WinLite. Ludashi keeps its original
+// artwork selection/crop (including offline icons) and all six user-selected palettes.
 object GameDetailComposeHost {
     @JvmStatic
-    fun create(context: Context, title: String, subtitle: String, artworkPath: String?, fallback: Bitmap?, favorite: Boolean, callbacks: GameDetailCallbacks): ComposeView {
+    fun create(context: Context, title: String, subtitle: String, artworkPath: String?, fallback: Bitmap?, favorite: Boolean, shortcut: Shortcut, callbacks: GameDetailCallbacks): ComposeView {
         applyAppFullscreen(context as? MainActivity)
         return ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            setContent { WinZTheme { GameDetailScreen(title, subtitle, artworkPath, fallback, favorite, callbacks) } }
+            setContent { WinZTheme { CompositionLocalProvider(LocalArtworkMotion provides rememberArtworkMotionEnabled()) { GameDetailScreen(title, subtitle, artworkPath, fallback, favorite, shortcut, callbacks) } } }
         }
     }
 }
 
 @Composable
-private fun GameDetailScreen(title: String, subtitle: String, artworkPath: String?, fallback: Bitmap?, initialFavorite: Boolean, callbacks: GameDetailCallbacks) {
-    val landscape = LocalConfiguration.current.screenWidthDp > LocalConfiguration.current.screenHeightDp
+private fun GameDetailScreen(title: String, subtitle: String, artworkPath: String?, fallback: Bitmap?, initialFavorite: Boolean, shortcut: Shortcut, callbacks: GameDetailCallbacks) {
     val activity = LocalContext.current as? MainActivity
-
-    if (landscape) {
-        KeepLandscapeChromeHidden(activity, restoreChromeOnPortrait = false)
-    }
-
+    val context = LocalContext.current.applicationContext
+    val landscape = LocalConfiguration.current.screenWidthDp > LocalConfiguration.current.screenHeightDp
+    if (landscape) KeepLandscapeChromeHidden(activity, restoreChromeOnPortrait = false)
     DisposableEffect(activity, landscape) {
-        if (!landscape) {
-            activity?.setBottomNavigationVisible(false)
-            activity?.setMainToolbarVisible(true)
-        }
+        activity?.setBottomNavigationVisible(false)
+        activity?.setMainToolbarVisible(false)
         onDispose { }
     }
-
-    val artwork by produceState<Bitmap?>(fallback, artworkPath, fallback) {
-        value = withContext(Dispatchers.IO) { artworkPath?.takeIf { File(it).isFile }?.let(BitmapFactory::decodeFile) ?: fallback }
+    val key = LibraryImageCache.keyFor(artworkPath)
+    val artwork by produceState(LibraryImageCache.peek(key) ?: fallback, key, fallback) {
+        value = withContext(Dispatchers.IO) { LibraryImageCache.load(artworkPath) ?: fallback }
+    }
+    var resumeSerial by remember { mutableIntStateOf(0) }
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) resumeSerial++
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    val stats by produceState(GameStats(), shortcut.file.path, resumeSerial) {
+        val loaded = withContext(Dispatchers.IO) { GameStatsLoader.load(context, shortcut) }
+        value = loaded
+        value = withContext(Dispatchers.IO) {
+            val cached = GameStatsLoader.cachedSize(context, shortcut)
+            loaded.copy(sizeText = if (cached?.fresh == true) cached.text else GameStatsLoader.sizeText(context, shortcut))
+        }
     }
     var favorite by remember(initialFavorite) { mutableStateOf(initialFavorite) }
-    val toggle = {
-        favorite = !favorite
-        callbacks.onFavorite(favorite)
-    }
-    if (landscape) LandscapeDetail(title, subtitle, artwork, favorite, callbacks, toggle)
-    else PortraitDetail(title, subtitle, artwork, favorite, callbacks, toggle)
+    val toggle = { favorite = !favorite; callbacks.onFavorite(favorite) }
+    if (landscape) LandscapeDetail(title, subtitle, artwork, favorite, stats, callbacks, toggle)
+    else PortraitDetail(title, subtitle, artwork, favorite, stats, callbacks, toggle)
 }
 
 @Composable
-private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, favorite: Boolean, callbacks: GameDetailCallbacks, toggleFavorite: () -> Unit) {
+private fun Artwork(artwork: Bitmap?, modifier: Modifier) {
+    Box(modifier.clipToBounds().background(MaterialTheme.colorScheme.background)) {
+        if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize().kenBurns(), contentScale = ContentScale.Crop)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(.22f), Color.Transparent, Color.Black.copy(.88f)))))
+    }
+}
+
+@Composable
+private fun ArtControls(favorite: Boolean, toggle: () -> Unit) {
     val activity = LocalContext.current as? MainActivity
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Black.copy(.93f), Color.Black.copy(.70f), Color.Black.copy(.28f)))))
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(.18f), Color.Transparent, Color.Black.copy(.55f)))))
+    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        ArtButton({ activity?.onBackPressedDispatcher?.onBackPressed() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.ui_back)) }
+        ArtButton(toggle) { Icon(if (favorite) Icons.Outlined.Star else Icons.Outlined.StarBorder, stringResource(R.string.ui_favorite)) }
+    }
+}
 
-        Surface(
-            onClick = { activity?.onBackPressedDispatcher?.onBackPressed() },
-            modifier = Modifier.align(Alignment.TopStart).padding(start = 18.dp, top = 16.dp).size(44.dp),
-            shape = RoundedCornerShape(12.dp),
-            color = Color.Black.copy(.62f),
-            contentColor = Color.White,
-            border = BorderStroke(1.dp, Color.White.copy(.16f))
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.ArrowBack, "Back", modifier = Modifier.size(24.dp))
+@Composable
+private fun ArtButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    Surface(onClick, Modifier.size(44.dp), shape = WinZShapes.Medium, color = Color.Black.copy(.55f), contentColor = Color.White,
+        border = BorderStroke(1.dp, Color.White.copy(.18f))) { Box(contentAlignment = Alignment.Center) { content() } }
+}
+
+@Composable
+private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, favorite: Boolean, stats: GameStats, callbacks: GameDetailCallbacks, toggle: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        Artwork(artwork, Modifier.fillMaxSize())
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
+            ArtControls(favorite, toggle)
+            Column(Modifier.align(Alignment.TopStart).padding(start = 76.dp, end = 76.dp, top = 18.dp)) {
+                Text(title, color = Color.White, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, color = Color.White.copy(.75f), style = MaterialTheme.typography.bodyMedium, maxLines = 2)
             }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxSize().padding(start = 78.dp, end = 34.dp, top = 24.dp, bottom = 24.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.weight(1f).fillMaxHeight().widthIn(max = 590.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = Color.Black.copy(.42f),
-                border = BorderStroke(1.dp, Color.White.copy(.16f))
-            ) {
-                Column(
-                    Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Column(Modifier.weight(1f)) {
-                            Text(title, color = Color.White, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Spacer(Modifier.height(4.dp))
-                            Text(subtitle, color = Color.White.copy(.72f), style = MaterialTheme.typography.bodyLarge)
-                        }
-                        IconButton(onClick = toggleFavorite) {
-                            Icon(if (favorite) Icons.Outlined.Star else Icons.Outlined.StarBorder, "Favorite", tint = Color.White)
-                        }
-                    }
-                    Spacer(Modifier.height(20.dp))
-                    Button(
-                        onClick = callbacks::onPlay,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)
-                    ) {
-                        Icon(Icons.Outlined.PlayArrow, null)
-                        Spacer(Modifier.size(8.dp))
-                        Text("Play", fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DetailAction(Icons.Outlined.Settings, "Configure", Modifier.weight(1f), callbacks::onConfigure)
-                        DetailAction(Icons.Outlined.PlayArrow, "Enter container", Modifier.weight(1f), callbacks::onArguments)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DetailAction(Icons.Outlined.Folder, "Saves", Modifier.weight(1f), callbacks::onSaves)
-                        DetailAction(Icons.Outlined.DeleteOutline, "Remove", Modifier.weight(1f), callbacks::onRemove, true)
+            val compact = maxWidth < 700.dp || maxHeight < 360.dp
+            val available = (maxWidth - 54.dp).coerceAtLeast(200.dp)
+            val panelWidth = minOf(available * .55f, if (compact) 340.dp else 420.dp)
+            val statsWidth = (available - panelWidth).coerceAtLeast(100.dp)
+            Surface(Modifier.align(Alignment.BottomEnd).padding(18.dp).width(panelWidth).heightIn(max = (maxHeight - 116.dp).coerceAtLeast(100.dp)),
+                shape = WinZShapes.ExtraLarge, color = Color.Black.copy(.48f), border = BorderStroke(1.dp, Color.White.copy(.18f))) {
+                Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PlayButton(callbacks::onPlay)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LandscapeAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), Modifier.weight(1f), callbacks::onConfigure)
+                        LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
+                        LandscapeAction(Icons.Outlined.Backup, stringResource(R.string.ui_saves), Modifier.weight(1f), callbacks::onSaves)
+                        LandscapeAction(Icons.Outlined.Home, stringResource(R.string.ui_home), Modifier.weight(1f), callbacks::onHome)
+                        LandscapeAction(Icons.Outlined.DeleteOutline, stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
                     }
                 }
             }
-            Spacer(Modifier.weight(.75f))
+            if (stats.hasAny) StatsGrid(stats, Modifier.align(Alignment.BottomStart).padding(18.dp).width(statsWidth).heightIn(max = (maxHeight - 128.dp).coerceAtLeast(80.dp)).verticalScroll(rememberScrollState()), onArtwork = true)
         }
     }
 }
 
 @Composable
-private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, favorite: Boolean, callbacks: GameDetailCallbacks, toggleFavorite: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1.28f).background(MaterialTheme.colorScheme.surface)) {
-            if (artwork != null) Image(artwork.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(.18f), Color.Transparent, Color.Black.copy(.88f)))))
-            IconButton(onClick = toggleFavorite, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(48.dp)) {
-                Icon(if (favorite) Icons.Outlined.Star else Icons.Outlined.StarBorder, "Favorite", tint = Color.White)
-            }
-            Column(Modifier.align(Alignment.BottomStart).padding(22.dp)) {
-                Text(title, color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, color = Color.White.copy(.72f), style = MaterialTheme.typography.bodyMedium)
+private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, favorite: Boolean, stats: GameStats, callbacks: GameDetailCallbacks, toggle: () -> Unit) {
+    // One scrolling column: title, two-column statistics and actions stay reachable at large fonts.
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1.28f)) {
+            Artwork(artwork, Modifier.fillMaxSize())
+            ArtControls(favorite, toggle)
+            Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
+                Text(title, color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text(subtitle, color = Color.White.copy(.75f), style = MaterialTheme.typography.bodyMedium)
             }
         }
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(
-                onClick = callbacks::onPlay,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
-            ) { Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.size(8.dp)); Text("Play", fontWeight = FontWeight.Bold) }
-            DetailAction(Icons.Outlined.Settings, "Configure", Modifier.fillMaxWidth(), callbacks::onConfigure)
-            DetailAction(Icons.Outlined.PlayArrow, "Enter container", Modifier.fillMaxWidth(), callbacks::onArguments)
-            DetailAction(Icons.Outlined.Folder, "Saves", Modifier.fillMaxWidth(), callbacks::onSaves)
-            DetailAction(Icons.Outlined.DeleteOutline, "Remove", Modifier.fillMaxWidth(), callbacks::onRemove, true)
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth())
+            PlayButton(callbacks::onPlay)
+            DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)
+            DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
+            DetailAction(Icons.Outlined.Backup, stringResource(R.string.ui_saves), callbacks::onSaves)
+            DetailAction(Icons.Outlined.Home, stringResource(R.string.ui_add_to_home), callbacks::onHome)
+            DetailAction(Icons.Outlined.DeleteOutline, stringResource(R.string.remove), callbacks::onRemove, true)
             Spacer(Modifier.height(12.dp))
         }
     }
 }
 
 @Composable
-private fun DetailAction(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit, destructive: Boolean = false) {
-    val tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-    Surface(
-        onClick = onClick,
-        modifier = modifier.height(54.dp),
-        shape = RoundedCornerShape(12.dp),
-        color = if (destructive) MaterialTheme.colorScheme.errorContainer.copy(.22f) else MaterialTheme.colorScheme.surface.copy(.90f),
-        contentColor = tint,
-        border = BorderStroke(1.dp, if (destructive) MaterialTheme.colorScheme.error.copy(.62f) else MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null)
-            Spacer(Modifier.size(10.dp))
-            Text(label, fontWeight = FontWeight.SemiBold, maxLines = 1)
+private fun PlayButton(click: () -> Unit) {
+    Button(click, Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = WinZShapes.Medium,
+        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)) {
+        Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.ui_play), fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun LandscapeAction(icon: ImageVector, label: String, modifier: Modifier, click: () -> Unit, destructive: Boolean = false) {
+    Surface(click, modifier, shape = WinZShapes.Medium, color = Color.White.copy(.10f), contentColor = if (destructive) MaterialTheme.colorScheme.error else Color.White,
+        border = BorderStroke(1.dp, Color.White.copy(.16f))) {
+        Column(Modifier.padding(horizontal = 4.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Icon(icon, null, Modifier.size(23.dp)); Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun DetailAction(icon: ImageVector, label: String, click: () -> Unit, destructive: Boolean = false) {
+    Surface(click, Modifier.fillMaxWidth().heightIn(min = 54.dp), shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null); Spacer(Modifier.width(12.dp)); Text(label, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+private data class Stat(val icon: ImageVector, val label: String, val value: String)
+@Composable
+private fun StatsGrid(stats: GameStats, modifier: Modifier = Modifier, onArtwork: Boolean = false) {
+    val entries = buildList {
+        if (stats.playtimeMillis > 0) add(Stat(Icons.Outlined.Schedule, stringResource(R.string.ui_stat_playtime), formatPlaytime(stats.playtimeMillis)))
+        if (stats.playCount > 0) add(Stat(Icons.Outlined.SportsEsports, stringResource(R.string.ui_stat_plays), stats.playCount.toString()))
+        if (stats.lastPlayedMillis > 0) add(Stat(Icons.Outlined.History, stringResource(R.string.ui_stat_last_played), formatLastPlayed(stats.lastPlayedMillis)))
+        stats.sizeText?.let { add(Stat(Icons.Outlined.Storage, stringResource(R.string.ui_stat_size), it)) }
+    }
+    BoxWithConstraints(modifier) {
+        val columns = if (maxWidth >= (if (onArtwork) 200.dp else 280.dp) && LocalConfiguration.current.fontScale <= 1.3f) 2 else 1
+        val showIcons = maxWidth >= 280.dp
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            entries.chunked(columns).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { entry ->
+                        Surface(Modifier.weight(1f), shape = WinZShapes.Small, color = if (onArtwork) Color.Black.copy(.58f) else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (onArtwork) Color.White else MaterialTheme.colorScheme.onSurface,
+                            border = BorderStroke(1.dp, if (onArtwork) Color.White.copy(.16f) else MaterialTheme.colorScheme.outlineVariant)) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (showIcons) { Icon(entry.icon, null, Modifier.size(20.dp)); Spacer(Modifier.width(10.dp)) }
+                                Column(Modifier.weight(1f)) {
+                                    Text(entry.label, style = MaterialTheme.typography.labelSmall, color = LocalContentColor.current.copy(.7f))
+                                    Text(entry.value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                    if (row.size < columns) Spacer(Modifier.weight(1f))
+                }
+            }
         }
     }
 }

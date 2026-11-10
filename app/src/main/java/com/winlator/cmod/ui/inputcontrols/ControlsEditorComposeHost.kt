@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Environment
 import android.view.View
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -29,6 +30,9 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DragIndicator
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Palette
@@ -44,6 +48,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
@@ -52,6 +57,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -115,40 +126,71 @@ private fun Editor(profile: ControlsProfile, canvas: InputControlsView, callback
     var selected by remember { mutableStateOf<ControlElement?>(null) }
     var colors by remember { mutableStateOf(false) }
     var localRevision by remember { mutableIntStateOf(0) }
+    val history = remember(profile, canvas) { EditorHistory(profile, canvas) }
     val touchRevision: () -> Unit = {
+        history.commit()
         profile.save()
         canvas.invalidate()
         localRevision++
     }
     Box(Modifier.fillMaxSize()) {
-        AndroidView(factory = { canvas.apply { setOnEditBackgroundTapListener { colors = false; selected = null } } }, modifier = Modifier.fillMaxSize())
+        AndroidView(factory = { canvas.apply {
+            setOnEditBackgroundTapListener { colors = false; selected = null }
+            setOnEditStartListener { history.begin() }
+            setOnEditEndListener { history.commit(); localRevision++ }
+            setOnEditSelectionChangedListener { if (selected != null) selected = selectedElement; localRevision++ }
+        } }, modifier = Modifier.fillMaxSize())
+        val config = LocalConfiguration.current
+        val density = LocalDensity.current
+        var dragX by remember { mutableStateOf(0f) }
+        var dragY by remember { mutableStateOf(0f) }
+        var toolbarWidth by remember { mutableStateOf(0) }
+        val screenWidth = with(density) { config.screenWidthDp.dp.toPx() }
+        val screenHeight = with(density) { config.screenHeightDp.dp.toPx() }
+        LaunchedEffect(screenWidth, screenHeight, toolbarWidth) {
+            val maxX = ((screenWidth - toolbarWidth) / 2).coerceAtLeast(0f)
+            dragX = dragX.coerceIn(-maxX, maxX)
+            dragY = dragY.coerceIn(0f, (screenHeight - with(density) { 64.dp.toPx() }).coerceAtLeast(0f))
+        }
+
         Surface(
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+            modifier = Modifier.align(Alignment.TopCenter).offset { IntOffset(dragX.roundToInt(), dragY.roundToInt()) }.padding(top = 8.dp).onSizeChanged { toolbarWidth = it.width },
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 8.dp
         ) {
-            Row(Modifier.padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.padding(horizontal = 8.dp)) {
+            Row(Modifier.width((LocalConfiguration.current.screenWidthDp - 16).coerceAtMost(460).dp).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.DragIndicator, "Move toolbar", Modifier.size(28.dp).pointerInput(screenWidth, screenHeight, toolbarWidth) {
+                    detectDragGestures { change, delta ->
+                        change.consume()
+                        val maxX = ((screenWidth - toolbarWidth) / 2).coerceAtLeast(0f)
+                        dragX = (dragX + delta.x).coerceIn(-maxX, maxX)
+                        dragY = (dragY + delta.y).coerceIn(0f, (screenHeight - 64.dp.toPx()).coerceAtLeast(0f))
+                    }
+                })
+                Column(Modifier.width(80.dp).padding(horizontal = 4.dp)) {
                     Text(stringResource(R.string.profile), style = MaterialTheme.typography.labelSmall)
                     Text(profile.name, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                 }
-                IconButton(onClick = { canvas.addElement() }) { Icon(Icons.Outlined.Add, stringResource(R.string.add)) }
-                IconButton(onClick = { canvas.removeElement() }) { Icon(Icons.Outlined.Delete, stringResource(R.string.remove)) }
-                IconButton(onClick = { selected = canvas.selectedElement }) { Icon(Icons.Outlined.Settings, stringResource(R.string.settings)) }
-                IconButton(onClick = { colors = true }) { Icon(Icons.Outlined.Palette, "Scheme color") }
+                IconButton(onClick = { history.begin(); canvas.addElement(); history.commit(); localRevision++ }) { Icon(Icons.Outlined.Add, stringResource(R.string.add)) }
+                IconButton(onClick = { history.begin(); canvas.removeElement(); selected = null; history.commit(); localRevision++ }) { Icon(Icons.Outlined.Delete, stringResource(R.string.remove)) }
+                IconButton(onClick = { history.duplicate(); localRevision++ }) { Icon(Icons.Outlined.ContentCopy, "Duplicate") }
+                IconButton(onClick = { history.undo(); selected = null; localRevision++ }, enabled = history.canUndo) { Icon(Icons.AutoMirrored.Outlined.Undo, "Undo") }
+                IconButton(onClick = { history.begin(); selected = canvas.selectedElement }) { Icon(Icons.Outlined.Settings, stringResource(R.string.settings)) }
+                IconButton(onClick = { history.begin(); colors = true }) { Icon(Icons.Outlined.Palette, "Scheme color") }
             }
         }
         if (colors) {
             EditorPanel("Scheme Color", { profile.save(); colors = false }) {
                 Text("Applies to every control that doesn't have its own custom color", style = MaterialTheme.typography.bodySmall)
                 ColorGrid(profile.themeColor) { color -> profile.themeColor = color; touchRevision() }
+                HexColorField(profile.themeColor) { profile.themeColor = it; touchRevision() }
             }
         }
         selected?.let { element ->
             // The canvas remains interactive while the settings panel is open.
             key(element, revision) {
-                EditorPanel(stringResource(R.string.settings), { profile.save(); selected = null }) {
+                EditorPanel(stringResource(R.string.settings), { profile.save(); selected = null }, if (element.x > canvas.maxWidth / 2) Alignment.CenterStart else Alignment.CenterEnd) {
                     val stateRevision = localRevision
                     ElementFields(element, profile, canvas, callbacks, stateRevision, touchRevision)
                 }
@@ -158,13 +200,13 @@ private fun Editor(profile: ControlsProfile, canvas: InputControlsView, callback
 }
 
 @Composable
-private fun BoxScope.EditorPanel(title: String, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+private fun BoxScope.EditorPanel(title: String, onDismiss: () -> Unit, alignment: Alignment = Alignment.CenterEnd, content: @Composable () -> Unit) {
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
     val panelWidth = if (landscape) minOf(330f, configuration.screenWidthDp * 0.44f).dp
         else (configuration.screenWidthDp - 24).dp
     Surface(
-        modifier = Modifier.align(Alignment.CenterEnd).padding(12.dp).width(panelWidth)
+        modifier = Modifier.align(alignment).padding(12.dp).width(panelWidth)
             .heightIn(max = (configuration.screenHeightDp - 24).dp),
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -228,15 +270,16 @@ private fun <T> Choice(label: String, selected: T, options: List<T>, text: (T) -
 }
 
 @Composable
-private fun Percent(label: String, value: Float, step: Int, onChange: (Float) -> Unit, onFinished: () -> Unit) {
+private fun Percent(label: String, value: Float, step: Int, onChange: (Float) -> Unit, onFinished: () -> Unit, range: ClosedFloatingPointRange<Float> = 0f..1f) {
     var progress by remember(value) { mutableStateOf(value) }
     Column {
         Text("$label: ${(progress * 100).roundToInt()}%")
         Slider(
-            value = progress,
+            value = progress.coerceIn(range),
+            valueRange = range,
             onValueChange = {
                 val rounded = if (step == 1) (it * 100).roundToInt() else ((it * 100 / step).roundToInt() * step)
-                progress = rounded.coerceIn(0, 100) / 100f
+                progress = (rounded / 100f).coerceIn(range)
                 onChange(progress)
             },
             onValueChangeFinished = onFinished
@@ -265,7 +308,7 @@ private fun ElementFields(
             if (it != element.shape) { element.shape = it; save() }
         }
     }
-    Percent(stringResource(R.string.scale), element.scale, 5, { element.scale = it; canvas.invalidate() }, save)
+    Percent(stringResource(R.string.scale), element.scale, 5, { element.scale = it; canvas.invalidate() }, save, 0.5f..2f)
     if (type == ControlElement.Type.STICK || type == ControlElement.Type.DYNAMIC_STICK) {
         var deadZone by remember(element) { mutableStateOf(element.deadZone) }
         Column {
@@ -292,6 +335,7 @@ private fun ElementFields(
     Percent("Opacity", element.opacity, 1, { element.opacity = it; canvas.invalidate() }, save)
     Text("Theme Color", style = MaterialTheme.typography.labelMedium)
     ColorGrid(element.customColor) { element.customColor = it; save() }
+    HexColorField(element.customColor) { element.customColor = it; save() }
     if (type == ControlElement.Type.BUTTON) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.toggle_switch), modifier = Modifier.weight(1f))
@@ -458,4 +502,16 @@ private fun IconGallery(
             }
         }
     }
+}
+
+
+@Composable
+private fun HexColorField(color: Int, onChange: (Int) -> Unit) {
+    var value by remember(color) { mutableStateOf(if (color == 0) "" else "%06X".format(color and 0xffffff)) }
+    OutlinedTextField(value, { text ->
+        val clean = text.removePrefix("#").take(6)
+        value = clean
+        if (clean.isEmpty()) onChange(0)
+        else if (clean.length == 6 && clean.all { it in "0123456789abcdefABCDEF" }) onChange((0xff000000L or clean.toLong(16)).toInt())
+    }, label = { Text("Color #RRGGBB") }, singleLine = true, modifier = Modifier.fillMaxWidth())
 }

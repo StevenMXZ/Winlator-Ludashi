@@ -79,6 +79,7 @@ public class GameDetailFragment extends Fragment {
                 artworkPath,
                 fallback,
                 "1".equals(shortcut.getExtra("favorite", "0")),
+                shortcut,
                 new GameDetailCallbacks() {
                     @Override
                     public void onPlay() {
@@ -107,10 +108,15 @@ public class GameDetailFragment extends Fragment {
                     }
 
                     @Override
+                    public void onHome() {
+                        com.winlator.cmod.ui.library.HomeShortcuts.pin(requireActivity(), shortcut);
+                    }
+
+                    @Override
                     public void onRemove() {
-                        ContentDialog.confirm(requireContext(), R.string.do_you_want_to_remove_this_shortcut, () -> {
+                        com.winlator.cmod.ui.ThemedAlertHost.confirm((androidx.appcompat.app.AppCompatActivity) requireActivity(), getString(R.string.ui_remove_shortcut_title), getString(R.string.do_you_want_to_remove_this_shortcut), getString(R.string.remove), () -> {
                             if (shortcut.file.delete()) getParentFragmentManager().popBackStack();
-                        });
+                        }, true);
                     }
                 }
         );
@@ -166,10 +172,8 @@ public class GameDetailFragment extends Fragment {
         if (!(getActivity() instanceof MainActivity)) return;
         MainActivity activity = (MainActivity) getActivity();
         activity.setDetailMode(true);
-        if (isLandscape()) {
-            activity.setBottomNavigationVisible(false);
-            activity.setMainToolbarVisible(false);
-        }
+        activity.setBottomNavigationVisible(false);
+        activity.setMainToolbarVisible(false);
     }
 
     @Override
@@ -182,7 +186,10 @@ public class GameDetailFragment extends Fragment {
     public void onPause() {
         if (!isLandscape() && getActivity() instanceof MainActivity) {
             ((MainActivity) getActivity()).setDetailMode(false);
+            ((MainActivity) getActivity()).setBottomNavigationVisible(true);
+            ((MainActivity) getActivity()).setMainToolbarVisible(true);
         }
         super.onPause();
     }
 }
+

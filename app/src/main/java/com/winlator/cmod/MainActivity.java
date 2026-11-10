@@ -122,6 +122,8 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         }
 
         super.onCreate(savedInstanceState);
+        com.winlator.cmod.ui.UiStrings.install(this);
+        com.winlator.cmod.ui.toast.ForegroundActivityTracker.install(getApplication());
         orientationLocked = sharedPreferences.getBoolean(PREF_ORIENTATION_LOCKED, false);
         orientationMode = sharedPreferences.getString(PREF_ORIENTATION_MODE, ORIENTATION_MODE_AUTO);
         if (!ORIENTATION_MODE_VERTICAL.equals(orientationMode) && !ORIENTATION_MODE_HORIZONTAL.equals(orientationMode)) {
@@ -487,12 +489,12 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     private void show(Fragment fragment, boolean reverse) {
         FragmentManager fragmentManager = getSupportFragmentManager();
         if (reverse) {
-            fragmentManager.beginTransaction()
+            fragmentManager.beginTransaction().setReorderingAllowed(true)
                     .setCustomAnimations(R.anim.slide_in_down, R.anim.slide_out_up)
                     .replace(R.id.FLFragmentContainer, fragment)
                     .commit();
         } else {
-            fragmentManager.beginTransaction()
+            fragmentManager.beginTransaction().setReorderingAllowed(true)
                     .setCustomAnimations(R.anim.slide_in_up, R.anim.slide_out_down)
                     .replace(R.id.FLFragmentContainer, fragment)
                     .commit();
@@ -585,3 +587,4 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         }
     }
 }
+

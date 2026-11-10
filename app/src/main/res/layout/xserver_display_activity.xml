@@ -11,18 +11,16 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <ScrollView
+    <FrameLayout
         android:id="@+id/SidebarScrollView"
         android:layout_width="320dp"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        android:background="@color/ingame_sidebar_background"
-        android:scrollbars="none"
-        android:fillViewport="true">
+        android:background="@color/ingame_sidebar_background">
 
         <include layout="@layout/left_sidebar" />
 
-    </ScrollView>
+    </FrameLayout>
 
     <EditText
         android:id="@+id/XRTextInput"

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
@@ -116,13 +117,9 @@ object LibraryComposeHost {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 WinZTheme {
-                    LibraryRootWithoutEmptyDescription(
-                        items.value,
-                        grid.value,
-                        query.value,
-                        selectedShortcutPath,
-                        callbacks
-                    )
+                    CompositionLocalProvider(LocalArtworkMotion provides rememberArtworkMotionEnabled()) {
+                        LibraryRootWithoutEmptyDescription(items.value, grid.value, query.value, selectedShortcutPath, callbacks)
+                    }
                 }
             }
         }
@@ -131,3 +128,4 @@ object LibraryComposeHost {
 }
 
 internal enum class LibraryFilter { All, Favorites, Recent }
+

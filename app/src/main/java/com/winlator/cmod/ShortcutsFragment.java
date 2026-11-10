@@ -302,7 +302,7 @@ public class ShortcutsFragment extends Fragment {
         }
         if (item.getItemId() == MENU_FILE_MANAGER) {
             getParentFragmentManager().beginTransaction()
-                    .setCustomAnimations(R.anim.slide_in_up, R.anim.slide_out_down)
+                    .setCustomAnimations(R.anim.winz_screen_enter, R.anim.winz_screen_exit, R.anim.winz_screen_enter, R.anim.winz_screen_exit)
                     .addToBackStack(null)
                     .replace(R.id.FLFragmentContainer, new FileManagerFragment())
                     .commit();
@@ -577,7 +577,7 @@ public class ShortcutsFragment extends Fragment {
 
     private void openGameDetails(Shortcut shortcut) {
         getParentFragmentManager().beginTransaction()
-                .setCustomAnimations(R.anim.slide_in_up, R.anim.slide_out_down, R.anim.slide_in_down, R.anim.slide_out_up)
+                .setCustomAnimations(R.anim.winz_screen_enter, R.anim.winz_screen_exit, R.anim.winz_screen_enter, R.anim.winz_screen_exit)
                 .addToBackStack(null)
                 .replace(R.id.FLFragmentContainer, new GameDetailFragment(shortcut.file.getPath()))
                 .commit();
@@ -711,7 +711,7 @@ public class ShortcutsFragment extends Fragment {
             iconPickerLauncher.launch("image/*");
         }
         else if (LibraryComposeHost.ACTION_REMOVE.equals(action)) {
-            ContentDialog.confirm(context, R.string.do_you_want_to_remove_this_shortcut, () -> {
+            com.winlator.cmod.ui.ThemedAlertHost.confirm((androidx.appcompat.app.AppCompatActivity) requireActivity(), getString(R.string.ui_remove_shortcut_title), getString(R.string.do_you_want_to_remove_this_shortcut), getString(R.string.remove), () -> {
                 boolean fileDeleted = shortcut.file.delete();
                 try {
                     String basePath = shortcut.file.getPath().substring(0, shortcut.file.getPath().lastIndexOf("."));
@@ -724,7 +724,7 @@ public class ShortcutsFragment extends Fragment {
                     loadShortcutsList();
                     Toast.makeText(context, "Shortcut removed.", Toast.LENGTH_SHORT).show();
                 }
-            });
+            }, true);
         }
         else if (LibraryComposeHost.ACTION_CLONE.equals(action)) {
             ContainerManager containerManager = new ContainerManager(context);
@@ -1061,3 +1061,4 @@ public class ShortcutsFragment extends Fragment {
         } catch (Exception e) {}
     }
 }
+

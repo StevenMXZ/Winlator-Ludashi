@@ -387,9 +387,10 @@ private fun userArtworkPath(item: LibraryItem): String? =
 
 @Composable
 private fun ArtworkCompat(path: String?, fallback: Bitmap?, modifier: Modifier) {
-    val bitmap by produceState<Bitmap?>(fallback, path, fallback) {
+    val cacheKey = LibraryImageCache.keyFor(path)
+    val bitmap by produceState<Bitmap?>(LibraryImageCache.peek(cacheKey) ?: fallback, cacheKey, fallback) {
         value = withContext(Dispatchers.IO) {
-            path?.takeIf { File(it).isFile }?.let(BitmapFactory::decodeFile) ?: fallback
+            path?.takeIf { File(it).isFile }?.let(LibraryImageCache::load) ?: fallback
         }
     }
     if (bitmap != null) Image(bitmap!!.asImageBitmap(), null, modifier, contentScale = ContentScale.Crop)
@@ -549,3 +550,4 @@ private fun LibraryActionTileCompat(
         }
     }
 }
+

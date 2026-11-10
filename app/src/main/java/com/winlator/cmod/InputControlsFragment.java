@@ -326,7 +326,7 @@ public class InputControlsFragment extends Fragment {
         Intent intent = new Intent(requireContext(), ControlsEditorActivity.class);
         intent.putExtra("profile_id", currentProfile.id);
         startActivity(intent);
-        requireActivity().overridePendingTransition(R.anim.slide_in_up, R.anim.slide_out_down);
+        requireActivity().overridePendingTransition(R.anim.winz_screen_enter, R.anim.winz_screen_exit);
     }
 
     private void openController(int index) {
@@ -340,7 +340,7 @@ public class InputControlsFragment extends Fragment {
         intent.putExtra("profile_id", currentProfile.id);
         intent.putExtra("controller_id", controller.getId());
         startActivity(intent);
-        requireActivity().overridePendingTransition(R.anim.slide_in_up, R.anim.slide_out_down);
+        requireActivity().overridePendingTransition(R.anim.winz_screen_enter, R.anim.winz_screen_exit);
     }
 
     private void removeController(int index) {
@@ -409,3 +409,4 @@ public class InputControlsFragment extends Fragment {
         );
     }
 }
+

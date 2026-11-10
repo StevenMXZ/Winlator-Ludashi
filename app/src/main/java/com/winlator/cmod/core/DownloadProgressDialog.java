@@ -1,41 +1,29 @@
 package com.winlator.cmod.core;
 
 import android.app.Activity;
-import android.app.Dialog;
 import android.view.View;
-import android.view.Window;
-import android.view.WindowManager;
-import android.widget.TextView;
 
-import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.winlator.cmod.R;
 import com.winlator.cmod.math.Mathf;
+import com.winlator.cmod.ui.ThemedDownloadProgressHost;
 
+// Same public API as before (constructor, show()/show(int)/show(Runnable)/show(int, Runnable),
+// setProgress, setMessage, close, closeOnUiThread, isShowing) — callers (ImageFsInstaller,
+// HttpUtils, AdrenotoolsManager) don't need to change. Internally this now just forwards to
+// ThemedDownloadProgressHost, which shows the themed Compose card instead of inflating
+// download_progress_dialog.xml into a plain android.app.Dialog.
 public class DownloadProgressDialog {
     private final Activity activity;
-    private Dialog dialog;
+    private View overlay;
+    private final LegacyDownloadProgressDialog legacy;
 
     public DownloadProgressDialog(Activity activity) {
         this.activity = activity;
-    }
-
-    private void create() {
-        if (dialog != null) return;
-        dialog = new Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        dialog.setCancelable(false);
-        dialog.setCanceledOnTouchOutside(false);
-        dialog.setContentView(R.layout.download_progress_dialog);
-
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
-            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-        }
+        legacy = activity instanceof androidx.activity.ComponentActivity ? null : new LegacyDownloadProgressDialog(activity);
     }
 
     public void show() {
-        show(null);
+        show(0, null);
     }
 
     public void show(int textResId) {
@@ -47,39 +35,33 @@ public class DownloadProgressDialog {
     }
 
     public void show(int textResId, final Runnable onCancelCallback) {
+        if (legacy != null) { legacy.show(textResId, onCancelCallback); return; }
         if (isShowing()) return;
         close();
-        if (dialog == null) create();
-
-        if (textResId > 0) ((TextView)dialog.findViewById(R.id.TextView)).setText(textResId);
-
-        setProgress(0);
-        if (onCancelCallback != null) {
-            dialog.findViewById(R.id.BTCancel).setOnClickListener((v) -> onCancelCallback.run());
-            dialog.findViewById(R.id.LLBottomBar).setVisibility(View.VISIBLE);
-        }
-        dialog.show();
+        String message = activity.getString(textResId > 0 ? textResId : R.string.downloading_file);
+        overlay = ThemedDownloadProgressHost.show(activity, message, onCancelCallback);
     }
 
     public void setProgress(int progress) {
-        if (dialog == null) return;
-        progress = Mathf.clamp(progress, 0, 100);
-        ((CircularProgressIndicator)dialog.findViewById(R.id.CircularProgressIndicator)).setProgress(progress);
-        ((TextView)dialog.findViewById(R.id.TVProgress)).setText(progress+"%");
+        if (legacy != null) { legacy.setProgress(progress); return; }
+        if (overlay == null) return;
+        ThemedDownloadProgressHost.setProgress(overlay, Mathf.clamp(progress, 0, 100));
     }
 
     public void close() {
+        if (legacy != null) { legacy.close(); return; }
         try {
-            if (dialog != null) {
-                dialog.dismiss();
-            }
+            ThemedDownloadProgressHost.dismiss(overlay);
+        } catch (Exception e) {
         }
-        catch (Exception e) {}
+        overlay = null;
     }
-    
+
     public void setMessage(int textResId) {
-        if (textResId > 0) 
-            ((TextView)dialog.findViewById(R.id.TextView)).setText(textResId);
+        if (legacy != null) { legacy.setMessage(textResId); return; }
+        if (textResId > 0) {
+            ThemedDownloadProgressHost.setMessage(overlay, activity.getString(textResId));
+        }
     }
 
     public void closeOnUiThread() {
@@ -87,6 +69,7 @@ public class DownloadProgressDialog {
     }
 
     public boolean isShowing() {
-        return dialog != null && dialog.isShowing();
+        if (legacy != null) return legacy.isShowing();
+        return ThemedDownloadProgressHost.isShowing(overlay);
     }
 }

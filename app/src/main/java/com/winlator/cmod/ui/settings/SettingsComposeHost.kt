@@ -237,17 +237,16 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
                         model.autoDownloadGameArtwork,
                         "Fetch missing covers and banners from SteamGridDB"
                     ) { callbacks.onBooleanChanged("auto_download_game_artwork", it) }
-                }
-            }
-
-            item("game-saves-title") { SectionTitle("GAME SAVES") }
-            item("game-saves") {
-                GroupCard {
+                    GroupDivider()
                     ToggleRow(
                         "Game Saves for all shortcuts",
                         model.gameSavesAllShortcuts,
                         "Automatically detect and back up saves when any shortcut exits"
                     ) { callbacks.onBooleanChanged("game_saves_all_shortcuts", it) }
+                    GroupDivider()
+                    ToggleRow("Animated artwork", com.winlator.cmod.ui.library.rememberArtworkMotionEnabled(), "Slow zoom and movement on large game covers") {
+                        callbacks.onBooleanChanged("animated_artwork", it)
+                    }
                 }
             }
 
@@ -677,3 +676,4 @@ private fun EditableInlineValue(label: String, initial: String, onSave: (String)
         Button(onClick = { onSave(value) }, modifier = Modifier.align(Alignment.End)) { Text("Save") }
     }
 }
+

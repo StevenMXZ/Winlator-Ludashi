@@ -41,6 +41,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -109,8 +110,8 @@ internal fun LandscapePagerCore(
         if (item.bannerPath == null) callbacks.onArtworkNeeded(item.shortcutPath, "banner")
     }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        PagerImage(userArtworkPath(item) ?: item.bannerPath ?: item.coverPath, item.fallbackIcon, Modifier.fillMaxSize())
+    Box(Modifier.fillMaxSize().clipToBounds().background(MaterialTheme.colorScheme.background)) {
+        PagerImage(userArtworkPath(item) ?: item.bannerPath ?: item.coverPath, item.fallbackIcon, Modifier.fillMaxSize().kenBurns(amplitude = 0.04f, pan = 0.5f))
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Black.copy(.84f), Color.Black.copy(.48f), Color.Black.copy(.20f)))))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(.18f), Color.Transparent, Color.Black.copy(.72f)))))
         Column(Modifier.fillMaxSize().padding(horizontal = 26.dp, vertical = 12.dp)) {
@@ -157,7 +158,7 @@ internal fun LandscapePagerCore(
                                 color = Color.Black.copy(.30f),
                                 border = BorderStroke(if (selected) 2.dp else 1.dp, Color.White.copy(if (selected) .88f else .20f))
                             ) {
-                                PagerImage(userArtworkPath(candidate) ?: candidate.coverPath ?: candidate.bannerPath ?: candidate.iconPath, candidate.fallbackIcon, Modifier.fillMaxSize())
+                                PagerImage(userArtworkPath(candidate) ?: candidate.coverPath ?: candidate.bannerPath ?: candidate.iconPath, candidate.fallbackIcon, Modifier.fillMaxSize().kenBurns(amplitude = 0.05f, periodMs = 18_000, strength = if (selected) 1f else 0f))
                             }
                         }
                     }
@@ -195,11 +196,13 @@ private fun userArtworkPath(item: LibraryItem): String? =
 
 @Composable
 private fun PagerImage(path: String?, fallback: Bitmap?, modifier: Modifier) {
-    val image by produceState<Bitmap?>(fallback, path, fallback) {
+    val cacheKey = LibraryImageCache.keyFor(path)
+    val image by produceState<Bitmap?>(LibraryImageCache.peek(cacheKey) ?: fallback, cacheKey, fallback) {
         value = withContext(Dispatchers.IO) {
-            path?.takeIf { File(it).isFile }?.let { BitmapFactory.decodeFile(it) } ?: fallback
+            path?.takeIf { File(it).isFile }?.let { LibraryImageCache.load(it) } ?: fallback
         }
     }
     if (image != null) Image(image!!.asImageBitmap(), null, modifier, contentScale = ContentScale.Crop)
     else Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant))
 }
+

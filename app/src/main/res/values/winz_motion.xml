@@ -1,0 +1,4 @@
+<resources><style name="WinZDialogAnimation">
+<item name="android:windowEnterAnimation">@anim/winz_screen_enter</item>
+<item name="android:windowExitAnimation">@anim/winz_screen_exit</item>
+</style></resources>
