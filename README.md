@@ -6,7 +6,7 @@
 
 # Winlator Bionic
 
-[![Downloads](https://img.shields.io/github/downloads/StevenMXZ/Winlator-Ludashi/total.svg?style=flat-square&label=downloads)](https://github.com/StevenMXZ/Winlator-Ludashi/releases)
+[![Downloads](https://img.shields.io/github/downloads/StevenMXZ/Winlator-Ludashi/total.svg?style=flat-square&label=downloads)](https://github.com/StevenMXZ/Winlator-Ludashi/releases) [![Stars](https://img.shields.io/github/stars/StevenMXZ/Winlator-Ludashi?style=flat-square&logo=github&color=ffb300)](https://github.com/StevenMXZ/Winlator-Ludashi/stargazers) [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/JWdQqXkayG)
 
 Winlator is an Android application that lets you run Windows (x86\_64) applications with Wine. It supports standard `x86_64` containers using Box86/Box64, as well as `Arm64EC` containers which utilize FEXCore (for 64/32-bit) or an optional WowBox64 (for 32-bit).
 
