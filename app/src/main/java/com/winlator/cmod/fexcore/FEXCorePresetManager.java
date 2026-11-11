@@ -64,6 +64,10 @@ public class FEXCorePresetManager {
             envVars.put("FEX_DYNAMICL1CACHE", "1");
             envVars.put("FEX_DISABLEL2CACHE", "0");
         }
+        else if (id.equals(FEXCorePreset.EXTREME)) {
+            envVars.putAll(getEnvVars(context, FEXCorePreset.PERFORMANCE));
+            envVars.put("FEX_SMCCHECKS", "none");
+        }
         else if (id.startsWith(FEXCorePreset.CUSTOM)) {
             for (String[] preset : customPresetsIterator(context)) {
                 if (preset[0].equals(id)) {
@@ -82,6 +86,7 @@ public class FEXCorePresetManager {
         presets.add(new FEXCorePreset(FEXCorePreset.COMPATIBILITY, context.getString(R.string.compatibility)));
         presets.add(new FEXCorePreset(FEXCorePreset.INTERMEDIATE, context.getString(R.string.intermediate)));
         presets.add(new FEXCorePreset(FEXCorePreset.PERFORMANCE, context.getString(R.string.performance)));
+        presets.add(new FEXCorePreset(FEXCorePreset.EXTREME, context.getString(R.string.extreme)));
         for (String[] preset : customPresetsIterator(context)) presets.add(new FEXCorePreset(preset[0], preset[1]));
         return presets;
     }
