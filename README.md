@@ -6,6 +6,8 @@
 
 # Winlator Bionic
 
+[![Downloads](https://img.shields.io/github/downloads/StevenMXZ/Winlator-Ludashi/total.svg?style=flat-square&label=downloads)](https://github.com/StevenMXZ/Winlator-Ludashi/releases)
+
 Winlator is an Android application that lets you run Windows (x86\_64) applications with Wine. It supports standard `x86_64` containers using Box86/Box64, as well as `Arm64EC` containers which utilize FEXCore (for 64/32-bit) or an optional WowBox64 (for 32-bit).
 
 This is a fork of the **Winlator Bionic** project by [Pipetto-crypto](https://github.com/Pipetto-crypto/winlator).
@@ -64,6 +66,7 @@ You can find updated components (known as `wcps`) to improve compatibility and p
   - VKD3D: [gitlab.winehq.org/wine/vkd3d](https://gitlab.winehq.org/wine/vkd3d)
   - D8VK: [github.com/AlpyneDreams/d8vk](https://github.com/AlpyneDreams/d8vk)
   - CNC DDraw: [github.com/FunkyFr3sh/cnc-ddraw](https://github.com/FunkyFr3sh/cnc-ddraw)
-[ptitseb](https://github.com/ptitSeb) (Box86/Box64), [Danylo](https://blogs.igalia.com/dpiliaiev/tags/mesa/) (Turnip), [alexvorxx](https://github.com/alexvorxx) (Mods/Tips) and others.
+  - [ptitseb](https://github.com/ptitSeb) (Box86/Box64), [Danylo](https://blogs.igalia.com/dpiliaiev/tags/mesa/) (Turnip), [alexvorxx](https://github.com/alexvorxx) (Mods/Tips) and others.
+  - Frame Generation (LSFG): adapted from [Eden’s LSFG implementation](https://git.eden-emu.dev/eden-emu/eden/src/branch/master/src/video_core/frame_gen).
+  - **WinNative**: credit for half of the Steam integration, from [WinNative](https://github.com/WinNative-Emu/WinNative).
 
-- Frame Generation (LSFG): adapted from [Eden’s LSFG implementation](https://git.eden-emu.dev/eden-emu/eden/src/branch/master/src/video_core/frame_gen).
