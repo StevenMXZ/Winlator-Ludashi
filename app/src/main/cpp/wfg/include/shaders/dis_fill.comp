@@ -1,0 +1,207 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG frame generation: a Vulkan compute realisation of Dense Inverse Search
+// optical flow. The algorithm and its reference implementation come from
+// OpenCV's DISOpticalFlow, which adopted Till Kroeger's original OF_DIS.
+// See THIRD_PARTY_NOTICES.txt for attribution.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+// Two passes over the level-0 field, per source pair (pc.mode):
+//   0 - how well the next frame confirms each vector: the mean absolute luma difference
+//       (0..255) between the previous frame at the texel and the next frame where its vector
+//       ends, over the centre and its four diagonal neighbours (255 for an end off the frame);
+//   1 - the field the interpolation uses, with the vectors the next frame does not confirm
+//       replaced.
+//
+// Those are content going out of view - background sliding behind an object, the far side of
+// a turning one - which has nothing to match in the next frame, so the search leaves a vector
+// borrowed from whatever matched least badly, typically the occluder's: the generated frame
+// drags the occluder's texture over the background in a band as wide as the motion. That
+// content keeps moving with its own surface until it is hidden, so it takes the vector of the
+// nearest confirmed texels of that surface: walking out in eight directions, the cost of a
+// walk is its length plus the luma steps it crosses, so a silhouette separates the surfaces and
+// the cheapest walk stays on the texel's own. Only the interpolation sees the result; the next
+// pair's search still starts from the field as it was found.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D flowIn;     // packed level-0 field
+layout(set = 0, binding = 1) uniform sampler2D consTex;    // mode 0's output
+layout(set = 0, binding = 2) uniform sampler2D prevLuma;
+layout(set = 0, binding = 3) uniform sampler2D nextLuma;
+layout(set = 0, binding = 4) uniform sampler2D flowRaw;    // refined level-0 field, for mode 0
+layout(set = 0, binding = 5) uniform sampler2D histTex;    // overlay history (dis_hist.comp)
+layout(set = 0, binding = 8, r32f) uniform writeonly image2D consOut;
+layout(set = 0, binding = 6) uniform sampler2D flowPrevTex; // the previous pair's field
+layout(set = 0, binding = 9, rgba16f) uniform writeonly image2D flowOut;   // xy field, zw acceleration
+
+layout(push_constant) uniform PC {
+    int mode;
+    int accel;     // flowPrevTex holds the previous pair's field
+} pc;
+
+// Confirmation error below which a vector is trusted, and above which it is replaced outright.
+#ifndef FILL_LO
+#define FILL_LO 16.0
+#endif
+#ifndef FILL_HI
+#define FILL_HI 32.0
+#endif
+// Mean luma difference in place below which the pair counts as agreeing there.
+#ifndef FILL_STILL
+#define FILL_STILL 4.0
+#endif
+// Longest walk in texels: the band is as wide as the motion; a fast turn is ~16 texels at 180p.
+#ifndef FILL_WALK
+#define FILL_WALK 24
+#endif
+// Acceleration below / above which (in flow texels) none / all of it is applied.
+#ifndef ACCEL_LO
+#define ACCEL_LO 0.5
+#endif
+#ifndef ACCEL_HI
+#define ACCEL_HI 1.5
+#endif
+// Cost of a texel of walk, in luma steps crossed.
+#ifndef FILL_STEP_COST
+#define FILL_STEP_COST 2.0
+#endif
+
+bool finite2(vec2 v) {
+    return !(any(isnan(v)) || any(isinf(v)));
+}
+
+// Acceleration of the content at p over the pair, for a motion that is not uniform within it:
+// a camera turn speeding up or slowing down covers less or more than t of the pair's way by
+// time t, and on a turn's ramp a linear split puts the generated frame several pixels off -
+// as bad as repeating a frame on sharp texture. The content came into this pair's first frame
+// moving with the previous pair's vector (looked up where it came from, two fixed-point steps),
+// and leaves with this pair's: the difference is the acceleration a in the position
+// d(t) = f t + a (t^2 - t) / 2. Estimation noise between two fields of a steady motion stays
+// out: below half a flow texel nothing is applied.
+// Where the content at uv came from in the previous pair's field: two fixed-point steps of
+// y = uv - v(y) from the given start. z is how well the next frame confirmed that vector then.
+vec3 previousVector(vec2 uv, vec2 start) {
+    vec2 v = textureLod(flowPrevTex, clamp(uv - start, vec2(0.0), vec2(1.0)), 0.0).xy;
+    v = textureLod(flowPrevTex, clamp(uv - v, vec2(0.0), vec2(1.0)), 0.0).xy;
+    return textureLod(flowPrevTex, clamp(uv - v, vec2(0.0), vec2(1.0)), 0.0).xyz;
+}
+
+vec2 accelerationAt(vec2 uv, ivec2 sz) {
+    vec2 f = textureLod(flowIn, uv, 0.0).xy;
+    if (!finite2(f)) return vec2(0.0);
+    // Two starts: uv itself, and where the content would have been had it kept this pair's
+    // motion. Starting at uv, a texel just ahead of a moving object reads the background there
+    // and the lookup never leaves it - a whole object speed of false acceleration. Of the two,
+    // the smaller acceleration is the explanation to keep.
+    vec3 p0 = previousVector(uv, vec2(0.0));
+    vec3 p1 = previousVector(uv, f);
+    vec2 a0 = f - p0.xy;
+    vec2 a1 = f - p1.xy;
+    if (!finite2(a0)) a0 = vec2(1e9);
+    if (!finite2(a1)) a1 = vec2(1e9);
+    bool first = dot(a0, a0) <= dot(a1, a1);
+    vec2 a = first ? a0 : a1;
+    if (dot(a, a) >= 1e8) return vec2(0.0);
+    // Not from a vector the next frame did not confirm then either - the pair across a scene
+    // cut, content that was going out of view: its difference to this one is no acceleration.
+    return a * (1.0 - smoothstep(FILL_LO, FILL_HI, first ? p0.z : p1.z));
+}
+
+vec2 median3(vec2 a, vec2 b, vec2 c) {
+    return max(min(a, b), min(max(a, b), c));
+}
+
+vec2 acceleration(ivec2 p, ivec2 sz) {
+    if (pc.accel == 0) return vec2(0.0);
+    // A camera's acceleration is the same over large parts of the frame; where the two fields
+    // meet a different layer - an object's edge, a cut, something that wrapped round - the
+    // difference is not an acceleration at all. The median of the texel and its neighbours two
+    // texels away on either axis keeps the first and drops the second.
+    vec2 uv = (vec2(p) + 0.5) / vec2(sz);
+    vec2 o = 2.0 / vec2(sz);
+    vec2 c = accelerationAt(uv, sz);
+    vec2 h = median3(c, accelerationAt(uv - vec2(o.x, 0.0), sz), accelerationAt(uv + vec2(o.x, 0.0), sz));
+    vec2 w = median3(c, accelerationAt(uv - vec2(0.0, o.y), sz), accelerationAt(uv + vec2(0.0, o.y), sz));
+    vec2 a = median3(c, h, w);
+    // Only for a vector the next frame confirms.
+    float trust = 1.0 - smoothstep(FILL_LO, FILL_HI, texelFetch(consTex, p, 0).r);
+    return a * trust * smoothstep(ACCEL_LO, ACCEL_HI, length(a * vec2(sz)));
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sz = textureSize(flowIn, 0);
+    if (p.x >= sz.x || p.y >= sz.y) return;
+    vec2 f = texelFetch(flowIn, p, 0).xy;
+
+    if (pc.mode == 0) {
+        // From the refined field, so this runs next to the pack pass rather than after it.
+        f = texelFetch(flowRaw, p, 0).xy;
+        // A vector that ends off the frame is content leaving it, not going behind something:
+        // there is nothing to confirm it with, and nothing to replace it with either.
+        float e = 255.0;
+        if (finite2(f)) {
+            vec2 inv = 1.0 / vec2(sz);
+            vec2 end = vec2(p) + 0.5 + f * vec2(sz);
+            bool inFrame = all(greaterThanEqual(end, vec2(0.0))) && all(lessThanEqual(end, vec2(sz)));
+            float moved = 0.0;
+            float still = 0.0;
+            for (int i = 0; i < 5; i++) {
+                vec2 o = i == 0 ? vec2(0.0) : vec2((i & 1) != 0 ? 1.0 : -1.0, i < 3 ? 1.0 : -1.0);
+                ivec2 s = clamp(p + ivec2(o), ivec2(0), sz - 1);
+                float a = texelFetch(prevLuma, s, 0).r;
+                moved += abs(a - textureLod(nextLuma, (end + o) * inv, 0.0).r);
+                still += abs(a - texelFetch(nextLuma, s, 0).r);
+            }
+            // Where the pair agrees in place the content is a static overlay or still scenery,
+            // or too flat for any vector to matter: either way its vector stays.
+            e = (!inFrame || still * 0.2 < FILL_STILL) ? 0.0 : moved * 0.2;
+        }
+        imageStore(consOut, p, vec4(e, 0.0, 0.0, 0.0));
+        return;
+    }
+
+    // Not on a static overlay, translucent panels included: the scenery moving behind one makes
+    // its vectors look unconfirmed, and borrowing the scenery's motion would carry the panel.
+    // The history also remembers still scenery for a few frames after something moves onto it,
+    // so it only counts for a vector that is still about zero, as an overlay's is.
+    float replace = smoothstep(FILL_LO, FILL_HI, texelFetch(consTex, p, 0).r) *
+                    (1.0 - textureLod(histTex, (vec2(p) + 0.5) / vec2(sz), 0.0).r *
+                               (1.0 - smoothstep(0.5, 1.5, length(f * vec2(sz)))));
+    if (replace > 0.0) {
+        const ivec2 dirs[8] = ivec2[8](ivec2(1, 0), ivec2(-1, 0), ivec2(0, 1), ivec2(0, -1),
+                                       ivec2(1, 1), ivec2(-1, 1), ivec2(1, -1), ivec2(-1, -1));
+        float bestCost = 1e30;
+        vec2 best = f;
+        float l0 = texelFetch(prevLuma, p, 0).r;
+        for (int i = 0; i < 8; i++) {
+            float stepLen = i < 4 ? 1.0 : 1.41421356;
+            float cost = 0.0;
+            float lp = l0;
+            for (int k = 1; k <= FILL_WALK; k++) {
+                ivec2 q = p + dirs[i] * k;
+                if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, sz))) break;
+                float lq = texelFetch(prevLuma, q, 0).r;
+                cost += abs(lq - lp) + FILL_STEP_COST * stepLen;
+                lp = lq;
+                if (cost >= bestCost) break;
+                if (texelFetch(consTex, q, 0).r < FILL_LO) {
+                    vec2 fq = texelFetch(flowIn, q, 0).xy;
+                    if (finite2(fq)) {
+                        bestCost = cost;
+                        best = fq;
+                    }
+                    break;
+                }
+            }
+        }
+        f = mix(f, best, replace);
+    }
+    imageStore(flowOut, p, vec4(f, acceleration(p, sz)));
+}

@@ -242,10 +242,13 @@ include_directories(
         ${VULKAN_RENDERER_DIR}
 )
 
+add_subdirectory(wfg)
+
 add_library(vulkan_renderer SHARED
         winlator/renderer/vulkan/vulkan_jni.cpp
         ${VULKAN_CONTEXT_LEGACY}
         winlator/renderer/vulkan/VulkanRendererFilters.cpp
+        winlator/renderer/vulkan/VulkanRendererWfg.cpp
         winlator/renderer/vulkan/VulkanRendererPipelineOpt.cpp
         winlator/renderer/vulkan/vk_dispatch.c
 
@@ -286,6 +289,7 @@ target_compile_options(vulkan_renderer PRIVATE
 )
 
 target_link_libraries(vulkan_renderer
+        wfg
         log
         android
         vulkan

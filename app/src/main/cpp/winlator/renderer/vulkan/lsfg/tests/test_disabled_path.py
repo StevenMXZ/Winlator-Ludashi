@@ -47,7 +47,10 @@ void VulkanRendererContext::cleanupSwapchain() { assert(allowTransition); ++clea
 void VulkanRendererContext::createSwapchain() { assert(allowTransition && !frameGenRequested); ++rebuilds; }
 void VulkanRendererContext::createFramebuffers() { assert(allowTransition); }
 void VulkanRendererContext::createCmdBufs() { assert(allowTransition); }
+void VulkanRendererContext::processFrameGeneration(VkCommandBuffer, VkImage, uint32_t) { forbidden(); }
+void VulkanRendererContext::generateFrameGeneration(VkCommandBuffer, uint32_t, uint32_t, VkImage, VkImageView) { forbidden(); }
 void VulkanRendererContext::copyFrameGenTarget(VkCommandBuffer, const FrameGenTarget&, VkImage) { forbidden(); }
+void VulkanRendererContext::transition(VkCommandBuffer, VkImage, VkImageLayout, VkImageLayout, VkAccessFlags, VkAccessFlags, VkPipelineStageFlags, VkPipelineStageFlags) { forbidden(); }
 void VulkanRendererContext::transitionGeneratedSwapchainImage(VkCommandBuffer, VkImage) { forbidden(); }
 VkPipeline VulkanRendererGetOpaquePipeline(VulkanRendererContext* ctx) { return ctx->pipeline; }
 extern "C" void vkr_lsfg_process(VkrLsfg*, VkCommandBuffer, VkImage, uint32_t, uint32_t, uint32_t) { forbidden(); }
@@ -58,18 +61,20 @@ int main() {
     ctx.device = (VkDevice)1;
     ctx.vk_.DeviceWaitIdle = [](VkDevice) { ++drains; return VK_SUCCESS; };
     ctx.needsRender.store(false);
-    for (int i = 0; i < 1000; ++i) {
+    for (int engine = 0; engine < 2; ++engine) for (int i = 0; i < 1000; ++i) {
+        ctx.frameGenEngine = engine;
         ctx.configureFrameGeneration(false, i % 2 ? "pending-cache" : "", 2 + i % 3,
                                      i % 2 ? 60 : 120, 25 + i % 76, 120);
         assert(!ctx.frameGenerationActive());
     }
     assert(drains == 0 && !ctx.needsRender.load());
-    assert(ctx.frameGen == nullptr && !ctx.frameGenDispatchReady);
+    assert(ctx.frameGen == nullptr && !ctx.frameGenDispatchReady && ctx.wfg == nullptr && !ctx.wfgDispatchReady);
     assert(ctx.frameGenTargets.empty() && ctx.frameGenRenderDoneSems.empty());
 
     // A failed active quality/cache update must also restore normal swapchain policy.
     allowTransition = true;
     ctx.swapchain = (VkSwapchainKHR)1;
+    ctx.frameGenEngine = 0;
     ctx.frameGenRequested = true;
     ctx.frameGenMultiplier = 2; ctx.frameGenTargetRate = 0;
     ctx.frameGenFlowScale = 0.70f; ctx.frameGenCachePath = "pending-cache";
@@ -144,7 +149,7 @@ int main() {
         assert(ctx.frameGenTargets.empty() && ctx.frameGenGeneratedFrames.load() == 0);
     }
     std::cout << "PASS: 24 FG-off recording cases, direct swapchain, no extra copies/compute; "
-                 "1000 disabled configuration changes without GPU drain, resources or repaint; normal swapchain restored after disable/failure\n";
+                 "2000 disabled configuration changes across LSFG/WFG without GPU drain, resources or repaint; normal swapchain restored after disable/failure\n";
 }
 '''
     with tempfile.TemporaryDirectory() as directory:

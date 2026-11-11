@@ -12,6 +12,7 @@
 #include <dlfcn.h>
 #include "vk_dispatch.h"
 #include "lsfg/vkr_lsfg.h"
+#include "wfg/vkr_wfg.h"
 #include "window_vert.h"
 #include "window_frag.h"
 #include "window_sgsr_frag.h"
@@ -230,6 +231,11 @@ void VulkanRendererContext::createInstance() {
     if (!vk_.CreateInstance) throw std::runtime_error("vkCreateInstance unavailable");
     VkApplicationInfo ai{}; ai.sType=VK_STRUCTURE_TYPE_APPLICATION_INFO;
     ai.pApplicationName="Winlator"; ai.apiVersion=VK_API_VERSION_1_3;
+    auto enumerateVersion = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
+        gipa(nullptr, "vkEnumerateInstanceVersion"));
+    uint32_t loaderVersion = VK_API_VERSION_1_0;
+    if (enumerateVersion && enumerateVersion(&loaderVersion) == VK_SUCCESS)
+        ai.apiVersion = std::min(ai.apiVersion, loaderVersion);
     const char* ext[]={"VK_KHR_surface","VK_KHR_android_surface",
                        VK_EXT_DEBUG_UTILS_EXTENSION_NAME, nullptr};
     VkInstanceCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -409,7 +415,7 @@ void VulkanRendererContext::createLogicalDevice() {
     memoryModelProbe.pNext = &float16Probe;
     VkPhysicalDeviceFeatures2 featureProbe{};
     featureProbe.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    featureProbe.pNext = &memoryModelProbe;
+    featureProbe.pNext = props.apiVersion >= VK_API_VERSION_1_3 ? &memoryModelProbe : nullptr;
     if (vk_.GetPhysicalDeviceFeatures2)
         vk_.GetPhysicalDeviceFeatures2(physicalDevice, &featureProbe);
 
@@ -443,7 +449,15 @@ void VulkanRendererContext::createLogicalDevice() {
         featureProbe.features.shaderStorageImageWriteWithoutFormat == VK_TRUE &&
         featureProbe.features.shaderStorageImageExtendedFormats == VK_TRUE;
 
+    // WFG's embedded SPIR-V 1.3 shaders use typed storage images and FP32
+    // arithmetic. The LSFG Vulkan-1.3/memory-model gate must not reject WFG.
+    wfgDeviceSupported = props.apiVersion >= VK_API_VERSION_1_1 && graphicsQueueSupportsCompute &&
+        frameGenCompositeFormatSupported &&
+        featureProbe.features.shaderStorageImageExtendedFormats == VK_TRUE;
+
     VkPhysicalDeviceFeatures enabledFeatures{};
+    if (wfgDeviceSupported)
+        enabledFeatures.shaderStorageImageExtendedFormats = VK_TRUE;
     VkPhysicalDeviceVulkanMemoryModelFeatures memoryModelEnable{};
     memoryModelEnable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES;
     VkPhysicalDeviceShaderFloat16Int8Features float16Enable{};
@@ -534,9 +548,9 @@ void VulkanRendererContext::createSwapchain() {
         (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) != 0;
     const bool storageUsageSupported =
         (caps.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) != 0;
-    frameGenSurfaceSupported = frameGenDeviceSupported && transferDstSupported &&
+    frameGenSurfaceSupported = transferDstSupported &&
                                frameGenCompositeFormatSupported;
-    const bool wantsFrameGen = frameGenRequested && frameGenSurfaceSupported;
+    const bool wantsFrameGen = frameGenRequested && frameGenerationDeviceSupported() && frameGenSurfaceSupported;
 
     uint32_t imgCount=caps.minImageCount+1;
     if (caps.maxImageCount>0&&imgCount>caps.maxImageCount) imgCount=caps.maxImageCount;
@@ -580,7 +594,7 @@ void VulkanRendererContext::createSwapchain() {
     VkSwapchainKHR newSwapchain = VK_NULL_HANDLE;
     VkResult swapchainResult = vk_.CreateSwapchainKHR(device,&ci,nullptr,&newSwapchain);
     if (swapchainResult != VK_SUCCESS && wantsFrameGen && frameGenSwapchainStorage) {
-        FGLOG_E("LSFG fast swapchain failed result=%d usage=0x%x supportedUsage=0x%x; "
+        FGLOG_E("Frame generation fast swapchain failed result=%d usage=0x%x supportedUsage=0x%x; "
                 "retrying without STORAGE",
                 (int)swapchainResult, (unsigned)ci.imageUsage,
                 (unsigned)caps.supportedUsageFlags);
@@ -884,7 +898,7 @@ void VulkanRendererContext::createFramebuffers() {
                 throw std::runtime_error("framegen present semaphore");
         }
         if (!ensureFrameGenerationResources())
-            FGLOG_E("LSFG resources unavailable; renderer will use the direct path");
+            FGLOG_E("Frame generation resources unavailable; renderer will use the direct path");
     }
 }
 
@@ -1011,8 +1025,8 @@ uint32_t VulkanRendererContext::frameGenCapacity() const {
 }
 
 bool VulkanRendererContext::frameGenerationActive() const {
-    if (!frameGenRequested || !frameGenDeviceSupported || !frameGenSurfaceSupported ||
-        !frameGenPrepared || !frameGen || frameGenCapacity() == 0 ||
+    if (!frameGenRequested || !frameGenerationDeviceSupported() || !frameGenSurfaceSupported ||
+        !frameGenPrepared || (frameGenEngine == 1 ? !wfg : !frameGen) || frameGenCapacity() == 0 ||
         frameGenRenderDoneSems.size() != swapchainImages.size()) {
         return false;
     }
@@ -1104,6 +1118,7 @@ bool VulkanRendererContext::createFrameGenTargets(uint32_t count) {
 
 void VulkanRendererContext::destroyFrameGenTargets() {
     if (frameGen) vkr_lsfg_forget_targets(frameGen);
+    if (wfg) vkr_wfg_forget_targets(wfg);
     for (FrameGenTarget& target : frameGenTargets) {
         if (target.framebuffer != VK_NULL_HANDLE)
             vk_.DestroyFramebuffer(device, target.framebuffer, nullptr);
@@ -1125,14 +1140,33 @@ void VulkanRendererContext::destroyFrameGeneration() {
         frameGen = nullptr;
     }
     frameGenPrepared = false;
+    if (wfg) { vkr_wfg_destroy(wfg); wfg = nullptr; }
     frameGenGeneratedFrames.store(0, std::memory_order_relaxed);
 }
 
 bool VulkanRendererContext::ensureFrameGenerationResources() {
-    if (!frameGenRequested || !frameGenDeviceSupported || !frameGenSurfaceSupported ||
-        frameGenCachePath.empty() || frameGenCapacity() == 0) {
+    if (!frameGenRequested || !frameGenerationDeviceSupported() || !frameGenSurfaceSupported ||
+        (frameGenEngine == 0 && frameGenCachePath.empty()) || frameGenCapacity() == 0) {
         frameGenPrepared = false;
         return false;
+    }
+
+    if (frameGenEngine == 1) {
+        if (!wfgDispatchReady) {
+            wfgDispatchReady = vkr_wfg_bind_dispatch(gipa, instance);
+            if (!wfgDispatchReady) return false;
+        }
+        if (!wfg) wfg = vkr_wfg_create(device, physicalDevice);
+        if (!wfg) return false;
+        vkr_wfg_configure(wfg, frameGenMultiplier, frameGenTargetRate,
+                          static_cast<uint32_t>(std::lround(frameGenFlowScale * 100.f)),
+                          frameGenRefreshRate);
+        const uint32_t count = MAX_FRAMES_IN_FLIGHT +
+            (frameGenSwapchainStorage ? 0u : frameGenCapacity());
+        if (!createFrameGenTargets(count)) return false;
+        vkr_wfg_forget_targets(wfg);
+        frameGenPrepared = vkr_wfg_prepare(wfg, swapchainExt.width, swapchainExt.height, swapchainFmt);
+        return frameGenPrepared;
     }
 
     // Keep the LSFG dispatch unloaded until a real enable request.
@@ -1206,10 +1240,8 @@ void VulkanRendererContext::recordFrameGenOutputCmd(VkCommandBuffer cb,
         // Every preceding generated submission is fenced before this command
         // is recorded, so one descriptor target can be rebound safely.  This
         // keeps the direct path independent of the swapchain image count.
-        vkr_lsfg_generate_into(frameGen, cb, output, 0,
-                               swapchainImages[swapchainIndex],
-                               swapchainViews[swapchainIndex],
-                               swapchainExt.width, swapchainExt.height);
+        generateFrameGeneration(cb, output, 0, swapchainImages[swapchainIndex],
+                                swapchainViews[swapchainIndex]);
         transitionGeneratedSwapchainImage(cb, swapchainImages[swapchainIndex]);
     } else {
         const FrameGenTarget& src = output < generatedCount
@@ -1881,18 +1913,14 @@ void VulkanRendererContext::renderFrame() {
         retirePending.store(!deleteQueue.empty(),std::memory_order_release);
     }
 
-    const bool useFrameGeneration = frameGenRequested && frameGenerationActive();
-    uint32_t plannedGenerations = 0;
-    if (useFrameGeneration) {
+    bool useFrameGeneration = frameGenRequested && frameGenerationActive();
+    uint32_t generatedCount = 0;
+    if (useFrameGeneration && frameGenEngine == 0) {
         vkr_lsfg_set_refresh_rate(frameGen, frameGenRefreshRate);
-        plannedGenerations = vkr_lsfg_plan(
-            frameGen, frameGenCapacity(),
-            frameGenSourceFrames.load(std::memory_order_relaxed));
-        plannedGenerations = std::min(
-            {plannedGenerations, frameGenCapacity(), MAX_FRAMEGEN_GENERATIONS});
+        generatedCount = std::min({vkr_lsfg_plan(frameGen, frameGenCapacity(),
+            frameGenSourceFrames.load(std::memory_order_relaxed)),
+            frameGenCapacity(), MAX_FRAMEGEN_GENERATIONS});
     }
-
-    const uint32_t generatedCount = useFrameGeneration ? plannedGenerations : 0;
 
     uint32_t imgIdx;
 #ifdef LUDASHI_NATIVE_X11
@@ -1953,6 +1981,15 @@ void VulkanRendererContext::renderFrame() {
 
     {
         std::lock_guard<std::mutex> lk(renderMutex);
+
+        // WFG samples the committed source count under the same lock as the
+        // textures. Java publishes it with content; X++ has finished late latch.
+        if (useFrameGeneration && frameGenEngine == 1) {
+            generatedCount = std::min({vkr_wfg_plan(wfg, frameGenCapacity(),
+                frameGenSourceFrames.load(std::memory_order_relaxed), frameGenRefreshRate),
+                frameGenCapacity(), MAX_FRAMEGEN_GENERATIONS});
+            if (!vkr_wfg_needs_history(wfg)) useFrameGeneration = false;
+        }
 
         // Pin the draw list before releasing renderMutex: removeWindow may run
         // while commands are recorded but before their submit reaches the GPU.
@@ -2224,7 +2261,7 @@ void VulkanRendererContext::renderFrame() {
             }
             if ((acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR) ||
                 nextIndex >= swapchainImages.size()) {
-                FGLOG_E("LSFG sequential acquire %u/%u failed: %d index=%u",
+                FGLOG_E("Frame generation sequential acquire %u/%u failed: %d index=%u",
                        output, generatedCount, (int)acquireResult, nextIndex);
                 recreateSwapchain = true;
                 break;
@@ -2388,6 +2425,11 @@ void VulkanRendererContext::updateWindowContent(int64_t id, void* px, short w, s
         std::lock_guard<std::mutex> lk(renderMutex);
         auto it=texMap.find(id);
         if (it!=texMap.end()) it->second.dirty=true;
+#ifndef LUDASHI_NATIVE_X11
+        if (frameGenRequested && frameGenEngine == 1)
+            frameGenSourceFrames.store(wfgPendingSourceFrames.load(std::memory_order_relaxed),
+                                       std::memory_order_relaxed);
+#endif
     }
     needsRender.store(true); dirtyCV.notify_one();
 }
@@ -2415,6 +2457,11 @@ void VulkanRendererContext::updateWindowContentAHB(int64_t id, AHardwareBuffer* 
     wt.img  = src.img; wt.mem  = src.mem; wt.view = src.view; wt.ds   = src.ds;
     wt.isAHB = true; wt.ahb  = ahb; wt.w = src.w; wt.h = src.h;
     wt.needsTransition = false; // The first-use layout belongs to the cached VkImage.
+#ifndef LUDASHI_NATIVE_X11
+        if (frameGenRequested && frameGenEngine == 1)
+            frameGenSourceFrames.store(wfgPendingSourceFrames.load(std::memory_order_relaxed),
+                                       std::memory_order_relaxed);
+#endif
     needsRender.store(true); dirtyCV.notify_one();
 }
 
@@ -2741,7 +2788,7 @@ void VulkanRendererContext::configureFrameGeneration(bool enabled, const char* c
                 throw std::runtime_error("frame generation resources");
             fbResized.store(false);
         } catch (const std::exception& error) {
-            FGLOG_E("LSFG: swapchain rebuild failed while applying settings: %s; "
+            FGLOG_E("Frame generation: swapchain rebuild failed while applying settings: %s; "
                     "restoring direct renderer", error.what());
             frameGenRequested = false;
             destroyFrameGeneration();
@@ -2759,7 +2806,7 @@ void VulkanRendererContext::configureFrameGeneration(bool enabled, const char* c
         }
     } else if (enabled && swapchain != VK_NULL_HANDLE) {
         if (!ensureFrameGenerationResources()) {
-            FGLOG_E("LSFG: unable to apply frame generation settings");
+            FGLOG_E("Frame generation: unable to apply settings");
             frameGenRequested = false;
             destroyFrameGeneration();
             cleanupSwapchain();
@@ -2781,11 +2828,19 @@ void VulkanRendererContext::configureFrameGeneration(bool enabled, const char* c
 }
 
 void VulkanRendererContext::setFrameGenerationSourceCount(uint64_t count) {
+#ifndef LUDASHI_NATIVE_X11
+    // Java sends its count immediately before the content JNI call. Do not
+    // expose that count to WFG until the matching image is installed.
+    if (frameGenEngine == 1) {
+        wfgPendingSourceFrames.store(count, std::memory_order_relaxed);
+        return;
+    }
+#endif
     frameGenSourceFrames.store(count, std::memory_order_relaxed);
 }
 
 bool VulkanRendererContext::isFrameGenerationSupported() const {
-    return frameGenDeviceSupported && frameGenSurfaceSupported;
+    return frameGenerationDeviceSupported() && frameGenSurfaceSupported;
 }
 
 bool VulkanRendererContext::isFrameGenerationEnabled() const {

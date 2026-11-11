@@ -1,0 +1,48 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG, Farneback flow: sums the horizontally summed equations of dis_fb_hsum vertically
+// across the window and solves G d = h for this texel's displacement.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D sumG;   // (gxx, gxy, gyy, hx)
+layout(set = 0, binding = 1) uniform sampler2D sumH;   // hy
+layout(set = 0, binding = 8, rg32f) uniform writeonly image2D flowOut;  // normalised uv
+
+layout(push_constant) uniform PC {
+    int radius;
+    float sigma;
+} pc;
+
+void main() {
+    ivec2 size = textureSize(sumG, 0);
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= size.x || p.y >= size.y) return;
+
+    int R = pc.radius;
+    vec4 G = vec4(0.0);
+    float H = 0.0;
+    float wsum = 0.0;
+    for (int j = -R; j <= R; j++) {
+        ivec2 q = ivec2(p.x, clamp(p.y + j, 0, size.y - 1));
+        float w = pc.sigma > 0.0 ? exp(-float(j * j) / (2.0 * pc.sigma * pc.sigma)) : 1.0;
+        G += texelFetch(sumG, q, 0) * w;
+        H += texelFetch(sumH, q, 0).x * w;
+        wsum += w;
+    }
+    G /= wsum;
+    H /= wsum;
+
+    // G = [gxx gxy; gxy gyy], h = (hx, hy). The small term keeps flat windows finite, as in
+    // OpenCV, where it pulls the solution towards zero.
+    float idet = 1.0 / (G.x * G.z - G.y * G.y + 1e-3);
+    vec2 d = vec2(G.z * G.w - G.y * H, G.x * H - G.y * G.w) * idet;
+    if (any(isnan(d)) || any(isinf(d))) d = vec2(0.0);
+    imageStore(flowOut, p, vec4(d / vec2(size), 0.0, 0.0));
+}

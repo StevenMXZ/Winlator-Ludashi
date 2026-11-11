@@ -1,0 +1,329 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG frame generation: a Vulkan compute realisation of Dense Inverse Search
+// optical flow. The algorithm and its reference implementation come from
+// OpenCV's DISOpticalFlow, which adopted Till Kroeger's original OF_DIS.
+// See THIRD_PARTY_NOTICES.txt for attribution.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+// Gauss-Newton iterations per patch. The loop already breaks once the SSD stops
+// improving, so this only caps the hard cases; six reaches the same fixpoint
+// there while cutting a quarter off the heaviest loop in the search.
+#define DIS_INVERSE_ITERS 6
+
+#define DIS_MAX_MATCH_RMS 36.0
+
+// How much better the zero vector has to explain the block than whatever the
+// search settled on, as a ratio of RMS residuals, before it is taken instead.
+//
+// Static HUD, menus and map overlays sit on top of moving content and are
+// pixel-identical between frames, but the search has no notion of "did not
+// move": it starts from the coarser level, which carries the motion of whatever
+// surrounds the overlay, and Gauss-Newton refines from there. Gauss-Newton is a
+// local optimiser, and inside a smooth overlay the initialisation sits in a
+// local basin it never leaves - measured on a synthetic overlay over a
+// background panning four pixels, it stays at 3.9 px and leaves a residual of
+// RMS 24, while the zero vector leaves 0. The overlay is warped in the
+// generated frames and snapped back by the next real one, which is the flicker.
+//
+// The test is a ratio, not an absolute threshold, and that is what makes it
+// work. An absolute one has to sit near the noise floor, and on the same
+// synthetic scene it stopped firing entirely once frame noise reached an RMS of
+// 3. The ratio separates the cases by two orders of magnitude and holds from
+// noiseless up to an RMS of 6:
+//
+//     overlay interior       ratio 0.00 - 0.32   ->  zero taken
+//     overlay edge block     ratio 0.39 - 0.46   ->  zero taken
+//     background, 4 px pan   ratio 2.1  - 1e7    ->  kept
+//     background, 0.7 px pan ratio 2.7           ->  kept
+//     background, 0.3 px pan ratio 1.1           ->  kept
+//
+// 0.5 means zero has to be twice as good in RMS terms. The nearest thing on the
+// other side is a third of a pixel of real motion at 1.1, so there is room.
+//
+// A flat region that IS moving also qualifies, because a featureless block
+// matches itself anywhere. That costs nothing: there is nothing in it to see
+// move, and the structured blocks around it still carry the real motion.
+#define DIS_ZERO_MATCH_RATIO 0.5
+
+// Below this displacement, in texels, the search already landed on zero and
+// there is nothing for the test to change; skip its 64 samples.
+#define DIS_ZERO_TEST_MIN_PX 0.5
+
+// Gauss-Newton only converges within a few texels of where it starts, and a move of more than a
+// patch is thrown out, so starting the coarsest level from zero caps the motion the whole
+// pyramid can follow - at 180p flow, somewhere between 100 and 190 px per frame at 1280x720,
+// which a fast camera turn exceeds. The coarsest level is tiny (40x22 texels at 180p), so there
+// the displacements within the radius are block-matched first, every second one and on every
+// second texel of the patch, and Gauss-Newton refines the best from there. The bias, per sample
+// and squared texel of displacement, makes a flat block that matches anywhere keep the smallest
+// move.
+#define DIS_COARSE_SEARCH_RADIUS 12
+#define DIS_COARSE_SEARCH_BIAS 1.0
+
+// Below this distance, in texels, from the vector a level would start from, the previous pair's
+// vector is the same start and is not scored again.
+#define DIS_PRIOR_MIN_PX 0.5
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D lastLumaMap;
+layout(set = 0, binding = 1) uniform sampler2D nextLumaMap;
+layout(set = 0, binding = 2) uniform sampler2D lastGradientMap;
+layout(set = 0, binding = 3) uniform sampler2D flowMap;
+layout(set = 0, binding = 5, rgba32f) uniform image2D sparseFlowMap;
+// The previous pair's final flow, in normalised uv units, indexed by position in its first frame;
+// read on the levels whose bit is set in priorLevels.
+layout(set = 0, binding = 6) uniform sampler2D priorFlowMap;
+// The hybrid's Farneback field at the level above this one, in normalised uv units; read on the
+// levels whose bit is set in fbLevels.
+layout(set = 0, binding = 7) uniform sampler2D fbFlowMap;
+
+layout(push_constant) uniform PC {
+    int level;
+    int coarseLevel;
+    int priorLevels;
+    int fbLevels;
+} pc;
+
+float uluminance(vec3 c) {
+    return (0.299 * c.x + 0.587 * c.y + 0.114 * c.z) * 255.0;
+}
+
+float myDeterminant(mat2 m) {
+    return m[0][0] * m[1][1] - m[0][1] * m[1][0];
+}
+
+mat2 myInverse(mat2 m) {
+    float det = myDeterminant(m);
+    if (abs(det) < 1e-10) return mat2(0.0);
+    return mat2(m[1][1], -m[0][1], -m[1][0], m[0][0]) / det;
+}
+
+// The reference patches of one workgroup. Patches sit every 3 texels and are 8 wide, so the
+// 8x8 patches of a workgroup cover a 29x29 block and overlap almost entirely; the block is loaded
+// once, cooperatively, instead of every thread keeping its own 64 luminance values and 64
+// gradients in private arrays - which is what the register file cannot hold on mobile GPUs, and
+// the spill to memory was the single most expensive thing in the flow chain. The values are the
+// same texels as before (texelFetch at the same clamped coordinates), so the search is unchanged.
+#define TILE 29
+shared float sLuma[TILE * TILE];
+shared vec2 sGrad[TILE * TILE];
+
+#define REF(i, j) sLuma[(lp.y + (j)) * TILE + lp.x + (i)]
+#define GRAD(i, j) sGrad[(lp.y + (j)) * TILE + lp.x + (i)]
+
+// Mean-normalised SSD of the patch at pix displaced by f (texels), the metric the search minimises.
+float patchSSD(vec2 f, ivec2 pix, ivec2 lp, ivec2 denseSize) {
+    vec2 invImageSize = 1.0 / vec2(denseSize);
+    vec2 o = clamp(vec2(pix) + f, vec2(0.0), vec2(denseSize) - 8.0);
+    float s = 0.0;
+    float s2 = 0.0;
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            vec2 tc = (o + vec2(i, j) + 0.5) * invImageSize;
+            float diff = textureLod(nextLumaMap, tc, 0.0).x - REF(i, j);
+            s += diff;
+            s2 += diff * diff;
+        }
+    }
+    return s2 - s * s / 64.0;
+}
+
+void main() {
+    const float patchSize = 8.0;
+
+    ivec2 pixSparse = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sparseSize = imageSize(sparseFlowMap);
+    ivec2 denseSize = textureSize(lastLumaMap, 0);
+    ivec2 denseMax = denseSize - 1;
+
+    ivec2 tileOrigin = ivec2(gl_WorkGroupID.xy) * 24;
+    for (int k = int(gl_LocalInvocationIndex); k < TILE * TILE; k += 64) {
+        ivec2 q = clamp(tileOrigin + ivec2(k % TILE, k / TILE), ivec2(0), denseMax);
+        sLuma[k] = texelFetch(lastLumaMap, q, 0).x;
+        sGrad[k] = -texelFetch(lastGradientMap, q, 0).xy;
+    }
+    barrier();
+
+    if (pixSparse.x >= sparseSize.x || pixSparse.y >= sparseSize.y) return;
+
+    ivec2 pix = pixSparse * 3;
+    ivec2 lp = ivec2(gl_LocalInvocationID.xy) * 3;
+
+    vec2 gradSum = vec2(0.0);
+    mat2 H = mat2(0.0);
+
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            vec2 g = GRAD(i, j);
+            H[0][0] += g.x * g.x;
+            H[1][1] += g.y * g.y;
+            H[0][1] += g.x * g.y;
+            gradSum += g;
+        }
+    }
+
+    H[1][0] = H[0][1];
+    if (myDeterminant(H) < 1e-6) {
+        H[0][0] += 1e-6;
+        H[1][1] += 1e-6;
+    }
+    mat2 H_inv = myInverse(H);
+
+    vec2 flow;
+    if (pc.level == pc.coarseLevel) {
+        flow = vec2(0.0);
+        float bestCost = 1e30;
+        ivec2 maxOrigin = denseSize - ivec2(8);
+        for (int dy = -DIS_COARSE_SEARCH_RADIUS; dy <= DIS_COARSE_SEARCH_RADIUS; dy += 2) {
+            for (int dx = -DIS_COARSE_SEARCH_RADIUS; dx <= DIS_COARSE_SEARCH_RADIUS; dx += 2) {
+                ivec2 o = pix + ivec2(dx, dy);
+                if (any(lessThan(o, ivec2(0))) || any(greaterThan(o, maxOrigin))) continue;
+                float s = 0.0;
+                float s2 = 0.0;
+                for (int i = 0; i < 8; i += 2) {
+                    for (int j = 0; j < 8; j += 2) {
+                        float diff = texelFetch(nextLumaMap, o + ivec2(i, j), 0).x - REF(i, j);
+                        s += diff;
+                        s2 += diff * diff;
+                    }
+                }
+                float cost = s2 - s * s / 16.0 + DIS_COARSE_SEARCH_BIAS * 16.0 * float(dx * dx + dy * dy);
+                if (cost < bestCost) {
+                    bestCost = cost;
+                    flow = vec2(dx, dy);
+                }
+            }
+        }
+    } else {
+        ivec2 fmMax = textureSize(flowMap, 0) - 1;
+        vec4 cf = texelFetch(flowMap, clamp(ivec2(pix / 2) + 2, ivec2(0), fmMax), 0);
+        flow = cf.xy * vec2(denseSize);
+        if (any(isnan(flow)) || any(isinf(flow))) flow = vec2(0.0);
+    }
+    vec2 invImageSize = 1.0 / vec2(denseSize);
+    const float N = 64.0;
+
+    // Further starting points, each scored on the patch with the same mean-normalised SSD the
+    // search minimises; the search starts from the best. A wrong candidate simply loses here.
+    float startSSD = -1.0;
+
+    // The previous pair's vector: motion goes on. It is what follows an object too small or too
+    // fast for the coarse levels to see - there it is lost in the background - and a periodic
+    // texture that the refinement from the coarse vector would lock onto a period off. The field
+    // is indexed by position in the previous pair's first frame, where this patch's content was
+    // one vector ago, so it is looked up there (one fixed-point step from the patch centre).
+    if ((pc.priorLevels & (1 << pc.level)) != 0) {
+        vec2 c = (vec2(pix) + 4.0) * invImageSize;
+        vec2 p = textureLod(priorFlowMap, c, 0.0).xy;
+        p = textureLod(priorFlowMap, c - p, 0.0).xy * vec2(denseSize);
+        if (!any(isnan(p)) && !any(isinf(p)) && distance(p, flow) > DIS_PRIOR_MIN_PX) {
+            if (startSSD < 0.0) startSSD = patchSSD(flow, pix, lp, denseSize);
+            float priorSSD = patchSSD(p, pix, lp, denseSize);
+            if (priorSSD < startSSD) {
+                startSSD = priorSSD;
+                flow = p;
+            }
+        }
+    }
+
+    // In the hybrid the level above was searched by DIS, which finds small objects but follows
+    // smooth and fast motion worse than Farneback's windowed solve; Farneback's field for that
+    // level is the other start, and the patch decides between them.
+    if ((pc.fbLevels & (1 << pc.level)) != 0) {
+        vec2 f = textureLod(fbFlowMap, (vec2(pix) + 4.0) * invImageSize, 0.0).xy * vec2(denseSize);
+        if (!any(isnan(f)) && !any(isinf(f)) && distance(f, flow) > DIS_PRIOR_MIN_PX) {
+            if (startSSD < 0.0) startSSD = patchSSD(flow, pix, lp, denseSize);
+            float fbSSD = patchSSD(f, pix, lp, denseSize);
+            if (fbSSD < startSSD) {
+                startSSD = fbSSD;
+                flow = f;
+            }
+        }
+    }
+    vec2 initialFlow = flow;
+
+    const float N_INV = 1.0 / N;
+    float prevSSD = 1e10;
+    for (int iter = 0; iter < DIS_INVERSE_ITERS; iter++) {
+        vec2 warpOrigin = clamp(vec2(pix) + flow, vec2(0.0), vec2(denseSize) - patchSize);
+        float sd = 0.0;
+        float sd2 = 0.0;
+        vec2 sIg = vec2(0.0);
+
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                vec2 tc = (warpOrigin + vec2(i, j) + 0.5) * invImageSize;
+                float warped = textureLod(nextLumaMap, tc, 0.0).x;
+                float diff = warped - REF(i, j);
+                sd += diff;
+                sd2 += diff * diff;
+                sIg += GRAD(i, j) * diff;
+            }
+        }
+
+        vec2 dU = sIg - sd * gradSum / N;
+        float SSD = sd2 - sd * sd / N;
+
+        flow -= H_inv * dU;
+
+        if (SSD >= prevSSD) break;
+        prevSSD = SSD;
+    }
+
+    vec2 wantOrigin = vec2(pix) + flow;
+    vec2 maxOrigin = vec2(denseSize) - patchSize;
+    bool clamped = any(lessThan(wantOrigin, vec2(-0.5)))
+                || any(greaterThan(wantOrigin, maxOrigin + 0.5));
+
+    bool unmatched = prevSSD * N_INV > DIS_MAX_MATCH_RMS * DIS_MAX_MATCH_RMS;
+
+    const bool reverted = any(isnan(flow)) || any(isinf(flow)) || clamped || unmatched ||
+                          length(flow - initialFlow) > patchSize;
+    if (reverted) {
+        flow = initialFlow;
+    }
+
+    // Does the block explain itself better by not moving at all? Only asked when
+    // the search claims a displacement, and only when it was not thrown out
+    // above - prevSSD belongs to the searched vector, so once that has been
+    // replaced by the coarse estimate there is nothing valid to compare against.
+    float zeroSsd = -1.0;
+    if (!reverted && dot(flow, flow) > DIS_ZERO_TEST_MIN_PX * DIS_ZERO_TEST_MIN_PX) {
+        float zsd = 0.0;
+        float zsd2 = 0.0;
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                vec2 tc = (vec2(pix) + vec2(i, j) + 0.5) * invImageSize;
+                float diff = textureLod(nextLumaMap, tc, 0.0).x - REF(i, j);
+                zsd += diff;
+                zsd2 += diff * diff;
+            }
+        }
+        float zssd = zsd2 - zsd * zsd / N;
+        // Compared as sums of squares, so the RMS ratio is squared here and no
+        // square root is taken. prevSSD of exactly zero is a perfect match that
+        // only an equally perfect zero can tie, and the comparison handles it
+        // without a divide.
+        if (zssd <= prevSSD * (DIS_ZERO_MATCH_RATIO * DIS_ZERO_MATCH_RATIO)) {
+            flow = vec2(0.0);
+            zeroSsd = zssd;
+        }
+    }
+
+    flow *= invImageSize;
+    // .z is the mean-normalized SSD of the stored vector, or -1 for "not scored
+    // with that metric". The zero test measures exactly the metric the
+    // propagation passes use, on the same reference block, so when zero wins its
+    // score is carried forward: propagation then compares a neighbour's moving
+    // vector against a real, and very low, incumbent score instead of having to
+    // re-derive one, which is what keeps the surrounding motion from being
+    // propagated into the overlay.
+    imageStore(sparseFlowMap, pixSparse, vec4(flow, zeroSsd, 1.0));
+}

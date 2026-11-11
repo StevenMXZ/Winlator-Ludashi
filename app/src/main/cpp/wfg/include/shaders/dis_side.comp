@@ -1,0 +1,45 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG frame generation: a Vulkan compute realisation of Dense Inverse Search
+// optical flow. The algorithm and its reference implementation come from
+// OpenCV's DISOpticalFlow, which adopted Till Kroeger's original OF_DIS.
+// See THIRD_PARTY_NOTICES.txt for attribution.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+// Per level-0 flow texel: which real frame a true occlusion should take, and how sure.
+// The sign of the flow divergence over a wide window decides it - a diverging
+// field is area opening up, which only the next frame has, a converging one only
+// the previous. Computed once per pair at the flow resolution, it replaces four
+// bilinear flow fetches per output pixel in the interpolate pass and makes the
+// choice identical for every generated frame of the pair.
+
+#define DIS_SIDE_RADIUS 4.0
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D flowMap;
+layout(set = 0, binding = 5, r32f) uniform image2D sideOut;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sz = imageSize(sideOut);
+    if (p.x >= sz.x || p.y >= sz.y) return;
+
+    vec2 uSize = vec2(sz);
+    vec2 uv = (vec2(p) + 0.5) / uSize;
+    vec2 fo = (1.0 / uSize) * DIS_SIDE_RADIUS;
+    vec2 fL = textureLod(flowMap, clamp(uv - vec2(fo.x, 0.0), vec2(0.0), vec2(1.0)), 0.0).xy;
+    vec2 fR = textureLod(flowMap, clamp(uv + vec2(fo.x, 0.0), vec2(0.0), vec2(1.0)), 0.0).xy;
+    vec2 fU = textureLod(flowMap, clamp(uv - vec2(0.0, fo.y), vec2(0.0), vec2(1.0)), 0.0).xy;
+    vec2 fD = textureLod(flowMap, clamp(uv + vec2(0.0, fo.y), vec2(0.0), vec2(1.0)), 0.0).xy;
+    float divergence = (fR.x - fL.x) * uSize.x + (fD.y - fU.y) * uSize.y;
+    // Signed, in flow-resolution pixels across the window: the interpolate pass needs the
+    // magnitude too, to tell a real occlusion boundary from estimation noise.
+    if (isnan(divergence) || isinf(divergence)) divergence = 0.0;
+    imageStore(sideOut, p, vec4(divergence, 0.0, 0.0, 0.0));
+}

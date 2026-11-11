@@ -72,6 +72,8 @@ public:
         context->setPostFXMode(options.postFX);
         context->setStretchMode(options.stretch);
         context->setSharpness(options.sharpness);
+        wfgSelected = options.frameGenEngine == 1;
+        context->setFrameGenerationEngine(options.frameGenEngine);
         const int target = options.targetRate == -1 ? int(std::round(options.refresh)) : options.targetRate;
         context->configureFrameGeneration(options.frameGen && context->isFrameGenerationSupported(), options.frameGenCache.c_str(),
             options.multiplier, target, options.flowScale, options.refresh);
@@ -160,6 +162,8 @@ public:
             auto& b = *static_cast<Binding*>(value);
             if (*b.latch) (*b.latch)(*b.frame);
             b.renderer->UpdateScene(*b.frame);
+            if (b.renderer->wfgSelected && b.renderer->context->isFrameGenerationEnabled())
+                b.renderer->context->setFrameGenerationSourceCount(b.frame->frameGenSourceFrames);
         };
         struct ClearBinding {
             VulkanRendererContext* context;
@@ -177,6 +181,7 @@ public:
         return true;
     }
 private:
+    bool wfgSelected{};
     void UpdateScene(const NativeFrame& frame) {
         ids.clear(); xs.clear(); ys.clear();
         ids.reserve(frame.entries.size()); xs.reserve(frame.entries.size()); ys.reserve(frame.entries.size());

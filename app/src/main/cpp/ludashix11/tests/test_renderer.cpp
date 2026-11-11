@@ -15,6 +15,18 @@ int main() {
         if (VulkanRendererContext::instance->validationRequested) return 13;
         if (VulkanRendererContext::instance->presentMode != 2) return 14;
     }
+    {
+        auto wfgRenderer = xorg::CreateNativeRenderer(1280, 720);
+        wfgRenderer->Surface(new ANativeWindow);
+        xorg::NativeVisualOptions wfgOptions;
+        wfgOptions.frameGenEngine = 1; wfgOptions.frameGen = true;
+        wfgRenderer->VisualOptions(wfgOptions);
+        if (!wfgRenderer->VisualState().enabled || VulkanRendererContext::instance->frameGenEngine != 1 ||
+            !VulkanRendererContext::instance->frameGenCache.empty()) return 31;
+        wfgOptions.frameGen = false;
+        wfgRenderer->VisualOptions(wfgOptions);
+        if (wfgRenderer->VisualState().enabled) return 32;
+    }
     xorg::NativeRendererConfig config;
     config.presentMode = 1;
     config.swapRB = true;
@@ -94,6 +106,9 @@ int main() {
         auto image = std::make_shared<xorg::NativeDrawable>(16,16,32,buffer);
         AHardwareBuffer_release(buffer); return image;
     };
+    options.frameGenEngine = 1; options.frameGen = true; options.frameGenCache.clear();
+    renderer->VisualOptions(options);
+    frame.frameGenSourceFrames = 100;
     auto oldImage = imported(), newestImage = imported();
     frame.commandCacheEnabled = false; // Late selection also applies with replay disabled.
     frame.diagnostics = true; // Exercise AHB import accounting in the native adapter.
@@ -103,6 +118,7 @@ int main() {
     std::atomic<unsigned> latches{};
     const xorg::NativeFrameLatch latch = [&](xorg::NativeFrame& selected) {
         ++latches;
+        selected.frameGenSourceFrames = 101;
         selected.entries[0] = {newestImage, nullptr, newestImage->Pixels(), newestImage->Revision(), 0,0,true};
     };
     auto acquired = std::async(std::launch::async, [&] { return renderer->Draw(frame, latch); });
@@ -115,6 +131,7 @@ int main() {
     }
     context->acquireBlocked = false;
     if (!acquired.get() || latches != 1 || context->boundImages != std::vector<int64_t>{int64_t(newestImage->ID())}) return 14;
+    if (context->sourceFrames != 101) return 33;
     if (context->texMap.contains(oldImage->ID()) || !context->texMap.at(newestImage->ID()).isAHB) return 16;
     const auto stats = renderer->TakeAHBMetrics();
     if (stats.vkImports != 1 || stats.cacheHits != 0 || stats.cacheEntries != 1) return 20;

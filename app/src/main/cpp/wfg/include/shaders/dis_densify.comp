@@ -1,0 +1,87 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG frame generation: a Vulkan compute realisation of Dense Inverse Search
+// optical flow. The algorithm and its reference implementation come from
+// OpenCV's DISOpticalFlow, which adopted Till Kroeger's original OF_DIS.
+// See THIRD_PARTY_NOTICES.txt for attribution.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+#define DIS_DENSIFY_GUIDE_SIGMA 18.0
+
+#define DIS_DENSIFY_MATCH_FLOOR_RMS 1.5
+
+#define DIS_DENSIFY_TAPS 9
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D sparseFlowMap;
+layout(set = 0, binding = 1) uniform sampler2D lastImage;
+layout(set = 0, binding = 2) uniform sampler2D nextImage;
+layout(set = 0, binding = 5, rg32f) uniform image2D denseFlowMap;
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 denseSize = imageSize(denseFlowMap);
+    if (pix.x >= denseSize.x || pix.y >= denseSize.y) return;
+
+    ivec2 sparseSize = textureSize(sparseFlowMap, 0);
+    if (sparseSize.x <= 0 || sparseSize.y <= 0) {
+        imageStore(denseFlowMap, pix, vec4(0.0, 0.0, 0.0, 1.0));
+        return;
+    }
+
+    vec2 invDenseSize = 1.0 / vec2(denseSize);
+    vec2 uv = (vec2(pix) + 0.5) * invDenseSize;
+    float lastLum = textureLod(lastImage, uv, 0.0).x;
+
+    vec4 cand[DIS_DENSIFY_TAPS];
+    int candCount = 0;
+    float bestSsd = -1.0;
+
+    ivec2 s0 = ivec2(pix.x / 3, pix.y / 3) - 2;
+    for (int dy = 0; dy <= 2; dy++) {
+        for (int dx = 0; dx <= 2; dx++) {
+            ivec2 s = s0 + ivec2(dx, dy);
+            if (s.x < 0 || s.y < 0 || s.x >= sparseSize.x || s.y >= sparseSize.y) continue;
+            vec4 f = texelFetch(sparseFlowMap, s, 0);
+            f.w = textureLod(lastImage, (vec2(s * 3) + 4.0) * invDenseSize, 0.0).x;
+            cand[candCount] = f;
+            candCount++;
+            if (f.z >= 0.0 && (bestSsd < 0.0 || f.z < bestSsd)) bestSsd = f.z;
+        }
+    }
+
+    const float floorSsd =
+        64.0 * DIS_DENSIFY_MATCH_FLOOR_RMS * DIS_DENSIFY_MATCH_FLOOR_RMS;
+    const float invGuide2 = 1.0 / (DIS_DENSIFY_GUIDE_SIGMA * DIS_DENSIFY_GUIDE_SIGMA);
+    float refSsd = max(bestSsd, floorSsd);
+
+    vec2 acc = vec2(0.0);
+    float accW = 0.0;
+
+    for (int i = 0; i < candCount; i++) {
+        vec4 flow = cand[i];
+
+        float diff = textureLod(nextImage, uv + flow.xy, 0.0).x - lastLum;
+        float w = 1.0 / max(abs(diff), 1.0);
+
+        if (bestSsd >= 0.0 && flow.z >= 0.0) {
+            float r = flow.z / refSsd;
+            w /= 1.0 + r * r;
+        }
+
+        float dl = flow.w - lastLum;
+        w /= 1.0 + dl * dl * invGuide2;
+
+        acc += flow.xy * w;
+        accW += w;
+    }
+
+    vec2 denseFlow = accW > 0.0 ? acc / accW : vec2(0.0);
+    imageStore(denseFlowMap, pix, vec4(denseFlow, 0.0, 1.0));
+}

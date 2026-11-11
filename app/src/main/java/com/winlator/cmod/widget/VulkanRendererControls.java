@@ -6,6 +6,8 @@ public interface VulkanRendererControls {
     void setStretchMode(int mode);
     void setSharpness(float sharpness);
     void setFpsLimit(int fps);
+    void setFrameGenerationEngine(String engine);
+    String getFrameGenerationEngine();
     void setFrameGenerationConfig(boolean enabled, String cachePath, int multiplier,
                                   int targetRate, int flowScalePercent, float refreshRate);
     boolean setFrameGenerationEnabled(boolean enabled);

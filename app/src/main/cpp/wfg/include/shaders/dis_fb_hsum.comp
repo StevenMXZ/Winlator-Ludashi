@@ -1,0 +1,120 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG, Farneback flow: the per-texel displacement equations of one iteration, summed
+// across the window horizontally (dis_fb_vsolve sums them vertically and solves).
+//
+// With the first frame's expansion (A0, b0) at x and the second's (A1, b1) at x + d, Farneback's
+// constraint is A d = db with A = (A0 + A1) / 2 and db = (b0 - b1) / 2 + A d_prev. Its normal
+// equations G = A^T A, h = A^T db are summed over the window, and d = G^-1 h. As in OpenCV
+// (FarnebackUpdateMatrices), a second-frame sample off the level keeps only the first frame's
+// terms, and the equations fade out over the last five texels of the border.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D polyB0;
+layout(set = 0, binding = 1) uniform sampler2D polyC0;
+layout(set = 0, binding = 2) uniform sampler2D polyB1;
+layout(set = 0, binding = 3) uniform sampler2D polyC1;
+layout(set = 0, binding = 4) uniform sampler2D flowIn;   // normalised uv, any resolution
+layout(set = 0, binding = 8, rgba32f) uniform writeonly image2D sumG;  // (gxx, gxy, gyy, hx)
+layout(set = 0, binding = 9, r32f) uniform writeonly image2D sumH;     // hy
+
+layout(push_constant) uniform PC {
+    int radius;      // window half-width, at most MAX_RADIUS
+    float sigma;     // Gaussian window; 0 is a box
+    int useFlow;     // 0: start from zero
+    float robust;    // > 0: down-weight texels the current flow does not fit (see below)
+} pc;
+
+#define MAX_RADIUS 16
+#define W (64 + 2 * MAX_RADIUS)
+
+shared vec4 sG[W];
+shared float sH[W];
+
+float borderScale(int x, int n) {
+    int e = min(x, n - 1 - x);
+    return e >= 5 ? 1.0 : (e < 2 ? 0.14 : 0.4472);
+}
+
+void equations(ivec2 p, ivec2 size, out vec4 G, out float H) {
+    vec2 d = vec2(0.0);
+    if (pc.useFlow != 0) {
+        d = textureLod(flowIn, (vec2(p) + 0.5) / vec2(size), 0.0).xy * vec2(size);
+        if (any(isnan(d)) || any(isinf(d))) d = vec2(0.0);
+    }
+    vec4 r0 = texelFetch(polyB0, p, 0);
+    float c0 = texelFetch(polyC0, p, 0).x;
+
+    vec2 q = vec2(p) + d;
+    float axx, ayy, axy;
+    vec2 db;
+    float weight = 1.0;
+    if (all(greaterThanEqual(q, vec2(0.0))) && all(lessThanEqual(q, vec2(size - 1)))) {
+        vec2 quv = (q + 0.5) / vec2(size);
+        vec4 r1 = textureLod(polyB1, quv, 0.0);
+        float c1 = textureLod(polyC1, quv, 0.0).x;
+        axx = (r0.z + r1.z) * 0.5;
+        ayy = (r0.w + r1.w) * 0.5;
+        axy = (c0 + c1) * 0.25;
+        db = (r0.xy - r1.xy) * 0.5;
+        // Where the current flow is right, the two frames' linear terms agree at x and x + d;
+        // where they do not, the texel belongs to other motion (an edge, an occlusion) and
+        // would drag the window's solution across it. A Cauchy weight on the mismatch keeps the
+        // window to the texels that share its motion - iteratively reweighted least squares,
+        // one reweighting per iteration.
+        if (pc.robust > 0.0) weight = 1.0 / (1.0 + dot(db, db) / (pc.robust * pc.robust));
+    } else {
+        axx = r0.z;
+        ayy = r0.w;
+        axy = c0 * 0.5;
+        db = r0.xy * 0.5;
+    }
+    db += vec2(axx * d.x + axy * d.y, axy * d.x + ayy * d.y);
+
+    float s = borderScale(p.x, size.x) * borderScale(p.y, size.y);
+    axx *= s; ayy *= s; axy *= s; db *= s;
+
+    G = vec4(axx * axx + axy * axy, axy * (axx + ayy), ayy * ayy + axy * axy,
+             axx * db.x + axy * db.y) * weight;
+    H = (axy * db.x + ayy * db.y) * weight;
+}
+
+void main() {
+    ivec2 size = textureSize(polyB0, 0);
+    int R = min(pc.radius, MAX_RADIUS);
+    int y = int(gl_GlobalInvocationID.y);
+    int x0 = int(gl_WorkGroupID.x) * 64 - R;
+    int span = 64 + 2 * R;
+    for (int k = int(gl_LocalInvocationID.x); k < span; k += 64) {
+        ivec2 p = ivec2(clamp(x0 + k, 0, size.x - 1), y);
+        vec4 G;
+        float H;
+        equations(p, size, G, H);
+        sG[k] = G;
+        sH[k] = H;
+    }
+    barrier();
+
+    int x = int(gl_GlobalInvocationID.x);
+    if (x >= size.x || y >= size.y) return;
+
+    vec4 accG = vec4(0.0);
+    float accH = 0.0;
+    float wsum = 0.0;
+    int c = int(gl_LocalInvocationID.x) + R;
+    for (int j = -R; j <= R; j++) {
+        float w = pc.sigma > 0.0 ? exp(-float(j * j) / (2.0 * pc.sigma * pc.sigma)) : 1.0;
+        accG += sG[c + j] * w;
+        accH += sH[c + j] * w;
+        wsum += w;
+    }
+    imageStore(sumG, ivec2(x, y), accG / wsum);
+    imageStore(sumH, ivec2(x, y), vec4(accH / wsum, 0.0, 0.0, 0.0));
+}

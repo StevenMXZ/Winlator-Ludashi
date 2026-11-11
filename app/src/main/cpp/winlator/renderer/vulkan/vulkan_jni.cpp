@@ -335,6 +335,13 @@ Java_com_winlator_cmod_widget_VulkanXServerView_nativeGetSwapchainSize(
     return arr;
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeSetFrameGenerationEngine(
+    JNIEnv*, jobject, jlong handle, jint engine) {
+    auto* r = reinterpret_cast<VulkanRendererContext*>(handle);
+    if (r) r->setFrameGenerationEngine(engine);
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_winlator_cmod_widget_VulkanXServerView_nativeConfigureFrameGeneration(
     JNIEnv* env, jobject, jlong handle, jboolean enabled, jstring cachePath,

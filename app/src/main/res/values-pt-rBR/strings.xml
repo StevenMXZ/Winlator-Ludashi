@@ -676,4 +676,6 @@
     <string name="steam_store_apply_options">Baixar versão/idioma selecionados</string>
     <string name="steam_download_cancel_delete">Cancelar e excluir</string>
     <string name="steam_download_cancel_confirm">Excluir todos os arquivos parcialmente baixados deste jogo? Esta ação não pode ser desfeita.</string>
+    <string name="ui_frame_generation_engine">Gerador de quadros</string>
+    <string name="ui_enable_wfg_frame_generation">Ativar geração de quadros WFG</string>
 </resources>

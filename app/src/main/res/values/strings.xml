@@ -768,4 +768,6 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="steam_store_apply_options">Download selected version/language</string>
     <string name="steam_download_cancel_delete">Cancel and delete</string>
     <string name="steam_download_cancel_confirm">Delete all partially downloaded game files? This cannot be undone.</string>
+    <string name="ui_frame_generation_engine">Frame generation engine</string>
+    <string name="ui_enable_wfg_frame_generation">Enable WFG frame generation</string>
 </resources>

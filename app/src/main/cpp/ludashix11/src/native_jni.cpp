@@ -98,12 +98,13 @@ extern "C" JNIEXPORT jstring JNICALL JNI_NAME(nativeError)(JNIEnv* env, jclass, 
 }
 extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeVisualOptions)(JNIEnv* env, jclass, jlong handle,
         jint filter, jint postFX, jint stretch, jfloat sharpness, jboolean frameGen,
-        jstring cache, jint multiplier, jint targetRate, jint flowScale, jfloat refresh) {
+        jstring cache, jint multiplier, jint targetRate, jint flowScale, jfloat refresh, jint engine) {
     auto server = session(handle); if (!server) return 0;
     xorg::NativeVisualOptions options;
     options.filter = filter; options.postFX = postFX; options.stretch = stretch; options.sharpness = sharpness;
     options.frameGen = frameGen; options.multiplier = multiplier; options.targetRate = targetRate;
     options.flowScale = flowScale; options.refresh = refresh;
+    options.frameGenEngine = engine == 1 ? 1 : 0;
     if (cache) {
         JavaString path(env, cache);
         if (!path.text) return 0;

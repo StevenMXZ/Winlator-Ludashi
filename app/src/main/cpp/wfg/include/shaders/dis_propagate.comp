@@ -1,0 +1,108 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG frame generation: a Vulkan compute realisation of Dense Inverse Search
+// optical flow. The algorithm and its reference implementation come from
+// OpenCV's DISOpticalFlow, which adopted Till Kroeger's original OF_DIS.
+// See THIRD_PARTY_NOTICES.txt for attribution.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D lastLumaMap;
+layout(set = 0, binding = 1) uniform sampler2D nextLumaMap;
+layout(set = 0, binding = 2) uniform sampler2D flowIn;
+layout(set = 0, binding = 5, rgba32f) uniform image2D flowOut;
+
+layout(push_constant) uniform PC {
+    int dist;
+} pc;
+
+void main() {
+    ivec2 s = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 mx = textureSize(flowIn, 0) - 1;
+    if (s.x > mx.x || s.y > mx.y) return;
+
+    vec4 ownIn = texelFetch(flowIn, s, 0);
+    vec2 own = ownIn.xy;
+    float ownSsd = ownIn.z;
+    bool needOwn = !(ownSsd >= 0.0);
+
+    const ivec2 dirs[4] =
+        ivec2[4](ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1));
+    vec2 cand[4];
+    int candCount = 0;
+    for (int i = 0; i < 4; i++) {
+        ivec2 q = clamp(s + dirs[i] * pc.dist, ivec2(0), mx);
+        if (q == s) continue;
+        cand[candCount++] = texelFetch(flowIn, q, 0).xy;
+    }
+    if (candCount == 0) {
+        imageStore(flowOut, s, vec4(own, ownSsd, 1.0));
+        return;
+    }
+
+    ivec2 org = s * 3;
+    ivec2 denseSize = textureSize(lastLumaMap, 0);
+    ivec2 denseMax = denseSize - 1;
+    vec2 invImageSize = 1.0 / vec2(denseSize);
+
+    // The candidates are ranked on a 4x4 subsample of the patch rather than all
+    // 64 texels. The comparison only picks between four nearby vectors, so the
+    // extra precision of the full patch does not change the winner often, and
+    // this pass was the most texture-fetch-heavy in the chain.
+    const float N = 16.0;
+    float refLum[16];
+    for (int dy = 0; dy < 4; dy++) {
+        for (int dx = 0; dx < 4; dx++) {
+            ivec2 p = clamp(org + ivec2(dx * 2, dy * 2), ivec2(0), denseMax);
+            refLum[dy * 4 + dx] = texelFetch(lastLumaMap, p, 0).x;
+        }
+    }
+
+    float sd[5];
+    float sd2[5];
+    for (int i = 0; i < 5; i++) {
+        sd[i] = 0.0;
+        sd2[i] = 0.0;
+    }
+
+    for (int dy = 0; dy < 4; dy++) {
+        for (int dx = 0; dx < 4; dx++) {
+            int i = dy * 4 + dx;
+            vec2 base = (vec2(org) + vec2(dx * 2, dy * 2) + 0.5) * invImageSize;
+            float r = refLum[i];
+
+            if (needOwn) {
+                float d0 = textureLod(nextLumaMap, base + own, 0.0).x - r;
+                sd[0] += d0;
+                sd2[0] += d0 * d0;
+            }
+
+            for (int c = 0; c < candCount; c++) {
+                float dc = textureLod(nextLumaMap, base + cand[c], 0.0).x - r;
+                sd[c + 1] += dc;
+                sd2[c + 1] += dc * dc;
+            }
+        }
+    }
+
+    // The score is carried in the same units as the 64-sample scores the inverse
+    // search and the densification use, so the stored .z remains comparable.
+    const float SCORE_SCALE = 64.0 / 16.0;
+    vec2 best = own;
+    float bestSsd = needOwn ? (sd2[0] - sd[0] * sd[0] / N) * SCORE_SCALE : ownSsd;
+    for (int c = 0; c < candCount; c++) {
+        float ssd = (sd2[c + 1] - sd[c + 1] * sd[c + 1] / N) * SCORE_SCALE;
+        if (ssd < bestSsd) {
+            bestSsd = ssd;
+            best = cand[c];
+        }
+    }
+
+    imageStore(flowOut, s, vec4(best, bestSsd, 1.0));
+}

@@ -138,6 +138,7 @@ static constexpr uint32_t MAX_FRAMEGEN_TARGETS =
     MAX_FRAMES_IN_FLIGHT + MAX_FRAMEGEN_GENERATIONS;
 
 struct VkrLsfg;
+struct VkrWfg;
 
 struct WindowPushConstants      { float ndcX0, ndcY0, ndcX1, ndcY1; int useTexAlpha;
                                   float _pad[7];
@@ -256,6 +257,14 @@ public:
     void configureFrameGeneration(bool enabled, const char* cachePath,
                                   int multiplier, int targetRate,
                                   int flowScalePercent, float refreshRate);
+    // Engine is selected before enabling and stays fixed for this session.
+    void setFrameGenerationEngine(int engine);
+    bool frameGenerationDeviceSupported() const {
+        return frameGenEngine == 1 ? wfgDeviceSupported : frameGenDeviceSupported;
+    }
+    void processFrameGeneration(VkCommandBuffer cb, VkImage source, uint32_t generatedCount);
+    void generateFrameGeneration(VkCommandBuffer cb, uint32_t generation, uint32_t targetIndex,
+                                  VkImage image, VkImageView view);
     void setFrameGenerationSourceCount(uint64_t count);
     bool isFrameGenerationSupported() const;
     bool isFrameGenerationEnabled() const;
@@ -450,6 +459,10 @@ public:
 
     std::vector<FrameGenTarget> frameGenTargets;
     VkrLsfg* frameGen = nullptr;
+    VkrWfg* wfg = nullptr;
+    int frameGenEngine = 0; // 0 = existing LSFG, 1 = WFG
+    bool wfgDeviceSupported = false;
+    bool wfgDispatchReady = false;
     std::string frameGenCachePath;
     bool frameGenDispatchReady = false;
     bool frameGenDeviceSupported = false;
@@ -465,6 +478,7 @@ public:
     uint32_t frameGenTargetRate = 0;
     float frameGenFlowScale = 0.70f;
     float frameGenRefreshRate = 0.0f;
+    std::atomic<uint64_t> wfgPendingSourceFrames{0};
     std::atomic<uint64_t> frameGenSourceFrames{0};
     std::atomic<uint64_t> frameGenGeneratedFrames{0};
 

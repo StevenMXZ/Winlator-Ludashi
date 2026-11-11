@@ -75,6 +75,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     private volatile boolean pendingFrameGenEnabled = false;
     private volatile boolean effectiveFrameGenEnabled = false;
     private volatile Runnable frameGenerationStateListener = null;
+    private String pendingFrameGenEngine = "lsfg";
     private String  pendingFrameGenCache = null;
     private int     pendingFrameGenMultiplier = 2;
     private int     pendingFrameGenTargetRate = -1;
@@ -150,6 +151,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     private native void nativeSetSwapRB(long handle, boolean enabled);
     private native void nativeSetPresentMode(long handle, int mode);
     private native int[] nativeGetSupportedPresentModes(long handle);
+    private native void nativeSetFrameGenerationEngine(long handle, int engine);
     private native boolean nativeConfigureFrameGeneration(long handle, boolean enabled,
         String cachePath, int multiplier, int targetRate, int flowScalePercent,
         float refreshRate);
@@ -682,6 +684,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
             effectiveFrameGenEnabled = false;
             return;
         }
+        nativeSetFrameGenerationEngine(nativeHandle, "wfg".equals(pendingFrameGenEngine) ? 1 : 0);
         final boolean wasRequested = pendingFrameGenEnabled;
         final boolean supported = nativeIsFrameGenerationSupported(nativeHandle);
         final boolean shouldEnable = wasRequested && supported;
@@ -713,11 +716,20 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
         if (listener != null) post(listener);
     }
 
+    @Override public void setFrameGenerationEngine(String engine) {
+        synchronized (lock) {
+            if (!pendingFrameGenEnabled && !effectiveFrameGenEnabled)
+                pendingFrameGenEngine = "wfg".equals(engine) ? "wfg" : "lsfg";
+        }
+    }
+    @Override public String getFrameGenerationEngine() { return pendingFrameGenEngine; }
+
     public void setFrameGenerationConfig(boolean enabled, String cachePath,
                                          int multiplier, int targetRate,
                                          int flowScalePercent, float refreshRate) {
         synchronized (lock) {
-            pendingFrameGenEnabled = enabled && cachePath != null && !cachePath.isEmpty();
+            pendingFrameGenEnabled = enabled && ("wfg".equals(pendingFrameGenEngine) ||
+                (cachePath != null && !cachePath.isEmpty()));
             if (nativeHandle == 0) effectiveFrameGenEnabled = false;
             pendingFrameGenCache = cachePath;
             pendingFrameGenMultiplier = Math.max(2, Math.min(4, multiplier));
@@ -730,7 +742,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     public boolean setFrameGenerationEnabled(boolean enabled) {
         synchronized (lock) {
-            if (enabled && (pendingFrameGenCache == null || pendingFrameGenCache.isEmpty() ||
+            if (enabled && !"wfg".equals(pendingFrameGenEngine) && (pendingFrameGenCache == null || pendingFrameGenCache.isEmpty() ||
                     !new java.io.File(pendingFrameGenCache).isFile())) {
                 // A disabled launch intentionally skips cache lookup. Resolve
                 // it here so the sidebar can enable LSFG later in the session.

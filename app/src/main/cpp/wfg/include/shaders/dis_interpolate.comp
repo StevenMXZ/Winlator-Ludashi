@@ -1,0 +1,335 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG frame generation: a Vulkan compute realisation of Dense Inverse Search
+// optical flow. The algorithm and its reference implementation come from
+// OpenCV's DISOpticalFlow, which adopted Till Kroeger's original OF_DIS.
+// See THIRD_PARTY_NOTICES.txt for attribution.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D prevColor;
+layout(set = 0, binding = 1) uniform sampler2D nextColor;
+layout(set = 0, binding = 2) uniform sampler2D flowTex;
+layout(set = 0, binding = 3) uniform sampler2D sideTex;
+layout(set = 0, binding = 4) uniform sampler2D histTex;
+layout(set = 0, binding = 5, rgba8) uniform image2D outImage;
+// The field splatted to t (dis_splat.comp): xy the vector times z, z the share of the bilinear
+// footprint something landed on. One strip of SPLAT_STRIPS per generated frame, stacked down.
+layout(set = 0, binding = 6) uniform sampler2D splatTex;
+
+layout(push_constant) uniform PC {
+    float t;
+    int debugMode;
+    int layer;     // which generated frame of the pair: the splat strip
+} pc;
+
+layout(constant_id = 0) const int manualFlowFilter = 0;
+
+// Fixed-point steps that move the flow lookup from the output pixel to the point of the
+// previous frame that actually lands on it. 0 samples the field at the output pixel.
+#ifndef DIS_SOURCE_STEPS
+#define DIS_SOURCE_STEPS 2
+#endif
+
+// Keep a static overlay in place where the unwarped pair explains the pixel better than
+// the warped one. 0 turns it off.
+#ifndef DIS_STATIC_SELECT
+#define DIS_STATIC_SELECT 1
+#endif
+
+// Use the side map (sign of the flow divergence) for the frame an occlusion takes,
+// instead of the nearer one in time.
+#ifndef DIS_OCCL_SIDED
+#define DIS_OCCL_SIDED 1
+#endif
+
+// Catmull-Rom (5 bilinear taps) for the warped fetches instead of one bilinear tap.
+#ifndef DIS_WARP_CATMULL
+#define DIS_WARP_CATMULL 1
+#endif
+
+// Take the stabilised overlay confidence from dis_hist on top of the per-pixel test.
+#ifndef DIS_USE_HIST
+#define DIS_USE_HIST 1
+#endif
+
+// Take the vector that lands on the pixel from the splatted field where there is one.
+#ifndef DIS_SPLAT
+#define DIS_SPLAT 1
+#endif
+// Strips in the splat images: VKR_DIS_MAX_GENERATIONS.
+#ifndef SPLAT_STRIPS
+#define SPLAT_STRIPS 3
+#endif
+#ifndef SPLAT_APART_LO
+#define SPLAT_APART_LO 0.5
+#endif
+#ifndef SPLAT_APART_HI
+#define SPLAT_APART_HI 1.5
+#endif
+
+// Hand a pixel that a warped sample fetches from a static overlay to the other frame.
+#ifndef DIS_OVERLAY_OCCL
+#define DIS_OVERLAY_OCCL 1
+#endif
+
+#ifndef SIDE_LO
+#define SIDE_LO 4.0
+#endif
+#ifndef SIDE_HI
+#define SIDE_HI 12.0
+#endif
+
+#ifndef OCCL_LO
+#define OCCL_LO 0.20
+#endif
+#ifndef OCCL_HI
+#define OCCL_HI 0.60
+#endif
+
+// The field in xy and the acceleration (dis_fill.comp) in zw, one fetch.
+vec4 sampleFlow4(vec2 uv) {
+    if (manualFlowFilter == 0) return textureLod(flowTex, uv, 0.0);
+
+    vec2 sz = vec2(textureSize(flowTex, 0));
+    vec2 p = uv * sz - 0.5;
+    vec2 frac = fract(p);
+    ivec2 i0 = ivec2(floor(p));
+    ivec2 mx = ivec2(sz) - 1;
+
+    vec4 a = texelFetch(flowTex, clamp(i0,                ivec2(0), mx), 0);
+    vec4 b = texelFetch(flowTex, clamp(i0 + ivec2(1, 0), ivec2(0), mx), 0);
+    vec4 c = texelFetch(flowTex, clamp(i0 + ivec2(0, 1), ivec2(0), mx), 0);
+    vec4 e = texelFetch(flowTex, clamp(i0 + ivec2(1, 1), ivec2(0), mx), 0);
+    return mix(mix(a, b, frac.x), mix(c, e, frac.x), frac.y);
+}
+
+vec2 sampleFlow(vec2 uv) {
+    return sampleFlow4(uv).xy;
+}
+
+float maxChannel(vec3 v) {
+    return max(max(v.x, v.y), v.z);
+}
+
+vec3 warpSample(sampler2D tex, vec2 uv, vec2 texSize) {
+#if DIS_WARP_CATMULL == 0
+    return textureLod(tex, clamp(uv, vec2(0.0), vec2(1.0)), 0.0).xyz;
+#else
+    vec2 samplePos = uv * texSize;
+    vec2 texPos1 = floor(samplePos - 0.5) + 0.5;
+    vec2 fr = samplePos - texPos1;
+    vec2 w0 = fr * (-0.5 + fr * (1.0 - 0.5 * fr));
+    vec2 w1 = 1.0 + fr * fr * (-2.5 + 1.5 * fr);
+    vec2 w2 = fr * (0.5 + fr * (2.0 - 1.5 * fr));
+    vec2 w3 = fr * fr * (-0.5 + 0.5 * fr);
+    vec2 w12 = w1 + w2;
+    vec2 off12 = w2 / w12;
+    vec2 inv = 1.0 / texSize;
+    vec2 p0  = clamp((texPos1 - 1.0) * inv,   vec2(0.0), vec2(1.0));
+    vec2 p3  = clamp((texPos1 + 2.0) * inv,   vec2(0.0), vec2(1.0));
+    vec2 p12 = clamp((texPos1 + off12) * inv, vec2(0.0), vec2(1.0));
+    vec3 r = vec3(0.0);
+    r += textureLod(tex, vec2(p12.x, p0.y),  0.0).xyz * (w12.x * w0.y);
+    r += textureLod(tex, vec2(p0.x,  p12.y), 0.0).xyz * (w0.x  * w12.y);
+    r += textureLod(tex, vec2(p12.x, p12.y), 0.0).xyz * (w12.x * w12.y);
+    r += textureLod(tex, vec2(p3.x,  p12.y), 0.0).xyz * (w3.x  * w12.y);
+    r += textureLod(tex, vec2(p12.x, p3.y),  0.0).xyz * (w12.x * w3.y);
+    r /= w12.x + w12.y * (1.0 - w12.x);
+    return clamp(r, vec3(0.0), vec3(1.0));
+#endif
+}
+
+vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+void main() {
+    ivec2 pix = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(outImage);
+    if (pix.x >= size.x || pix.y >= size.y) return;
+
+    vec2 uv = (vec2(pix) + 0.5) / vec2(size);
+    vec2 texel = 1.0 / vec2(size);
+
+    const float GUARD_PX = 20.0;
+    // Where content leaves the frame between the pair, its patches have nothing to match, so
+    // the field is unreliable in a band as wide as the motion itself - on a fast camera turn
+    // far wider than the fixed guard. The band grows by the motion measured well inside the
+    // frame, and across it the field is taken from its inner edge.
+    vec2 fDeep = sampleFlow(clamp(uv, vec2(0.15), vec2(0.85)));
+    if (any(isnan(fDeep)) || any(isinf(fDeep))) fDeep = vec2(0.0);
+    vec2 guard = GUARD_PX * texel + min(abs(fDeep), vec2(0.25));
+    vec2 dEdge = min(uv, 1.0 - uv);
+    vec2 ramp = clamp((dEdge - guard) / max(guard, texel), 0.0, 1.0);
+    vec2 eased = ramp * ramp * (3.0 - 2.0 * ramp);
+    float edgeMix = min(eased.x, eased.y);
+
+    vec4 f4 = sampleFlow4(uv);
+    vec2 f = f4.xy;
+    if (edgeMix < 1.0) {
+        vec2 fInner = sampleFlow(clamp(uv, guard, 1.0 - guard));
+        f = mix(fInner, f, edgeMix);
+    }
+    if (any(isnan(f)) || any(isinf(f))) f = vec2(0.0);
+
+    if (pc.debugMode != 0) {
+        float m = length(f) * float(size.x) / 16.0;
+        float hue = atan(f.y, f.x) / 6.2831853 + 0.5;
+        vec3 fc = hsv2rgb(vec3(hue, clamp(m, 0.0, 1.0), min(1.0, 0.15 + m)));
+        imageStore(outImage, pix, vec4(fc, 1.0));
+        return;
+    }
+
+    // The field is defined on the previous frame's grid: f(x) carries the content at x in
+    // the previous frame to x + f(x) in the next. What reaches the output pixel at time t
+    // is the content whose x + t*f(x) equals uv, so the vector has to be read at x, not at
+    // uv. Reading it at uv is the halo: near a moving edge uv sits on the other layer in
+    // the previous frame. A couple of fixed-point steps find x wherever the field is
+    // smooth enough to have one.
+    vec2 fa = f;
+#if DIS_SOURCE_STEPS > 0
+    for (int i = 0; i < DIS_SOURCE_STEPS; i++) {
+        vec2 fn = sampleFlow(clamp(uv - pc.t * fa, vec2(0.0), vec2(1.0)));
+        if (any(isnan(fn)) || any(isinf(fn))) break;
+        fa = fn;
+    }
+#endif
+    // The real pair where it sits: the splat guard, the early-out below and the static test at
+    // the end all need it.
+    vec3 s0 = textureLod(prevColor, uv, 0.0).xyz;
+    vec3 s1 = textureLod(nextColor, uv, 0.0).xyz;
+    float rStatic = dot(abs(s0 - s1), vec3(1.0));
+
+#if DIS_SPLAT
+    // The fixed-point steps cannot choose between two layers that both claim the pixel; the
+    // splat already did, by which of them the next frame confirms. Where nothing landed (content
+    // coming into view) the steps stand. Only where the two disagree by more than a flow
+    // texel: inside one layer the steps follow the smooth field, and the splat, a winner per
+    // texel, would only make it blocky.
+    vec2 splatSize = vec2(textureSize(splatTex, 0)) / vec2(1.0, float(SPLAT_STRIPS));
+    float sv = clamp(uv.y, 0.5 / splatSize.y, 1.0 - 0.5 / splatSize.y);
+    vec4 sp = textureLod(splatTex, vec2(uv.x, (float(pc.layer) + sv) / float(SPLAT_STRIPS)), 0.0);
+    if (sp.z > 1e-3 && !(any(isnan(sp.xy)) || any(isinf(sp.xy)))) {
+        vec2 fs = sp.xy / sp.z;
+        float apart = length((fs - fa) * splatSize);
+        float take = smoothstep(0.25, 0.75, sp.z) * smoothstep(SPLAT_APART_LO, SPLAT_APART_HI, apart);
+        // Not on a static overlay - still in the history and the same in both frames here: there
+        // the moving scenery behind ties with it on how well the pair confirms it and outranks
+        // its zero on length.
+        if (take > 0.0) {
+            take *= 1.0 - textureLod(histTex, uv, 0.0).r * (1.0 - smoothstep(0.03, 0.12, rStatic));
+        }
+        fa = mix(fa, fs, take);
+    }
+#endif
+#if DIS_SOURCE_STEPS > 0 || DIS_SPLAT
+    fa = mix(f, fa, edgeMix);
+#endif
+
+
+    // Under a quarter of a pixel no warp can change an output pixel visibly, and where the
+    // pair also agrees nothing crossed the pixel either, so the ten warped fetches below
+    // would buy nothing. The agreement test matters: a still background just ahead of a
+    // moving object has a zero field too, and there the occlusion handling below is what
+    // brings the object in. Static scenery and HUD-heavy screens are mostly this case.
+    vec2 fpx = max(abs(f), abs(fa)) * vec2(size);
+    if (max(fpx.x, fpx.y) <= 0.25 && rStatic < 0.03) {
+        imageStore(outImage, pix, vec4(mix(s0, s1, pc.t), 1.0));
+        return;
+    }
+
+    // Where the content is at t, with the pair's acceleration (dis_fill.comp): a turn speeding up
+    // or slowing down does not cover t of its way by time t.
+    vec2 acc = f4.zw * edgeMix;
+    if (any(isnan(acc)) || any(isinf(acc))) acc = vec2(0.0);
+    vec2 uv0 = uv - (pc.t * fa + 0.5 * (pc.t * pc.t - pc.t) * acc);
+    vec2 uv1 = uv0 + fa;
+
+    vec3 c0 = warpSample(prevColor, uv0, vec2(size));
+    vec3 c1 = warpSample(nextColor, uv1, vec2(size));
+
+
+    // How far each sample is from being inside its frame. The feather lies inside the frame: a
+    // sample past the edge has nothing (the fetch is clamped to the edge column), so it gets no
+    // weight at all, and one just inside it gives way gradually.
+    const float FEATHER_PX = 8.0;
+    vec2 feather = FEATHER_PX / vec2(size);
+    vec2 d0 = min(uv0, vec2(1.0) - uv0) / feather;
+    vec2 d1 = min(uv1, vec2(1.0) - uv1) / feather;
+    float out0 = 1.0 - clamp(min(d0.x, d0.y), 0.0, 1.0);
+    float out1 = 1.0 - clamp(min(d1.x, d1.y), 0.0, 1.0);
+
+    float w0 = (1.0 - pc.t) * (1.0 - out0);
+    float w1 = pc.t * (1.0 - out1);
+    float wsum = w0 + w1;
+
+    vec3 result = wsum > 1e-4
+        ? (c0 * w0 + c1 * w1) / wsum
+        : (out0 <= out1 ? c0 : c1);
+
+    // Where the two warped samples agree, occl is exactly zero and so is its effect on the result;
+    // the side map is only fetched where it can matter. A sample from outside its frame is not
+    // evidence of an occlusion: comparing against it would call the frame edge one and hand the
+    // pixel to exactly the sample that is off-frame. There the in-frame sample above already
+    // stands alone.
+    float bothIn = (1.0 - out0) * (1.0 - out1);
+    float rMotion = dot(abs(c0 - c1), vec3(1.0));
+    float occl = smoothstep(OCCL_LO, OCCL_HI, rMotion * bothIn);
+    if (occl > 0.0) {
+        vec3 single = pc.t < 0.5 ? c0 : c1;
+#if DIS_OCCL_SIDED
+        // Where the field opens up (divergence > 0) the content is new and only the next frame
+        // has it; where it closes, only the previous. The sign is only trusted across a real
+        // motion boundary - a few pixels of divergence is estimation noise, and there the
+        // nearer frame in time is the better guess.
+        float div = textureLod(sideTex, uv, 0.0).r;
+        float sure = smoothstep(SIDE_LO, SIDE_HI, abs(div));
+        single = mix(single, div > 0.0 ? c1 : c0, sure);
+#endif
+#if DIS_OVERLAY_OCCL
+        // Scenery that moves out from under a HUD panel was hidden in one frame of the pair, and
+        // the warp fetches the panel there. Where one sample sits on an overlay and the other and
+        // the pixel do not, the other one is the scenery.
+        float hp = textureLod(histTex, uv, 0.0).r;
+        float h0 = textureLod(histTex, uv0, 0.0).r;
+        float h1 = textureLod(histTex, uv1, 0.0).r;
+        single = mix(single, c1, smoothstep(0.3, 0.7, (1.0 - hp) * h0 * (1.0 - h1)));
+        single = mix(single, c0, smoothstep(0.3, 0.7, (1.0 - hp) * h1 * (1.0 - h0)));
+#endif
+        result = mix(result, single, occl);
+    }
+
+#if DIS_STATIC_SELECT
+    // Two hypotheses for this pixel, scored by how well each reconciles the real pair:
+    // "it moved with the field" (c0 vs c1) and "it stood still" (the pair where it sits).
+    // A HUD over a moving scene scores near zero standing still and badly moving; the
+    // scene itself scores the other way round. Only a clear win for standing still pins
+    // the pixel, so moving content keeps its motion even where it is flat.
+    // Both terms carry the same "standing still wins" gate; where it is zero nothing changes and
+    // the overlay history is not fetched.
+    float stillWins = smoothstep(0.02, 0.10, rMotion - rStatic);
+    if (stillWins > 0.0) {
+        float keep = (1.0 - smoothstep(0.03, 0.12, rStatic)) * stillWins;
+#if DIS_USE_HIST
+        // Not where a sample is off-frame: there rMotion measures the frame edge, not the
+        // pixel, so stillWins says nothing, and the history would pin moving scenery along the
+        // edge as a blend of the pair - the doubled band on a camera turn. An overlay there is
+        // still kept by the per-pixel test above.
+        float histStatic = textureLod(histTex, uv, 0.0).r;
+        keep = max(keep, histStatic * stillWins * bothIn);
+#endif
+        result = mix(result, mix(s0, s1, pc.t), keep);
+    }
+#endif
+
+    imageStore(outImage, pix, vec4(result, 1.0));
+}

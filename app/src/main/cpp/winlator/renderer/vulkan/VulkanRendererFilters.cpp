@@ -436,24 +436,24 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
 
     if (useFrameGeneration) {
         FrameGenTarget& realTarget = frameGenTargets[currentFrame];
-        vkr_lsfg_process(frameGen, cb, realTarget.image, swapchainExt.width,
-                         swapchainExt.height, generatedCount);
+        processFrameGeneration(cb, realTarget.image, generatedCount);
         if (frameGenSwapchainStorage && generatedCount > 0) {
-            vkr_lsfg_generate_into(frameGen, cb, 0, 0,
-                                   swapchainImages[imgIdx], swapchainViews[imgIdx],
-                                   swapchainExt.width, swapchainExt.height);
+            generateFrameGeneration(cb, 0, 0, swapchainImages[imgIdx], swapchainViews[imgIdx]);
             transitionGeneratedSwapchainImage(cb, swapchainImages[imgIdx]);
         } else {
             for (uint32_t generation = 0; generation < generatedCount; generation++) {
                 const uint32_t targetIndex = MAX_FRAMES_IN_FLIGHT + generation;
                 FrameGenTarget& generatedTarget = frameGenTargets[targetIndex];
-                vkr_lsfg_generate_into(frameGen, cb, generation, targetIndex,
-                                       generatedTarget.image, generatedTarget.view,
-                                       swapchainExt.width, swapchainExt.height);
+                generateFrameGeneration(cb, generation, targetIndex,
+                                        generatedTarget.image, generatedTarget.view);
             }
             const FrameGenTarget& firstOutput = generatedCount > 0
                 ? frameGenTargets[MAX_FRAMES_IN_FLIGHT]
                 : realTarget;
+            if (frameGenEngine == 1 && generatedCount > 0)
+                transition(cb, firstOutput.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
             copyFrameGenTarget(cb, firstOutput, swapchainImages[imgIdx]);
         }
     }

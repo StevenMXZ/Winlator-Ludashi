@@ -31,6 +31,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     private float sharpness = .5f;
     private boolean frameGenRequested, frameGenEnabled, paused;
     private String frameGenCache;
+    private String frameGenEngine = "lsfg";
     private int frameGenMultiplier = 2, frameGenTargetRate = -1, frameGenFlowScale = 70;
     private float frameGenRefresh = 60f;
     private long visualRevision, generatedFrames;
@@ -389,7 +390,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         if (handle == 0 || destroyed) return;
         visualRevision = nativeVisualOptions(handle, filterMode, postFXMode, stretchMode, sharpness,
                 frameGenRequested, frameGenCache, frameGenMultiplier, frameGenTargetRate,
-                frameGenFlowScale, frameGenRefresh);
+                frameGenFlowScale, frameGenRefresh, "wfg".equals(frameGenEngine) ? 1 : 0);
         if (frameGenRequested || frameGenEnabled) {
             removeCallbacks(frameGenCheck);
             post(frameGenCheck);
@@ -407,16 +408,22 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     @Override public synchronized void setSharpness(float value) {
         sharpness = Float.isNaN(value) ? .5f : Math.max(0f, Math.min(1f, value)); applyVisualOptions();
     }
+    @Override public synchronized void setFrameGenerationEngine(String engine) {
+        if (!frameGenRequested && !frameGenEnabled)
+            frameGenEngine = "wfg".equals(engine) ? "wfg" : "lsfg";
+    }
+    @Override public synchronized String getFrameGenerationEngine() { return frameGenEngine; }
     @Override public synchronized void setFrameGenerationConfig(boolean enabled, String cachePath,
             int multiplier, int targetRate, int flowScalePercent, float refreshRate) {
         frameGenCache = cachePath;
-        frameGenRequested = isVulkanBackend() && enabled && cachePath != null && !cachePath.isEmpty();
+        frameGenRequested = isVulkanBackend() && enabled && ("wfg".equals(frameGenEngine) ||
+            (cachePath != null && !cachePath.isEmpty()));
         frameGenRefresh = refreshRate >= 1f ? refreshRate : 60f;
         setFrameGenerationSettings(multiplier, targetRate, flowScalePercent);
     }
     @Override public synchronized boolean setFrameGenerationEnabled(boolean enabled) {
         if (destroyed || handle == 0 || enabled && !isVulkanBackend()) return false;
-        if (enabled && (frameGenCache == null || !new File(frameGenCache).isFile())) {
+        if (enabled && !"wfg".equals(frameGenEngine) && (frameGenCache == null || !new File(frameGenCache).isFile())) {
             File cache = LosslessScaling.resolveCacheFile(getContext(), true);
             if (cache == null) return false;
             frameGenCache = cache.getAbsolutePath();
@@ -446,7 +453,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     }
     private static native long nativeVisualOptions(long handle, int filter, int postFX, int stretch,
             float sharpness, boolean frameGen, String cachePath, int multiplier, int targetRate,
-            int flowScale, float refreshRate);
+            int flowScale, float refreshRate, int engine);
     private static native long[] nativeVisualState(long handle);
     private static native void nativeHudEnabled(long handle, boolean enabled);
     private static native String[] nativeHudSnapshot(long handle);

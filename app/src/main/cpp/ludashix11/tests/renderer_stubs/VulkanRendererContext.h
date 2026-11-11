@@ -46,7 +46,8 @@ public:
     float sharpness{.5f};
     bool frameGenSupported{true}, frameGenEnabled{}, frameGenRequested{};
     std::string frameGenCache;
-    int multiplier{}, targetRate{}, flowScale{};
+    int multiplier{}, targetRate{}, flowScale{}, frameGenEngine{};
+    void setFrameGenerationEngine(int engine) { if (!frameGenRequested) frameGenEngine = engine; }
     float refresh{};
     uint64_t sourceFrames{}, generatedFrames{};
     void setFilterMode(int value) { filter = value; }
@@ -56,7 +57,7 @@ public:
     void configureFrameGeneration(bool enabled, const char* cache, int m, int target, int flow, float hz) {
         frameGenRequested = enabled;
         frameGenCache = cache; multiplier = m; targetRate = target; flowScale = flow; refresh = hz;
-        frameGenEnabled = enabled && frameGenSupported && !frameGenCache.empty();
+        frameGenEnabled = enabled && frameGenSupported && (frameGenEngine == 1 || !frameGenCache.empty());
     }
     bool isFrameGenerationSupported() const { return frameGenSupported; }
     bool isFrameGenerationEnabled() const { return frameGenEnabled; }

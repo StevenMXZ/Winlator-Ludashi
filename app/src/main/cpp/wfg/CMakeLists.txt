@@ -1,0 +1,32 @@
+find_program(WFG_GLSLC glslc HINTS "${ANDROID_NDK}/shader-tools/linux-x86_64")
+find_program(WFG_GLSLANG glslangValidator)
+if(NOT WFG_GLSLC AND NOT WFG_GLSLANG)
+    message(FATAL_ERROR "WFG requires glslc or glslangValidator")
+endif()
+file(GLOB DIS_SHADER_SOURCES CONFIGURE_DEPENDS "include/shaders/*.comp")
+set(DIS_SHADER_HEADERS)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+foreach(input IN LISTS DIS_SHADER_SOURCES)
+    get_filename_component(base "${input}" NAME_WE)
+    set(var "${base}_comp")
+    set(spv "${CMAKE_CURRENT_BINARY_DIR}/shaders/${var}.spv")
+    set(hdr "${spv}.h")
+    if(WFG_GLSLC)
+        set(compile_shader "${WFG_GLSLC}" --target-env=vulkan1.1 -O "${input}" -o "${spv}")
+    else()
+        set(compile_shader "${WFG_GLSLANG}" -V --target-env vulkan1.1 -Os "${input}" -o "${spv}")
+    endif()
+    add_custom_command(OUTPUT "${hdr}"
+        COMMAND ${compile_shader}
+        COMMAND "${CMAKE_COMMAND}" -DINPUT_FILE=${spv} -DOUTPUT_FILE=${hdr}
+                -DVAR_NAME=${var} -P "${CMAKE_CURRENT_SOURCE_DIR}/bin2c.cmake"
+        DEPENDS "${input}" bin2c.cmake VERBATIM)
+    list(APPEND DIS_SHADER_HEADERS "${hdr}")
+endforeach()
+add_library(wfg STATIC src/vkr_dis.c src/vk_dispatch.c
+    ../winlator/renderer/vulkan/wfg/vkr_wfg.cpp ${DIS_SHADER_HEADERS})
+set_target_properties(wfg PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_compile_options(wfg PRIVATE -O2 -Wall -Wextra -fvisibility=hidden)
+target_compile_definitions(wfg PUBLIC VK_USE_PLATFORM_ANDROID_KHR)
+target_include_directories(wfg PUBLIC include PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}")
+target_link_libraries(wfg PRIVATE log dl)

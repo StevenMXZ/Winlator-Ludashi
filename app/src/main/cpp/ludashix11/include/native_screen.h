@@ -99,6 +99,7 @@ struct NativeVisualOptions {
     std::string frameGenCache;
     int multiplier{2}, targetRate{-1}, flowScale{70};
     float refresh{60.f};
+    int frameGenEngine{};
     bool operator==(const NativeVisualOptions&) const = default;
 };
 struct NativeVisualState {

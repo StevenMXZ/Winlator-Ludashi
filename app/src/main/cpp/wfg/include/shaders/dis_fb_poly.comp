@@ -1,0 +1,99 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG, Farneback flow: polynomial expansion of one pyramid level of a frame.
+//
+// Gunnar Farneback, "Two-Frame Motion Estimation Based on Polynomial Expansion" (SCIA 2003);
+// the formulation follows OpenCV's calcOpticalFlowFarneback (FarnebackPolyExp). Around every
+// texel the luminance is fitted, under a Gaussian applicability, by
+//     f(x, y) ~ r1 + rx*x + ry*y + rxx*x^2 + ryy*y^2 + rxy*x*y,
+// which is two separable passes of three moments each followed by the closed-form inverse of
+// the 6x6 normal matrix (its four distinct entries come in as push constants). Computed once
+// per frame and level: the frame is the second of this pair and the first of the next one.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D lumaMap;
+layout(set = 0, binding = 8, rgba32f) uniform writeonly image2D polyB;  // (rx, ry, rxx, ryy)
+layout(set = 0, binding = 9, r32f) uniform writeonly image2D polyC;     // rxy
+
+layout(push_constant) uniform PC {
+    float sigma;
+    float ig11;
+    float ig03;
+    float ig33;
+    float ig55;
+} pc;
+
+// Half-width of the applicability. With sigma 1.1 the weights beyond 3 are under 2.5% of the
+// centre, so this is the 11-tap OpenCV kernel to within its own float precision.
+#define N 3
+#define T (8 + 2 * N)
+
+shared float sL[T * T];
+shared vec3 sV[8 * T];
+
+void main() {
+    ivec2 size = textureSize(lumaMap, 0);
+    ivec2 base = ivec2(gl_WorkGroupID.xy) * 8 - N;
+    for (int k = int(gl_LocalInvocationIndex); k < T * T; k += 64) {
+        ivec2 q = clamp(base + ivec2(k % T, k / T), ivec2(0), size - 1);
+        sL[k] = texelFetch(lumaMap, q, 0).x;
+    }
+
+    float g[N + 1];
+    float s = 0.0;
+    for (int k = 0; k <= N; k++) {
+        g[k] = exp(-float(k * k) / (2.0 * pc.sigma * pc.sigma));
+        s += k == 0 ? g[k] : 2.0 * g[k];
+    }
+    for (int k = 0; k <= N; k++) g[k] /= s;
+
+    barrier();
+
+    // Vertical moments (I, y*I, y^2*I) for this thread's output row, on every tile column.
+    ivec2 l = ivec2(gl_LocalInvocationID.xy);
+    int r = l.y + N;
+    for (int c = l.x; c < T; c += 8) {
+        float v0 = g[0] * sL[r * T + c];
+        float v1 = 0.0;
+        float v2 = 0.0;
+        for (int k = 1; k <= N; k++) {
+            float a = sL[(r - k) * T + c];
+            float b = sL[(r + k) * T + c];
+            v0 += g[k] * (a + b);
+            v1 += float(k) * g[k] * (b - a);
+            v2 += float(k * k) * g[k] * (a + b);
+        }
+        sV[l.y * T + c] = vec3(v0, v1, v2);
+    }
+    barrier();
+
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= size.x || p.y >= size.y) return;
+
+    // Horizontal moments: b1 ~ 1, b2 ~ x, b3 ~ y, b4 ~ x^2, b5 ~ y^2, b6 ~ xy.
+    int c = l.x + N;
+    vec3 v = sV[l.y * T + c];
+    float b1 = g[0] * v.x, b2 = 0.0, b3 = g[0] * v.y, b4 = 0.0, b5 = g[0] * v.z, b6 = 0.0;
+    for (int k = 1; k <= N; k++) {
+        vec3 vp = sV[l.y * T + c + k];
+        vec3 vm = sV[l.y * T + c - k];
+        float xg = float(k) * g[k];
+        b1 += g[k] * (vp.x + vm.x);
+        b4 += float(k) * xg * (vp.x + vm.x);
+        b2 += xg * (vp.x - vm.x);
+        b3 += g[k] * (vp.y + vm.y);
+        b6 += xg * (vp.y - vm.y);
+        b5 += g[k] * (vp.z + vm.z);
+    }
+
+    imageStore(polyB, p, vec4(b2 * pc.ig11, b3 * pc.ig11, b1 * pc.ig03 + b4 * pc.ig33,
+                              b1 * pc.ig03 + b5 * pc.ig33));
+    imageStore(polyC, p, vec4(b6 * pc.ig55, 0.0, 0.0, 0.0));
+}

@@ -1,0 +1,141 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG frame generation: a Vulkan compute realisation of Dense Inverse Search
+// optical flow. The algorithm and its reference implementation come from
+// OpenCV's DISOpticalFlow, which adopted Till Kroeger's original OF_DIS.
+// See THIRD_PARTY_NOTICES.txt for attribution.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+// The field forward-splatted to the generated frame's time, at flow resolution: every level-0
+// texel carries its vector to where it lands at t, and where several land on one texel the
+// one both real frames confirm wins. Run three times per source pair (pc.mode), for every
+// generated frame of the pair at once - one strip of the images per frame:
+//   0 - clear the key and the field;
+//   1 - every texel atomically raises the key of the texels it lands on to its priority;
+//   2 - the texels whose priority is the key there write their vector.
+//
+// The interpolate pass reads its vectors from the previous frame's grid and has to find, for
+// each output pixel, the point that lands on it. Its fixed-point steps do that inside a layer
+// but cannot choose between layers: around an object the camera orbits, the background sliding
+// behind its silhouette and the object's own surface both claim the band along the edge, the
+// lookup takes whichever the blurred field there is closer to, and the surface smears onto the
+// background or the background onto the surface. Splatting asks the opposite question - who
+// lands here - and the priority settles it the way FSR 3's frame interpolation does with depth
+// or vector length, but on what the pair can tell: a vector whose content is still there at
+// its end in the next frame is visible at t; one whose end shows something else is going
+// behind an occluder (or is wrong) and gives way. Vector length breaks the remaining ties.
+//
+// The key is cleared to 0 and every priority is at least 1, so 0 means "nothing landed".
+//
+// Per pair rather than per generated frame because what it costs is barriers, not work: the
+// grid is the flow's, a few tens of thousands of texels, but three passes with a barrier
+// between each added 0.13 ms per generated frame on an Adreno 750. Here the clear rides the
+// luma pass's barrier, the splat the pack pass's, and only the resolve adds one.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D prevLuma;
+layout(set = 0, binding = 1) uniform sampler2D nextLuma;
+layout(set = 0, binding = 2) uniform sampler2D flowTex;
+layout(set = 0, binding = 8, r32ui) uniform uimage2D splatKey;
+layout(set = 0, binding = 9, rgba16f) uniform image2D splatField;
+
+layout(push_constant) uniform PC {
+    int gens;
+    int mode;
+} pc;
+
+// Splat only the vectors that land where the field moves differently, by more than this many
+// flow texels.
+#ifndef SPLAT_CONFLICT_ONLY
+#define SPLAT_CONFLICT_ONLY 1
+#endif
+#ifndef SPLAT_CONFLICT
+#define SPLAT_CONFLICT 1.0
+#endif
+
+// Mean absolute luma difference (0..255) per consistency step: 8 luma levels per step, 31 steps.
+#define SPLAT_ERR_STEP 8.0
+
+uint priority(ivec2 p, vec2 fpx, ivec2 sz) {
+    vec2 inv = 1.0 / vec2(sz);
+    vec2 end = vec2(p) + 0.5 + fpx;
+    // An end off the frame has nothing to confirm it.
+    if (any(lessThan(end, vec2(0.0))) || any(greaterThan(end, vec2(sz)))) return 1u;
+    float e = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 o = vec2(x, y);
+            float a = textureLod(prevLuma, (vec2(p) + 0.5 + o) * inv, 0.0).r;
+            float b = textureLod(nextLuma, (end + o) * inv, 0.0).r;
+            e += abs(a - b);
+        }
+    }
+    e *= 1.0 / 9.0;
+    uint q = 31u - uint(clamp(e / SPLAT_ERR_STEP, 0.0, 31.0));
+    uint m = uint(clamp(length(fpx) * 4.0, 0.0, 1023.0));
+    return ((q << 10) | m) + 1u;
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sz = textureSize(flowTex, 0);
+    if (p.x >= sz.x || p.y >= sz.y) return;
+
+    if (pc.mode == 0) {
+        for (int g = 0; g < pc.gens; g++) {
+            imageStore(splatKey, p + ivec2(0, g * sz.y), uvec4(0u));
+            imageStore(splatField, p + ivec2(0, g * sz.y), vec4(0.0));
+        }
+        return;
+    }
+
+    vec2 f = texelFetch(flowTex, p, 0).xy;
+    if (any(isnan(f)) || any(isinf(f))) return;
+    vec2 fpx = f * vec2(sz);
+    // The same for every generated frame: scored once, splatted to each - scored lazily, since
+    // most texels splat to none.
+    uint key = 0u;
+
+    for (int g = 0; g < pc.gens; g++) {
+        float t = float(g + 1) / float(pc.gens + 1);
+        vec2 target = vec2(p) + 0.5 + t * fpx;
+#if SPLAT_CONFLICT_ONLY
+        // Only where the field at the landing point moves differently: inside a layer the
+        // interpolate's own lookup finds this same vector, and the splat (the only atomics in
+        // WFG, the larger part of its cost on an Adreno 750) would change nothing.
+        ivec2 land = clamp(ivec2(floor(target)), ivec2(0), sz - 1);
+        vec2 fl = texelFetch(flowTex, land, 0).xy;
+        if (length((fl - f) * vec2(sz)) < SPLAT_CONFLICT) continue;
+#endif
+        if (key == 0u) key = priority(p, fpx, sz);
+#if SPLAT_CONFLICT_ONLY
+        // The texels that do not splat still compete: the content the lookup would put at the
+        // landing point comes from where the field there starts, and a vector that would lose
+        // to it changes nothing either.
+        if (all(equal(fl, fl))) {
+            vec2 flpx = fl * vec2(sz);
+            ivec2 nat = clamp(ivec2(floor(vec2(land) + 0.5 - t * flpx)), ivec2(0), sz - 1);
+            vec2 fn = texelFetch(flowTex, nat, 0).xy;
+            if (all(equal(fn, fn)) && priority(nat, fn * vec2(sz), sz) >= key) continue;
+        }
+#endif
+        // The four texels round the landing point, so a stretched field leaves no gaps.
+        ivec2 base = ivec2(floor(target - 0.5));
+        ivec2 strip = ivec2(0, g * sz.y);
+        for (int i = 0; i < 4; i++) {
+            ivec2 q = base + ivec2(i & 1, i >> 1);
+            if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, sz))) continue;
+            if (pc.mode == 1) {
+                imageAtomicMax(splatKey, q + strip, key);
+            } else if (imageLoad(splatKey, q + strip).r == key) {
+                imageStore(splatField, q + strip, vec4(f, 1.0, 0.0));
+            }
+        }
+    }
+}

@@ -25,7 +25,7 @@ if(ANDROID)
     target_include_directories(ludashix11 PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../winlator/renderer/vulkan
         ${CMAKE_CURRENT_BINARY_DIR}/..)
-    target_link_libraries(ludashix11 PRIVATE android log vulkan EGL GLESv2 adrenotools dl atomic)
+    target_link_libraries(ludashix11 PRIVATE android log vulkan EGL GLESv2 adrenotools dl atomic wfg)
 else()
     add_executable(ludashix11_host ${CORE_SOURCES} ${NATIVE_SOURCES} tests/host_backend.cpp)
     set(LUDASHI_TARGET ludashix11_host)

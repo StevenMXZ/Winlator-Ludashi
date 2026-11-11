@@ -31,7 +31,8 @@ import java.io.File;
 class LiveEnableTest {
     final Object lock = new Object(); long nativeHandle=1;
     boolean pendingFrameGenEnabled, effectiveFrameGenEnabled, supported=true;
-    String pendingFrameGenCache;
+    String pendingFrameGenCache; String pendingFrameGenEngine="lsfg";
+    void nativeSetFrameGenerationEngine(long handle, int engine) {}
     int pendingFrameGenMultiplier, pendingFrameGenTargetRate, pendingFrameGenFlowScale;
     float pendingFrameGenRefreshRate;
     java.util.concurrent.atomic.AtomicLong sourceFrames = new java.util.concurrent.atomic.AtomicLong();
@@ -41,7 +42,8 @@ class LiveEnableTest {
     boolean nativeConfigureFrameGeneration(long h, boolean enabled, String cache,
              int multiplier, int targetRate, int scale, float refresh) {
         ++configCalls; nativeCache=cache;
-        return enabled && !failNative && cache!=null && new File(cache).isFile();
+        return enabled && !failNative && ("wfg".equals(pendingFrameGenEngine) ||
+            cache!=null && new File(cache).isFile());
     }
     void nativeSetFrameGenerationSourceCount(long h,long count) {}
     void notifyFrameGenerationStateChanged() {++notifications;}
@@ -86,6 +88,15 @@ class LiveEnableTest {
                   !view.effectiveFrameGenEnabled,"enable before surface must remain pending");
             view.nativeHandle=1; view.applyPendingFrameGeneration();
             check(view.effectiveFrameGenEnabled,"surface creation must apply pending enable");
+            view=new LiveEnableTest(); view.pendingFrameGenEngine="wfg";
+            int beforeWfg=LosslessScaling.resolutions;
+            view.setFrameGenerationConfig(true,null,2,-1,50,120);
+            check(view.effectiveFrameGenEnabled,"WFG startup without DLL");
+            check(view.setFrameGenerationEnabled(false),"WFG disable");
+            check(view.setFrameGenerationEnabled(true),"WFG reenable without DLL");
+            check(LosslessScaling.resolutions==beforeWfg,"WFG must not resolve LSFG cache");
+            view.supported=false;
+            check(!view.setFrameGenerationEnabled(true),"WFG unsupported driver fallback");
         } finally {cache.delete();}
         System.out.println("PASS: LSFG off/on, cache resolution, native failure and surface lifecycle");
     }

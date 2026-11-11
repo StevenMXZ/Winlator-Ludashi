@@ -1556,15 +1556,20 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (frameGenTargetRate < -1) frameGenTargetRate = -1;
             if (frameGenFlowScale < 25 || frameGenFlowScale > 100) frameGenFlowScale = 70;
 
-            File frameGenCache = frameGenRequested
+            String containerEngine = container != null ? container.getExtra("frameGenEngine", "lsfg") : "lsfg";
+            String frameGenEngine = shortcut != null
+                    ? shortcut.getExtra("frameGenEngine", containerEngine) : containerEngine;
+            boolean useWfg = "wfg".equals(frameGenEngine);
+            vkRenderer.setFrameGenerationEngine(useWfg ? "wfg" : "lsfg");
+            File frameGenCache = frameGenRequested && !useWfg
                     ? LosslessScaling.resolveCacheFile(this, true) : null;
-            if (frameGenRequested && frameGenCache == null) {
+            if (frameGenRequested && !useWfg && frameGenCache == null) {
                 Log.w("XServerDisplayActivity",
                         "LSFG requested but Lossless.dll shaders have not been imported");
             }
             float panelRefreshRate = getWindowManager().getDefaultDisplay().getRefreshRate();
             vkRenderer.setFrameGenerationConfig(
-                    frameGenRequested && frameGenCache != null,
+                    frameGenRequested && (useWfg || frameGenCache != null),
                     frameGenCache != null ? frameGenCache.getAbsolutePath() : null,
                     frameGenMultiplier, frameGenTargetRate, frameGenFlowScale,
                     panelRefreshRate);
@@ -2332,6 +2337,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
         View    btSaveGraphicsPreset = findViewById(R.id.BTSaveGraphicsPreset);
         View    llFrameGenOptions  = findViewById(R.id.LLFrameGenOptions);
         Switch  swEnableFrameGen   = findViewById(R.id.SWEnableFrameGen);
+        if (swEnableFrameGen != null && vkRenderer != null) {
+            swEnableFrameGen.setTag(null);
+            swEnableFrameGen.setText("wfg".equals(vkRenderer.getFrameGenerationEngine())
+                ? "WFG Frame Generation" : getString(R.string.sidebar_lsfg_frame_generation));
+        }
         View    llFrameGenSettings = findViewById(R.id.LLFrameGenSettings);
         View    llFrameGenMultiplierSettings = findViewById(R.id.LLFrameGenMultiplierSettings);
         Spinner spFrameGenMode = findViewById(R.id.SPFrameGenMode);
@@ -2544,7 +2554,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             final boolean[] updatingFrameGenSwitch = {false};
             swEnableFrameGen.setOnCheckedChangeListener((button, checked) -> {
                 if (updatingFrameGenSwitch[0]) return;
-                if (checked && LosslessScaling.getStatus(this, true) !=
+                if (checked && !"wfg".equals(vkRenderer.getFrameGenerationEngine()) && LosslessScaling.getStatus(this, true) !=
                         LosslessScaling.STATUS_OK) {
                     updatingFrameGenSwitch[0] = true;
                     swEnableFrameGen.setChecked(false);
@@ -2561,7 +2571,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     updatingFrameGenSwitch[0] = false;
                     updateFrameGenVisibility.run();
                     Toast.makeText(this,
-                        "LSFG could not be enabled with the current Vulkan driver or surface.",
+                        "Frame generation could not be enabled with the current Vulkan driver or surface.",
                         Toast.LENGTH_LONG).show();
                     return;
                 }

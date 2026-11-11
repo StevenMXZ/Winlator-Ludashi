@@ -1,0 +1,88 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG frame generation: a Vulkan compute realisation of Dense Inverse Search
+// optical flow. The algorithm and its reference implementation come from
+// OpenCV's DISOpticalFlow, which adopted Till Kroeger's original OF_DIS.
+// See THIRD_PARTY_NOTICES.txt for attribution.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D prep;
+layout(set = 0, binding = 1) uniform sampler2D d1;
+layout(set = 0, binding = 2) uniform sampler2D d2;
+layout(set = 0, binding = 3) uniform sampler2D dW;
+layout(set = 0, binding = 4) uniform sampler2D flowDense;
+layout(set = 0, binding = 5) uniform sampler2D wt;
+layout(set = 0, binding = 8, rgba32f) uniform image2D A;
+// A.w and B.zw carry the smoothness weights the SOR reads at this cell, so it needs no weight
+// fetches of its own: the centre weight, and the left and up ones already zeroed at the frame
+// edge as the SOR's own "p.x > 0 ? ... : 0" did.
+layout(set = 0, binding = 9, rgba32f) uniform image2D B;
+
+layout(push_constant) uniform PC {
+    float delta2;
+    float gamma2;
+    float zeta2;
+    float eps2;
+} pc;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sz = imageSize(A);
+    if (p.x >= sz.x || p.y >= sz.y) return;
+    ivec2 mx = sz - 1;
+    vec2 uSize = vec2(sz);
+
+    vec4 d1v = texelFetch(d1, p, 0);
+    vec4 d2v = texelFetch(d2, p, 0);
+    float Iz = texelFetch(prep, p, 0).y;
+    vec2 dWp = texelFetch(dW, p, 0).xy;
+    float Ix = d1v.x, Iy = d1v.y, Ixz = d1v.z, Iyz = d1v.w;
+    float Ixx = d2v.x, Ixy = d2v.y, Iyy = d2v.z;
+    float dU = dWp.x, dV = dWp.y;
+
+    float dn = Ix * Ix + Iy * Iy + pc.zeta2;
+    float Ik1z = Iz + Ix * dU + Iy * dV;
+    float w = (pc.delta2 / sqrt(Ik1z * Ik1z / dn + pc.eps2)) / dn;
+    float a11 = w * Ix * Ix + pc.zeta2;
+    float a12 = w * Ix * Iy;
+    float a22 = w * Iy * Iy + pc.zeta2;
+    float b1 = -w * Iz * Ix;
+    float b2 = -w * Iz * Iy;
+
+    float dnx = Ixx * Ixx + Ixy * Ixy + pc.zeta2;
+    float dny = Iyy * Iyy + Ixy * Ixy + pc.zeta2;
+    float Ik1zx = Ixz + Ixx * dU + Ixy * dV;
+    float Ik1zy = Iyz + Ixy * dU + Iyy * dV;
+    w = pc.gamma2 / sqrt(Ik1zx * Ik1zx / dnx + Ik1zy * Ik1zy / dny + pc.eps2);
+    a11 += w * (Ixx * Ixx / dnx + Ixy * Ixy / dny);
+    a12 += w * (Ixx * Ixy / dnx + Ixy * Iyy / dny);
+    a22 += w * (Ixy * Ixy / dnx + Iyy * Iyy / dny);
+    b1 -= w * (Ixx * Ixz / dnx + Ixy * Iyz / dny);
+    b2 -= w * (Ixy * Ixz / dnx + Iyy * Iyz / dny);
+
+    float wc = texelFetch(wt, p, 0).r;
+    float wl = texelFetch(wt, ivec2(max(p.x - 1, 0), p.y), 0).r;
+    float wu = texelFetch(wt, ivec2(p.x, max(p.y - 1, 0)), 0).r;
+    vec2 W  = texelFetch(flowDense, p, 0).xy * uSize;
+    vec2 Wr = texelFetch(flowDense, ivec2(min(p.x + 1, mx.x), p.y), 0).xy * uSize;
+    vec2 Wl = texelFetch(flowDense, ivec2(max(p.x - 1, 0), p.y), 0).xy * uSize;
+    vec2 Wd = texelFetch(flowDense, ivec2(p.x, min(p.y + 1, mx.y)), 0).xy * uSize;
+    vec2 Wu = texelFetch(flowDense, ivec2(p.x, max(p.y - 1, 0)), 0).xy * uSize;
+
+    float addA = 0.0;
+    vec2 addB = vec2(0.0);
+    if (p.x < mx.x) { addA += wc; addB += wc * (Wr - W); }
+    if (p.x > 0)    { addA += wl; addB -= wl * (W - Wl); }
+    if (p.y < mx.y) { addA += wc; addB += wc * (Wd - W); }
+    if (p.y > 0)    { addA += wu; addB -= wu * (W - Wu); }
+
+    imageStore(A, p, vec4(a11 + addA, a12, a22 + addA, wc));
+    imageStore(B, p, vec4(vec2(b1, b2) + addB, p.x > 0 ? wl : 0.0, p.y > 0 ? wu : 0.0));
+}

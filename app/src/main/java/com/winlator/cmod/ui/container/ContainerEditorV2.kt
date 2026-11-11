@@ -188,6 +188,7 @@ private class ContainerEditorStateV2(
     var displayXDynamicRange by mutableStateOf(editing?.getDisplayXDynamicRange() ?: "sdr")
     var displayXPresentMode by mutableStateOf(editing?.getDisplayXPresentMode() ?: "auto")
     var displayXPrecisePresentation by mutableStateOf(editing?.getDisplayXPrecisePresentation() ?: false)
+    var frameGenEngine by mutableStateOf(if (editing?.getExtra("frameGenEngine", "lsfg") == "wfg") "wfg" else "lsfg")
     var frameGenEnabled by mutableStateOf((editing?.getExtra("frameGen", "0") ?: "0") == "1")
     var frameGenMultiplier by mutableIntStateOf(
         (editing?.getExtra("frameGenMultiplier", "2") ?: "2").toIntOrNull()?.coerceIn(2, 4) ?: 2
@@ -335,7 +336,7 @@ private class ContainerEditorStateV2(
         fullscreen, desktopTheme, desktopBackground, wallpaperStamp, mouseWarp, drives,
         displayServer, renderer, rendererPresentMode, rendererDriver, filterMode, surfaceFormat, trueDisplayX,
         displayXPerformanceMode, displayXPresentAtRefreshRate, displayXPresentMode, displayXDynamicRange,
-        displayXPrecisePresentation, frameGenEnabled, frameGenMultiplier,
+        displayXPrecisePresentation, frameGenEngine, frameGenEnabled, frameGenMultiplier,
         frameGenTargetRate, frameGenFlowScale, graphicsDriver, freedrenoVersion, graphicsConfig,
         wrapper, wrapperConfig, emulator, fexVersion, boxVersion, fexPreset, boxPreset, exclusive, xinput, dinput,
         forceSsbs, syncCpu, startup, openGlDefaultInitialized, autoMesaGlVersionOverride, envVars,
@@ -485,6 +486,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.setDisplayXDynamicRange(state.displayXDynamicRange)
         container.setDisplayXPresentMode(state.displayXPresentMode)
         container.setDisplayXPrecisePresentation(state.displayXPrecisePresentation)
+        container.putExtra("frameGenEngine", state.frameGenEngine)
         container.putExtra("frameGen", if (state.frameGenEnabled) "1" else "0")
         container.putExtra("frameGenMultiplier", state.frameGenMultiplier.toString())
         container.putExtra("frameGenTargetRate", state.frameGenTargetRate.toString())
@@ -584,6 +586,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                     .put("displayXDynamicRange", state.displayXDynamicRange)
                     .put("displayXPresentMode", state.displayXPresentMode)
                     .put("displayXPrecisePresentation", if (state.displayXPrecisePresentation) "1" else "0")
+                    .put("frameGenEngine", state.frameGenEngine)
                     .put("frameGen", if (state.frameGenEnabled) "1" else "0")
                     .put("frameGenMultiplier", state.frameGenMultiplier.toString())
                     .put("frameGenTargetRate", state.frameGenTargetRate.toString())
@@ -911,6 +914,8 @@ private fun ContainerCategoryV2(
             }
             if (s.renderer == "Vulkan") {
                 FrameGenerationSettings(
+                    engine = s.frameGenEngine,
+                    onEngineChanged = { s.frameGenEngine = it },
                     enabled = s.frameGenEnabled,
                     multiplier = s.frameGenMultiplier,
                     targetRate = s.frameGenTargetRate,

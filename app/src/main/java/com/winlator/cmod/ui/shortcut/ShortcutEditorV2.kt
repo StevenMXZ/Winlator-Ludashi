@@ -187,6 +187,9 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var displayXDynamicRange by mutableStateOf(shortcut.getDisplayXDynamicRange())
     var displayXPresentMode by mutableStateOf(shortcut.getDisplayXPresentMode())
     var displayXPrecisePresentation by mutableStateOf(shortcut.getDisplayXPrecisePresentation())
+    var frameGenEngine by mutableStateOf(
+        if (shortcut.getExtra("frameGenEngine", container.getExtra("frameGenEngine", "lsfg")) == "wfg") "wfg" else "lsfg"
+    )
     var frameGenEnabled by mutableStateOf(
         shortcut.getExtra("frameGen", container.getExtra("frameGen", "0")) == "1"
     )
@@ -1124,6 +1127,11 @@ private fun ShortcutCategoryV2(
             }
             if (s.renderer == "Vulkan") {
                 FrameGenerationSettings(
+                    engine = s.frameGenEngine,
+                    onEngineChanged = {
+                        s.frameGenEngine = it
+                        s.extra("frameGenEngine", it)
+                    },
                     enabled = s.frameGenEnabled,
                     multiplier = s.frameGenMultiplier,
                     targetRate = s.frameGenTargetRate,

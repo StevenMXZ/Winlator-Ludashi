@@ -315,6 +315,8 @@ void NativeScreen::PostInvalidate() {
     }
     frame.requests.insert(frame.requests.end(), requests.begin(), requests.end());
     requests.clear();
+    if (frameGenRequested.load(std::memory_order_relaxed) && visualOptions.frameGenEngine == 1)
+        frame.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
     latest = std::move(frame);
     sceneCurrent = true;
     // A pending scene is replaced in place; it needs no additional wake.
@@ -357,6 +359,8 @@ bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket, const sp<Presen
         } else ++i;
     }
     latest.requests.push_back(ticket);
+    if (frameGenRequested.load(std::memory_order_relaxed) && visualOptions.frameGenEngine == 1)
+        latest.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
     // Do not wake a slot-blocked worker for every producer Present. It will
     // consume the newest snapshot after retirement notifies cv, or after Draw.
     if (!std::exchange(dirty, true)) cv.notify_one();
@@ -724,6 +728,7 @@ void NativeScreen::Worker() {
         {
             std::lock_guard lock(state);
             if (dirty && sceneCurrent && !surfaceDirty && !optionsDirty && !stop) {
+                refreshed.frameGenSourceFrames = latest.frameGenSourceFrames;
                 refreshed.entries = latest.entries;
                 refreshed.requests.swap(latest.requests);
                 for (const auto& request : frame.requests) {
@@ -742,6 +747,7 @@ void NativeScreen::Worker() {
             }
         }
         if (changed) {
+            frame.frameGenSourceFrames = refreshed.frameGenSourceFrames;
             frame.entries.swap(refreshed.entries);
             frame.requests.swap(refreshed.requests);
             frame.cursor.swap(refreshed.cursor);
@@ -781,7 +787,7 @@ void NativeScreen::Worker() {
         bool changeSurface{}, changeOptions{}, changeVisual{}, fs{}, visible{}, nextHasSurface{};
         NativeVisualOptions nextVisual;
         u64 nextVisualRevision{};
-        int limit{}; float rate{}, zoom{};
+        int limit{}, selectedFrameGenEngine{}; float rate{}, zoom{};
         {
             std::unique_lock lock(state);
             if (!dirty) continue;
@@ -792,6 +798,8 @@ void NativeScreen::Worker() {
                 continue;
             }
             if (!recycled.empty()) { frame = std::move(recycled.back()); recycled.pop_back(); }
+            selectedFrameGenEngine = visualOptions.frameGenEngine;
+            frame.frameGenSourceFrames = latest.frameGenSourceFrames;
             frame.entries = latest.entries;
             frame.requests.swap(latest.requests);
             frame.cursor = latest.cursor;
@@ -837,7 +845,8 @@ void NativeScreen::Worker() {
                 appliedVisualRevision = nextVisualRevision;
             }
             frame.frameTimeline = displayXFrameTimeline.load(std::memory_order_relaxed);
-            frame.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
+            if (selectedFrameGenEngine != 1)
+                frame.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
             // IDLE is a Java-compatible producer acknowledgement, not an
             // eligibility flag. Already-acknowledged scenes remain drawable.
             if (hasSurface) submitted = renderer->Draw(frame, drawLatch);

@@ -31,6 +31,8 @@ import kotlinx.coroutines.withContext
 /** Settings shared by the container and shortcut editors. */
 @Composable
 fun FrameGenerationSettings(
+    engine: String,
+    onEngineChanged: (String) -> Unit,
     enabled: Boolean,
     multiplier: Int,
     targetRate: Int,
@@ -78,11 +80,19 @@ fun FrameGenerationSettings(
     }
 
     SettingsCard {
-        SettingToggle(uiStr(R.string.ui_enable_lsfg_frame_generation), enabled) { requested ->
+        val useWfg = engine == "wfg"
+        SettingChoice(uiStr(R.string.ui_frame_generation_engine), if (useWfg) "WFG" else "LSFG", listOf("LSFG", "WFG")) { selected ->
+            enableAfterImport = false
+            onEngineChanged(if (selected == "WFG") "wfg" else "lsfg")
+            // Switching to LSFG must not arm it without its imported shaders.
+            if (selected == "LSFG" && enabled && !refreshStatus()) onEnabledChanged(false)
+        }
+        SettingsDivider()
+        SettingToggle(if (useWfg) uiStr(R.string.ui_enable_wfg_frame_generation) else uiStr(R.string.ui_enable_lsfg_frame_generation), enabled) { requested ->
             if (!requested) {
                 enableAfterImport = false
                 onEnabledChanged(false)
-            } else if (refreshStatus()) {
+            } else if (useWfg || refreshStatus()) {
                 onEnabledChanged(true)
             } else {
                 enableAfterImport = true
@@ -119,17 +129,19 @@ fun FrameGenerationSettings(
             }
         }
 
-        SettingsDivider()
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (cacheStatus == LosslessScaling.STATUS_OK) {
-                Text(uiStr(R.string.ui_lsfg_ready), color = MaterialTheme.colorScheme.primary)
-            } else Button(
-                enabled = !importing,
-                onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-msdownload", "*/*")) },
-            ) { Text(if (importing) uiStr(R.string.ui_importing) else uiStr(R.string.ui_import_lossless_dll)) }
+        if (!useWfg) {
+            SettingsDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (cacheStatus == LosslessScaling.STATUS_OK) {
+                    Text(uiStr(R.string.ui_lsfg_ready), color = MaterialTheme.colorScheme.primary)
+                } else Button(
+                    enabled = !importing,
+                    onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-msdownload", "*/*")) },
+                ) { Text(if (importing) uiStr(R.string.ui_importing) else uiStr(R.string.ui_import_lossless_dll)) }
+            }
         }
     }
 }

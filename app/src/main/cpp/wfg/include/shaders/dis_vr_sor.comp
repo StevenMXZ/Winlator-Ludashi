@@ -1,0 +1,65 @@
+// SPDX-FileCopyrightText: Copyright 2026 qwertypower (DEVAR Entertainment LLC)
+// SPDX-License-Identifier: MIT
+//
+// WFG frame generation: a Vulkan compute realisation of Dense Inverse Search
+// optical flow. The algorithm and its reference implementation come from
+// OpenCV's DISOpticalFlow, which adopted Till Kroeger's original OF_DIS.
+// See THIRD_PARTY_NOTICES.txt for attribution.
+
+#version 450
+
+precision highp float;
+precision highp int;
+
+// One red-black SOR half-sweep of the variational refinement.
+//
+// dis_vr_coef packs everything a cell needs into two texels - A with the centre weight in .w, B
+// with the left and up weights in .zw - so each update is two coefficient fetches instead of
+// five. The field ping-pongs between two images: on Adreno a sampled read is cheaper than the
+// image load an in-place update would need, and the dispatch count, not the work per cell, is
+// what the level-0 solver is bound by. The arithmetic is unchanged.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D A;   // a11, a12, a22, wc
+layout(set = 0, binding = 1) uniform sampler2D B;   // b1, b2, wl, wu (zero at the frame edge)
+layout(set = 0, binding = 3) uniform sampler2D dWin;
+layout(set = 0, binding = 8, rg32f) uniform image2D dWout;
+
+layout(push_constant) uniform PC {
+    float omega;
+    int parity;
+} pc;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 sz = imageSize(dWout);
+    if (p.x >= sz.x || p.y >= sz.y) return;
+    ivec2 mx = sz - 1;
+
+    vec2 d = texelFetch(dWin, p, 0).xy;
+    if (((p.x + p.y) & 1) != pc.parity) {
+        imageStore(dWout, p, vec4(d, 0.0, 0.0));
+        return;
+    }
+
+    vec4 Av = texelFetch(A, p, 0);
+    vec4 Bw = texelFetch(B, p, 0);
+    float wc = Av.w;
+    float wl = Bw.z;
+    float wu = Bw.w;
+    float wr = p.x < mx.x ? wc : 0.0;
+    float wd = p.y < mx.y ? wc : 0.0;
+
+    vec2 dl = texelFetch(dWin, ivec2(max(p.x - 1, 0), p.y), 0).xy;
+    vec2 dr = texelFetch(dWin, ivec2(min(p.x + 1, mx.x), p.y), 0).xy;
+    vec2 du = texelFetch(dWin, ivec2(p.x, max(p.y - 1, 0)), 0).xy;
+    vec2 dd = texelFetch(dWin, ivec2(p.x, min(p.y + 1, mx.y)), 0).xy;
+
+    vec2 sigma = wl * dl + wr * dr + wu * du + wd * dd;
+
+    float nu = d.x + pc.omega * ((sigma.x + Bw.x - d.y * Av.y) / Av.x - d.x);
+    float nv = d.y + pc.omega * ((sigma.y + Bw.y - nu * Av.y) / Av.z - d.y);
+
+    imageStore(dWout, p, vec4(nu, nv, 0.0, 0.0));
+}
