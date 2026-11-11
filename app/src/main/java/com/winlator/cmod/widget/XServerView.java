@@ -273,8 +273,11 @@ public class XServerView extends XServerRendererView implements SurfaceHolder.Ca
     
     @Override
     public void onModifyWindowProperty(Window window, Property property) {
-        if (property.nameAsString().equals("WM_CLASS"))
+        if (property.nameAsString().equals("WM_CLASS")) {
+            if (unviewableWMClass != null && window.getClassName().contains(unviewableWMClass))
+                window.attributes.setEnabled(false);
             nativeSetWindowClassName(window.id, property.toString());
+        }
     }
     
     @Override

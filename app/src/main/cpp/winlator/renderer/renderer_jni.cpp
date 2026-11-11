@@ -257,6 +257,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeMapWindow(JNIEnv *env, jobject t
     if (!window) return;
     
     window->mapped = true;
+    window->enabled = env->CallBooleanMethod(window->attributes, cache.windowAttributesIsEnabled);
     
     if (xserver.isDisplayX()) {
         displayX.queueWindowEvent([window] { displayX.mapWindow(window); });
@@ -549,6 +550,9 @@ Java_com_winlator_cmod_widget_XServerView_nativeSetWindowClassName(JNIEnv *env, 
     std::string str(chars);
     env->ReleaseStringUTFChars(className, chars);
     window->className = str;
+    window->enabled = env->CallBooleanMethod(window->attributes, cache.windowAttributesIsEnabled);
+    if (xserver.isDisplayX() && window->mapped && window->drawable)
+        displayX.requestWindowUpdate(window);
 }
 
 extern "C" JNIEXPORT void JNICALL
