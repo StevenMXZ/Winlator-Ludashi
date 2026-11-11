@@ -67,6 +67,7 @@ import com.winlator.cmod.box64.Box64PresetManager
 import com.winlator.cmod.container.Container
 import com.winlator.cmod.container.ContainerManager
 import com.winlator.cmod.contents.ContentsManager
+import com.winlator.cmod.core.OpenGLDriverDefaults
 import com.winlator.cmod.core.DefaultVersion
 import com.winlator.cmod.core.FileUtils
 import com.winlator.cmod.core.GPUInformation
@@ -201,7 +202,7 @@ private class ContainerEditorStateV2(
     )
 
     var graphicsDriver by mutableStateOf(
-        editing?.graphicsDriver ?: if (preferredDriver == DefaultVersion.WRAPPER_ADRENO) {
+        editing?.graphicsDriver ?: if (OpenGLDriverDefaults.shouldUseFreedreno(context, preferredDriver)) {
             "freedreno"
         } else Container.DEFAULT_GRAPHICS_DRIVER
     )

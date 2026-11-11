@@ -82,6 +82,7 @@ private val advancedEnvSpecs = mapOf(
     "MESA_SHADER_CACHE_DISABLE" to AdvancedEnvSpec(AdvancedEnvKind.CHECKBOX, listOf("false", "true")),
     "mesa_glthread" to AdvancedEnvSpec(AdvancedEnvKind.CHECKBOX, listOf("false", "true")),
     "WINEESYNC" to AdvancedEnvSpec(AdvancedEnvKind.CHECKBOX, listOf("0", "1")),
+    "WINE_FAST_YIELD" to AdvancedEnvSpec(AdvancedEnvKind.CHECKBOX, listOf("0", "1")),
     "TU_DEBUG" to AdvancedEnvSpec(AdvancedEnvKind.MULTI, listOf("forcecb", "nocb", "deck_emu", "startup", "nir", "nobin", "sysmem", "gmem", "forcebin", "layout", "noubwc", "nomultipos", "nolrz", "nolrzfc", "perf", "perfc", "flushall", "syncdraw", "push_consts_per_stage", "rast_order", "unaligned_store", "log_skip_gmem_ops", "dynamic", "bos", "3d_load", "fdm", "noconform", "rd")),
     "DXVK_HUD" to AdvancedEnvSpec(AdvancedEnvKind.MULTI, listOf("scale=0.5", "scale=0.7", "opacity=0.5", "opacity=0.7", "devinfo", "fps", "frametimes", "submissions", "drawcalls", "pipelines", "descriptors", "memory", "gpuload", "version", "api", "cs", "compiler", "samplers")),
     "MESA_EXTENSION_MAX_YEAR" to AdvancedEnvSpec(AdvancedEnvKind.TEXT),

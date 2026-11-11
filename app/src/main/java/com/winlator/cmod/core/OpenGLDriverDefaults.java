@@ -26,7 +26,7 @@ public final class OpenGLDriverDefaults {
 
             String config = data.optString("graphicsDriverConfig", Container.DEFAULT_GRAPHICSDRIVERCONFIG);
             String selectedVersion = resolveDriverVersion(context, configValue(config, "version"));
-            boolean freedreno = isTurnipDriver(selectedVersion);
+            boolean freedreno = shouldUseFreedreno(context, selectedVersion);
             EnvVars environment = new EnvVars(data.optString("envVars", Container.DEFAULT_ENV_VARS));
             boolean automaticOverride = false;
 
@@ -56,7 +56,7 @@ public final class OpenGLDriverDefaults {
 
         String config = container.getGraphicsDriverConfig();
         String selectedVersion = resolveDriverVersion(context, configValue(config, "version"));
-        boolean freedreno = isTurnipDriver(selectedVersion);
+        boolean freedreno = shouldUseFreedreno(context, selectedVersion);
         EnvVars environment = new EnvVars(container.getEnvVars());
         boolean automaticOverride = false;
 
@@ -74,6 +74,21 @@ public final class OpenGLDriverDefaults {
         return true;
     }
 
+    public static boolean shouldUseFreedreno(Context context, String version) {
+        if (!isTurnipDriver(version)) return false;
+        String soc = android.os.Build.VERSION.SDK_INT >= 31 ? android.os.Build.SOC_MODEL : "";
+        String renderer = "";
+        try { renderer = GPUInformation.getRenderer(null, context); } catch (Throwable ignored) {}
+        return !isAdreno825(renderer, soc);
+    }
+
+    static boolean isAdreno825(String renderer, String soc) {
+        String gpu = renderer == null ? "" : renderer.toLowerCase(Locale.ROOT);
+        String model = soc == null ? "" : soc.toLowerCase(Locale.ROOT);
+        return model.contains("sm8735") || (gpu.contains("adreno") &&
+                java.util.regex.Pattern.compile("(?<![0-9])825(?![0-9])").matcher(gpu).find());
+    }
+
     public static boolean isTurnipDriver(String version) {
         String value = version == null ? "" : version.toLowerCase(Locale.ROOT);
         return value.contains("turnip") || value.startsWith("tu-") || value.startsWith("mesa-turnip");
@@ -85,6 +100,9 @@ public final class OpenGLDriverDefaults {
                 : DefaultVersion.WRAPPER_ADRENO;
         try {
             if (GPUInformation.isDriverSupported(candidate, context)) return candidate;
+            if (!candidate.equals(DefaultVersion.WRAPPER_ADRENO) &&
+                    GPUInformation.isDriverSupported(DefaultVersion.WRAPPER_ADRENO, context))
+                return DefaultVersion.WRAPPER_ADRENO;
         } catch (Throwable ignored) {}
         return DefaultVersion.WRAPPER;
     }

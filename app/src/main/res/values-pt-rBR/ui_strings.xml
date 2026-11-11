@@ -134,7 +134,7 @@
   <string name="ui_extensions">"Extensões"</string>
   <string name="ui_favorites">"Favoritos"</string>
   <string name="ui_features">"Recursos"</string>
-  <string name="ui_force_ssbs_cpu_speed_fix">"Forçar SSBS (correção de velocidade da CPU)"</string>
+  <string name="ui_force_ssbs_cpu_speed_fix">"Ativar SSBS"</string>
   <string name="ui_formats">"Formatos"</string>
   <string name="ui_frame_rate_limit">"Limite de FPS"</string>
   <string name="ui_fullscreen_stretched">"Tela cheia esticada"</string>
