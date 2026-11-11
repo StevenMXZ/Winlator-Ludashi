@@ -92,7 +92,7 @@ public final class ShortcutPresetManager {
         inherited.put("lc_all", c.getLC_ALL());
         inherited.put("inputType", String.valueOf(c.getInputType()));
         inherited.put("cpuList", c.getCPUList(true));
-        inherited.put("displayServer", c.getExtra("displayServer", "java"));
+        inherited.put("displayServer", c.getExtra("displayServer", "native"));
         for (int i=0;i<KEYS.length;i++) {
             for (String key: KEYS[i]) {
                 String value = shortcut.getExtra(key, inherited.getOrDefault(key, ""));

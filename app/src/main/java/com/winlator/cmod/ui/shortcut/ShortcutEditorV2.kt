@@ -173,8 +173,8 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var name by mutableStateOf(com.winlator.cmod.steam.SteamGames.displayName(shortcut))
     var screen by mutableStateOf(normalizeResolution(shortcut.getExtra("screenSize", container.getScreenSize())))
     var displayServer by mutableStateOf(
-        if (shortcut.getExtra("displayServer", container.getExtra("displayServer", "java")) == "native")
-            "X++" else "Java X11"
+        if (shortcut.getExtra("displayServer", container.getExtra("displayServer", "native")) == "native")
+            "X++" else "X11"
     )
     var renderer by mutableStateOf(if (shortcut.getUseDisplayX()) "DisplayX" else if (shortcut.getRendererNative()) "EGL" else "Vulkan")
     var presentMode by mutableStateOf(shortcut.getRendererPresentMode())
@@ -1050,7 +1050,7 @@ private fun ShortcutCategoryV2(
                 }
                 SettingsDivider()
                 SettingChoice(uiStr(R.string.ui_display_server), s.displayServer,
-                    listOf("Java X11", "X++")) {
+                    listOf("X11", "X++")) {
                     s.displayServer = it
                     s.extra("displayServer", if (it == "X++") "native" else "java")
                 }

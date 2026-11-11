@@ -452,10 +452,10 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
         }
         final Spinner spDisplayServer = view.findViewById(R.id.SPDisplayServer);
         ArrayAdapter<String> displayServers = new ArrayAdapter<>(context, R.layout.spinner_item_amoled,
-                new String[]{"Java X11", "Ludashi X11 (Native Vulkan)"});
+                new String[]{"X11", "X++"});
         displayServers.setDropDownViewResource(R.layout.spinner_dropdown_item_amoled_compact);
         spDisplayServer.setAdapter(displayServers);
-        spDisplayServer.setSelection("native".equals(rendererCfgHolder.getExtra("displayServer", "java")) ? 1 : 0);
+        spDisplayServer.setSelection("native".equals(rendererCfgHolder.getExtra("displayServer", "native")) ? 1 : 0);
         spDisplayServer.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent, View row, int pos, long id) {
                 rendererCfgHolder.putExtra("displayServer", pos == 1 ? "native" : "java");
@@ -787,7 +787,7 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
                     container.setGraphicsDriver(graphicsDriver);
                     container.setGraphicsDriverConfig(graphicsDriverConfig);
                     container.setDXWrapper(dxwrapper);
-                    container.putExtra("displayServer", rendererCfgHolder.getExtra("displayServer", "java"));
+                    container.putExtra("displayServer", rendererCfgHolder.getExtra("displayServer", "native"));
                     container.setRendererNative(rendererCfgHolder.isRendererNative());
                     container.setRendererPresentMode(rendererCfgHolder.getRendererPresentMode());
                     container.setRendererDriverId(rendererCfgHolder.getRendererDriverId());
@@ -871,7 +871,7 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
                     manager.createContainerAsync(data, contentsManager, (container) -> {
                         if (container != null) {
                             this.container = container;
-                            container.putExtra("displayServer", rendererCfgHolder.getExtra("displayServer", "java"));
+                            container.putExtra("displayServer", rendererCfgHolder.getExtra("displayServer", "native"));
                             container.saveData();
                             saveWineRegistryKeys(view);
                         }

@@ -168,8 +168,8 @@ private class ContainerEditorStateV2(
     var drives by mutableStateOf(editing?.drives ?: Container.DEFAULT_DRIVES)
 
     var displayServer by mutableStateOf(
-        if (editing?.getExtra("displayServer", "java") == "native") "X++"
-        else "Java X11"
+        if ((editing?.getExtra("displayServer", "native") ?: "native") == "native") "X++"
+        else "X11"
     )
     var renderer by mutableStateOf(
         when {
@@ -845,7 +845,7 @@ private fun ContainerCategoryV2(
                 }
                 SettingsDivider()
                 SettingChoice(uiStr(R.string.ui_display_server), s.displayServer,
-                    listOf("Java X11", "X++")) { s.displayServer = it }
+                    listOf("X11", "X++")) { s.displayServer = it }
                 SettingsDivider()
                 SettingChoice(uiStr(R.string.ui_renderer), s.renderer, listOf("Vulkan", "EGL", "DisplayX")) {
                     s.renderer = it

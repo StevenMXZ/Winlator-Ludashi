@@ -59,8 +59,8 @@ internal fun ContainerRuntimePane(
     val boxPresets = remember { Box64PresetManager.getPresets("box64", context).associate { it.id to it.name } }
 
     var displayServer by remember(containerId) {
-        mutableStateOf(if (container.getExtra("displayServer", "java") == "native")
-            "X++" else "Java X11")
+        mutableStateOf(if (container.getExtra("displayServer", "native") == "native")
+            "X++" else "X11")
     }
     var renderer by remember { mutableStateOf(if (container.getUseDisplayX()) "DisplayX" else if (container.isRendererNative()) "EGL" else "Vulkan") }
     var screen by remember { mutableStateOf(normalizeResolution(container.getScreenSize())) }
@@ -173,7 +173,7 @@ internal fun ContainerRuntimePane(
         ContainerOverviewComposeHost.SECTION_VIDEO -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingsCard {
                 SettingChoice(uiStr(R.string.ui_display_server), displayServer,
-                    listOf("Java X11", "X++")) {
+                    listOf("X11", "X++")) {
                     displayServer = it
                     container.putExtra("displayServer", if (it == "X++") "native" else "java")
                     container.saveData()

@@ -56,7 +56,7 @@ fun uiOptionLabel(value: String): String = when (value) {
     "Balanced" -> uiStr(R.string.profile_balanced)
     "Performance" -> uiStr(R.string.performance)
     "Ultra Performance" -> uiStr(R.string.ui_ultra_performance)
-    "Ludashi X11 (Native Vulkan)" -> uiStr(R.string.ui_ludashi_x11_native_vulkan)
+    "X++" -> uiStr(R.string.ui_ludashi_x11_native_vulkan)
     "Builtin (Wine)" -> uiStr(R.string.ui_builtin_wine)
     "Native (Windows)" -> uiStr(R.string.ui_native_windows)
     "Strict Shader Math" -> uiStr(R.string.strict_shader_math)

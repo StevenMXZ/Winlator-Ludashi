@@ -202,8 +202,8 @@ public class ContainerSectionFragment extends Fragment {
                 description,
                 rendererEntries,
                 container.getUseDisplayX() ? "DisplayX" : container.isRendererNative() ? "EGL" : "Vulkan",
-                "native".equals(container.getExtra("displayServer", "java"))
-                        ? "X++" : "Java X11",
+                "native".equals(container.getExtra("displayServer", "native"))
+                        ? "X++" : "X11",
                 screenEntries,
                 findScreenEntry(screenEntries, container.getScreenSize()),
                 container.getScreenSize(),
@@ -281,7 +281,7 @@ public class ContainerSectionFragment extends Fragment {
                             @NonNull String fexcorePreset
                     ) {
                         if (section == VIDEO) {
-                            container.putExtra("displayServer", !displayServer.equals("Java X11") ? "native" : "java");
+                            container.putExtra("displayServer", !displayServer.equals("X11") ? "native" : "java");
                             container.setScreenSize(normalizeScreenSize(screenSize));
                             container.setGraphicsDriver(StringUtils.parseIdentifier(graphicsDriver));
                             container.setGraphicsDriverConfig(graphicsDriverConfig);

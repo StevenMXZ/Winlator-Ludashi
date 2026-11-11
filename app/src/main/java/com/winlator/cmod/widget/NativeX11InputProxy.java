@@ -4,7 +4,7 @@ import com.winlator.cmod.core.KeyValueSet;
 import com.winlator.cmod.xserver.ScreenInfo;
 import com.winlator.cmod.xserver.XServer;
 
-/** UI input state only. No Java X11 connector is started for this object. */
+/** UI input state only. No X11 connector is started for this object. */
 public final class NativeX11InputProxy extends XServer {
     public NativeX11InputProxy(ScreenInfo info, KeyValueSet config) {
         super(info, "egl", config);

@@ -1419,7 +1419,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private boolean isNativeX11Enabled() {
-        String base = container != null ? container.getExtra("displayServer", "java") : "java";
+        String base = container != null ? container.getExtra("displayServer", "native") : "native";
         return "native".equals(shortcut != null ? shortcut.getExtra("displayServer", base) : base);
     }
 

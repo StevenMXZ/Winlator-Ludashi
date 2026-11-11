@@ -210,7 +210,7 @@
   <string name="ui_remove_drive">"Remover unidade"</string>
   <string name="ui_remove_profile">"Remover perfil"</string>
   <string name="ui_renderer">"Renderizador"</string>
-  <string name="ui_renderer_java_x11">"Renderizador (Java X11)"</string>
+  <string name="ui_renderer_java_x11">"Renderizador (X11)"</string>
   <string name="ui_renderer_driver">"Driver do renderizador"</string>
   <string name="ui_renderer_options">"Opções do renderizador"</string>
   <string name="ui_rendering_mode">"Modo de renderização"</string>

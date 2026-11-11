@@ -224,7 +224,7 @@
   <string name="enable_experimental_wow64_mode">"Ativar modo WoW64 experimental"</string>
   <string name="logs">"Logs"</string>
   <string name="enable_wine_debug">"Ativar depuração do Wine"</string>
-  <string name="enable_winlator_logs">"Ativar logs do Winlator"</string>
+  <string name="enable_winlator_logs">"Ativar logcat do Winlator"</string>
   <string name="enable_box64_logs">"Ativar logs do Box64"</string>
   <string name="export">"Exportar"</string>
   <string name="logs_exported_to">"Logs exportados para"</string>

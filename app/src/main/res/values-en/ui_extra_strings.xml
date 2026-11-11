@@ -40,7 +40,7 @@
   <string name="ui_unknown_error">"unknown error"</string>
   <string name="ui_cannot_export_this_preset">"Cannot export this preset"</string>
   <string name="ui_winlator_xserver_messages">"Winlator XServer Messages"</string>
-  <string name="ui_ludashi_x11_native_vulkan">"Ludashi X11 (Native Vulkan)"</string>
+  <string name="ui_ludashi_x11_native_vulkan">"X++"</string>
   <string name="ui_could_not_update_the_pinned_shortcut">"Could not update the pinned shortcut"</string>
   <string name="ui_bilinear">"Bilinear"</string>
   <string name="ui_checking_vulkan_device_compatibility">"Checking Vulkan device compatibility…"</string>

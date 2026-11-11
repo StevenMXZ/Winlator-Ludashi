@@ -422,7 +422,7 @@ private fun ContainerSectionScreen(
                                 Icons.Outlined.DesktopWindows,
                                 uiStr(R.string.ui_display_server),
                                 displayServer,
-                                arrayOf("Java X11", "X++")
+                                arrayOf("X11", "X++")
                             ) { displayServer = it }
                             GroupDivider()
                             ChoiceSetting(
