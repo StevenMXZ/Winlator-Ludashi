@@ -1,4 +1,4 @@
-name: Ludashi 4.2 organized
+name: Ludashi 5.0 organized
 
 on:
   workflow_dispatch:
@@ -221,10 +221,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="ludashi-4.2-organized-${{ github.run_number }}-r${{ github.run_attempt }}"
-          echo 'Ludashi 4.2 organized with Steam support, signed for updates over the existing Ludashi 4.2 release.' > "$RUNNER_TEMP/release-notes.txt"
+          tag="ludashi-5.0-organized-${{ github.run_number }}-r${{ github.run_attempt }}"
+          echo 'Ludashi 5.0 organized with Steam support, signed for updates over the existing Ludashi 4.2 release.' > "$RUNNER_TEMP/release-notes.txt"
           gh release create "$tag" \
-            app/build/outputs/apk/release/app-release.apk#Winlator-Ludashi-4.2.apk \
+            app/build/outputs/apk/release/app-release.apk#Winlator-Ludashi-5.0.apk \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Ludashi 4.2 organized #${{ github.run_number }}" \
+            --title "Ludashi 5.0 organized #${{ github.run_number }}" \
             --notes-file "$RUNNER_TEMP/release-notes.txt" --prerelease
