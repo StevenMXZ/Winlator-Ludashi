@@ -39,7 +39,7 @@ import androidx.compose.material.icons.outlined.Gamepad
 import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
@@ -589,7 +589,7 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
                 navigationIcon = { IconButton(onClick = ::closeEditor) { Icon(Icons.Outlined.ArrowBack, null) } },
                 actions = {
                     Box {
-                        IconButton(onClick = { presetsMenu = true }) { Icon(Icons.Outlined.MoreVert, uiStr(R.string.ui_preset_presets)) }
+                        IconButton(onClick = { presetsMenu = true }) { Icon(Icons.Outlined.Share, uiStr(R.string.ui_preset_presets)) }
                         DropdownMenu(expanded = presetsMenu, onDismissRequest = { presetsMenu = false }) {
                             DropdownMenuItem(text = { Text(uiStr(R.string.ui_preset_copy_from_game)) }, onClick = { presetsMenu = false; copyDialog = true })
                             DropdownMenuItem(text = { Text(uiStr(R.string.ui_preset_import_settings)) }, onClick = { presetsMenu = false; importLauncher.launch("*/*") })
