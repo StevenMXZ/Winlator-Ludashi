@@ -47,7 +47,7 @@ def run(binary):
                 process.stdin.write('cursor 1\n'); process.stdin.flush()
                 assert process.stdout.readline().strip() == 'input'
                 deadline = time.monotonic() + 3
-                while 'cursor_x=431 cursor_y=231' not in path.read_text():
+                while 'cursor_x=416 cursor_y=216' not in path.read_text():
                     assert time.monotonic() < deadline, path.read_text()
                     time.sleep(.005)
                 c.close()

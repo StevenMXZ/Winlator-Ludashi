@@ -59,7 +59,7 @@ def run(binary):
                 c.barrier()
                 # No more producer input: GPU retirement alone must wake Draw.
                 sampled(130)
-                assert re.search(r"HostScene serial=130 .*cursor_x=723 cursor_y=411", path.read_text()), path.read_text()
+                assert re.search(r"HostScene serial=130 .*cursor_x=708 cursor_y=396", path.read_text()), path.read_text()
                 c.close()
                 print("PASS: latest Present and cursor progress after GPU-slot saturation without further input")
             finally:

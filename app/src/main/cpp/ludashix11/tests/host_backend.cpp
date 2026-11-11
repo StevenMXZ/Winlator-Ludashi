@@ -224,6 +224,11 @@ int main(int argc, char** argv) {
     }
     if (std::string(argv[1]) == "--cursor-hud") {
         auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
+        xorg::Cursor arrow(screen, 105, u32(68), u32(69), 0x000000, 0xffffff);
+        if (arrow.GetHotspotX() != 15 || arrow.GetHotspotY() != 15) return 20;
+        u32 tip{};
+        arrow.GetDrawable()->ReadPixels(reinterpret_cast<u8*>(&tip), 15, 15, 1, 1, 1);
+        if ((tip >> 24) != 255) return 21;
         xorg::Pixmap source(screen, 101, 3, 1, u8(1)), mask(screen, 102, 3, 1, u8(1));
         const u8 src[] = {3,0,0,0}, msk[] = {5,0,0,0};
         source.GetDrawable()->WriteBinaryPixels(src, 3, 1, 1, 0);
