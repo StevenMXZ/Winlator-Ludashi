@@ -27,7 +27,7 @@
     </string-array>
     <string-array name="wrapper_graphics_driver_version_entries">
         <item>System</item>
-        <item>turnip26.2.0</item>
+        <item>turnip27.0.0</item>
     </string-array>
     <string-array name="audio_driver_entries">
         <item>Alsa-Oboe</item>
@@ -136,7 +136,7 @@
         <item>0.4.2</item>
     </string-array>
     <string-array name="fexcore_version_entries">
-        <item>2601</item>
+        <item>2611</item>
     </string-array>
     <string-array name="desktop_theme_entries">
         <item>Light</item>

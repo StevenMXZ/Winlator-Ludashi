@@ -93,6 +93,8 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             File destination) {
         ContentProfile profile = resolveInstalledRuntimeProfile(type, version);
         if (profile != null) return contentsManager.applyContent(profile);
+        if (type == ContentProfile.ContentType.CONTENT_TYPE_FEXCORE && "2611".equals(version))
+            destination = environment.getImageFs().getRootDir();
         return TarCompressorUtils.extract(
                 TarCompressorUtils.Type.ZSTD,
                 context,
@@ -184,7 +186,13 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
                 ContentProfile.ContentType.CONTENT_TYPE_FEXCORE, fexcoreVersion);
         boolean fexcoreFilesMissing = fexcoreProfile != null
                 && !contentsManager.isContentApplied(fexcoreProfile);
-        if (!fexcoreVersion.equals(container.getExtra("fexcoreVersion")) || fexcoreFilesMissing) {
+        boolean bundledUnixlibs = fexcoreProfile == null && "2611".equals(fexcoreVersion);
+        File unixlibDir = new File(rootDir, "usr/lib/wine/aarch64-unix");
+        boolean bundledUnixlibsMissing = bundledUnixlibs
+                && (!"2611-unixlibs".equals(container.getExtra("fexcoreBundledRevision"))
+                || !new File(unixlibDir, "libarm64ecfex.so").isFile()
+                || !new File(unixlibDir, "libwow64fex.so").isFile());
+        if (!fexcoreVersion.equals(container.getExtra("fexcoreVersion")) || fexcoreFilesMissing || bundledUnixlibsMissing) {
             if (fexcoreFilesMissing) {
                 Log.w("GuestProgramLauncherComponent",
                         "FEXCore files are missing or incomplete; reapplying " + fexcoreVersion);
@@ -197,6 +205,7 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
                     system32dir);
             if (applied) {
                 container.putExtra("fexcoreVersion", fexcoreVersion);
+                if (bundledUnixlibs) container.putExtra("fexcoreBundledRevision", "2611-unixlibs");
                 containerDataChanged = true;
             } else {
                 Log.e("GuestProgramLauncherComponent", "Unable to apply FEXCore version " + fexcoreVersion);
