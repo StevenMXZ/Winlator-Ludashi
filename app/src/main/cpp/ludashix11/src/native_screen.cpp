@@ -368,12 +368,21 @@ bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket, const sp<Presen
     return true;
 }
 void NativeScreen::HudFrame(u32 id) {
-    if (!hudEnabled) return;
+    if (!hudEnabled && HasApplicationContent()) return;
     auto* resource = server.GetResource(id);
     if (!resource || resource->GetType() != XResourceType::Window) return;
     auto* window = resource->As<Window>();
     if (window->IsRoot() || window->IsInputOnly() || window->GetWidth() <= 1 ||
         window->GetHeight() <= 1 || IsWindowFiltered(window)) return;
+    if (!HasApplicationContent() && window->IsAllAncestorsMapped()) {
+        auto* hints = window->GetProperty(Atom::GetID("WM_HINTS"));
+        if (hints && hints->format == 32 && hints->GetData().size() >= 9 * sizeof(u32)) {
+            u32 group{};
+            memcpy(&group, hints->GetData().data() + 8 * sizeof(u32), sizeof(group));
+            if (group == window->id) applicationContent.store(true, std::memory_order_release);
+        }
+    }
+    if (!hudEnabled) return;
     // A filtered Wine/Explorer desktop may contain the actual game window.
     // Like Collect(), reject only the filtered drawable itself, never a mapped
     // child merely because one of its ancestors has a filtered WM_CLASS.

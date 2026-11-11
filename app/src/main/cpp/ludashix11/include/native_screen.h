@@ -204,11 +204,13 @@ public:
     // Accessed only under XServer::Lock; disabled HUD adds one branch per update.
     void SetHudEnabled(bool enabled) { hudEnabled = enabled; hudWindow = 0; hudFrames = 0; }
     void HudFrame(u32 drawable);
+    bool HasApplicationContent() const { return applicationContent.load(std::memory_order_acquire); }
     u32 HudWindow() const { return hudWindow; }
     u64 HudFrames() const { return hudFrames; }
 private:
     void MutateDrawable(Drawable*, const void*, void (*)(const void*));
     std::atomic<int64_t> displayXFrameTimeline{-1};
+    std::atomic<bool> applicationContent{false};
     bool hudEnabled{};
     u32 hudWindow{};
     u64 hudFrames{};

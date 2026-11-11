@@ -134,7 +134,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
                             android.widget.Toast.LENGTH_LONG).show();
                     return;
                 }
-                if (started) {
+                if (started && nativeHasApplicationContent(handle)) {
                     ready = true;
                     if (readyCallback != null) readyCallback.run();
                     return;
@@ -472,5 +472,6 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     private static native String nativeError(long handle);
     private static native boolean nativeHasContent(long handle);
     private static native long nativeFocusHandle(long handle);
+    private static native boolean nativeHasApplicationContent(long handle);
     private static native boolean nativeHasWindow(long handle, long hwnd);
 }
