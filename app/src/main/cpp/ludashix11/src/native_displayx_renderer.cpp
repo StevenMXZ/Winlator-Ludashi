@@ -127,7 +127,7 @@ class DisplayXNativeRenderer final : public NativeRenderer {
     std::unordered_map<u64, Layer> layers;
     sp<Queue> queue = std::make_shared<Queue>();
     bool fullscreen{}, cursorVisible{true};
-    bool overlayBuffers[2]{true, true}, rgbxBuffers{true};
+    bool overlayBuffers[2]{true, true};
     float zoom{1}, refresh{60};
     NativeMagnifierPan pan;
     NativeBackendGeometry geometry;
@@ -159,22 +159,15 @@ class DisplayXNativeRenderer final : public NativeRenderer {
         description.width = drawable->GetWidth();
         description.height = drawable->GetHeight();
         description.layers = 1;
-        description.format = opaque && rgbxBuffers ? AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM
-                                    : AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
+        description.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
         description.usage = AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN | AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
         AHardwareBuffer *buffer{};
-        // Give gralloc the intended scanout usage. Some low-end allocators reject
-        // CPU-writable overlay buffers or RGBX; retain the sampled RGBA fallback.
         if (overlayBuffers[opaque]) description.usage |= AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY;
         if (AHardwareBuffer_allocate(&description, &buffer)) {
             overlayBuffers[opaque] = false;
             description.usage &= ~AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY;
-            if (AHardwareBuffer_allocate(&description, &buffer)) {
-                if (opaque) rgbxBuffers = false;
-                description.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
-                if (AHardwareBuffer_allocate(&description, &buffer))
-                    throw std::runtime_error("Cannot allocate X++ DisplayX backing buffer");
-            }
+            if (AHardwareBuffer_allocate(&description, &buffer))
+                throw std::runtime_error("Cannot allocate X++ DisplayX backing buffer");
         }
         auto result = std::make_shared<HardwareBuffer>(buffer);
         AHardwareBuffer_release(buffer);

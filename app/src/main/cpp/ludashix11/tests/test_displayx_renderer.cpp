@@ -94,7 +94,7 @@ int main() {
         assert(TestProperties() == properties + 1 && testAllocations == allocations);
         AHardwareBuffer_Desc description{};
         TestBufferDesc(1, &description);
-        assert(description.format == AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM);
+        assert(description.format == AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
         assert(description.usage & AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY);
         TestBufferDesc(3, &description);
         assert(description.format == AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
@@ -184,7 +184,7 @@ int main() {
             AHardwareBuffer_Desc description{};
             TestBufferDesc(1, &description);
             assert(!(description.usage & AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY));
-            assert(description.format == (rejectRGBX ? 1u : 2u));
+            assert(description.format == AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
             const int failures = testAllocationFailures;
             image->FillRect(0, 0, 1, 1, 0xff123456);
             frame.entries[0].pixels = image->Pixels();
