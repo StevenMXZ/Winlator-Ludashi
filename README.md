@@ -70,3 +70,6 @@ You can find updated components (known as `wcps`) to improve compatibility and p
   - Frame Generation (LSFG): adapted from [Eden’s LSFG implementation](https://git.eden-emu.dev/eden-emu/eden/src/branch/master/src/video_core/frame_gen).
   - **WinNative**: credit for half of the Steam integration, from [WinNative](https://github.com/WinNative-Emu/WinNative).
 
+# License
+
+Winlator Ludashi is licensed under the [GNU General Public License v3.0](LICENSE). Third-party licenses and the original Winlator MIT notice are preserved in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
