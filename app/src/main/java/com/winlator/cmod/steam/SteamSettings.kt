@@ -8,7 +8,7 @@ object SteamSettings {
     private val revision = mutableIntStateOf(0)
     @JvmStatic fun enabled(context: Context): Boolean {
         revision.intValue
-        return context.getSharedPreferences("steam-settings", 0).getBoolean("enabled", false)
+        return context.getSharedPreferences("steam-settings", 0).getBoolean("enabled", true)
     }
     fun setEnabled(context: Context, enabled: Boolean) {
         check(!SteamSession.gameActive) { "Exit the running Steam game before changing this setting" }
