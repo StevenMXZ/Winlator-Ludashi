@@ -23,10 +23,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install WFG validation tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y glslang-tools spirv-tools libvulkan-dev
+      - name: Cache native shader tools
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ludashi-ci-tools
+          key: native-tools-${{ runner.os }}-${{ hashFiles('.github/scripts/prepare-native-tools.sh') }}
+      - name: Prepare native tools without apt
+        run: bash .github/scripts/prepare-native-tools.sh
       - name: Validate WFG and disabled frame generation
         run: |
           python3 app/src/main/cpp/winlator/renderer/vulkan/wfg/tests/test_backend.py
@@ -107,11 +110,13 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Install Android native build tools
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build glslang-tools zstd g++-mingw-w64-x86-64-posix
+      - name: Cache native shader tools
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ludashi-ci-tools
+          key: native-tools-${{ runner.os }}-${{ hashFiles('.github/scripts/prepare-native-tools.sh') }}
+      - name: Prepare native tools without apt
+        run: bash .github/scripts/prepare-native-tools.sh
 
       - name: Bundle Khronos Vulkan validation layer
         run: |
@@ -134,8 +139,8 @@ jobs:
         with:
           targets: aarch64-linux-android
 
-      - name: Build Ludashi Steam launcher
-        run: bash app/src/main/cpp/ludashi-steam-launcher/build.sh
+      - name: Verify or build Ludashi Steam launcher
+        run: bash .github/scripts/prepare-steam-launcher.sh
 
       - name: Test native Steam client
         run: cargo test --locked --manifest-path app/src/main/cpp/ludashi-steam-client/rust/Cargo.toml
