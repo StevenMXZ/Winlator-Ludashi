@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - ludashi-4.2-organized
+      - ludashi-5.0
 
 permissions:
   contents: write
@@ -60,6 +60,7 @@ jobs:
           python3 app/src/main/cpp/winlator/tests/verify_critical_jni.py
           python3 app/src/main/cpp/winlator/tests/test_native_streams.py
           python3 app/src/main/cpp/ludashix11/tests/test_composition.py
+          "$RUNNER_TEMP/native-x11-host/ludashix11_host" --framegen-options
           "$RUNNER_TEMP/native-x11-host/ludashix11_host" --pending-cow
           python3 app/src/main/cpp/ludashix11/tests/test_async_import.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"
           python3 app/src/main/cpp/ludashix11/tests/test_hidden_cursor.py "$RUNNER_TEMP/native-x11-host/ludashix11_host"

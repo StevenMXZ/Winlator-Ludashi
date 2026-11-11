@@ -181,6 +181,27 @@ int main(int argc, char** argv) {
         std::cout << "PASS: DisplayX native timeline pacing, FIFO bypass and older-Android fallback\n";
         return 0;
     }
+    if (std::string(argv[1]) == "--framegen-options") {
+        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
+        xorg::NativeVisualOptions options;
+        options.frameGenEngine = 1;
+        options.frameGen = true;
+        auto enabled = screen.SetVisualOptions(options);
+        options.frameGen = false;
+        if (screen.SetVisualOptions(options) == enabled) return 30;
+        options.frameGenEngine = 0;
+        options.frameGen = true;
+        auto missingCache = screen.SetVisualOptions(options);
+        options.frameGen = false;
+        if (screen.SetVisualOptions(options) != missingCache) return 31;
+        options.frameGenCache = "/tmp/test-lsfg-cache";
+        options.frameGen = true;
+        enabled = screen.SetVisualOptions(options);
+        options.frameGen = false;
+        if (screen.SetVisualOptions(options) == enabled) return 32;
+        std::cout << "PASS: WFG accepts an empty cache; LSFG still requires a cache; both can disable\n";
+        return 0;
+    }
     if (std::string(argv[1]) == "--pending-cow") {
         int sockets[2]; if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) return 2;
         xorg::XClient client(server, sockets[0]);

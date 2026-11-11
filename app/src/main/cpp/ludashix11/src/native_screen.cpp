@@ -99,7 +99,7 @@ u64 NativeScreen::SetVisualOptions(NativeVisualOptions options) {
     options.targetRate = std::clamp(options.targetRate, -1, 1000);
     options.flowScale = std::clamp(options.flowScale, 25, 100);
     options.refresh = std::isfinite(options.refresh) ? std::clamp(options.refresh, 24.f, 240.f) : 60.f;
-    options.frameGen = options.frameGen && !options.frameGenCache.empty();
+    options.frameGen = options.frameGen && (options.frameGenEngine == 1 || !options.frameGenCache.empty());
     std::lock_guard lock(state);
     if (options == visualOptions) return visualRevision;
     visualOptions = std::move(options);
