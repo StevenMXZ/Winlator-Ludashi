@@ -10,13 +10,13 @@ internal class SteamLibraryCache(private val root: File) {
     fun read(account: Long): Entry? = runCatching {
         require(account > 0)
         val json = JSONObject(File(root, "$account.json").readText())
-        require(json.getInt("version") == 1 && json.getLong("account") == account)
+        require(json.getInt("version") == 2 && json.getLong("account") == account)
         Entry(json.getJSONObject("snapshot").toString(), json.getString("metadata"), json.getLong("savedAt"))
     }.getOrNull()
 
     fun write(account: Long, snapshot: String, metadata: String, now: Long) {
         require(account > 0)
-        val json = JSONObject().put("version", 1).put("account", account).put("savedAt", now)
+        val json = JSONObject().put("version", 2).put("account", account).put("savedAt", now)
             .put("snapshot", JSONObject(snapshot)).put("metadata", metadata)
         check(root.isDirectory || root.mkdirs())
         val temp = File(root, "$account.tmp")

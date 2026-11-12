@@ -83,7 +83,7 @@ import java.io.File
                 else if (!state.gameActive) TextButton(onClick = { SteamSession.reconnect() }) { Text(uiStr(R.string.steam_ui_retry)) }
             }
         }
-        if (state.signedIn && state.libraryLoading && apps.isEmpty()) {
+        if (state.signedIn && state.libraryLoading) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(uiStr(R.string.steam_ui_loading_library, state.libraryProgress), style = MaterialTheme.typography.labelMedium)
                 LinearProgressIndicator(progress = { state.libraryProgress / 100f }, modifier = Modifier.fillMaxWidth())

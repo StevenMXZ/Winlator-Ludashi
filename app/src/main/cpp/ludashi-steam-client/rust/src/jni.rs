@@ -4913,6 +4913,7 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
     };
     handle.core.library().ingest_app_pics_response(&response);
     let mut apps = Vec::new();
+    for id in &response.unknown_appids { apps.push(json!({"appid": id, "unknown": true})); }
     for app in response.apps {
         if app.buffer.is_empty() {
             continue;
@@ -4972,6 +4973,7 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
     };
     handle.core.library().ingest_package_pics_response(&response);
     let mut packages = Vec::new();
+    for id in &response.unknown_packageids { packages.push(json!({"packageid": id, "unknown": true})); }
     for package in response.packages {
         if package.buffer.is_empty() {
             continue;

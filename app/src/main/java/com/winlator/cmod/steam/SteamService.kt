@@ -172,13 +172,13 @@ object SteamSession {
                         }
                         librarySync.step(object : SteamLibrarySync.Gateway {
                             override fun snapshot() = active.getLibrarySnapshotJson()
-                            override fun packages(ids: List<Int>, tokens: List<Long>): Boolean {
+                            override fun packages(ids: List<Int>, tokens: List<Long>): Set<Int>? {
                                 if (!downloading) status = librarySync.message
-                                return active.getPicsPackageInfo(ids, tokens)?.let { org.json.JSONArray(it).length() > 0 } ?: false
+                                return active.getPicsPackageInfo(ids, tokens)?.let { returnedIds(it, "packageid") }
                             }
-                            override fun apps(ids: List<Int>, tokens: List<Long>): Boolean {
+                            override fun apps(ids: List<Int>, tokens: List<Long>): Set<Int>? {
                                 if (!downloading) status = librarySync.message
-                                return active.getPicsAppProductInfo(ids, tokens)?.let { org.json.JSONArray(it).length() > 0 } ?: false
+                                return active.getPicsAppProductInfo(ids, tokens)?.let { returnedIds(it, "appid") }
                             }
                             override fun tokens(ids: List<Int>): Map<Int, Long> {
                                 val json = active.getPicsAccessTokens(ids, emptyList()) ?: error("Steam access-token request timed out. Try again.")
@@ -196,14 +196,26 @@ object SteamSession {
                                     .onSuccess { libraryCacheSaved = true }
                                     .onFailure { android.util.Log.w("SteamLibrary", "Cannot cache library", it) }
                             }
-                        } else if (library == "{}" && SteamLibrary.items(context, snapshot).isNotEmpty()) {
-                            library = snapshot
+                        } else if (SteamLibrary.items(context, snapshot).isNotEmpty()) {
+                            val current = JSONObject(snapshot)
+                            val fresh = current.optJSONArray("owned_apps") ?: org.json.JSONArray()
+                            val ids = (0 until fresh.length()).map { fresh.getJSONObject(it).getInt("id") }.toSet()
+                            val cached = JSONObject(library).optJSONArray("owned_apps")
+                            for (i in 0 until (cached?.length() ?: 0)) {
+                                val old = cached!!.getJSONObject(i)
+                                if (old.getInt("id") !in ids) fresh.put(old)
+                            }
+                            library = current.put("owned_apps", fresh).toString()
                         }
                     }
                 } finally { polling.set(false) }
             }
             main.postDelayed(this, 3000)
         }
+    }
+    private fun returnedIds(text: String, key: String): Set<Int> {
+        val rows = org.json.JSONArray(text)
+        return (0 until rows.length()).map { rows.getJSONObject(it).getInt(key) }.toSet()
     }
     fun message(text: String) { status = text }
     fun work(action: () -> Unit) { worker.execute { try { action() } catch (e: Exception) { status = e.message ?: "Steam operation failed" } catch (e: LinkageError) { status = "Steam native library unavailable" } } }
@@ -373,6 +385,7 @@ object SteamSession {
         librarySync.reset(forceRefresh = true); libraryCacheRestored = true; libraryCacheSaved = false; libraryMetadataAt = 0L
         libraryLoading = true; libraryProgress = 0; libraryError = ""
         status = "Reloading Steam library…"
+        ensurePolling()
     }
     fun reconnect() = work {
         check(!gameActive) { "Exit the running game before reconnecting the app's Steam session" }

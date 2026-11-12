@@ -153,9 +153,12 @@ impl LudashiLibraryStore {
                 let slot = packages.entry(package.packageid).or_default();
                 slot.package_id = package.packageid;
                 slot.change_number = package.change_number as i32;
-                slot.pics_fetched = true;
+                slot.pics_fetched = false;
                 if !package.buffer.is_empty() {
                     if let Some((_prefix, root)) = vdf::parse_binary_package(&package.buffer) {
+                        slot.pics_fetched = true;
+                        slot.app_ids.clear();
+                        slot.depot_ids.clear();
                         extract_uint32_array(root.child("appids"), &mut slot.app_ids);
                         extract_uint32_array(root.child("depotids"), &mut slot.depot_ids);
                         for app_id in &slot.app_ids {
@@ -184,7 +187,7 @@ impl LudashiLibraryStore {
                 let app = apps.entry(app_resp.appid).or_default();
                 app.app_id = app_resp.appid;
                 app.change_number = app_resp.change_number;
-                app.pics_fetched = true;
+                app.pics_fetched = false;
                 if app_resp.missing_token {
                     app.missing_token = true;
                     app.pics_fetched = false;
@@ -197,6 +200,7 @@ impl LudashiLibraryStore {
                 let Some(root) = vdf::parse_auto(&app_resp.buffer) else {
                     continue;
                 };
+                app.pics_fetched = true;
                 let appinfo = if root.name.eq_ignore_ascii_case("appinfo") {
                     &root
                 } else {
@@ -966,5 +970,21 @@ mod tests {
         store.ingest_license_list(&CMsgClientLicenseList { eresult: 1, licenses: vec![] });
         assert_eq!(store.owned_app_count(), 0);
         assert_eq!(store.package_count(), 0);
+    }
+
+    #[test]
+    fn missing_buffers_remain_pending_instead_of_polluting_the_cache() {
+        let store = LudashiLibraryStore::default();
+        let response = CMsgClientPICSProductInfoResponse {
+            apps: vec![PicsAppInfoResp { appid: 480, ..Default::default() }],
+            packages: vec![PicsPackageInfoResp { packageid: 100, ..Default::default() }],
+            ..Default::default()
+        };
+        store.ingest_app_pics_response(&response);
+        store.ingest_package_pics_response(&response);
+        assert!(!store.find_app(480).unwrap().pics_fetched);
+        assert!(!store.packages()[0].pics_fetched);
+        assert_eq!(store.get_pending_app_pics_request(10).len(), 1);
+        assert_eq!(store.get_pending_package_pics_request(10).len(), 1);
     }
 }
