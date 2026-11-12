@@ -47,6 +47,9 @@ public class PreloaderDialog {
 
     private final Activity activity;
     private Dialog dialog;
+    private Runnable launchCancel;
+
+    public void setLaunchCancel(Runnable action) { launchCancel = action; }
     private Bitmap artworkBitmap;
     private volatile String theGamesDbRequestKey;
 
@@ -82,6 +85,11 @@ public class PreloaderDialog {
             configureStandardPreloader(textResId);
         }
 
+        View cancel = dialog.findViewById(R.id.CancelLaunch);
+        cancel.setVisibility(textResId == R.string.starting_up && launchCancel != null ? View.VISIBLE : View.GONE);
+        cancel.setOnClickListener(v -> { if (launchCancel != null) launchCancel.run(); });
+        dialog.setCancelable(textResId == R.string.starting_up && launchCancel != null);
+        dialog.setOnCancelListener(d -> { if (launchCancel != null) launchCancel.run(); });
         dialog.show();
         Window window = dialog.getWindow();
         if (window != null) {

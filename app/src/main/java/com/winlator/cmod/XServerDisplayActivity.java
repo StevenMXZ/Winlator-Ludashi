@@ -151,6 +151,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private static final boolean DISABLE_TOUCHSCREEN_AUTO_HIDE = true;
     private static final HashMap<String, Boolean> WINE_XRANDR_SUPPORT_CACHE = new HashMap<>();
     private final AtomicBoolean exiting = new AtomicBoolean(false);
+    private final Object startupLock = new Object();
+    private boolean launchCancelled;
 
     public static String NOTIFICATION_CHANNEL_ID = "Winlator";
     public static int NOTIFICATION_ID = -1;
@@ -574,6 +576,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         boolean removeLoadingBarWhenBootingGames = PreferenceManager.getDefaultSharedPreferences(this)
                 .getBoolean("remove_loading_bar_when_booting_games", false);
+        preloaderDialog.setLaunchCancel(() -> {
+            if (exiting.get()) return;
+            launchCancelled = true;
+            preloaderDialog.close();
+            exit();
+        });
         if (!removeLoadingBarWhenBootingGames) preloaderDialog.show(R.string.starting_up);
 
         inputControlsManager = new InputControlsManager(this);
@@ -704,6 +712,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, builder.build());
 
         Runnable runnable = () -> {
+            if (exiting.get()) return;
             setupUI();
             setupSidebarInputControls();
             if (controlsProfile.isEmpty()) {
@@ -711,29 +720,32 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 simulateConfirmInputControlsDialog();
             }
             Executors.newSingleThreadExecutor().execute(() -> {
-                setupWineSystemFiles();
-                try {
-                    extractGraphicsDriverFiles();
-                } catch (IllegalStateException error) {
-                    Log.e("OpenGLDriver", "Driver startup failed", error);
-                    runOnUiThread(() -> {
-                        android.widget.Toast.makeText(this, error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
-                        exit();
-                    });
-                    return;
-                }
-                changeWineAudioDriver();
-                applyGameRefreshRateUnlock();
-                try {
-                    setupXEnvironment();
-                } catch (PackageManager.NameNotFoundException e) {
-                    throw new RuntimeException(e);
-                } catch (IllegalStateException e) {
-                    Log.e("LudashiX11", "Display startup failed", e);
-                    runOnUiThread(() -> {
-                        android.widget.Toast.makeText(this, e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
-                        exit();
-                    });
+                synchronized (startupLock) {
+                    if (exiting.get()) return;
+                    setupWineSystemFiles();
+                    try {
+                        extractGraphicsDriverFiles();
+                    } catch (IllegalStateException error) {
+                        Log.e("OpenGLDriver", "Driver startup failed", error);
+                        runOnUiThread(() -> {
+                            android.widget.Toast.makeText(this, error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                            exit();
+                        });
+                        return;
+                    }
+                    changeWineAudioDriver();
+                    applyGameRefreshRateUnlock();
+                    try {
+                        setupXEnvironment();
+                    } catch (PackageManager.NameNotFoundException e) {
+                        throw new RuntimeException(e);
+                    } catch (IllegalStateException e) {
+                        Log.e("LudashiX11", "Display startup failed", e);
+                        runOnUiThread(() -> {
+                            android.widget.Toast.makeText(this, e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                            exit();
+                        });
+                    }
                 }
             });
         };
@@ -949,7 +961,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
         savePlaytimeData();
         handler.removeCallbacks(savePlaytimeRunnable);
 
-        if (shortcut != null && "RealSteam".equals(shortcut.getExtra("steamLaunchMode")) && !shortcut.getExtra("steamAppId").isEmpty()) {
+        if (launchCancelled) {
+            new Thread(() -> {
+                synchronized (startupLock) { }
+                runOnUiThread(this::finishExitAfterSteam);
+            }, "CancelGameLaunch").start();
+        } else if (shortcut != null && "RealSteam".equals(shortcut.getExtra("steamLaunchMode")) && !shortcut.getExtra("steamAppId").isEmpty()) {
             new Thread(() -> {
                 com.winlator.cmod.steam.SteamCloud.awaitShutdown(this, shortcut);
                 runOnUiThread(this::finishExitAfterSteam);
@@ -1277,6 +1294,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                             UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.PULSE_SERVER_PATH)));
         }
 
+        if (exiting.get()) return;
         com.winlator.cmod.steam.SteamLaunch.apply(this, shortcut, envVars);
         guestProgramLauncherComponent.setEnvVars(envVars);
         guestProgramLauncherComponent.setTerminationCallback((status) -> runOnUiThread(this::exit));
@@ -1288,6 +1306,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         }
 
+        if (exiting.get()) return;
         environment.startEnvironmentComponents();
 
         winHandler.start();
