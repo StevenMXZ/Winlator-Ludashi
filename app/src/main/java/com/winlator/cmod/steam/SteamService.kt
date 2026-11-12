@@ -414,6 +414,7 @@ object SteamSession {
         val branch = SteamInstallOptions.branch(context, id)
         val language = SteamInstallOptions.language(context, id)
         val depots = SteamCatalog.depots(info, branch, language)
+        SteamInstallRecord.directory(context.filesDir)
         val dir = SteamStorage.download(context, id, name)
         SteamGoldberg.restore(dir)
         SteamGoldberg.invalidate(dir)
@@ -432,14 +433,31 @@ object SteamSession {
                         status = "$name: depot ${depotsDone + 1}/$depotsTotal — ${if (depotTotal > 0) depotDone * 100 / depotTotal else 0}%" + if (verifying) " (verifying)" else ""
                     }
                     override fun onComplete(success: Boolean, error: String, bytesWritten: Long, depotsCompleted: Int, depotsSkipped: Int) {
+                        android.util.Log.i("SteamDownload", "app=$id complete=$success bytes=$bytesWritten depots=$depotsCompleted skipped=$depotsSkipped error=$error")
                         work {
-                            if (success) {
-                                dir.walkTopDown().filter { it.isFile && it.name.endsWith(".ludashi-original") }.forEach { it.delete() }
-                                File(context.filesDir, "steam-library/$id.json").writeText(SteamStorage.record(info, dir, branch, language).toString())
-                                main.post { SteamGames.changed() }
+                            var finalized = false
+                            try {
+                                if (success) {
+                                    SteamInstallRecord.write(context.filesDir, id, SteamStorage.record(info, dir, branch, language))
+                                    finalized = true
+                                    main.post { SteamGames.changed() }
+                                }
+                                status = if (success) "$name installed" else if (gameActive) "Download paused while the container runs" else "Download failed: $error"
+                            } catch (failure: Exception) {
+                                android.util.Log.e("SteamDownload", "Cannot finalize installation for app $id", failure)
+                                status = "Download failed: ${failure.message ?: "Cannot finalize installation"}"
+                            } finally {
+                                downloading = false
+                                downloadMeter = null
                             }
-                            downloading = false
-                            status = if (success) "$name installed" else if (gameActive) "Download paused while the container runs" else "Download failed: $error"
+                            if (finalized) {
+                                runCatching {
+                                    java.nio.file.Files.walk(dir.toPath()).use { paths ->
+                                        paths.filter { java.nio.file.Files.isRegularFile(it, java.nio.file.LinkOption.NOFOLLOW_LINKS) && it.fileName.toString().endsWith(".ludashi-original") }
+                                            .forEach { java.nio.file.Files.deleteIfExists(it) }
+                                    }
+                                }.onFailure { android.util.Log.w("SteamDownload", "Cannot remove original-file backups for app $id", it) }
+                            }
                         }
                     }
                 }, SteamDownloadSettings.processing(SteamDownloadSettings.tier(context)))
