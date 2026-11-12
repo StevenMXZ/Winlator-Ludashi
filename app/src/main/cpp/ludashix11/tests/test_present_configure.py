@@ -37,6 +37,15 @@ def run(binary):
                     event(owner, eid, window, x, y, w, h, flags, seq)
                     event(observer, observer_eid, window, x, y, w, h, flags)
                     barrier(owner); barrier(observer); barrier(frames)
+                desktop, game = owner.base | 20, owner.base | 21
+                create(owner, desktop, owner.root, 0, 0, 1280, 720)
+                create(owner, game, desktop, 0, 0, 800, 600); barrier(owner)
+                configure(desktop, 12, 800, 600); barrier(owner)
+                position = owner.reply(owner.send(40, payload=struct.pack('<IIhh', game, owner.root, 0, 0)))
+                assert struct.unpack_from('<hh', position, 12) == (0, 0), position.hex()
+                configure(desktop, 15, 10, 20, 1280, 720); barrier(owner)
+                position = owner.reply(owner.send(40, payload=struct.pack('<IIhh', game, owner.root, 0, 0)))
+                assert struct.unpack_from('<hh', position, 12) == (10, 20), position.hex()
                 create(owner, parent, owner.root, 100, 200, 256, 192, 3)
                 create(owner, other_parent, owner.root, 400, 300, 256, 192, 5)
                 create(owner, window, parent, 4, 6, 64, 48, 2); barrier(owner)
@@ -54,7 +63,8 @@ def run(binary):
                 seq = configure(window, 15, -4, -6, 128, 96); both(seq, -4, -6, 128, 96)
                 # Parent translation does not change this window's parent-relative geometry.
                 configure(parent, 3, 101, 202); barrier(owner); barrier(observer); barrier(frames)
-                # Parent resize changes the child's relative origin through CenterGravity.
+                owner.send(2, payload=struct.pack('<III', window, 32, 5)); barrier(owner)
+                # Parent resize changes the child's relative origin through explicit CenterGravity.
                 seq = configure(parent, 12, 384, 320); both(seq, 60, 58, 128, 96)
                 # Reparent to an offset parent; requested coordinates are relative to the NEW parent.
                 seq = owner.send(7, payload=struct.pack('<IIhh', window, other_parent, 7, 9))
