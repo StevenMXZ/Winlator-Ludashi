@@ -100,6 +100,9 @@ std::atomic<int64_t> gVsyncNs{0};
 // the mean motion-compensated luma error of a pair; the gap between the two
 // thresholds keeps a near-still scene from toggling.
 std::atomic<bool> gSourceUncapped{false};
+// 0 means "do not cap". Written whenever mode, multiplier, refresh or the
+// still-image flag changes, and read from the X++ present thread.
+std::atomic<int> gSourceCap{0};
 constexpr double kStillRes    = 0.0005;
 constexpr double kMoveRes     = 0.0015;
 constexpr int    kStillPairs  = 20;    // about a second at the X3 cap
@@ -333,6 +336,7 @@ struct FrameGenState {
     void pollScd(VulkanRendererContext* c);
     void updateStill(double res, bool cut);
     void setUncapped(bool on);
+    void publishSourceCap();
     double gpuMsEma = 0.0, interpMsEma = 0.0;
     double stageMs[kStamps - 1] = {};  // pyramid, motion + scene cut, select, interp + copies
     bool   overloaded = false;
@@ -1383,9 +1387,21 @@ void FrameGenState::pollScd(VulkanRendererContext* c) {
         if (scdPending[s] && c->vk_.GetFenceStatus(c->device, fgFence[s]) == VK_SUCCESS) readScd(s);
 }
 
+void FrameGenState::publishSourceCap() {
+    int cap = 0;
+    if (enabled.load(std::memory_order_relaxed) && mode.load(std::memory_order_relaxed) == 0 &&
+        !gSourceUncapped.load(std::memory_order_relaxed)) {
+        const int m = std::max(2, multiplier.load(std::memory_order_relaxed));
+        const float hz = targetHz.load(std::memory_order_relaxed);
+        cap = std::max(1, (int)std::lround(hz > 1.f ? hz / (float)m : 60.f / (float)m));
+    }
+    gSourceCap.store(cap, std::memory_order_relaxed);
+}
+
 void FrameGenState::setUncapped(bool on) {
     stillCount = 0;
     gSourceUncapped.store(on);
+    publishSourceCap();
 }
 
 void FrameGenState::updateStill(double res, bool cut) {
@@ -1996,12 +2012,17 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
         }
     }
 #endif
+    // Sample before the scene copy. A game frame that arrives while the copy
+    // is in flight belongs to the next Draw; consuming it here would stamp
+    // that frame's time onto the image already snapshotted, and the motion
+    // field then warps the picture.
+    const uint64_t serialNow = contentSerial.load();
     // Redraws between real frames (cursor, small windows) would land in the
     // FIFO between a generated and a real frame and break the cadence. The
     // next real frame picks them up; a stalled game still gets redraws.
     // X++ cannot take this skip: the image above is already acquired, and
     // contentSerial only moves inside the latch. A cursor update is presented.
-    if (!holdSlot && contentSerial.load() == lastSerial && haveArrival && intervalMs > 0.0 &&
+    if (!holdSlot && serialNow == lastSerial && haveArrival && intervalMs > 0.0 &&
         msBetween(lastArrival, arrival) < intervalMs * 2.5) {
         xppDone = true;
         return true;
@@ -2076,9 +2097,10 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
     }
 
     // Is this a new game frame or just a redraw (cursor, window changes)?
-    const uint64_t serial = contentSerial.load();
-    const bool newContent = serial != lastSerial;
-    lastSerial = serial;
+    // serialNow was taken before the copy, so a present that landed during
+    // the submit is still unseen and can wake the pacer below.
+    const bool newContent = serialNow != lastSerial;
+    lastSerial = serialNow;
     // No game draws a new frame this soon: it is the same frame arriving twice
     // or in two parts. Counting it as a frame stops motion for one pair and
     // doubles it in the next, so it only replaces the current image.
@@ -2276,6 +2298,10 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         return ok;
     };
     auto finish = [&]() {
+        // The X++ image was acquired before this loop. Dropping it leaves a
+        // signaled semaphore with no submit, and the swapchain is recreated.
+        // A newer game frame woke the wait: show this capture unchanged.
+        if (heldAcquire) present(composeScene[slot]);
         if (waitScene) {
             VkPipelineStageFlags stg = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
             VkSubmitInfo si{};
@@ -2498,6 +2524,7 @@ void VulkanRendererFrameGenConfigure(VulkanRendererContext* c, bool enabled, int
     st->targetHz.store(targetHz > 1.f ? targetHz : 60.f);
     if (enabled && !st->enabled.load()) st->failed = false;
     st->enabled.store(enabled);
+    st->publishSourceCap();
     c->needsRender.store(true);
     c->dirtyCV.notify_one();
 }
@@ -2520,10 +2547,15 @@ bool VulkanRendererFrameGenSourceUncapped() {
     return gSourceUncapped.load(std::memory_order_relaxed);
 }
 
+int VulkanRendererFrameGenSourceCap() {
+    return gSourceCap.load(std::memory_order_relaxed);
+}
+
 void VulkanRendererFrameGenDestroy(VulkanRendererContext* c) {
     FrameGenState* st = c->tuningFrameGen.exchange(nullptr);
     if (!st) return;
     st->enabled.store(false);
+    gSourceCap.store(0, std::memory_order_relaxed);
     st->forcedFifo = false;  // the swapchain is going away with the context
     if (st->active || st->scenePass) st->deactivate(c);
     delete st;

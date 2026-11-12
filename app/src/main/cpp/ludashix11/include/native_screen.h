@@ -134,6 +134,9 @@ public:
         (void)enabled; (void)mode; (void)quality; (void)multiplier; (void)hz;
     }
     virtual bool TuningFrameGenStats(float out[7]) { (void)out; return false; }
+    // A game frame was presented. Runs on the X11 thread while Draw may be
+    // asleep in the frame-gen pacer; that sleep only wakes on this note.
+    virtual void NoteTuningContent(int width, int height) { (void)width; (void)height; }
 };
 std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 width, u16 height, bool validation = false, const NativeRendererConfig& config = {});
 
@@ -253,6 +256,8 @@ private:
     bool IsWindowFiltered(Window*) const;
     void Worker();
     bool PrepareIdle(const sp<PresentTicket>&);
+    // User FPS limit, tightened by Tuning's power-saver cap while that mode is on.
+    int PacingLimit() const;
     void Idle(const sp<PresentTicket>&);
     void FlushDeferredIdles();
     void Complete(const sp<PresentTicket>&, bool idleFirst = false);

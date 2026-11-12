@@ -60,5 +60,10 @@ void VulkanRendererFrameGenNoteVsync(int64_t frameTimeNs);
 // Power saver X3 lifts its source cap while the image is still (loading screens).
 bool VulkanRendererFrameGenSourceUncapped();
 
+// Frames per second the game should be held to in power saver, or 0 when the
+// user's own limit applies. X++ reads this on every Present: the cap has to
+// follow a still image without waiting for another options update.
+int VulkanRendererFrameGenSourceCap();
+
 // Must run before the device is destroyed.
 void VulkanRendererFrameGenDestroy(VulkanRendererContext* ctx);

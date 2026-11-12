@@ -304,6 +304,9 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         if (frameGenRefresh != refresh) {
             frameGenRefresh = refresh;
             if (frameGenRequested) applyVisualOptions();
+            // Power saver caps at refresh / multiplier. The cap has to follow
+            // the panel, or the generated frames never land on vsync.
+            if (tuningFrameGen) applyTuningFrameGen();
         }
     }
     @Override public synchronized void surfaceCreated(SurfaceHolder holder) { updateOptions(); startDisplayTimeline(); }

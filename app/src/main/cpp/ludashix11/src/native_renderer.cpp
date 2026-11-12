@@ -119,6 +119,10 @@ public:
         out[6] = float(stats.quality);
         return true;
     }
+    void NoteTuningContent(int width, int height) override {
+        if (auto* ctx = tuningContext.load(std::memory_order_acquire))
+            VulkanRendererFrameGenNoteContent(ctx, width, height);
+    }
 #endif
     NativeVisualState VisualState() const override {
         if (!context || context->surfaceDetached.load()) return {};
@@ -269,10 +273,10 @@ private:
                     ++ahbMetrics.unchangedDrawables;
                 }
 #ifdef LUDASHI_NATIVE_X11
-                // A reused AHB is not imported again, and updateWindowContentAHB
-                // is the only place that tells Tuning a game frame arrived.
-                // Without this, the source rate stays 0 and the modern HUD
-                // replaces the present counter with that 0.
+                // Import only notes a new AHB. A reused one still has to count,
+                // or the HUD source rate stays 0. Present notes too, on the
+                // X11 thread, so the pacer can wake; both bumps of one frame
+                // fall into the single sample taken before the scene copy.
                 if (entry.ticket) {
                     const auto seen = presentSerials.find(id);
                     const bool fresh = seen == presentSerials.end() || seen->second != entry.ticket->serial;
