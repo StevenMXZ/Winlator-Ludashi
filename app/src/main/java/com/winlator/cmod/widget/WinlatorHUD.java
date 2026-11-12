@@ -744,7 +744,10 @@ public class WinlatorHUD extends View {
         }
         int state = s != null && s.length > 5 ? (int) s[5] : 0;
         if (state == 1 || state == 4) {
-            strFps = String.format(Locale.US, "%.0f", s[0]);
+            // Source rate from Tuning. X++ can report 0 while presents are
+            // still arriving; keep the counted game frames in that case.
+            float game = s[0] >= 1f ? s[0] : snapFps;
+            strFps = String.format(Locale.US, "%.0f", game);
             generatedFpsText = String.format(Locale.US, " -> %.0f", s[1]);
             fg = String.format(Locale.US, "%.1fms +%.0fms", s[2], s[3]);
         } else if (state == 3) {

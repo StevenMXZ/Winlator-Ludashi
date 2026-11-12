@@ -90,6 +90,21 @@ void NativeScreen::UpdateCursor(Drawable* d, s16 x, s16 y) {
     }
     PostInvalidate();
 }
+void NativeScreen::SetTuningFrameGen(bool enabled, int mode, int quality, int multiplier, float hz) {
+    NativeRenderer* renderer = nullptr;
+    {
+        std::lock_guard lock(tuningFrameGenMutex);
+        tuningFrameGen = {true, enabled, mode, quality, multiplier, hz};
+        renderer = liveRenderer.load(std::memory_order_acquire);
+    }
+    // The present thread may not be up yet. Worker applies the saved config
+    // when it publishes the renderer; a later call hits the live one.
+    if (renderer) renderer->SetTuningFrameGen(enabled, mode, quality, multiplier, hz);
+}
+bool NativeScreen::TuningFrameGenStats(float out[7]) {
+    NativeRenderer* renderer = liveRenderer.load(std::memory_order_acquire);
+    return renderer && renderer->TuningFrameGenStats(out);
+}
 u64 NativeScreen::SetVisualOptions(NativeVisualOptions options) {
     options.filter = std::clamp(options.filter, 0, 5);
     options.postFX = std::clamp(options.postFX, 0, 20);
@@ -675,6 +690,20 @@ void NativeScreen::ProtocolError(int client, u8 opcode, u8 minor, u8 code, u32 r
 void NativeScreen::Worker() {
     const auto info = server.GetScreenInfo();
     auto renderer = CreateNativeRenderer(info.width, info.height, server.ValidationEnabled(), server.RendererConfig());
+    // Cleared before renderer is destroyed: this guard is declared after it.
+    struct PublishRenderer {
+        std::atomic<NativeRenderer*>* slot;
+        PublishRenderer(std::atomic<NativeRenderer*>* slot, NativeRenderer* renderer) : slot(slot) {
+            slot->store(renderer, std::memory_order_release);
+        }
+        ~PublishRenderer() { slot->store(nullptr, std::memory_order_release); }
+    } publishRenderer{&liveRenderer, renderer.get()};
+    {
+        std::lock_guard lock(tuningFrameGenMutex);
+        if (tuningFrameGen.valid)
+            renderer->SetTuningFrameGen(tuningFrameGen.enabled, tuningFrameGen.mode, tuningFrameGen.quality,
+                                        tuningFrameGen.multiplier, tuningFrameGen.hz);
+    }
     // Frames retain the AHBs until the corresponding GPU sampling fences signal.
     // Draw owns context changes. A separate worker retires previously published
     // submissions while Draw may be blocked in acquire/present for another slot.
@@ -981,6 +1010,9 @@ void NativeScreen::Worker() {
         try { renderer->PrepareSurfaceChange(); retire(renderer->Drain()); }
         catch (const std::exception& e) { LOGE("Native GPU shutdown drain failed: {}", e.what()); }
     }
+    // Stats and configure run on the UI thread. Drop the pointer before the
+    // renderer object goes away; the guard clears it again on scope exit.
+    liveRenderer.store(nullptr, std::memory_order_release);
     renderer.reset();
     {
         std::lock_guard lock(state);

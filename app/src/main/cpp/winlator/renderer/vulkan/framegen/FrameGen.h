@@ -33,6 +33,17 @@ struct FrameGenStats {
 };
 
 // Called from renderFrame. Returns true when the frame was fully handled.
+//
+// Ludashi 5 X++ (LUDASHI_NATIVE_X11) calls renderFrame from its present thread
+// and drops the frame unless two things happen, in this order:
+//   1. The swapchain image is acquired, then nativeFrameReady latches the scene.
+//      The latch is what uploads the X11 snapshot. It has to stay after acquire:
+//      that is the point where the previous slot is finished and this image is ours.
+//   2. slotSerial of the slot Draw captured (currentFrame on entry) changes.
+//      Draw registers one fence, the one for that slot. Tuning therefore reuses
+//      the slot for every present inside the call and advances currentFrame once
+//      afterwards. The Java server leaves nativeFrameReady null, so none of this
+//      runs there and the old present order stays.
 bool VulkanRendererFrameGenRender(VulkanRendererContext* ctx);
 
 // Called whenever a window receives new pixels.

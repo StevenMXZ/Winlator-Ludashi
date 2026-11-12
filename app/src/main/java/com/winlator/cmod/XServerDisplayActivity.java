@@ -2686,8 +2686,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
         sw.setChecked(initial);
         if (details != null) details.setVisibility(initial ? View.VISIBLE : View.GONE);
 
-        // X++ drives renderFrame itself and expects its scene latch and slot serial; Tuning bypasses both.
-        final boolean tuningSupported = vkRenderer instanceof VulkanXServerView;
+        // EGL and DisplayX have no Tuning path. Vulkan X11 and Vulkan X++ both do:
+        // X++ acquires, latches, then presents on the slot Draw is watching.
+        final boolean tuningSupported = vkRenderer instanceof VulkanXServerView
+                || (vkRenderer instanceof com.winlator.cmod.widget.NativeX11View
+                    && ((com.winlator.cmod.widget.NativeX11View) vkRenderer).isVulkanBackend());
         sw.setEnabled(tuningSupported);
         View unsupported = findViewById(R.id.TVTuningFrameGenUnsupported);
         if (unsupported != null) unsupported.setVisibility(tuningSupported ? View.GONE : View.VISIBLE);

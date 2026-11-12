@@ -160,6 +160,16 @@ float halfToFloat(uint16_t h) {
 
 }  // namespace
 
+// Runs the lambda on scope exit, including when renderFrame throws. The lambda
+// is created inside FrameGenState and can reach its private X++ cleanup.
+template <class F>
+struct FgScopeExit {
+    F fn;
+    explicit FgScopeExit(F f) : fn(f) {}
+    FgScopeExit(const FgScopeExit&) = delete;
+    ~FgScopeExit() { fn(); }
+};
+
 struct FgImage {
     VkImage        image  = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
@@ -272,6 +282,13 @@ struct FrameGenState {
     bool            interpUsed[kGenImages] = {};
     uint64_t        slotSerial[kRing] = {};
 
+    // X++ Draw owns one swapchain slot for the whole renderFrame. See FrameGen.h.
+    bool     holdSlot = false;
+    bool     heldAcquire = false;
+    bool     slotPresented = false;
+    uint32_t heldCf = 0;
+    uint32_t heldImg = 0;
+
     // Ring and timing
     int  prevSlot = -1, curSlot = -1;
     uint64_t slotUse[kRing] = {}, slotClock = 0;
@@ -375,6 +392,8 @@ struct FrameGenState {
     void retireTextures(VulkanRendererContext* c, int slot);
     bool presentCompose(VulkanRendererContext* c, VkDescriptorSet ds, const FrameBuild& fb,
                         bool withCursorUpload, VkSemaphore extraWait = VK_NULL_HANDLE);
+    bool takeSwapchainImage(VulkanRendererContext* c, uint32_t cf, uint32_t& imgIdx);
+    void endXpp(VulkanRendererContext* c);
     void recordCompute(VulkanRendererContext* c, VkCommandBuffer cb, int slot, int prev, int cur,
                        const float* phases, int k, int genBase, bool needPrevPyr);
     void buildPyramid(VulkanRendererContext* c, VkCommandBuffer cb, int slot);
@@ -1562,6 +1581,55 @@ void FrameGenState::prepare(VulkanRendererContext* c, FrameBuild& fb) {
     fb.curH = c->cursorTexH;
 }
 
+bool FrameGenState::takeSwapchainImage(VulkanRendererContext* c, uint32_t cf, uint32_t& imgIdx) {
+    auto& vk = c->vk_;
+    VkResult fs = vk.GetFenceStatus(c->device, c->inFlightFences[cf]);
+    if (fs == VK_NOT_READY) {
+        if (vk.WaitForFences(c->device, 1, &c->inFlightFences[cf], VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+            c->fbResized.store(true);
+            c->swapchainRetryPending.store(true);
+            return false;
+        }
+    } else if (fs != VK_SUCCESS) {
+        c->fbResized.store(true);
+        c->swapchainRetryPending.store(true);
+        return false;
+    }
+
+    VkResult res = vk.AcquireNextImageKHR(c->device, c->swapchain, UINT64_MAX,
+                                          c->imgAvailSems[cf], VK_NULL_HANDLE, &imgIdx);
+    if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_ERROR_SURFACE_LOST_KHR) {
+        c->fbResized.store(true);
+        return false;
+    }
+    // A one-off acquire error used to skip this present and leave the swapchain.
+    if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) return false;
+    if (imgIdx >= c->swapchainFBs.size() || imgIdx >= c->swapchainImages.size()) {
+        c->fbResized.store(true);
+        c->swapchainRetryPending.store(true);
+        return false;
+    }
+    return true;
+}
+
+void FrameGenState::endXpp(VulkanRendererContext* c) {
+    if (!holdSlot) return;
+    holdSlot = false;
+    // A signaled acquire that nobody submitted has to die with the swapchain.
+    // Destroying that semaphore is what the resize path already does.
+    if (heldAcquire) {
+        heldAcquire = false;
+        c->fbResized.store(true);
+        c->swapchainRetryPending.store(true);
+    }
+    if (slotPresented) {
+        slotPresented = false;
+        // Draw sampled currentFrame before renderFrame. Leave it on the slot
+        // we submitted until the call returns, then step once for the next Draw.
+        c->currentFrame = (heldCf + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
+}
+
 bool FrameGenState::presentCompose(VulkanRendererContext* c, VkDescriptorSet ds,
                                    const FrameBuild& fb, bool withCursorUpload,
                                    VkSemaphore extraWait) {
@@ -1573,27 +1641,29 @@ bool FrameGenState::presentCompose(VulkanRendererContext* c, VkDescriptorSet ds,
     };
 
     const uint32_t cf = c->currentFrame;
+    // An earlier present in this call already gave up the swapchain. Acquiring
+    // again would signal a semaphore that is still pending.
+    if (c->fbResized.load()) return false;
     if (c->swapchain == VK_NULL_HANDLE || cf >= c->cmdBufs.size() ||
         c->cmdBufs[cf] == VK_NULL_HANDLE)
         return fail();
 
-    VkResult fs = vk.GetFenceStatus(c->device, c->inFlightFences[cf]);
-    if (fs == VK_NOT_READY) {
-        if (vk.WaitForFences(c->device, 1, &c->inFlightFences[cf], VK_TRUE, UINT64_MAX) != VK_SUCCESS)
-            return fail();
-    } else if (fs != VK_SUCCESS) {
-        return fail();
-    }
-
     uint32_t imgIdx = 0;
-    VkResult res = vk.AcquireNextImageKHR(c->device, c->swapchain, UINT64_MAX,
-                                          c->imgAvailSems[cf], VK_NULL_HANDLE, &imgIdx);
-    if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_ERROR_SURFACE_LOST_KHR) {
-        c->fbResized.store(true);
+    if (heldAcquire && heldCf == cf) {
+        // The X++ latch already acquired this image. Acquiring again would
+        // signal the same semaphore twice.
+        VkResult fs = vk.GetFenceStatus(c->device, c->inFlightFences[cf]);
+        if (fs == VK_NOT_READY) {
+            if (vk.WaitForFences(c->device, 1, &c->inFlightFences[cf], VK_TRUE, UINT64_MAX) != VK_SUCCESS)
+                return fail();
+        } else if (fs != VK_SUCCESS) {
+            return fail();
+        }
+        imgIdx = heldImg;
+        heldAcquire = false;
+    } else if (!takeSwapchainImage(c, cf, imgIdx)) {
         return false;
     }
-    if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) return false;
-    if (imgIdx >= c->swapchainFBs.size() || imgIdx >= c->swapchainImages.size()) return fail();
 
     if (c->imgInFlight.size() != c->swapchainImages.size())
         c->imgInFlight.assign(c->swapchainImages.size(), VK_NULL_HANDLE);
@@ -1658,12 +1728,19 @@ bool FrameGenState::presentCompose(VulkanRendererContext* c, VkDescriptorSet ds,
     pi.swapchainCount = 1;
     pi.pSwapchains = scs;
     pi.pImageIndices = &imgIdx;
-    res = vk.QueuePresentKHR(c->graphicsQueue, &pi);
+    VkResult res = vk.QueuePresentKHR(c->graphicsQueue, &pi);
     if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_ERROR_SURFACE_LOST_KHR ||
         res == VK_SUBOPTIMAL_KHR)
         c->fbResized.store(true);
 
-    c->currentFrame = (cf + 1) % MAX_FRAMES_IN_FLIGHT;
+    if (holdSlot) {
+        // Same slot Draw is watching. A new serial is the only signal that
+        // this fence belongs to the scene latched above.
+        c->slotSerial[cf] = c->submittedSerial == 0 ? 1 : c->submittedSerial;
+        slotPresented = true;
+    } else {
+        c->currentFrame = (cf + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
     ++outCount;
     return true;
 }
@@ -1874,12 +1951,61 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
     if (m == 1) dynTrim();
 
     const auto arrival = Clock::now();
+    // X++ aborts (a throw, or a return that skips endXpp) leave a signaled
+    // acquire or an untracked submit. Force the swapchain recreate either way.
+    // A normal return sets xppDone so endXpp only retires a held acquire and
+    // steps currentFrame when this call actually presented.
+    bool xppDone = false;
+    FgScopeExit xppGuard{[this, c, &xppDone] {
+        if (!holdSlot) return;
+        if (!xppDone) {
+            holdSlot = false;
+            heldAcquire = false;
+            slotPresented = false;
+            c->fbResized.store(true);
+            c->swapchainRetryPending.store(true);
+            return;
+        }
+        endXpp(c);
+    }};
+#ifdef LUDASHI_NATIVE_X11
+    // Java never sets nativeFrameReady. On X++ the callback is installed for
+    // this Draw only, and contentSerial does not move until the latch runs,
+    // so the redraw skip below would drop the first real frame of the call.
+    if (c->nativeFrameReady) {
+        holdSlot = true;
+        heldCf = c->currentFrame;
+        slotPresented = false;
+        uint32_t img = 0;
+        if (!takeSwapchainImage(c, heldCf, img)) {
+            // Nothing was acquired. Returning here keeps the normal present
+            // from taking a second image; Draw drops this frame.
+            xppDone = true;
+            return true;
+        }
+        heldImg = img;
+        heldAcquire = true;
+        try {
+            c->nativeFrameReady(c->nativeFrameReadyData);
+        } catch (const std::exception& e) {
+            FG_LOGE("X++ scene latch failed: %s", e.what());
+            c->fbResized.store(true);
+            c->swapchainRetryPending.store(true);
+            xppDone = true;
+            return true;
+        }
+    }
+#endif
     // Redraws between real frames (cursor, small windows) would land in the
     // FIFO between a generated and a real frame and break the cadence. The
     // next real frame picks them up; a stalled game still gets redraws.
-    if (contentSerial.load() == lastSerial && haveArrival && intervalMs > 0.0 &&
-        msBetween(lastArrival, arrival) < intervalMs * 2.5)
+    // X++ cannot take this skip: the image above is already acquired, and
+    // contentSerial only moves inside the latch. A cursor update is presented.
+    if (!holdSlot && contentSerial.load() == lastSerial && haveArrival && intervalMs > 0.0 &&
+        msBetween(lastArrival, arrival) < intervalMs * 2.5) {
+        xppDone = true;
         return true;
+    }
 
     const int slot = pickSlot();
     slotUse[slot] = ++slotClock;
@@ -1930,6 +2056,7 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
         vk.CreateFence(c->device, &fi, nullptr, &sceneFence[slot]);
         c->fbResized.store(true);
         c->swapchainRetryPending.store(true);
+        xppDone = true;
         return true;
     }
     {
@@ -1984,7 +2111,11 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
         ++newFrameCount;
     }
 
-    if (m == 1) return renderDynamic(c, fb, slot, arrival, newContent, dupFrame, gap);
+    if (m == 1) {
+        const bool presented = renderDynamic(c, fb, slot, arrival, newContent, dupFrame, gap);
+        xppDone = true;
+        return presented;
+    }
 
     if (multiplier.load() != 3 && gSourceUncapped.load()) setUncapped(false);
     pollScd(c);
@@ -2112,6 +2243,7 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
     }
 
     publishStats(false, overloaded ? 3 : (appliedQuality < quality.load() ? 4 : 1));
+    xppDone = true;
     return true;
 }
 
@@ -2328,6 +2460,16 @@ bool VulkanRendererFrameGenRender(VulkanRendererContext* c) {
     try {
         if (st->renderFrame(c)) return true;
     } catch (const std::exception& e) {
+        // X++ already acquired, or a submit landed on a slot Draw will not
+        // track if we fall through. The guard flagged a swapchain retry.
+        // Presenting again here would acquire a second image on a signaled
+        // semaphore. Let the next Draw recreate it.
+        if (c->fbResized.load() || c->swapchainRetryPending.load()) {
+            FG_LOGE("frame aborted for swapchain retry: %s", e.what());
+            std::lock_guard<std::mutex> lk(c->renderMutex);
+            c->pendingFrameSerial = 0;
+            return true;
+        }
         FG_LOGE("frame failed, falling back to the normal path: %s", e.what());
         std::lock_guard<std::mutex> lk(c->renderMutex);
         c->pendingFrameSerial = 0;

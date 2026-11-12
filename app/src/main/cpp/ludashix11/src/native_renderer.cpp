@@ -1,6 +1,9 @@
 #include "native_screen.h"
 #include "VulkanRendererContext.h"
 #include "native_magnifier.h"
+#ifdef LUDASHI_NATIVE_X11
+#include "framegen/FrameGen.h"
+#endif
 #ifdef __ANDROID__
 #include "VulkanDriver.h"
 #endif
@@ -16,7 +19,14 @@ class LudashiRenderer final : public NativeRenderer {
 public:
     LudashiRenderer(u16 w, u16 h, bool validate, const NativeRendererConfig& config)
         : width(w), height(h), validation(validate), rendererConfig(config) {}
-    ~LudashiRenderer() override { if (context) context->detachSurface(); context.reset(); }
+    ~LudashiRenderer() override {
+#ifdef LUDASHI_NATIVE_X11
+        // Drop the pointer before the context so a UI stats read cannot use it.
+        tuningContext.store(nullptr, std::memory_order_release);
+#endif
+        if (context) context->detachSurface();
+        context.reset();
+    }
     void Surface(ANativeWindow* window) override {
         if (!window) { if (context) context->detachSurface(); return; }
         if (!context) {
@@ -54,6 +64,10 @@ public:
         }
         context->onSurfaceResized(ANativeWindow_getWidth(context->window), ANativeWindow_getHeight(context->window));
         UpdateTransform();
+#ifdef LUDASHI_NATIVE_X11
+        // The context is created here, often after the UI already chose Tuning.
+        publishTuningContext();
+#endif
     }
     void Options(bool fs, bool visible, int, float rate, float newZoom) override {
         fullscreen = fs; cursor = visible; refresh = rate;
@@ -78,6 +92,34 @@ public:
         context->configureFrameGeneration(options.frameGen && context->isFrameGenerationSupported(), options.frameGenCache.c_str(),
             options.multiplier, target, options.flowScale, options.refresh);
     }
+#ifdef LUDASHI_NATIVE_X11
+    // Tuning does not go through VisualOptions. That path turns LSFG/WFG on,
+    // and only one engine may own the swapchain. The UI clears LSFG first.
+    void SetTuningFrameGen(bool enabled, int mode, int quality, int multiplier, float hz) override {
+        std::lock_guard lock(tuningMutex);
+        tuningValid = true;
+        tuningEnabled = enabled;
+        tuningMode = mode;
+        tuningQuality = quality;
+        tuningMultiplier = multiplier;
+        tuningHz = hz;
+        if (auto* ctx = tuningContext.load(std::memory_order_acquire))
+            VulkanRendererFrameGenConfigure(ctx, enabled, mode, quality, multiplier, hz);
+    }
+    bool TuningFrameGenStats(float out[7]) override {
+        auto* ctx = tuningContext.load(std::memory_order_acquire);
+        if (!ctx) return false;
+        const FrameGenStats stats = VulkanRendererFrameGenGetStats(ctx);
+        out[0] = stats.srcFps;
+        out[1] = stats.outFps;
+        out[2] = stats.gpuMs;
+        out[3] = stats.addedLatencyMs;
+        out[4] = float(stats.generated);
+        out[5] = float(stats.state);
+        out[6] = float(stats.quality);
+        return true;
+    }
+#endif
     NativeVisualState VisualState() const override {
         if (!context || context->surfaceDetached.load()) return {};
         return {true, context->isFrameGenerationSupported(), context->isFrameGenerationEnabled(),
@@ -192,8 +234,9 @@ private:
             u64 id = d.ID(); registry.try_emplace(id, entry.drawable);
             if (AHardwareBuffer* ahb = d.HardwareBuffer()) {
                 const auto imported = context->texMap.find(id);
-                if (imported == context->texMap.end() || !imported->second.isAHB ||
-                    imported->second.ahb != ahb) {
+                const bool sameAhb = imported != context->texMap.end() && imported->second.isAHB &&
+                    imported->second.ahb == ahb;
+                if (!sameAhb) {
                     // Optional diagnostics: no cache probe or clock read when disabled.
                     const bool trace = frame.diagnostics;
                     const bool cached = trace && context->ahbImportCache.contains(ahb);
@@ -225,6 +268,21 @@ private:
                 } else if (frame.diagnostics) {
                     ++ahbMetrics.unchangedDrawables;
                 }
+#ifdef LUDASHI_NATIVE_X11
+                // A reused AHB is not imported again, and updateWindowContentAHB
+                // is the only place that tells Tuning a game frame arrived.
+                // Without this, the source rate stays 0 and the modern HUD
+                // replaces the present counter with that 0.
+                if (entry.ticket) {
+                    const auto seen = presentSerials.find(id);
+                    const bool fresh = seen == presentSerials.end() || seen->second != entry.ticket->serial;
+                    if (fresh) {
+                        presentSerials[id] = entry.ticket->serial;
+                        if (sameAhb)
+                            VulkanRendererFrameGenNoteContent(context.get(), d.GetWidth(), d.GetHeight());
+                    }
+                }
+#endif
             } else if (revisions[id] != entry.revision) {
                 const auto& pixels = *entry.pixels;
                 // X11's native little-endian 0xAARRGGBB is already BGRA in memory.
@@ -297,7 +355,26 @@ private:
     NativeAHBMetrics ahbMetrics{};
     u32 importLogCount{};
     std::unique_ptr<VulkanRendererContext> context;
+#ifdef LUDASHI_NATIVE_X11
+    void publishTuningContext() {
+        tuningContext.store(context ? context.get() : nullptr, std::memory_order_release);
+        std::lock_guard lock(tuningMutex);
+        if (tuningValid && context)
+            VulkanRendererFrameGenConfigure(context.get(), tuningEnabled, tuningMode, tuningQuality,
+                                            tuningMultiplier, tuningHz);
+    }
+    std::atomic<VulkanRendererContext*> tuningContext{nullptr};
+    std::mutex tuningMutex;
+    bool tuningValid = false;
+    bool tuningEnabled = false;
+    int tuningMode = 0, tuningQuality = 1, tuningMultiplier = 2;
+    float tuningHz = 60.f;
+#endif
     std::unordered_map<u64, u64> revisions;
+#ifdef LUDASHI_NATIVE_X11
+    // Last Present serial already reported to Tuning, per drawable.
+    std::unordered_map<u64, u32> presentSerials;
+#endif
     std::unordered_map<u64, std::weak_ptr<NativeDrawable>> registry;
     // Stable window counts reuse these buffers across frames and cursor redraws.
     std::vector<int64_t> ids;
