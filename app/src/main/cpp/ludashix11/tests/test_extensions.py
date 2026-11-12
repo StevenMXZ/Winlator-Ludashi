@@ -122,11 +122,15 @@ def run(binary):
                 c.send(render, 27, struct.pack('<IIHH', cursor, picture, 1, 1))
                 c.send(render, 7, struct.pack('<I', picture))
                 c.send(render, 31, struct.pack('<III', animated, cursor, 16))
+                grabbed = c.reply(c.send(26, 1, struct.pack('<IHBBIII', c.root, 0, 1, 1, 0, 0, 0)))
+                assert grabbed[1] == 0
                 c.send(2, payload=struct.pack('<III', c.root, 1 << 14, animated)); c.barrier()
                 deadline = time.monotonic() + 2
                 pattern = r'HostCursor w=3 h=2 first=4294901760 row1=2147548928 last=4278190335'
                 while not re.search(pattern, logpath.read_text()) and time.monotonic() < deadline: time.sleep(.005)
                 assert re.search(pattern, logpath.read_text()), logpath.read_text()
+                grabbed = c.reply(c.send(26, 1, struct.pack('<IHBBIII', c.root, 0, 1, 1, 0, animated, 0)))
+                assert grabbed[1] == 0
                 c.send(95, payload=struct.pack('<I', animated))
                 c.send(95, payload=struct.pack('<I', cursor)); c.barrier()
                 # FreeCursor releases the ID while root/grab references keep its image alive.
@@ -134,10 +138,18 @@ def run(binary):
                 c.send(53, 32, struct.pack('<IIHH', pix, c.root, 3, 2))
                 c.send(render, 4, struct.pack('<IIII', picture, pix, formats[32], 0))
                 c.send(render, 27, struct.pack('<IIHH', cursor, picture, 0, 0))
-                c.send(2, payload=struct.pack('<III', c.root, 1 << 14, cursor)); c.barrier()
+                cursor_window = c.base | 30
+                c.send(1, payload=struct.pack('<IIhhHHHHII', cursor_window, c.root, 490, 540, 30, 30, 0, 2, 0, 0))
+                c.send(8, payload=struct.pack('<I', cursor_window))
+                c.send(2, payload=struct.pack('<III', cursor_window, 1 << 14, cursor)); c.barrier()
+                time.sleep(.05)
+                assert 'HostCursor w=3 h=2 first=0 row1=0 last=0' not in logpath.read_text()
+                grabbed = c.reply(c.send(26, 1, struct.pack('<IHBBIII', c.root, 0, 1, 1, 0, 0, 0)))
+                assert grabbed[1] == 0
                 deadline = time.monotonic() + 2
                 while 'HostCursor w=3 h=2 first=0 row1=0 last=0' not in logpath.read_text() and time.monotonic() < deadline: time.sleep(.005)
                 assert 'HostCursor w=3 h=2 first=0 row1=0 last=0' in logpath.read_text(), logpath.read_text()
+                c.send(27, payload=struct.pack('<I', 0)); c.barrier()
                 c.send(render, 7, struct.pack('<I', picture)); c.send(54, payload=struct.pack('<I', pix))
                 c.send(95, payload=struct.pack('<I', cursor)); c.barrier()
                 # Invalid requests produce wire errors without disconnecting the game.

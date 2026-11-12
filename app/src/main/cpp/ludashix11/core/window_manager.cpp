@@ -847,7 +847,10 @@ Cursor* WindowManager::UpdatePointerPosition(s32 x, s32 y, u32 mode, bool notify
     if (grab_cursor) {
         cursor = grab_cursor.get();
     } else {
-        cursor = window->GetCursor();
+        Window* cursorWindow = GetPointerWindow(x, y);
+        if (grab_pointer_window && cursorWindow != grab_pointer_window &&
+            !grab_pointer_window->IsAncestorOf(cursorWindow)) cursorWindow = grab_pointer_window;
+        cursor = cursorWindow->GetCursor();
     }
     server.GetScreen().UpdateCursor(cursor->GetDrawable(), clamp_x - cursor->GetHotspotX(), clamp_y - cursor->GetHotspotY());
     if (window != motion_window) {
