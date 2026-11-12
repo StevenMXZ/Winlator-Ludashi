@@ -77,7 +77,7 @@ class SteamModesTest {
         } finally { SteamSession.endGame(context) }
         assertFalse(SteamSession.gameActive)
     }
-    @Test fun failedOfflinePreparationRestoresSelectedModeAndShortcut() {
+    @Test fun offlineWithoutSteamApiSucceedsAndFailedReconfigurationRestoresMode() {
         val context = RuntimeEnvironment.getApplication()
         SteamSettings.setEnabled(context, true)
         val id = 99821
@@ -93,11 +93,20 @@ class SteamModesTest {
             putExtra("steamExecutable", "game.exe")
             saveData()
         }
-        assertThrows(IllegalStateException::class.java) {
-            SteamLaunch.prepareConfigured(context, configured, "Goldberg")
+        val offline = SteamLaunch.prepareConfigured(context, configured, "Goldberg")
+        assertEquals("Goldberg", SteamSettings.mode(context, id))
+        assertEquals("Goldberg", offline.getExtra("steamLaunchMode"))
+        assertTrue(offline.path.endsWith("game.exe"))
+        val direct = SteamLaunch.prepareConfigured(context, offline, "Raw")
+        direct.putExtra("steamExecutable", "missing.exe")
+        direct.saveData()
+        assertFalse(File(game, "missing.exe").exists())
+        assertThrows(IllegalArgumentException::class.java) {
+            SteamLaunch.prepareConfigured(context, direct, "Goldberg")
         }
         assertEquals("Raw", SteamSettings.mode(context, id))
         assertEquals("Raw", Shortcut(container, file).getExtra("steamLaunchMode"))
+        assertEquals(direct.path, Shortcut(container, file).path)
         assertEquals("game", File(game, "game.exe").readText())
     }
 

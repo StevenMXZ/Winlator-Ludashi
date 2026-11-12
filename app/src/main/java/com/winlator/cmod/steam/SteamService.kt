@@ -79,6 +79,7 @@ object SteamSession {
     @Volatile var downloadTotal = 0L
         private set
     @Volatile private var authAttempt = 0
+    @Volatile private var pendingLogin: SteamPendingLogin? = null
     private var ca = ""
     @Volatile private var activeCmUrl = ""
     private var app: Context? = null
@@ -94,8 +95,9 @@ object SteamSession {
             if (closing || gameActive || !restoring || restoreDeadline == 0L) return
             val remaining = (restoreDeadline - SystemClock.elapsedRealtime()).coerceAtLeast(0)
             if (remaining == 0L) {
-                recoveryBlocked = true; restoring = false
+                recoveryBlocked = true; restoring = false; signingIn = false; pendingLogin = null; qrUrl = ""
                 status = "Steam restoration timed out. Retry connection."
+                authError = status
                 val timedOut = session
                 work { if (session === timedOut) { session = null; timedOut?.setStateObserver(null); timedOut?.disconnect(); timedOut?.close(); connected = false; signedIn = false } }
                 return
@@ -241,7 +243,7 @@ object SteamSession {
         if (restoring && (restoreDeadline == 0L || recoveryBlocked)) startRestoreDeadline()
         val previous = session
         session = null
-        ++authAttempt; guard.cancel(); signingIn = false; qrUrl = ""; connected = false; signedIn = false
+        ++authAttempt; pendingLogin = null; guard.cancel(); signingIn = false; qrUrl = ""; connected = false; signedIn = false
         previous?.let { it.cancelDownload(); it.cancelLogin(); it.disconnect(); it.close() }
         if (downloading) status = "Pausing download after session loss…"
         librarySync.reset(); licensesReceived = false; libraryCacheRestored = false; libraryCacheSaved = false; libraryMetadataAt = 0L
@@ -263,7 +265,8 @@ object SteamSession {
                 connected = state >= 2; signedIn = state == 3
                 if (signedIn) {
                     SteamSocial.appEvent(context)
-                    signingIn = false; restoring = false; authError = ""; restoreDeadline = 0L
+                    signingIn = false; restoring = false; authError = ""; restoreDeadline = 0L; qrUrl = ""
+                    confirmLogin(context, s)
                     context.getSharedPreferences("steam-settings", 0).edit().putString("last-cm-url", activeCmUrl).apply()
                 }
                 else if (savedAccount && !recoveryBlocked) restoring = true
@@ -287,6 +290,10 @@ object SteamSession {
                 if (emsg == 751 || emsg == 757 || emsg == 5500) {
                     val code = SteamLogonResult.code(body, eresult)
                     if (code != null && code != 1) {
+                        if (pendingLogin != null) {
+                            pendingLogin = null; signingIn = false; restoring = false; qrUrl = ""; restoreDeadline = 0L
+                            authError = "Steam refused the sign-in (code $code)."
+                        }
                         status = "Steam ended/refused the session (code $code)."
                         if (SteamLogonResult.requiresNewLogin(code)) {
                             recoveryBlocked = true; restoring = false; savedAccount = false; signedIn = false
@@ -346,15 +353,20 @@ object SteamSession {
                         if (result.success && result.refreshToken.isNotBlank()) work {
                             if (session !== s || attempt != authAttempt) return@work
                             try {
-                                check(result.steamId > 0 && result.accountName.isNotBlank()) { "Steam returned incomplete account details" }
-                                SteamCredentials.save(context, result.accountName, result.refreshToken, result.steamId)
-                                guard.cancel(); savedAccount = true; restoring = true
+                                check(result.accountName.isNotBlank()) { "Steam returned incomplete account details" }
+                                pendingLogin = SteamPendingLogin(result.accountName, result.refreshToken, result.steamId)
+                                guard.cancel(); restoring = true; qrUrl = ""
                                 restoreStage = "Authenticating Steam account"; startRestoreDeadline()
-                                recovery.reset(); recovery.began(SystemClock.elapsedRealtime())
+                                recovery.reset()
                                 check(s.logonWithRefreshToken(result.refreshToken, result.accountName, result.steamId)) { "Steam logon failed" }
-                            } finally { signingIn = false }
+                            } catch (error: Exception) {
+                                pendingLogin = null; restoring = false; restoreDeadline = 0L; qrUrl = ""
+                                authError = error.message ?: "Steam sign-in failed"
+                                status = authError
+                                signingIn = false
+                            }
                         } else if (!result.hadRemoteInteraction) {
-                            signingIn = false; guard.cancel()
+                            signingIn = false; pendingLogin = null; qrUrl = ""; guard.cancel()
                             authError = result.errorMessage.ifBlank { "Steam sign-in failed" }
                             status = authError
                             // Auth jobs that timed out must not be retried on the same CM transport.
@@ -362,6 +374,23 @@ object SteamSession {
                         }
                     }
         }
+    private fun confirmLogin(context: Context, s: LudashiSteamSession) {
+        val pending = pendingLogin ?: return
+        val attempt = authAttempt
+        work {
+            if (session !== s || closing || attempt != authAttempt || pendingLogin !== pending || !signedIn) return@work
+            try {
+                pending.confirm(s.steamId()) { account, token, id -> SteamCredentials.save(context, account, token, id) }
+                savedAccount = true
+                pendingLogin = null
+            } catch (error: Exception) {
+                pendingLogin = null; signingIn = false; restoring = false; qrUrl = ""
+                authError = error.message ?: "Could not save Steam login"
+                status = authError
+                replaceSession(context, false)
+            }
+        }
+    }
     fun loginQr() {
         if (gameActive || signingIn || app?.let { !SteamSettings.enabled(it) } != false) return
         signingIn = true; authError = ""; qrUrl = ""; recoveryBlocked = false
@@ -377,7 +406,11 @@ object SteamSession {
                 s.startLoginWithQr(LudashiQrCallback { url ->
                     if (session === s && attempt == authAttempt) qrUrl = url
                 }, authCallback(context, s, attempt))
-            } catch (error: Exception) { signingIn = false; qrUrl = ""; throw error }
+            } catch (error: Exception) {
+                signingIn = false; pendingLogin = null; qrUrl = ""
+                authError = error.message ?: "Steam QR sign-in failed"
+                status = authError
+            }
         }
     }
     fun retryLibrary() = work {
@@ -396,8 +429,15 @@ object SteamSession {
         try { replaceSession(context) } catch (error: Exception) { restoreFailure(error) }
     }
     fun cancelLogin() {
-        ++authAttempt; guard.cancel(); signingIn = false; qrUrl = ""
-        work { session?.cancelLogin(); status = "Sign-in cancelled" }
+        val authenticating = pendingLogin != null
+        val cancelledSession = session
+        ++authAttempt; pendingLogin = null; restoring = false; restoreDeadline = 0L; guard.cancel(); signingIn = false; qrUrl = ""
+        work {
+            if (session !== cancelledSession) return@work
+            session?.cancelLogin()
+            if (authenticating && !closing && !gameActive) app?.let { replaceSession(it, false) }
+            status = "Sign-in cancelled"
+        }
     }
     fun info(id: Int): JSONObject {
         val raw = session?.getPicsAppInfo(id) ?: error("No Steam metadata for $id")
@@ -542,7 +582,7 @@ object SteamSession {
     }
     fun close() {
         closing = true; savedAccount = false; restoring = false; recoveryBlocked = true
-        ++generation; ++authAttempt; guard.cancel(); signingIn = false; qrUrl = ""; signedIn = false; connected = false
+        ++generation; ++authAttempt; pendingLogin = null; guard.cancel(); signingIn = false; qrUrl = ""; signedIn = false; connected = false
         main.removeCallbacks(poll); main.removeCallbacks(restoreWatch)
         restoreDeadline = 0L
         work {
