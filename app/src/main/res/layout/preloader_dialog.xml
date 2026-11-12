@@ -91,12 +91,5 @@
             android:textColor="#F1F1F3"
             android:textSize="15sp" />
     </LinearLayout>
-    <Button
-        android:id="@+id/CancelLaunch"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_margin="24dp"
-        android:text="@string/steam_cloud_launch_cancel"
-        android:visibility="gone" />
+
 </FrameLayout>
