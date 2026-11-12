@@ -1051,107 +1051,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private boolean ownsPrefixLease;
-    private boolean exclusiveInputBusy;
-
-    public boolean isExclusiveInputEnabled() {
-        return shortcut != null ? shortcut.getExtra("exclusiveXInput", container.isExclusiveXInput() ? "1" : "0").equals("1")
-                : container.isExclusiveXInput();
-    }
-
-    public boolean isExclusiveInputBusy() { return exclusiveInputBusy; }
-    public boolean canChangeExclusiveInput() { return winHandler != null && winHandler.isSessionReady() && !exclusiveInputBusy; }
-    public boolean isSidebarXInputEnabled() {
-        return winHandler != null && (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_XINPUT) != 0;
-    }
-    public boolean isSidebarDInputEnabled() {
-        return winHandler != null && (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_DINPUT) != 0;
-    }
-
-    public void changeExclusiveInput(boolean enabled, Runnable refreshed) {
-        if (!canChangeExclusiveInput() || enabled == isExclusiveInputEnabled()) return;
-        boolean xinput = isSidebarXInputEnabled(), dinput = isSidebarDInputEnabled();
-        if (!enabled) {
-            xinput = true;
-            dinput = true;
-        } else if (xinput && dinput) {
-            dinput = false;
-        }
-        applySidebarJoystickSettings(xinput, dinput, enabled, refreshed);
-    }
-
-    public void changeSidebarInputApis(boolean xinput, boolean dinput, Runnable refreshed) {
-        if (!canChangeExclusiveInput() || !isExclusiveInputEnabled() || (xinput && dinput)) return;
-        if (xinput == isSidebarXInputEnabled() && dinput == isSidebarDInputEnabled()) return;
-        applySidebarJoystickSettings(xinput, dinput, true, refreshed);
-    }
-
-    private void applySidebarJoystickSettings(boolean xinput, boolean dinput, boolean exclusive, Runnable refreshed) {
-        if (!canChangeExclusiveInput()) return;
-        final boolean previousExclusive = isExclusiveInputEnabled();
-        final boolean previousDinput = isSidebarDInputEnabled();
-        final byte previousType = winHandler.getInputType();
-        final byte nextType = (byte)((previousType &
-                ~(WinHandler.FLAG_INPUT_TYPE_XINPUT | WinHandler.FLAG_INPUT_TYPE_DINPUT)) |
-                (xinput ? WinHandler.FLAG_INPUT_TYPE_XINPUT : 0) |
-                (dinput ? WinHandler.FLAG_INPUT_TYPE_DINPUT : 0));
-
-        // Keep the focus of the original Wine HWND when regedit opens a console.
-        Window focused = xServer.windowManager.getFocusedWindow();
-        while (focused != null && focused.getHandle() == 0) focused = focused.getParent();
-        final Window focusTarget = focused;
-        final com.winlator.cmod.widget.NativeX11View nativeFocus = xServerView instanceof com.winlator.cmod.widget.NativeX11View
-                ? (com.winlator.cmod.widget.NativeX11View) xServerView : null;
-        final long focusHandle = nativeFocus != null ? nativeFocus.getFocusedWindowHandle()
-                : focused != null ? focused.getHandle() : 0;
-        File driveC = new File(container.getRootDir(), ".wine/drive_c");
-        exclusiveInputBusy = true;
-        refreshed.run();
-        winHandler.holdGamepadsNeutral();
-
-        com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC, dinput, exclusive, ok -> {
-            if (isFinishing() || isDestroyed()) return;
-            if (ok) {
-                // Set the transport mode before reconnecting devices, so the new API is used.
-                winHandler.setInputType(nextType);
-                winHandler.setXInputDisabled(!xinput);
-            }
-            Runnable finish = () -> winHandler.reconnectGamepads(() -> {
-                if (isFinishing() || isDestroyed()) return;
-                if (ok) {
-                    if (shortcut != null) {
-                        shortcut.putExtra("exclusiveXInput", exclusive ? "1" : "0");
-                        shortcut.putExtra("inputType", String.valueOf(nextType & 0xff));
-                        shortcut.putExtra("disableXinput", xinput ? null : "1");
-                        shortcut.saveData();
-                    } else {
-                        container.setExclusiveXInput(exclusive);
-                        container.setInputType(nextType & 0xff);
-                        container.saveData();
-                    }
-                }
-                exclusiveInputBusy = false;
-                if (nativeFocus != null && nativeFocus.hasWindowHandle(focusHandle)) {
-                    winHandler.bringToFront("", focusHandle);
-                } else if (focusTarget != null && focusTarget.attributes.isMapped()
-                        && xServer.windowManager.getWindow(focusTarget.id) == focusTarget
-                        && focusTarget.getHandle() == focusHandle) {
-                    winHandler.bringToFront("", focusHandle);
-                }
-                refreshed.run();
-                android.widget.Toast.makeText(this,
-                        ok ? "Controller input updated. Some games may need a restart."
-                           : "Could not apply controller input. Previous settings restored.",
-                        android.widget.Toast.LENGTH_LONG).show();
-            });
-            if (ok) finish.run();
-            else com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC,
-                    previousDinput, previousExclusive, ignored -> {
-                        winHandler.setInputType(previousType);
-                        finish.run();
-                    });
-        });
-    }
-
     private void showVibrationDialog() {
         if (winHandler == null)
             return;
@@ -1389,18 +1288,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         }
 
-        java.util.concurrent.CountDownLatch gamepadsPrepared = new java.util.concurrent.CountDownLatch(1);
-        runOnUiThread(() -> {
-            try { winHandler.prepareGamepadsForWine(); }
-            finally { gamepadsPrepared.countDown(); }
-        });
-        try {
-            if (!gamepadsPrepared.await(3, java.util.concurrent.TimeUnit.SECONDS))
-                throw new IllegalStateException("Controller preparation timed out");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Controller preparation interrupted", e);
-        }
         environment.startEnvironmentComponents();
 
         winHandler.start();
@@ -2990,7 +2877,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         inputControlsView.setProfile(profile);
-        profile.prepareGamepad();
         inputControlsView.setVisibility(View.VISIBLE);
         inputControlsView.requestFocus();
 

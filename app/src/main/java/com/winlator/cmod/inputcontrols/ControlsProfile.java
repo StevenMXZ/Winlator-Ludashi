@@ -64,25 +64,6 @@ public class ControlsProfile implements Comparable<ControlsProfile> {
         return virtualGamepad;
     }
 
-    /** Read bindings before layout; no element geometry or first touch is needed. */
-    public void prepareGamepad() {
-        if (elementsLoaded) return;
-        virtualGamepad = false;
-        try {
-            JSONObject data = new JSONObject(FileUtils.readString(getProfileFile(context, id)));
-            JSONArray items = data.getJSONArray("elements");
-            for (int i = 0; i < items.length(); i++) {
-                JSONArray bindings = items.getJSONObject(i).getJSONArray("bindings");
-                boolean gamepad = bindings.length() > 0;
-                for (int j = 0; j < bindings.length(); j++)
-                    if (!Binding.fromString(bindings.getString(j)).isGamepad()) gamepad = false;
-                if (gamepad) { virtualGamepad = true; return; }
-            }
-        } catch (Exception e) {
-            android.util.Log.w("ControlsProfile", "Could not read gamepad bindings", e);
-        }
-    }
-
     public GamepadState getGamepadState() {
         if (gamepadState == null) gamepadState = new GamepadState();
         return gamepadState;

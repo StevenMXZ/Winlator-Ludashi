@@ -177,47 +177,6 @@ private fun Sidebar(state: ModernSidebarController) {
 }
 
 @Composable
-private fun ExclusiveInputRow(state: ModernSidebarController) {
-    val activity = state.activity
-    @Suppress("UNUSED_VARIABLE") val revision = state.revision
-    Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(uiStr(R.string.ui_exclusive_input), style = MaterialTheme.typography.bodyMedium)
-                if (activity.isExclusiveInputBusy) Text(uiStr(R.string.ui_applying), style = MaterialTheme.typography.bodySmall)
-            }
-            Switch(activity.isExclusiveInputEnabled, { activity.changeExclusiveInput(it, state::refresh) },
-                enabled = activity.canChangeExclusiveInput())
-        }
-    }
-}
-
-@Composable
-private fun InputApiRow(state: ModernSidebarController) {
-    val activity = state.activity
-    @Suppress("UNUSED_VARIABLE") val revision = state.revision
-    val canEdit = activity.canChangeExclusiveInput() && activity.isExclusiveInputEnabled
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(uiStr(R.string.ui_enable_xinput), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                Switch(activity.isSidebarXInputEnabled, { enabled ->
-                    state.activity.changeSidebarInputApis(enabled, if (enabled) false else activity.isSidebarDInputEnabled, state::refresh)
-                }, enabled = canEdit)
-            }
-        }
-        Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(uiStr(R.string.ui_enable_dinput), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                Switch(activity.isSidebarDInputEnabled, { enabled ->
-                    state.activity.changeSidebarInputApis(if (enabled) false else activity.isSidebarXInputEnabled, enabled, state::refresh)
-                }, enabled = canEdit)
-            }
-        }
-    }
-}
-
-@Composable
 private fun RailButton(selected: Boolean, click: () -> Unit, cellSize: androidx.compose.ui.unit.Dp, icon: @Composable () -> Unit) {
     val fill by animateColorAsState(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, WinZMotion.standard(150), label = "railSelection")
     Surface(click, Modifier.size(cellSize), shape = WinZShapes.Medium,
@@ -332,10 +291,6 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
             }
             view is TextView -> if (view.text.isNotBlank()) Text(view.text.toString(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             view is ViewGroup -> LegacyFields(view, revision, active, refresh, heading, sidebar)
-        }
-        if (view.id == R.id.SWEnableTouchscreenHaptics && sidebar != null) {
-            ExclusiveInputRow(sidebar)
-            InputApiRow(sidebar)
         }
     }
 }
