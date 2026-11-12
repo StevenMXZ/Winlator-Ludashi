@@ -208,20 +208,22 @@ void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
             externalFrames.erase(external); external = externalFrames.end();
         }
         if (external != externalFrames.end()) d = external->second.frame->drawable;
-        const auto& rect = w->GetInRect();
-        // Vulkan window quads force useTexAlpha=0, including depth-32 images.
-        // Match that opacity when discarding fully covered layers.
-        frame.entries.push_back({d, i == direct.end() ? nullptr : i->second, d->Pixels(), d->Revision(),
-                rect.left, rect.top, true, w->id, int(w->GetWidth()), int(w->GetHeight()), {}});
-        if (external != externalFrames.end()) {
-            frame.entries.back().ticket.reset();
-            frame.entries.back().external = external->second.frame;
-        }
-        if (i != direct.end() && external == externalFrames.end()) {
-            frame.entries.back().x += i->second->x;
-            frame.entries.back().y += i->second->y;
-            frame.tickets[w->id] = i->second;
-        }
+        if (i != direct.end() || external != externalFrames.end() || d->HasContent()) {
+            const auto& rect = w->GetInRect();
+            // Vulkan window quads force useTexAlpha=0, including depth-32 images.
+            // Match that opacity when discarding fully covered layers.
+            frame.entries.push_back({d, i == direct.end() ? nullptr : i->second, d->Pixels(), d->Revision(),
+                    rect.left, rect.top, true, w->id, int(w->GetWidth()), int(w->GetHeight()), {}});
+            if (external != externalFrames.end()) {
+                frame.entries.back().ticket.reset();
+                frame.entries.back().external = external->second.frame;
+            }
+            if (i != direct.end() && external == externalFrames.end()) {
+                frame.entries.back().x += i->second->x;
+                frame.entries.back().y += i->second->y;
+                frame.tickets[w->id] = i->second;
+            }
+        } else d->AwaitContent();
     }
     // Hiding a window's own content must not hide its mapped children: Wine
     // game windows can be parented beneath the filtered Explorer desktop.
@@ -245,7 +247,11 @@ void NativeScreen::MutateDrawable(Drawable* drawable, const void* callback, void
         catch (...) { restore(); throw; }
         restore();
     }
-    if (image->Revision() != before) DrawableChanged(drawable);
+    if (image->Revision() != before) {
+        const bool firstContent = image->PublishContent();
+        if (firstContent) PostInvalidate();
+        else DrawableChanged(drawable);
+    }
 }
 void NativeScreen::DrawableChanged(Drawable* drawable) {
     // Called under XServer::Lock: pixels changed, but geometry/visibility did not.
@@ -368,21 +374,12 @@ bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket, const sp<Presen
     return true;
 }
 void NativeScreen::HudFrame(u32 id) {
-    if (!hudEnabled && HasApplicationContent()) return;
+    if (!hudEnabled) return;
     auto* resource = server.GetResource(id);
     if (!resource || resource->GetType() != XResourceType::Window) return;
     auto* window = resource->As<Window>();
     if (window->IsRoot() || window->IsInputOnly() || window->GetWidth() <= 1 ||
         window->GetHeight() <= 1 || IsWindowFiltered(window)) return;
-    if (!HasApplicationContent() && window->IsAllAncestorsMapped()) {
-        auto* hints = window->GetProperty(Atom::GetID("WM_HINTS"));
-        if (hints && hints->format == 32 && hints->GetData().size() >= 9 * sizeof(u32)) {
-            u32 group{};
-            memcpy(&group, hints->GetData().data() + 8 * sizeof(u32), sizeof(group));
-            if (group == window->id) applicationContent.store(true, std::memory_order_release);
-        }
-    }
-    if (!hudEnabled) return;
     // A filtered Wine/Explorer desktop may contain the actual game window.
     // Like Collect(), reject only the filtered drawable itself, never a mapped
     // child merely because one of its ancestors has a filtered WM_CLASS.

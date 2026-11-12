@@ -151,6 +151,8 @@ int main(int argc, char** argv) {
         auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
         auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
                                       0, InputOutput, 24, 0, nullptr);
+        auto* initial = static_cast<xorg::NativeDrawable*>(window->GetDrawable());
+        screen.MutateDrawable(initial, [&] { initial->FillRect(0, 0, 32, 32, 0xff000000); });
         screen.SetFrameTimeline(42);
         wm.MapWindow(&client, window.get());
         screen.UpdateSurface(new ANativeWindow);
@@ -179,27 +181,6 @@ int main(int argc, char** argv) {
         screen.UpdateSurface(nullptr);
         close(sockets[1]);
         std::cout << "PASS: DisplayX native timeline pacing, FIFO bypass and older-Android fallback\n";
-        return 0;
-    }
-    if (std::string(argv[1]) == "--startup-content") {
-        int sockets[2]; if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) return 2;
-        xorg::XClient client(server, sockets[0]);
-        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
-        auto& wm = server.GetWindowManager();
-        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 1280, 720,
-                                      0, InputOutput, 24, 0, nullptr);
-        wm.MapWindow(&client, window.get());
-        if (screen.HasApplicationContent()) return 40;
-        screen.HudFrame(window->id);
-        if (screen.HasApplicationContent()) return 41;
-        std::vector<u8> hints(9 * sizeof(u32));
-        memcpy(hints.data() + 8 * sizeof(u32), &window->id, sizeof(u32));
-        window->AddProperty(xorg::Atom::GetID("WM_HINTS"), xorg::Atom::GetID("WM_HINTS"), 32, 0, hints);
-        if (screen.HasApplicationContent()) return 42;
-        screen.HudFrame(window->id);
-        if (!screen.HasApplicationContent()) return 43;
-        close(sockets[1]);
-        std::cout << "PASS: native startup waits for application content, not socket startup or window mapping\n";
         return 0;
     }
     if (std::string(argv[1]) == "--framegen-options") {
