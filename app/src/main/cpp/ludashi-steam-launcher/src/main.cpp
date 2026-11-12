@@ -1954,12 +1954,16 @@ static std::string redist_silent_args(const std::filesystem::path& installer) {
     if (name.find("dxsetup") != std::string::npos) return " /silent";
     if (name.find("ue4prereq") != std::string::npos) return " /quiet /norestart";
     if (name.find("physx") != std::string::npos) return " /quiet /norestart";
+    if (name.find("vcredist") != std::string::npos) return " /q";
     return " /quiet /norestart";
 }
 
 static RedistInstallResult run_redist_installer(const std::filesystem::path& installer,
                                                 DWORD* outExitCode) {
-    std::string cmd = "\"" + installer.string() + "\"" + redist_silent_args(installer);
+    std::string ext = installer.extension().string();
+    for (char& c : ext) c = (char) std::tolower((unsigned char) c);
+    std::string cmd = (ext == ".msi" ? "msiexec.exe /i " : "") +
+        std::string("\"") + installer.string() + "\"" + redist_silent_args(installer);
     std::vector<char> cmdVec(cmd.begin(), cmd.end());
     cmdVec.push_back('\0');
 
