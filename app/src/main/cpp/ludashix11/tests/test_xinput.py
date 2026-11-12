@@ -6,6 +6,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 from test_wire import Client
 
 def run(binary):
@@ -13,7 +14,7 @@ def run(binary):
     with tempfile.TemporaryFile(mode='w+') as log:
         process = subprocess.Popen([binary, str(child.fileno())], pass_fds=[child.fileno()],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, text=True,
-            env=dict(os.environ, LUDASHI_HOST_INPUT='1'))
+            env=dict(os.environ, LUDASHI_HOST_INPUT='1', LUDASHI_HOST_TRACE_SCENE='1'))
         child.close()
         try:
             assert process.stdout.readline().strip() == 'ready'
@@ -89,12 +90,52 @@ def run(binary):
             inject('raw 0 0'); inject('relative 4 7'); quiet()
             inject('raw 1 0'); inject('relative -4 -7'); motion(-4, -7)
 
+            # Recover from overscroll without converting the correction into raw motion.
+            for x, y, dx, dy, expected in [
+                (-5000, 100, 20, 0, (4, 100)),
+                (6000, 100, -20, 0, (1276, 100)),
+                (100, -5000, 0, 20, (100, 4)),
+                (100, 5000, 0, -20, (100, 716)),
+            ]:
+                inject('raw 0 0'); inject(f'absolute {x} {y}'); quiet()
+                inject('raw 1 0'); inject(f'relative {dx} {dy}'); motion(dx, dy)
+                p = c.reply(c.send(38, payload=struct.pack('<I', c.root)))
+                assert struct.unpack_from('<hh', p, 16) == expected, p.hex()
+            c.send(41, payload=struct.pack('<IIhhHHhh', 0, c.root, 0, 0, 0, 0, 200, 250)); quiet()
+            inject('relative -7 9'); motion(-7, 9)
+            p = c.reply(c.send(38, payload=struct.pack('<I', c.root)))
+            assert struct.unpack_from('<hh', p, 16) == (193, 259), p.hex()
+
             # Reject an incomplete mask atomically; the preceding selections remain active.
             c.send(xi, 46, struct.pack('<IHHHH', c.root, 1, 0, 1, 10))
             p = c.packet(); assert p[0] == 0 and p[1] == 16, p.hex()
             inject('relative 1 2'); motion(1, 2)
             select(0, 0); select(1, 0)
             inject('relative 1 2'); quiet()
+
+            # Visual pointer coordinates follow Java beyond the root, but explicit
+            # XGrabPointer confinement still restricts the cursor to its window.
+            pixmap, cursor, confine = [c.base | i for i in (10, 11, 12)]
+            c.send(53, 1, struct.pack('<IIHH', pixmap, c.root, 1, 1))
+            c.send(93, payload=struct.pack('<III8H', cursor, pixmap, 0, 0, 0, 0, 65535, 65535, 65535, 0, 0))
+            c.send(2, payload=struct.pack('<III', c.root, 1 << 14, cursor)); c.barrier()
+            def visual(x, y):
+                expected = f'cursor_x={x} cursor_y={y}'
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    output = os.pread(log.fileno(), os.fstat(log.fileno()).st_size, 0).decode(errors='replace')
+                    if expected in output: return
+                    time.sleep(.005)
+                raise AssertionError(expected)
+            for x, y in [(-20, -30), (1300, -40), (-50, 750), (1400, 800), (20, 30)]:
+                inject(f'absolute {x} {y}'); visual(x, y)
+            c.send(1, payload=struct.pack('<IIhhHHHHII', confine, c.root, 40, 50, 100, 80, 0, 2, 0, 0))
+            c.send(8, payload=struct.pack('<I', confine)); c.barrier()
+            grabbed = c.reply(c.send(26, 1, struct.pack('<IHBBIII', c.root, 0, 1, 1, confine, 0, 0)))
+            assert grabbed[1] == 0
+            inject('absolute -100 1000'); visual(40, 129)
+            c.send(27, payload=struct.pack('<I', 0)); c.barrier()
+            inject('absolute -25 1005'); visual(-25, 1005)
 
             # Unimplemented reply requests produce an error rather than hanging.
             c.send(xi, 60, struct.pack('<I', c.root))
@@ -103,7 +144,7 @@ def run(binary):
             for _ in range(50):
                 c = Client(channel); xi = c.extension('XInputExtension')
                 select(1, mask); c.close(); inject('relative 1 1')
-            print('PASS: XI2 devices, raw motion/buttons, fixed point, warps, masks, errors and disconnected subscribers')
+            print('PASS: XI2 devices, raw motion/buttons, fixed point, warps, offscreen cursor positions, explicit confinement, masks, errors and disconnected subscribers')
         finally:
             process.terminate(); process.wait(10); channel.close(); log.seek(0); output = log.read()
             assert process.returncode == 0, output

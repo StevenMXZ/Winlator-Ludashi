@@ -104,7 +104,8 @@ public:
                 memcpy(&next, pixels.data() + (pixels.size() > row ? row : 0), 4);
             }
             std::cerr << "HostCursor w=" << frame.cursor->GetWidth() << " h=" << frame.cursor->GetHeight()
-                      << " first=" << first << " row1=" << next << " last=" << last << '\n';
+                      << " first=" << first << " row1=" << next << " last=" << last
+                      << " cursor_x=" << frame.cursorX << " cursor_y=" << frame.cursorY << '\n';
         }
         {
             std::lock_guard lock(pendingMutex);

@@ -837,8 +837,6 @@ Cursor* WindowManager::UpdatePointerPosition(s32 x, s32 y, u32 mode, bool notify
             y = in_rect.bottom - 1;
         }
     }
-    const auto clamp_x = std::clamp(x, 0, root_window->width - 1);
-    const auto clamp_y = std::clamp(y, 0, root_window->height - 1);
     if (grab_pointer_window) {
         window = grab_pointer_window;
     } else {
@@ -852,7 +850,7 @@ Cursor* WindowManager::UpdatePointerPosition(s32 x, s32 y, u32 mode, bool notify
             !grab_pointer_window->IsAncestorOf(cursorWindow)) cursorWindow = grab_pointer_window;
         cursor = cursorWindow->GetCursor();
     }
-    server.GetScreen().UpdateCursor(cursor->GetDrawable(), clamp_x - cursor->GetHotspotX(), clamp_y - cursor->GetHotspotY());
+    server.GetScreen().UpdateCursor(cursor->GetDrawable(), x - cursor->GetHotspotX(), y - cursor->GetHotspotY());
     if (window != motion_window) {
         motion_window->LeaveEnterNotify(x, y, window, mode);
         motion_window = window;
