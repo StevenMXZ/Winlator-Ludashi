@@ -3,7 +3,17 @@ package com.winlator.cmod.steam
 import org.junit.Assert.*
 import org.junit.Test
 
+@org.junit.runner.RunWith(org.robolectric.RobolectricTestRunner::class)
+@org.robolectric.annotation.Config(manifest = org.robolectric.annotation.Config.NONE, sdk = [28])
 class SteamCloudTest {
+    @Test fun cloudCapabilityUsesProductMetadataWithoutTreatingUnknownAsUnsupported() {
+        assertEquals(false, SteamCloud.supportsCloud(org.json.JSONObject("""{"common":{"name":"No Cloud"},"depots":{}}""")))
+        assertEquals(false, SteamCloud.supportsCloud(org.json.JSONObject("""{"common":{},"depots":{},"ufs":{"quota":"0","maxnumfiles":"0"}}""")))
+        assertEquals(true, SteamCloud.supportsCloud(org.json.JSONObject("""{"common":{},"depots":{},"ufs":{"quota":"1000"}}""")))
+        assertEquals(true, SteamCloud.supportsCloud(org.json.JSONObject("""{"common":{"category":{"category_23":"1"}},"depots":{}}""")))
+        assertNull(SteamCloud.supportsCloud(org.json.JSONObject("{}")))
+    }
+
     @Test fun onlyConfirmedStateMeansSynchronizedIncludingAnEmptyTransfer() {
         for (state in -1..8) {
             val report = SteamCloud.parse("appid=764790\nphase=exit\nstate=$state\ntransfers=0\n")!!

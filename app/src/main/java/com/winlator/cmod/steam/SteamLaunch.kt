@@ -176,8 +176,9 @@ object SteamLaunch {
         env.put("LUDASHI_STEAM_APPID", id)
         val info = JSONObject(File(context.filesDir, "steam-library/$id.json").readText())
         if (SteamSocial.enabled(context) || SteamAchievements.enabled(context)) SteamSocial.beginGuest(context, env, id)
-        SteamCloud.begin(context, shortcut)
-        env.put("LUDASHI_STEAM_AGENT_CLOUD", "1")
+        val cloudEnabled = SteamCloud.supportsCloud(info) != false
+        SteamCloud.begin(context, shortcut, cloudEnabled)
+        env.put("LUDASHI_STEAM_AGENT_CLOUD", if (cloudEnabled) "1" else "0")
         env.put("LUDASHI_STEAM_LANGUAGE", "english")
         env.put("LUDASHI_STEAM_APP_NAME", info.optJSONObject("common")?.optString("name").orEmpty())
         env.put("LUDASHI_STEAM_BUILD_ID", info.optJSONObject("depots")?.optJSONObject("branches")?.optJSONObject("public")?.optString("buildid", "0") ?: "0")

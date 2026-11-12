@@ -38,10 +38,19 @@ object SteamCloud {
         val user = SteamCredentials.load(context)?.optLong("id") ?: 0L
         return File(context.filesDir, "steam-cloud/$user/${shortcut.container.id}-$id.txt")
     }
-    fun begin(context: Context, shortcut: Shortcut) {
+    internal fun supportsCloud(info: org.json.JSONObject): Boolean? {
+        val common = info.optJSONObject("common")
+        if (common?.optJSONObject("category")?.optString("category_23") == "1") return true
+        val ufs = info.optJSONObject("ufs")
+        if (ufs != null && (ufs.optLong("quota") > 0 || ufs.optLong("maxnumfiles") > 0 ||
+                (ufs.optJSONObject("savefiles")?.length() ?: 0) > 0)) return true
+        return if (common != null && info.has("depots")) false else null
+    }
+    fun begin(context: Context, shortcut: Shortcut, enabled: Boolean = true) {
         val root = drive(shortcut)
         listOf("ludashi-steam-cloud-status.txt", "ludashi-steam-cloud-conflict.txt", "ludashi-steam-cloud-conflict-answer.txt", "ludashi-steam-shutdown-complete.txt", "ludashi-steam-launcher-ready.txt", "ludashi-launcher.shutdown")
             .forEach { File(root, it).delete() }
+        if (!enabled) return
         val activity = context as? ComponentActivity ?: return
         val id = shortcut.getExtra("steamAppId").toInt()
         val destination = cached(context, id, shortcut)
