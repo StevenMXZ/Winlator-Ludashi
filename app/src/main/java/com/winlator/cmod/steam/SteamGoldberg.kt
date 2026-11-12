@@ -81,8 +81,13 @@ object SteamGoldberg {
         }
     }
     @JvmOverloads fun prepare(context: Context, game: File, id: Int, progress: ((String, Long, Long) -> Unit)? = null) {
+        invalidate(game)
         val dlls = apiDlls(game).filter { it.isFile }
-        check(dlls.isNotEmpty()) { "No Steam API DLL found for regular Goldberg mode. Use SteamLudashi or Raw for this game." }
+        if (dlls.isEmpty()) {
+            android.util.Log.i("SteamOffline", "app=$id has no Steam API DLL; attempting direct offline launch")
+            progress?.invoke("prepare", 0L, 0L)
+            return
+        }
         ensureInstalled(context, progress)
         progress?.invoke("prepare", 0L, 0L)
         dlls.forEach { dll ->

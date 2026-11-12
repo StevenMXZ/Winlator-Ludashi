@@ -440,6 +440,7 @@ object SteamSession {
                                 if (success) {
                                     SteamInstallRecord.write(context.filesDir, id, SteamStorage.record(info, dir, branch, language))
                                     finalized = true
+                                    SteamGoldberg.invalidate(dir)
                                     main.post { SteamGames.changed() }
                                 }
                                 status = if (success) "$name installed" else if (gameActive) "Download paused while the container runs" else "Download failed: $error"
