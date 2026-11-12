@@ -189,7 +189,7 @@ private class ContainerEditorStateV2(
     var displayXDynamicRange by mutableStateOf(editing?.getDisplayXDynamicRange() ?: "sdr")
     var displayXPresentMode by mutableStateOf(editing?.getDisplayXPresentMode() ?: "auto")
     var displayXPrecisePresentation by mutableStateOf(editing?.getDisplayXPrecisePresentation() ?: false)
-    var frameGenEngine by mutableStateOf(if (editing?.getExtra("frameGenEngine", "lsfg") == "wfg") "wfg" else "lsfg")
+    var frameGenEngine by mutableStateOf(com.winlator.cmod.widget.FrameGenEngine.of(editing, null))
     var frameGenEnabled by mutableStateOf((editing?.getExtra("frameGen", "0") ?: "0") == "1")
     var frameGenMultiplier by mutableIntStateOf(
         (editing?.getExtra("frameGenMultiplier", "2") ?: "2").toIntOrNull()?.coerceIn(2, 4) ?: 2

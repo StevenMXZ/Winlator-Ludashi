@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.winlator.cmod.lsfg.LosslessScaling
+import com.winlator.cmod.widget.FrameGenEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,13 +81,23 @@ fun FrameGenerationSettings(
     }
 
     SettingsCard {
-        val useWfg = engine == "wfg"
-        SettingChoice(uiStr(R.string.ui_frame_generation_engine), if (useWfg) "WFG" else "LSFG", listOf("LSFG", "WFG")) { selected ->
+        val useWfg = engine == FrameGenEngine.WFG
+        val engineIndex = FrameGenEngine.indexOf(engine)
+        val engineLabels = FrameGenEngine.LABELS.toList()
+        SettingChoice(uiStr(R.string.ui_frame_generation_engine), engineLabels[engineIndex], engineLabels) { selected ->
             enableAfterImport = false
-            onEngineChanged(if (selected == "WFG") "wfg" else "lsfg")
+            val next = FrameGenEngine.idAt(engineLabels.indexOf(selected))
+            onEngineChanged(next)
             // Switching to LSFG must not arm it without its imported shaders.
-            if (selected == "LSFG" && enabled && !refreshStatus()) onEnabledChanged(false)
+            if (next == FrameGenEngine.LSFG && enabled && !refreshStatus()) onEnabledChanged(false)
         }
+        if (engineIndex == 0) {
+            SettingsDivider()
+            Text("Tuning frame generation is turned on and adjusted from the in-game sidebar.",
+                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
         SettingsDivider()
         SettingToggle(if (useWfg) uiStr(R.string.ui_enable_wfg_frame_generation) else uiStr(R.string.ui_enable_lsfg_frame_generation), enabled) { requested ->
             if (!requested) {
@@ -142,6 +153,7 @@ fun FrameGenerationSettings(
                     onClick = { picker.launch(arrayOf("application/octet-stream", "application/x-msdownload", "*/*")) },
                 ) { Text(if (importing) uiStr(R.string.ui_importing) else uiStr(R.string.ui_import_lossless_dll)) }
             }
+        }
         }
     }
 }

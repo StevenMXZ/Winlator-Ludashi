@@ -215,6 +215,126 @@
                     android:paddingStart="14dp"
                     android:paddingEnd="14dp"
                     android:visibility="gone">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Frame generation engine"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+                        <Spinner
+                            android:id="@+id/SPFrameGenEngine"
+                            android:layout_width="120dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/sidebar_spinner" />
+                    </LinearLayout>
+                    <LinearLayout
+                        android:id="@+id/LLTuningFrameGen"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingBottom="12dp"
+                        android:visibility="gone">
+                        <Switch
+                            android:id="@+id/SWTuningFrameGen"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:text="Frame Generation"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp" />
+                        <TextView
+                            android:id="@+id/TVTuningFrameGenUnsupported"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Tuning frame generation needs the X11 display server. Use LSFG or WFG with X++."
+                            android:textColor="#B0B0B0"
+                            android:textSize="12sp"
+                            android:visibility="gone" />
+                        <LinearLayout
+                            android:id="@+id/LLTuningFrameGenDetails"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="42dp"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="Mode"
+                                    android:textColor="#0055ff"
+                                    android:textSize="13sp" />
+                                <Spinner
+                                    android:id="@+id/SPTuningFrameGenMode"
+                                    android:layout_width="130dp"
+                                    android:layout_height="36dp"
+                                    android:background="@android:color/transparent" />
+                            </LinearLayout>
+                            <TextView
+                                android:id="@+id/TVTuningFrameGenModeInfo"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginBottom="4dp"
+                                android:textColor="#99FFFFFF"
+                                android:textSize="12sp" />
+                            <LinearLayout
+                                android:id="@+id/LLTuningFrameGenMultiplier"
+                                android:layout_width="match_parent"
+                                android:layout_height="42dp"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="Multiplier"
+                                    android:textColor="#0055ff"
+                                    android:textSize="13sp" />
+                                <Spinner
+                                    android:id="@+id/SPTuningFrameGenMultiplier"
+                                    android:layout_width="130dp"
+                                    android:layout_height="36dp"
+                                    android:background="@android:color/transparent" />
+                            </LinearLayout>
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="42dp"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="Motion quality"
+                                    android:textColor="#0055ff"
+                                    android:textSize="13sp" />
+                                <Spinner
+                                    android:id="@+id/SPTuningFrameGenQuality"
+                                    android:layout_width="130dp"
+                                    android:layout_height="36dp"
+                                    android:background="@android:color/transparent" />
+                            </LinearLayout>
+                            <TextView
+                                android:id="@+id/TVTuningFrameGenStats"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:textColor="#99FFFFFF"
+                                android:textSize="12sp"
+                                android:fontFamily="monospace" />
+                        </LinearLayout>
+                    </LinearLayout>
                     <Switch
                         android:id="@+id/SWEnableFrameGen"
                         android:layout_width="match_parent"

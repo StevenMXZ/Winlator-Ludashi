@@ -1,0 +1,40 @@
+#version 450
+// Scene-cut detection from the motion-compensated residual of the finest
+// block field. A fast pan has a low residual after compensation; a cut or a
+// full-screen flash does not. Output: (residual, 0, cut, 1).
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D field;
+layout(binding = 2) uniform sampler2D prevScd;
+layout(binding = 3, rgba16f) uniform writeonly image2D outImg;
+
+layout(push_constant) uniform PC {
+    ivec2 size;
+    float cutTh;    // absolute residual that always counts as a cut
+    float cutRatio; // jump vs the previous residual that counts as a cut
+    vec4  pad;
+} pc;
+
+shared float slot[64];
+
+void main() {
+    uint li = gl_LocalInvocationIndex;
+    float sum = 0.0;
+    for (int y = int(gl_LocalInvocationID.y); y < pc.size.y; y += 8)
+        for (int x = int(gl_LocalInvocationID.x); x < pc.size.x; x += 8)
+            sum += texelFetch(field, ivec2(x, y), 0).b;
+    slot[li] = sum;
+    barrier();
+    for (uint s = 32u; s > 0u; s >>= 1u) {
+        if (li < s) slot[li] += slot[li + s];
+        barrier();
+    }
+    if (li == 0u) {
+        float mean = slot[0] / max(float(pc.size.x * pc.size.y), 1.0);
+        float prev = texelFetch(prevScd, ivec2(0), 0).r;
+        float cut = 0.0;
+        if (mean > pc.cutTh) cut = 1.0;
+        if (mean > pc.cutTh * 0.5 && mean > prev * pc.cutRatio + 0.01) cut = 1.0;
+        imageStore(outImg, ivec2(0), vec4(mean, 0.0, cut, 1.0));
+    }
+}

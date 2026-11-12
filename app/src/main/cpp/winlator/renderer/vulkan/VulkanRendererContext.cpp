@@ -62,6 +62,7 @@ VulkanRendererContext::VulkanRendererContext(ANativeWindow* win, int cW, int cH,
 VulkanRendererContext::~VulkanRendererContext() {
     isRunning = false; dirtyCV.notify_all();
     if (renderThread.joinable()) renderThread.join();
+    VulkanRendererFrameGenDestroy(this);
     std::lock_guard<std::mutex> lk(renderMutex);
     vk_.DeviceWaitIdle(device);
     for (auto& [id, wt] : texMap) destroyWinTex(wt);
@@ -1882,6 +1883,7 @@ void VulkanRendererContext::renderFrame() {
         swapchainRetryPending.store(true);
         return;
     }
+    if (VulkanRendererFrameGenRender(this)) return;
     bool currentFenceWaited = false;
 #ifdef LUDASHI_NATIVE_X11
     const auto nativeSlotStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
@@ -2431,6 +2433,7 @@ void VulkanRendererContext::updateWindowContent(int64_t id, void* px, short w, s
                                        std::memory_order_relaxed);
 #endif
     }
+    VulkanRendererFrameGenNoteContent(this, w, h);
     needsRender.store(true); dirtyCV.notify_one();
 }
 
@@ -2462,6 +2465,7 @@ void VulkanRendererContext::updateWindowContentAHB(int64_t id, AHardwareBuffer* 
             frameGenSourceFrames.store(wfgPendingSourceFrames.load(std::memory_order_relaxed),
                                        std::memory_order_relaxed);
 #endif
+    VulkanRendererFrameGenNoteContent(this, wt.w, wt.h);
     needsRender.store(true); dirtyCV.notify_one();
 }
 

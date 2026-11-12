@@ -188,7 +188,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var displayXPresentMode by mutableStateOf(shortcut.getDisplayXPresentMode())
     var displayXPrecisePresentation by mutableStateOf(shortcut.getDisplayXPrecisePresentation())
     var frameGenEngine by mutableStateOf(
-        if (shortcut.getExtra("frameGenEngine", container.getExtra("frameGenEngine", "lsfg")) == "wfg") "wfg" else "lsfg"
+        com.winlator.cmod.widget.FrameGenEngine.of(container, shortcut)
     )
     var frameGenEnabled by mutableStateOf(
         shortcut.getExtra("frameGen", container.getExtra("frameGen", "0")) == "1"

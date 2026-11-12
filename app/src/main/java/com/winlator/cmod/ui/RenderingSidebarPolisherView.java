@@ -85,6 +85,15 @@ public class RenderingSidebarPolisherView extends View {
 
         styleSpinnerRow(root.findViewById(R.id.SPUpscalerMode), onSurface);
         styleSpinnerRow(root.findViewById(R.id.SPPostFXMode), onSurface);
+
+        restoreCard(root.findViewById(R.id.LLFrameGenOptions), 12);
+        styleSwitch(root.findViewById(R.id.SWTuningFrameGen), onSurface, onSurfaceVariant, primary, surfaceVariant);
+        styleSpinnerRow(root.findViewById(R.id.SPFrameGenEngine), onSurface);
+        styleSpinnerRow(root.findViewById(R.id.SPTuningFrameGenMode), onSurface);
+        styleSpinnerRow(root.findViewById(R.id.SPTuningFrameGenMultiplier), onSurface);
+        styleSpinnerRow(root.findViewById(R.id.SPTuningFrameGenQuality), onSurface);
+        TextView frameGenStats = root.findViewById(R.id.TVTuningFrameGenStats);
+        if (frameGenStats != null) frameGenStats.setTextColor(onSurfaceVariant);
         postDelayed(() -> ensureVulkanUpscalers(getRootView(), 0), 100);
 
         TextView sharpnessHeader = root.findViewById(R.id.LBLSharpnessHeader);
@@ -145,6 +154,26 @@ public class RenderingSidebarPolisherView extends View {
             spinner.setAdapter(adapter);
         }
 
+    }
+
+    private void styleSwitch(Switch sw, int onSurface, int onSurfaceVariant, int primary, int surfaceVariant) {
+        if (sw == null) return;
+        sw.setBackground(null);
+        sw.setPadding(0, 0, 0, 0);
+        sw.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        sw.setTextColor(onSurface);
+        ViewGroup.LayoutParams lp = sw.getLayoutParams();
+        if (lp != null) {
+            lp.height = dp(48);
+            sw.setLayoutParams(lp);
+        }
+
+        int[][] states = new int[][] {
+                new int[] { android.R.attr.state_checked },
+                new int[] { }
+        };
+        sw.setThumbTintList(new ColorStateList(states, new int[] { primary, onSurfaceVariant }));
+        sw.setTrackTintList(new ColorStateList(states, new int[] { primary, surfaceVariant }));
     }
 
     private void restoreCard(View view, int paddingDp) {

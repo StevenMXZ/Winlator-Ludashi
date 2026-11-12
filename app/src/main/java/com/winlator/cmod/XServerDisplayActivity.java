@@ -94,6 +94,7 @@ import com.winlator.cmod.math.Mathf;
 import com.winlator.cmod.math.XForm;
 import com.winlator.cmod.midi.MidiHandler;
 import com.winlator.cmod.midi.MidiManager;
+import com.winlator.cmod.widget.FrameGenEngine;
 import com.winlator.cmod.widget.FrameRating;
 import com.winlator.cmod.widget.SeekBar;
 import com.winlator.cmod.widget.WinlatorHUD;
@@ -1556,13 +1557,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (frameGenTargetRate < -1) frameGenTargetRate = -1;
             if (frameGenFlowScale < 25 || frameGenFlowScale > 100) frameGenFlowScale = 70;
 
-            String containerEngine = container != null ? container.getExtra("frameGenEngine", "lsfg") : "lsfg";
-            String frameGenEngine = shortcut != null
-                    ? shortcut.getExtra("frameGenEngine", containerEngine) : containerEngine;
-            boolean useWfg = "wfg".equals(frameGenEngine);
-            vkRenderer.setFrameGenerationEngine(useWfg ? "wfg" : "lsfg");
-            File frameGenCache = frameGenRequested && !useWfg
-                    ? LosslessScaling.resolveCacheFile(this, true) : null;
+            String frameGenEngine = FrameGenEngine.of(container, shortcut);
+            boolean useWfg = FrameGenEngine.WFG.equals(frameGenEngine);
+            // Tuning keeps LSFG/WFG off, but the cache path is still passed so the sidebar can switch to LSFG.
+            if (FrameGenEngine.TUNING.equals(frameGenEngine)) frameGenRequested = false;
+            vkRenderer.setFrameGenerationEngine(useWfg ? FrameGenEngine.WFG : FrameGenEngine.LSFG);
+            File frameGenCache = !useWfg ? LosslessScaling.resolveCacheFile(this, true) : null;
             if (frameGenRequested && !useWfg && frameGenCache == null) {
                 Log.w("XServerDisplayActivity",
                         "LSFG requested but Lossless.dll shaders have not been imported");
@@ -2687,7 +2687,188 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (lblSharpnessHeader != null) lblSharpnessHeader.setVisibility(sharpVis);
         if (sbSharpness        != null) sbSharpness.setVisibility(sharpVis);
         graphicsControlsReady = true;
+        setupSidebarFrameGen(vkRenderer);
+    }
 
+    private static final String[] FRAME_GEN_MODES = {"Fixed", "Dynamic"};
+    private static final String FRAME_GEN_MODE_INFO =
+        "The game runs uncapped and only the missing frames up to the refresh rate are generated. Uses more power.";
+    private static final String[] FRAME_GEN_MULTIPLIERS = {"X2", "X3"};
+    private static final String[] FRAME_GEN_QUALITY = {"Low", "Medium", "High"};
+
+    // Frame generation follows the shortcut when launched from one, otherwise the container.
+    private String frameGenGet(String key, String fallback) {
+        String path = getIntent().getStringExtra("shortcut_path");
+        if (container != null && path != null && !path.isEmpty() && new File(path).isFile()) {
+            String v = new Shortcut(container, new File(path)).getExtra(key, "");
+            if (!v.isEmpty()) return v;
+        }
+        if (container == null) return fallback;
+        String v = container.getExtra(key);
+        return v == null || v.isEmpty() ? fallback : v;
+    }
+
+    private void frameGenPut(String key, String value) {
+        if (container == null) return;
+        String path = getIntent().getStringExtra("shortcut_path");
+        if (path != null && !path.isEmpty() && new File(path).isFile()) {
+            Shortcut store = new Shortcut(container, new File(path));
+            store.putExtra(key, value);
+            store.saveData();
+        } else {
+            container.putExtra(key, value);
+            container.saveData();
+        }
+    }
+
+    private int frameGenInt(String key, int def, int max) {
+        try {
+            return Math.max(0, Math.min(max, Integer.parseInt(frameGenGet(key, String.valueOf(def)))));
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    private void setupSidebarFrameGen(final VulkanRendererControls vkRenderer) {
+        final View details = findViewById(R.id.LLTuningFrameGenDetails);
+        final View tuningGroup = findViewById(R.id.LLTuningFrameGen);
+        final Switch sw = findViewById(R.id.SWTuningFrameGen);
+        final Spinner spMode = findViewById(R.id.SPTuningFrameGenMode);
+        final Spinner spMultiplier = findViewById(R.id.SPTuningFrameGenMultiplier);
+        final View multiplierRow = findViewById(R.id.LLTuningFrameGenMultiplier);
+        final TextView tvModeInfo = findViewById(R.id.TVTuningFrameGenModeInfo);
+        final Spinner spQuality = findViewById(R.id.SPTuningFrameGenQuality);
+        final TextView tvStats = findViewById(R.id.TVTuningFrameGenStats);
+        final Spinner spEngine = findViewById(R.id.SPFrameGenEngine);
+        final Switch swOther = findViewById(R.id.SWEnableFrameGen);
+        final View otherSettings = findViewById(R.id.LLFrameGenSettings);
+        if (vkRenderer == null || sw == null || spMode == null || spMultiplier == null || spQuality == null) return;
+
+        String[][] labels = {FRAME_GEN_MODES, FRAME_GEN_MULTIPLIERS, FRAME_GEN_QUALITY};
+        Spinner[] spinners = {spMode, spMultiplier, spQuality};
+        for (int i = 0; i < spinners.length; i++) {
+            ArrayAdapter<String> a = createSidebarSpinnerAdapter(labels[i]);
+            a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spinners[i].setAdapter(a);
+        }
+
+        final String[] engine = {FrameGenEngine.of(container, shortcut)};
+        spMode.setSelection(frameGenInt("graphicsFrameGenMode", 0, FRAME_GEN_MODES.length - 1), false);
+        spMultiplier.setSelection(frameGenInt("graphicsFrameGenMultiplier", 0, FRAME_GEN_MULTIPLIERS.length - 1), false);
+        spQuality.setSelection(frameGenInt("graphicsFrameGenMotion", 2, FRAME_GEN_QUALITY.length - 1), false);
+        final boolean initial = "1".equals(frameGenGet("graphicsFrameGen", "0"));
+        sw.setChecked(initial);
+        if (details != null) details.setVisibility(initial ? View.VISIBLE : View.GONE);
+
+        // X++ drives renderFrame itself and expects its scene latch and slot serial; Tuning bypasses both.
+        final boolean tuningSupported = vkRenderer instanceof VulkanXServerView;
+        sw.setEnabled(tuningSupported);
+        View unsupported = findViewById(R.id.TVTuningFrameGenUnsupported);
+        if (unsupported != null) unsupported.setVisibility(tuningSupported ? View.GONE : View.VISIBLE);
+        final Runnable updateModeViews = () -> {
+            int mode = spMode.getSelectedItemPosition();
+            if (tvModeInfo != null) {
+                tvModeInfo.setText(FRAME_GEN_MODE_INFO);
+                tvModeInfo.setVisibility(mode == 1 ? View.VISIBLE : View.GONE);
+            }
+            if (multiplierRow != null) multiplierRow.setVisibility(mode == 0 ? View.VISIBLE : View.GONE);
+        };
+        updateModeViews.run();
+
+        final Runnable apply = () -> vkRenderer.setFrameGen(
+            tuningSupported && sw.isChecked() && FrameGenEngine.TUNING.equals(engine[0]),
+            spMode.getSelectedItemPosition(), spQuality.getSelectedItemPosition(),
+            spMultiplier.getSelectedItemPosition() + 2);
+        final Runnable persist = () -> {
+            frameGenPut("graphicsFrameGen", sw.isChecked() ? "1" : "0");
+            frameGenPut("graphicsFrameGenMode", String.valueOf(spMode.getSelectedItemPosition()));
+            frameGenPut("graphicsFrameGenMultiplier", String.valueOf(spMultiplier.getSelectedItemPosition()));
+            frameGenPut("graphicsFrameGenMotion", String.valueOf(spQuality.getSelectedItemPosition()));
+        };
+
+        final Runnable showEngine = () -> {
+            boolean tuning = FrameGenEngine.TUNING.equals(engine[0]);
+            if (tuningGroup != null) tuningGroup.setVisibility(tuning ? View.VISIBLE : View.GONE);
+            if (swOther != null) {
+                swOther.setVisibility(tuning ? View.GONE : View.VISIBLE);
+                swOther.setText(FrameGenEngine.WFG.equals(engine[0])
+                    ? "WFG Frame Generation" : getString(R.string.sidebar_lsfg_frame_generation));
+            }
+            if (otherSettings != null)
+                otherSettings.setVisibility(!tuning && swOther != null && swOther.isChecked() ? View.VISIBLE : View.GONE);
+        };
+        showEngine.run();
+        apply.run();
+
+        if (spEngine != null) {
+            ArrayAdapter<String> a = createSidebarSpinnerAdapter(FrameGenEngine.LABELS);
+            a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spEngine.setAdapter(a);
+            spEngine.setSelection(FrameGenEngine.indexOf(engine[0]), false);
+            spEngine.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                    String next = FrameGenEngine.idAt(pos);
+                    if (next.equals(engine[0])) return;
+                    // Only one engine may own the swapchain, and LSFG/WFG only switch while off.
+                    if (vkRenderer.isFrameGenerationRequested()) vkRenderer.setFrameGenerationEnabled(false);
+                    engine[0] = next;
+                    if (!FrameGenEngine.TUNING.equals(next)) vkRenderer.setFrameGenerationEngine(next);
+                    frameGenPut(FrameGenEngine.KEY, next);
+                    apply.run();
+                    showEngine.run();
+                    if (modernSidebar != null) modernSidebar.onRuntimeStatusChanged();
+                }
+                @Override public void onNothingSelected(AdapterView<?> p) {}
+            });
+        }
+
+        sw.setOnCheckedChangeListener((btn, checked) -> {
+            if (details != null) details.setVisibility(checked ? View.VISIBLE : View.GONE);
+            apply.run();
+            persist.run();
+        });
+        AdapterView.OnItemSelectedListener changed = new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                updateModeViews.run();
+                apply.run();
+                persist.run();
+            }
+            @Override public void onNothingSelected(AdapterView<?> p) {}
+        };
+        spMode.setOnItemSelectedListener(changed);
+        spMultiplier.setOnItemSelectedListener(changed);
+        spQuality.setOnItemSelectedListener(changed);
+
+        if (tvStats == null) return;
+        final Runnable[] poll = new Runnable[1];
+        poll[0] = () -> {
+            if (!tvStats.isAttachedToWindow()) return;
+            if (sw.isChecked() && FrameGenEngine.TUNING.equals(engine[0])) {
+                float[] s = vkRenderer.getFrameGenStats();
+                int state = s.length > 5 ? (int) s[5] : 0;
+                // The modern HUD already shows the numbers; keep only notices here.
+                final boolean inHud = modernHud != null && modernHud.isUserEnabled();
+                String text;
+                switch (state) {
+                    case 1:
+                    case 4:
+                        text = inHud ? "" : String.format(java.util.Locale.US,
+                            "%.0f \u2192 %.0f FPS  |  GPU %.1f ms  |  +%.0f ms", s[0], s[1], s[2], s[3]);
+                        if (state == 4 && s.length > 6) {
+                            int q = Math.max(0, Math.min(FRAME_GEN_QUALITY.length - 1, (int) s[6]));
+                            text += (text.isEmpty() ? "" : "\n") + "GPU busy: motion quality " + FRAME_GEN_QUALITY[q];
+                        }
+                        break;
+                    case 2: text = "Unavailable on this GPU"; break;
+                    case 3: text = "Paused: GPU overloaded"; break;
+                    default: text = "Waiting for frames..."; break;
+                }
+                tvStats.setText(text);
+                tvStats.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
+            }
+            tvStats.postDelayed(poll[0], 500);
+        };
+        tvStats.post(poll[0]);
     }
 
         private void setupSidebarInputControls() {

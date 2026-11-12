@@ -336,6 +336,41 @@ Java_com_winlator_cmod_widget_VulkanXServerView_nativeGetSwapchainSize(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeSetFrameGen(
+    JNIEnv*, jobject, jlong handle, jboolean enabled, jint mode, jint quality, jint multiplier,
+    jfloat targetHz)
+{
+    auto* r = reinterpret_cast<VulkanRendererContext*>(handle);
+    if (r) VulkanRendererFrameGenConfigure(r, enabled == JNI_TRUE, mode, quality, multiplier, targetHz);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeNoteVsync(JNIEnv*, jclass, jlong frameTimeNs)
+{
+    VulkanRendererFrameGenNoteVsync((int64_t)frameTimeNs);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeFrameGenSourceUncapped(JNIEnv*, jclass)
+{
+    return VulkanRendererFrameGenSourceUncapped() ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_winlator_cmod_widget_VulkanXServerView_nativeGetFrameGenStats(
+    JNIEnv* env, jobject, jlong handle)
+{
+    jfloatArray arr = env->NewFloatArray(7);
+    auto* r = reinterpret_cast<VulkanRendererContext*>(handle);
+    if (!r) return arr;
+    FrameGenStats s = VulkanRendererFrameGenGetStats(r);
+    jfloat vals[7] = { s.srcFps, s.outFps, s.gpuMs, s.addedLatencyMs,
+                       (jfloat)s.generated, (jfloat)s.state, (jfloat)s.quality };
+    env->SetFloatArrayRegion(arr, 0, 7, vals);
+    return arr;
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_winlator_cmod_widget_VulkanXServerView_nativeSetFrameGenerationEngine(
     JNIEnv*, jobject, jlong handle, jint engine) {
     auto* r = reinterpret_cast<VulkanRendererContext*>(handle);
@@ -401,4 +436,3 @@ Java_com_winlator_cmod_widget_VulkanXServerView_nativeReattachSurface(
     bool ok = r->reattachSurface(win);
     return (jboolean)ok;
 }
-

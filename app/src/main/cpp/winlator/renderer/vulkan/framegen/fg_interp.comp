@@ -1,0 +1,216 @@
+#version 450
+// Intermediate frame at phase t from the per-pixel vector field.
+// Where the two warped samples agree they are blended; where they do not
+// (occlusion, wrong vector) a single warped sample is used, because blending
+// two misaligned images is what reads as a double image.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D prevTex;
+layout(binding = 1) uniform sampler2D curTex;
+layout(binding = 2) uniform sampler2D vecTex;  // finest-level pixels: (v, cost)
+layout(binding = 3, rgba8) uniform writeonly image2D outImg;
+layout(binding = 4) uniform sampler2D scdTex;
+
+layout(push_constant) uniform PC {
+    vec2  outSize;
+    vec2  fieldSize;
+    float t;
+    float confLo;
+    float confHi;
+    float staticTh; // vectors shorter than this copy the nearer frame; 0 disables
+    float fieldT;   // time the field is anchored at; equals t when estimated for this phase
+    int   mode;     // 0 bilinear, 1 sharp only on edges, 2 sharp and per-pixel vector pick
+} pc;
+
+bool inside(vec2 uv) { return all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0))); }
+
+vec4 fetchVec(vec2 fpos) {
+    ivec2 p = clamp(ivec2(floor(fpos)), ivec2(0), ivec2(pc.fieldSize) - 1);
+    return texelFetch(vecTex, p, 0);
+}
+
+// The field is coarser than the output, so a nearest lookup moves each block of
+// output pixels as one and turns smooth motion (camera turns, zoom, perspective)
+// into visible steps. Neighbours that move alike are blended bilinearly; across
+// a motion edge the nearest vector is kept, since blending there drags a halo.
+vec4 fetchVecSmooth(vec2 fpos) {
+    vec2 q = fpos - 0.5;
+    ivec2 b = ivec2(floor(q));
+    vec2 w = q - vec2(b);
+    ivec2 hi = ivec2(pc.fieldSize) - 1;
+    vec4 v00 = texelFetch(vecTex, clamp(b, ivec2(0), hi), 0);
+    vec4 v10 = texelFetch(vecTex, clamp(b + ivec2(1, 0), ivec2(0), hi), 0);
+    vec4 v01 = texelFetch(vecTex, clamp(b + ivec2(0, 1), ivec2(0), hi), 0);
+    vec4 v11 = texelFetch(vecTex, clamp(b + ivec2(1, 1), ivec2(0), hi), 0);
+    float spread = max(max(length(v00.rg - v11.rg), length(v10.rg - v01.rg)),
+                       max(length(v00.rg - v10.rg), length(v00.rg - v01.rg)));
+    vec4 smoothV = mix(mix(v00, v10, w.x), mix(v01, v11, w.x), w.y);
+    return mix(smoothV, fetchVec(fpos), smoothstep(0.75, 1.5, spread));
+}
+
+vec3 fetchPixel(sampler2D tex, vec2 uv) {
+    ivec2 p = clamp(ivec2(floor(uv * pc.outSize)), ivec2(0), ivec2(pc.outSize) - 1);
+    return texelFetch(tex, p, 0).rgb;
+}
+
+// Warps land between pixels. Nearest sampling duplicates and skips pixels along
+// moving edges (the staircase in motion trails) and bilinear softens them;
+// Catmull-Rom (5 bilinear taps) keeps them sharp and is exact on whole pixels.
+vec3 sampleSharp(sampler2D tex, vec2 uv) {
+    vec2 pos = uv * pc.outSize;
+    vec2 tc = floor(pos - 0.5) + 0.5;
+    vec2 f = pos - tc;
+    vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+    vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+    vec2 w3 = f * f * (-0.5 + 0.5 * f);
+    vec2 w12 = w1 + w2;
+    vec2 inv = 1.0 / pc.outSize;
+    vec2 t0 = (tc - 1.0) * inv;
+    vec2 t3 = (tc + 2.0) * inv;
+    vec2 t12 = (tc + w2 / w12) * inv;
+    float a = w12.x * w0.y, b = w0.x * w12.y, c = w12.x * w12.y, d = w3.x * w12.y, e = w12.x * w3.y;
+    vec3 r = textureLod(tex, vec2(t12.x, t0.y), 0.0).rgb * a
+           + textureLod(tex, vec2(t0.x, t12.y), 0.0).rgb * b
+           + textureLod(tex, t12, 0.0).rgb * c
+           + textureLod(tex, vec2(t3.x, t12.y), 0.0).rgb * d
+           + textureLod(tex, vec2(t12.x, t3.y), 0.0).rgb * e;
+    return clamp(r / (a + b + c + d + e), 0.0, 1.0);
+}
+
+vec3 sampleMotion(sampler2D tex, vec2 uv, bool sharp) {
+    return sharp ? sampleSharp(tex, uv) : textureLod(tex, uv, 0.0).rgb;
+}
+
+// Across a motion edge one field texel covers several output pixels, so the
+// nearest vector moves them as a block. Each pixel instead takes the
+// neighbouring vector whose two warped samples agree best.
+vec4 pickVec(vec2 fpos, vec2 uv) {
+    vec2 q = fpos - 0.5;
+    ivec2 b = ivec2(floor(q));
+    ivec2 hi = ivec2(pc.fieldSize) - 1;
+    vec4 cand[4];
+    cand[0] = texelFetch(vecTex, clamp(b, ivec2(0), hi), 0);
+    cand[1] = texelFetch(vecTex, clamp(b + ivec2(1, 0), ivec2(0), hi), 0);
+    cand[2] = texelFetch(vecTex, clamp(b + ivec2(0, 1), ivec2(0), hi), 0);
+    cand[3] = texelFetch(vecTex, clamp(b + ivec2(1, 1), ivec2(0), hi), 0);
+    float spread = max(max(length(cand[0].rg - cand[3].rg), length(cand[1].rg - cand[2].rg)),
+                       max(length(cand[0].rg - cand[1].rg), length(cand[0].rg - cand[2].rg)));
+    vec4 smoothV = fetchVecSmooth(fpos);
+    if (spread < 0.75) return smoothV;
+    vec4 best = smoothV;
+    float bestCost = 1e9;
+    for (int i = 0; i < 5; ++i) {
+        vec4 v = i < 4 ? cand[i] : smoothV;
+        vec2 vuv = v.rg / pc.fieldSize;
+        vec3 dp = abs(fetchPixel(prevTex, uv - pc.t * vuv) - fetchPixel(curTex, uv + (1.0 - pc.t) * vuv));
+        float cost = dp.r + dp.g + dp.b + 0.5 * v.b;
+        if (cost < bestCost) { bestCost = cost; best = v; }
+    }
+    return best;
+}
+
+// Largest per-channel change of a pixel between the two real frames.
+float pixelChange(ivec2 p) {
+    p = clamp(p, ivec2(0), ivec2(pc.outSize) - 1);
+    vec3 d = abs(texelFetch(prevTex, p, 0).rgb - texelFetch(curTex, p, 0).rgb);
+    return max(d.r, max(d.g, d.b));
+}
+
+// Pixels identical in both frames while the area around them moves as a whole
+// are overlays (HUD, crosshair, subtitles): warping them along the background
+// vector drags them. An isolated vector over a static area is a small moving
+// object instead, and still gets warped so it does not vanish between frames.
+const float kOverlayChange = 3.0 / 255.0;
+const float kEdge = 0.05;
+
+// Spatial contrast of the current frame. Flat areas do not show the staircase
+// a bilinear warp leaves on a hard edge, so only those edges need Catmull-Rom.
+float localContrast(ivec2 gid, vec3 c0) {
+    ivec2 hi = ivec2(pc.outSize) - 1;
+    vec3 d = abs(c0 - texelFetch(curTex, clamp(gid + ivec2( 1, 0), ivec2(0), hi), 0).rgb);
+    d = max(d, abs(c0 - texelFetch(curTex, clamp(gid + ivec2(-1, 0), ivec2(0), hi), 0).rgb));
+    d = max(d, abs(c0 - texelFetch(curTex, clamp(gid + ivec2( 0, 1), ivec2(0), hi), 0).rgb));
+    d = max(d, abs(c0 - texelFetch(curTex, clamp(gid + ivec2( 0,-1), ivec2(0), hi), 0).rgb));
+    return max(d.r, max(d.g, d.b));
+}
+
+bool isOverlay(ivec2 gid, vec2 fpos, vec2 v) {
+    if (pixelChange(gid + ivec2( 1, 0)) > kOverlayChange ||
+        pixelChange(gid + ivec2(-1, 0)) > kOverlayChange ||
+        pixelChange(gid + ivec2( 0, 1)) > kOverlayChange ||
+        pixelChange(gid + ivec2( 0,-1)) > kOverlayChange) return false;
+    const float r = 6.0;
+    float tol = 0.5 * length(v) + 1.0;
+    vec2 o[4] = vec2[](vec2(r, 0.0), vec2(-r, 0.0), vec2(0.0, r), vec2(0.0, -r));
+    for (int i = 0; i < 4; ++i)
+        if (length(fetchVec(fpos + o[i]).rg - v) > tol) return false;
+    return true;
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(gid, ivec2(pc.outSize)))) return;
+
+    vec2 uv = (vec2(gid) + 0.5) / pc.outSize;
+    vec3 p0 = texelFetch(prevTex, gid, 0).rgb;
+    vec3 c0 = texelFetch(curTex, gid, 0).rgb;
+    vec3 hold = pc.t < 0.5 ? p0 : c0;
+    vec3 d0 = abs(p0 - c0);
+    bool unchanged = max(d0.r, max(d0.g, d0.b)) <= kOverlayChange;
+
+    if (texelFetch(scdTex, ivec2(0), 0).b > 0.5) {
+        imageStore(outImg, gid, vec4(hold, 1.0));
+        return;
+    }
+
+    // A field built for this phase already lives at the output pixel. A field
+    // built at another time (the middle one used by Dynamic) has to be stepped
+    // onto this pixel's trajectory; that step has no answer on occlusions.
+    vec2 fpos = uv * pc.fieldSize;
+    vec4 f = fetchVecSmooth(fpos);
+    if (abs(pc.t - pc.fieldT) > 0.01) {
+        fpos -= (pc.t - pc.fieldT) * f.rg;
+        // High re-picks a vector at the stepped pixel. Lower levels reuse the
+        // smooth field there; a second full search would not fit in a vsync.
+        if (pc.mode < 2) f = fetchVecSmooth(fpos);
+    }
+    vec4 mark = fetchVec(fpos);
+    // Alpha 0 was marked at estimation time for a large static overlay. The
+    // full-resolution test stays for thin HUD the coarse mark misses.
+    if (dot(f.rg, f.rg) < pc.staticTh * pc.staticTh ||
+        (unchanged && (mark.a < 0.5 || isOverlay(gid, fpos, f.rg)))) {
+        imageStore(outImg, gid, vec4(hold, 1.0));
+        return;
+    }
+    if (pc.mode >= 2) f = pickVec(fpos, uv);
+
+    vec2 vuv = f.rg / pc.fieldSize;
+    vec2 pUv = uv - pc.t * vuv;
+    vec2 cUv = uv + (1.0 - pc.t) * vuv;
+    bool pIn = inside(pUv);
+    bool cIn = inside(cUv);
+    bool sharp = pc.mode >= 2 || (pc.mode == 1 && localContrast(gid, c0) >= kEdge);
+    // Content entering or leaving the screen exists in one frame only.
+    if (!pIn && !cIn) {
+        imageStore(outImg, gid, vec4(hold, 1.0));
+        return;
+    }
+    if (!pIn) {
+        imageStore(outImg, gid, vec4(sampleMotion(curTex, cUv, sharp), 1.0));
+        return;
+    }
+    if (!cIn) {
+        imageStore(outImg, gid, vec4(sampleMotion(prevTex, pUv, sharp), 1.0));
+        return;
+    }
+
+    vec3 p = sampleMotion(prevTex, pUv, sharp);
+    vec3 c = sampleMotion(curTex,  cUv, sharp);
+    vec3 d = abs(p - c);
+    float diff = (d.r + d.g + d.b) * (1.0 / 3.0);
+    float conf = 1.0 - smoothstep(pc.confLo, pc.confHi, f.b);
+    float agree = 1.0 - smoothstep(pc.confLo, pc.confHi * 1.5, diff);
+    vec3 near = pc.t <= 0.5 ? p : c;
+    imageStore(outImg, gid, vec4(mix(near, mix(p, c, pc.t), conf * agree), 1.0));
+}

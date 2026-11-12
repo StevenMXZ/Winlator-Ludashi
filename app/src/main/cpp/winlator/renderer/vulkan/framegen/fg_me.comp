@@ -1,0 +1,184 @@
+#version 450
+// Block motion estimation on one pyramid level, one thread per 8x8 block.
+// Vectors are anchored at the phase being generated, in pixels of this level:
+//   prev(x - phase * v)  ~  cur(x + (1 - phase) * v)
+// Candidate based (EPZS / 3DRS style) instead of a blind window search: a few
+// predictors from the coarser level, the previous frame and the neighbors are
+// tested and only the best one is refined. This keeps the field coherent, which
+// is what makes interpolated motion look solid instead of blocky.
+//   mode 0: predictors + local refinement
+//   mode 1: spatial propagation, re-tests the neighbors' vectors
+//   mode 2: copy the search field forward (coarse levels are only predictors)
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D prevTex;
+layout(binding = 1) uniform sampler2D curTex;
+layout(binding = 2) uniform sampler2D inField;   // mode 0: coarser level, mode 1: this level
+layout(binding = 3, rgba16f) uniform writeonly image2D outField;
+layout(binding = 4) uniform sampler2D tempField; // previous frame, finest-level pixels
+
+layout(push_constant) uniform PC {
+    ivec2 lvlSize;     // active luma rectangle
+    int   mode;
+    int   flags;       // 1 coarser level, 2 previous frame, 4 half-pel, 8 wide search
+    vec2  coarseScale; // pixels of this level per pixel of the coarser one
+    float tempScale;   // pixels of this level per finest-level pixel
+    float lambda;      // cost per pixel of deviation from the reference vector
+    float phase;       // time the field is anchored at, 0.5 = middle frame
+    float pad;
+    vec2  allocSize;   // allocated luma image; the active rect is its top-left
+    ivec2 blockSize;   // active block field
+    ivec2 coarseBlocks;
+    ivec2 tempBlocks;
+} pc;
+
+const float kBlock = 8.0;
+
+// Pixel position inside the active luma rect, as a UV into the allocation.
+vec2 toUv(vec2 pixel) {
+    vec2 rect = vec2(pc.lvlSize);
+    vec2 p = clamp(pixel, vec2(0.0), rect);
+    vec2 uv = p / pc.allocSize;
+    vec2 limit = rect / pc.allocSize;
+    vec2 guard = vec2(pc.allocSize.x > rect.x ? 0.51 : 0.0,
+                      pc.allocSize.y > rect.y ? 0.51 : 0.0) / pc.allocSize;
+    return min(uv, limit - guard);
+}
+
+// Mean absolute luma difference over a 12x12 window around the block, sampled
+// on pixel corners so each bilinear tap averages a 2x2 footprint.
+// maxMean stops the sum once the candidate can no longer win. Remaining taps
+// are non-negative, so a partial sum already past the limit is final.
+float blockCost(vec2 center, vec2 v, float maxMean) {
+    vec2 a = center - pc.phase * v;
+    vec2 b = center + (1.0 - pc.phase) * v;
+    float ceilSum = maxMean * 36.0;
+    bool bounded = maxMean < 1.0;
+    float s = 0.0;
+    for (int j = 0; j < 6; ++j) {
+        for (int i = 0; i < 6; ++i) {
+            vec2 o = vec2(float(i * 2 - 5), float(j * 2 - 5));
+            float p = textureLod(prevTex, toUv(a + o), 0.0).r;
+            float c = textureLod(curTex,  toUv(b + o), 0.0).r;
+            s += abs(p - c);
+        }
+        if (bounded && s >= ceilSum) return maxMean;
+    }
+    return s * (1.0 / 36.0);
+}
+
+vec2  bestV;
+float bestCost;
+float bestScore;
+vec2  refV;
+
+void tryV(vec2 center, vec2 v) {
+    float penalty = pc.lambda * length(v - refV);
+    float room = bestScore - penalty;
+    if (room <= 0.0) return;
+    float c = blockCost(center, v, room);
+    float s = c + penalty;
+    if (s < bestScore) { bestScore = s; bestCost = c; bestV = v; }
+}
+
+void s2(inout float a, inout float b) { float t = min(a, b); b = max(a, b); a = t; }
+
+float med9(float p0, float p1, float p2, float p3, float p4,
+           float p5, float p6, float p7, float p8) {
+    s2(p1, p2); s2(p4, p5); s2(p7, p8);
+    s2(p0, p1); s2(p3, p4); s2(p6, p7);
+    s2(p1, p2); s2(p4, p5); s2(p7, p8);
+    s2(p0, p3); s2(p5, p8); s2(p4, p7);
+    s2(p3, p6); s2(p1, p4); s2(p2, p5);
+    s2(p4, p7); s2(p4, p2); s2(p6, p4);
+    s2(p4, p2);
+    return p4;
+}
+
+void main() {
+    ivec2 b = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 fs = pc.blockSize;
+    if (any(greaterThanEqual(b, fs))) return;
+    vec2 center = vec2(b) * kBlock + 0.5 * kBlock;
+
+    if (pc.mode == 2) {
+        imageStore(outField, b, texelFetch(inField, b, 0));
+        return;
+    }
+
+    if (pc.mode == 1) {
+        vec4 own = texelFetch(inField, b, 0);
+        bestV = own.rg;
+        bestCost = own.b;
+        vec2 n[9];
+        int k = 0;
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx)
+                n[k++] = texelFetch(inField, clamp(b + ivec2(dx, dy), ivec2(0), fs - 1), 0).rg;
+        // A neighbor's vector must be clearly better to take over, so flat
+        // areas keep their own vector instead of flickering between equals.
+        for (int i = 0; i < 9; ++i) {
+            if (i == 4) continue;
+            float c = blockCost(center, n[i], bestCost - 0.004);
+            if (c < bestCost - 0.004) { bestCost = c; bestV = n[i]; }
+        }
+        // The median of the neighborhood wins ties: smooth fields interpolate
+        // without seams between blocks.
+        vec2 med = vec2(med9(n[0].x, n[1].x, n[2].x, n[3].x, n[4].x, n[5].x, n[6].x, n[7].x, n[8].x),
+                        med9(n[0].y, n[1].y, n[2].y, n[3].y, n[4].y, n[5].y, n[6].y, n[7].y, n[8].y));
+        if (med != bestV) {
+            float c = blockCost(center, med, bestCost + 0.003);
+            if (c <= bestCost + 0.003) { bestCost = c; bestV = med; }
+        }
+        imageStore(outField, b, vec4(bestV, bestCost, 1.0));
+        return;
+    }
+
+    refV = vec2(0.0);
+    bool hasCoarse = (pc.flags & 1) != 0;
+    ivec2 cb = ivec2(0);
+    ivec2 cfs = ivec2(1);
+    if (hasCoarse) {
+        cfs = pc.coarseBlocks;
+        cb = clamp(ivec2(floor(center / pc.coarseScale / kBlock)), ivec2(0), cfs - 1);
+        refV = texelFetch(inField, cb, 0).rg * pc.coarseScale;
+    }
+
+    bestV = vec2(0.0);
+    bestCost = blockCost(center, bestV, 2.0);
+    bestScore = bestCost + pc.lambda * length(refV);
+
+    if (hasCoarse) {
+        tryV(center, refV);
+        tryV(center, texelFetch(inField, clamp(cb + ivec2(-1, 0), ivec2(0), cfs - 1), 0).rg * pc.coarseScale);
+        tryV(center, texelFetch(inField, clamp(cb + ivec2( 1, 0), ivec2(0), cfs - 1), 0).rg * pc.coarseScale);
+        tryV(center, texelFetch(inField, clamp(cb + ivec2(0, -1), ivec2(0), cfs - 1), 0).rg * pc.coarseScale);
+        tryV(center, texelFetch(inField, clamp(cb + ivec2(0,  1), ivec2(0), cfs - 1), 0).rg * pc.coarseScale);
+    }
+    if ((pc.flags & 2) != 0) {
+        ivec2 tfs = pc.tempBlocks;
+        ivec2 tb = clamp(ivec2(floor(center / pc.tempScale / kBlock)), ivec2(0), tfs - 1);
+        tryV(center, texelFetch(tempField, tb, 0).rg * pc.tempScale);
+    }
+    if ((pc.flags & 8) != 0) {
+        for (int dy = -4; dy <= 4; ++dy)
+            for (int dx = -4; dx <= 4; ++dx)
+                if (dx != 0 || dy != 0) tryV(center, vec2(float(dx), float(dy)));
+    }
+
+    vec2 c0 = bestV;
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            if (dx != 0 || dy != 0) tryV(center, c0 + vec2(float(dx), float(dy)));
+
+    if ((pc.flags & 4) != 0) {
+        // Axis steps only. Each test is a full window, and the diagonals rarely win.
+        c0 = bestV;
+        tryV(center, c0 + vec2( 0.5,  0.0));
+        tryV(center, c0 + vec2(-0.5,  0.0));
+        tryV(center, c0 + vec2( 0.0,  0.5));
+        tryV(center, c0 + vec2( 0.0, -0.5));
+    }
+
+    imageStore(outField, b, vec4(bestV, bestCost, 1.0));
+}

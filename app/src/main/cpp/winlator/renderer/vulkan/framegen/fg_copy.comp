@@ -1,0 +1,12 @@
+#version 450
+// Keeps a field for the next frame.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D srcTex;
+layout(binding = 3, rgba16f) uniform writeonly image2D dstImg;
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(gid, imageSize(dstImg)))) return;
+    imageStore(dstImg, gid, texelFetch(srcTex, gid, 0));
+}

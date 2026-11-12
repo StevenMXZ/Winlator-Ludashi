@@ -11,6 +11,7 @@
 
 #include "view_transformation.hpp"
 #include "xform.hpp"
+#include "framegen/FrameGen.h"
 
 struct VkTable {
 
@@ -175,7 +176,10 @@ static_assert(sizeof(WindowPushConstantsFSR1) == sizeof(WindowPushConstantsSGSR)
 static_assert(offsetof(WindowPushConstantsPostFX, cosR) == 48, "cosR offset must match window_vert.txt layout(offset=48)");
 
 class VulkanRendererContext {
+    friend struct FrameGenState;
 public:
+    std::atomic<FrameGenState*> tuningFrameGen{nullptr};
+
     VulkanRendererContext(ANativeWindow* window, int cWidth, int cHeight,
                           void* adrenotoolsHandle = nullptr,
                           bool validationEnabled = false);
@@ -581,7 +585,8 @@ public:
         float ox, float oy, float sx, float sy, float cw, float ch,
         short ptrX, short ptrY, short curHotX, short curHotY,
         short curW, short curH, bool curVis,
-        VkRect2D scissorRect, uint32_t generatedCount, bool useFrameGeneration);
+        VkRect2D scissorRect, uint32_t generatedCount, bool useFrameGeneration,
+        const FrameGenPass* fgPass = nullptr);
     void renderLoop();
     void renderFrame();
 

@@ -157,6 +157,30 @@ add_custom_command(
     COMMENT "Compiling window_postfx.frag -> window_postfx_frag.h"
 )
 
+# Frame generation compute shaders (isolated under vulkan/framegen).
+set(FG_SHADER_HEADERS "")
+foreach(FG_SHADER down me select interp scd copy)
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fg_${FG_SHADER}_comp.h
+        COMMAND glslangValidator -V --vn fg_${FG_SHADER}_comp_code
+                -x -o ${CMAKE_CURRENT_BINARY_DIR}/fg_${FG_SHADER}_comp.h
+                ${VULKAN_RENDERER_DIR}/framegen/fg_${FG_SHADER}.comp
+        DEPENDS ${VULKAN_RENDERER_DIR}/framegen/fg_${FG_SHADER}.comp
+        COMMENT "Compiling fg_${FG_SHADER}.comp -> fg_${FG_SHADER}_comp.h"
+    )
+    list(APPEND FG_SHADER_HEADERS ${CMAKE_CURRENT_BINARY_DIR}/fg_${FG_SHADER}_comp.h)
+endforeach()
+
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fg_down_r8_comp.h
+    COMMAND glslangValidator -V -DFG_LUMA_R8 --vn fg_down_r8_comp_code
+            -x -o ${CMAKE_CURRENT_BINARY_DIR}/fg_down_r8_comp.h
+            ${VULKAN_RENDERER_DIR}/framegen/fg_down.comp
+    DEPENDS ${VULKAN_RENDERER_DIR}/framegen/fg_down.comp
+    COMMENT "Compiling fg_down.comp (r8) -> fg_down_r8_comp.h"
+)
+list(APPEND FG_SHADER_HEADERS ${CMAKE_CURRENT_BINARY_DIR}/fg_down_r8_comp.h)
+
 set(VULKAN_CONTEXT_SOURCE ${VULKAN_RENDERER_DIR}/VulkanRendererContext.cpp)
 set(VULKAN_CONTEXT_LEGACY ${CMAKE_CURRENT_BINARY_DIR}/VulkanRendererContext_legacy.cpp)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${VULKAN_CONTEXT_SOURCE})
@@ -250,6 +274,8 @@ add_library(vulkan_renderer SHARED
         winlator/renderer/vulkan/VulkanRendererFilters.cpp
         winlator/renderer/vulkan/VulkanRendererWfg.cpp
         winlator/renderer/vulkan/VulkanRendererPipelineOpt.cpp
+        winlator/renderer/vulkan/framegen/FrameGen.cpp
+        ${FG_SHADER_HEADERS}
         winlator/renderer/vulkan/vk_dispatch.c
 
         winlator/renderer/vulkan/lsfg/lsfg_dll.c

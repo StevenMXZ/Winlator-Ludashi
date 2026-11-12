@@ -4,6 +4,9 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Choreographer;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -72,6 +75,10 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     private int     pendingPostFXMode     = 0;
     private float   pendingSharpness      = 0.5f;
     private boolean pendingSwapRB         = false;
+    private boolean tuningFrameGen = false;
+    private int     tuningFrameGenMode = 0;
+    private int     tuningFrameGenQuality = 1;
+    private int     tuningFrameGenMultiplier = 2;
     private volatile boolean pendingFrameGenEnabled = false;
     private volatile boolean effectiveFrameGenEnabled = false;
     private volatile Runnable frameGenerationStateListener = null;
@@ -87,6 +94,19 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     private FrameRating classicHudRef = null;
     private volatile int fpsWindowId = -1;
     private volatile int fpsLimit = 0;
+    private volatile int frameGenSourceCap = 0;
+
+    // Performance frame generation decides per vsync, so it needs the display's timestamps.
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile boolean vsyncTracking = false;
+    private final Choreographer.FrameCallback vsyncCallback = new Choreographer.FrameCallback() {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            if (!vsyncTracking) return;
+            nativeNoteVsync(frameTimeNanos);
+            Choreographer.getInstance().postFrameCallback(this);
+        }
+    };
 
     private static volatile boolean nativeLibLoaded = false;
 
@@ -151,6 +171,11 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     private native void nativeSetSwapRB(long handle, boolean enabled);
     private native void nativeSetPresentMode(long handle, int mode);
     private native int[] nativeGetSupportedPresentModes(long handle);
+    private native void nativeSetFrameGen(long handle, boolean enabled, int mode, int quality,
+                                          int multiplier, float targetHz);
+    private native float[] nativeGetFrameGenStats(long handle);
+    @FastNative private static native void nativeNoteVsync(long frameTimeNanos);
+    @FastNative private static native boolean nativeFrameGenSourceUncapped();
     private native void nativeSetFrameGenerationEngine(long handle, int engine);
     private native boolean nativeConfigureFrameGeneration(long handle, boolean enabled,
         String cachePath, int multiplier, int targetRate, int flowScalePercent,
@@ -217,6 +242,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
                         nativeSetPostFXMode(nativeHandle, pendingPostFXMode);
                         nativeSetSharpness(nativeHandle, pendingSharpness);
                         applyPendingFrameGeneration();
+                        applyFrameGen();
                         updateTransform();
                         nativeSetCursorVisible(nativeHandle, cursorVisible);
                         initComplete = true;
@@ -236,6 +262,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
                     nativeSetPostFXMode(nativeHandle, pendingPostFXMode);
                     nativeSetSharpness(nativeHandle, pendingSharpness);
                     applyPendingFrameGeneration();
+                    applyFrameGen();
                     updateTransform();
                     nativeSetCursorVisible(nativeHandle, cursorVisible);
 
@@ -285,6 +312,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     public void forceCleanup() {
         initComplete = false;
+        setVsyncTracking(false);
         frameGenerationStateListener = null;
         effectiveFrameGenEnabled = false;
         if (initExecutor != null) {
@@ -669,6 +697,63 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
         synchronized (lock) { if (nativeHandle != 0) nativeSetFilterMode(nativeHandle, mode); }
     }
 
+    private float displayRefreshRate() {
+        android.view.Display display = getDisplay();
+        float hz = display != null ? display.getRefreshRate() : 0f;
+        return hz > 1f ? hz : 60f;
+    }
+
+    // Caller must hold {@code lock} and have a valid native handle.
+    private void applyFrameGen() {
+        updateFrameGenSourceCap();
+        nativeSetFrameGen(nativeHandle, tuningFrameGen, tuningFrameGenMode,
+            tuningFrameGenQuality, tuningFrameGenMultiplier, displayRefreshRate());
+    }
+
+    private void updateFrameGenSourceCap() {
+        frameGenSourceCap = tuningFrameGen && tuningFrameGenMode == 0
+            ? Math.round(displayRefreshRate() / tuningFrameGenMultiplier) : 0;
+    }
+
+    private void setVsyncTracking(boolean on) {
+        if (vsyncTracking == on) return;
+        vsyncTracking = on;
+        mainHandler.post(() -> {
+            Choreographer ch = Choreographer.getInstance();
+            ch.removeFrameCallback(vsyncCallback);
+            if (vsyncTracking) ch.postFrameCallback(vsyncCallback);
+        });
+    }
+
+    /**
+     * @param mode       0 power saver (game capped at refresh / multiplier, then multiplied),
+     *                   1 performance (game uncapped, only refreshes it would miss get generated)
+     * @param quality    0 low, 1 medium, 2 high (motion estimation detail)
+     * @param multiplier power saver only: 2 or 3 output frames per real frame
+     */
+    @Override
+    public void setFrameGen(boolean enabled, int mode, int quality, int multiplier) {
+        tuningFrameGen = enabled;
+        tuningFrameGenMode = mode;
+        tuningFrameGenQuality = quality;
+        tuningFrameGenMultiplier = Math.max(2, Math.min(3, multiplier));
+        updateFrameGenSourceCap();
+        setVsyncTracking(enabled && mode == 1);
+        synchronized (lock) { if (nativeHandle != 0) applyFrameGen(); }
+    }
+
+    /**
+     * srcFps, outFps, gpuMs, addedLatencyMs, generatedPerFrame,
+     * state (0 off, 1 on, 2 n/a, 3 paused, 4 on with lowered quality), quality in use.
+     */
+    @Override
+    public float[] getFrameGenStats() {
+        synchronized (lock) {
+            if (nativeHandle != 0) return nativeGetFrameGenStats(nativeHandle);
+        }
+        return new float[6];
+    }
+
     public void setSwapRB(boolean enabled) {
         pendingSwapRB = enabled;
         synchronized (lock) { if (nativeHandle != 0) nativeSetSwapRB(nativeHandle, enabled); }
@@ -847,15 +932,18 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
         if (fr instanceof WinlatorHUD) {
             hudRef = (WinlatorHUD) fr;
             hudRef.setFrameGenerationSource(this);
+            hudRef.setFrameGenSource(() -> tuningFrameGen ? getFrameGenStats() : null);
         } else if (fr instanceof FrameRating) {
             classicHudRef = (FrameRating) fr;
             classicHudRef.setFrameGenerationSource(this);
         }
     }
     public int getFpsLimit() {
-        // This value feeds PresentExtension's X11/game pacer. Frame generation
-        // must not disable it; the Vulkan renderer itself has no FPS cap here.
-        return fpsLimit;
+        // This value feeds PresentExtension's X11/game pacer. LSFG and WFG must not
+        // disable it; the Tuning generator caps the source to its own cadence.
+        int cap = frameGenSourceCap;
+        if (cap <= 0 || nativeFrameGenSourceUncapped()) return fpsLimit;
+        return fpsLimit > 0 ? Math.min(fpsLimit, cap) : cap;
     }
     public void setFpsLimit(int limit) { this.fpsLimit = Math.max(0, Math.min(1000, limit)); }
     public void setPipMode(boolean pip) { inPipMode = pip; }
