@@ -678,4 +678,8 @@
     <string name="steam_download_cancel_confirm">Excluir todos os arquivos parcialmente baixados deste jogo? Esta ação não pode ser desfeita.</string>
     <string name="ui_frame_generation_engine">Gerador de quadros</string>
     <string name="ui_enable_wfg_frame_generation">Ativar geração de quadros WFG</string>
+    <string name="steam_cloud_launch_failed">O Steam Cloud não concluiu a sincronização. Tente novamente ou inicie com os saves locais. Ao iniciar sem sincronizar, o launcher não enviará saves automaticamente nesta sessão.</string>
+    <string name="steam_cloud_launch_continue">Iniciar sem sincronizar</string>
+    <string name="steam_cloud_launch_retry">Tentar novamente</string>
+    <string name="steam_cloud_launch_cancel">Cancelar inicialização</string>
 </resources>

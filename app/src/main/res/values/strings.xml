@@ -771,4 +771,8 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="steam_download_cancel_confirm">Delete all partially downloaded game files? This cannot be undone.</string>
     <string name="ui_frame_generation_engine">Frame generation engine</string>
     <string name="ui_enable_wfg_frame_generation">Enable WFG frame generation</string>
+    <string name="steam_cloud_launch_failed">Steam Cloud could not finish syncing. Retry or start with local saves. Starting without sync skips automatic launcher uploads for this session.</string>
+    <string name="steam_cloud_launch_continue">Start without syncing</string>
+    <string name="steam_cloud_launch_retry">Try again</string>
+    <string name="steam_cloud_launch_cancel">Cancel launch</string>
 </resources>

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-expected=5b29598ba80f9982ce9cbfab421951f8a2b13b14cb20521019626b8d709662a7
+expected=f264870ce873686f8b830743473ac2c009fee9303f592a53ef5ff1535025af71
 actual="$(git ls-files app/src/main/cpp/ludashi-steam-launcher \
     app/src/main/assets/ludashisteam/bionic/steam.exe \
     app/src/main/assets/ludashisteam/bionic/steam32.exe | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -d ' ' -f1)"

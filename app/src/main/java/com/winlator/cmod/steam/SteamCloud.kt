@@ -48,7 +48,7 @@ object SteamCloud {
     }
     fun begin(context: Context, shortcut: Shortcut, enabled: Boolean = true) {
         val root = drive(shortcut)
-        listOf("ludashi-steam-cloud-status.txt", "ludashi-steam-cloud-conflict.txt", "ludashi-steam-cloud-conflict-answer.txt", "ludashi-steam-shutdown-complete.txt", "ludashi-steam-launcher-ready.txt", "ludashi-launcher.shutdown")
+        listOf("ludashi-steam-cloud-launch-answer.txt", "ludashi-steam-cloud-status.txt", "ludashi-steam-cloud-conflict.txt", "ludashi-steam-cloud-conflict-answer.txt", "ludashi-steam-shutdown-complete.txt", "ludashi-steam-launcher-ready.txt", "ludashi-launcher.shutdown")
             .forEach { File(root, it).delete() }
         if (!enabled) return
         val activity = context as? ComponentActivity ?: return
@@ -70,6 +70,7 @@ object SteamCloud {
                 var previous = ""
                 var persisted = ""
                 var promptOpen = false
+                var cloudBypassed = false
                 try { for (ignored in events) {
                     val (reportText, conflict) = withContext(Dispatchers.IO) {
                         val text = runCatching { File(root, "ludashi-steam-cloud-status.txt").readText() }.getOrDefault("")
@@ -101,11 +102,30 @@ object SteamCloud {
                                     dismissButton = { TextButton(onClick = { answer("local") }) { Text(uiStr(R.string.steam_cloud_keep_local)) } })
                             }
                         }
-                        if (reportText != previous && parse(reportText)?.let { it.id == id && it.phase == "launch" && it.state !in listOf(0, 2, 3, 5, 7) } == true) {
+                        if (!cloudBypassed && reportText != previous && parse(reportText)?.let { it.id == id && it.phase == "launch" && it.state !in listOf(0, 2, 3, 5, 7) } == true) {
                             panel(activity, "steam-cloud-error") { close ->
-                                val leave = { close(); (activity as? com.winlator.cmod.XServerDisplayActivity)?.exitSteamLaunchFailure(); Unit }
-                                AlertDialog(onDismissRequest = leave, title = { Text(uiStr(R.string.steam_cloud_saves)) },
-                                    text = { Text(uiStr(R.string.steam_cloud_failed)) }, confirmButton = { TextButton(onClick = leave) { Text(uiStr(R.string.ui_back)) } })
+                                fun answer(choice: String) {
+                                    activity.lifecycleScope.launch {
+                                        val result = withContext(Dispatchers.IO) { runCatching {
+                                            val temp = File(root, "ludashi-steam-cloud-launch-answer.tmp")
+                                            temp.writeText(choice)
+                                            check(temp.renameTo(File(root, "ludashi-steam-cloud-launch-answer.txt")))
+                                        } }
+                                        result.onSuccess {
+                                            cloudBypassed = choice == "continue"
+                                            previous = if (choice == "retry") "" else reportText
+                                            close()
+                                            if (choice == "cancel") (activity as? com.winlator.cmod.XServerDisplayActivity)?.exitSteamLaunchFailure()
+                                        }.onFailure { android.widget.Toast.makeText(activity, uiStr(R.string.steam_cloud_pending), android.widget.Toast.LENGTH_LONG).show() }
+                                    }
+                                }
+                                AlertDialog(onDismissRequest = { answer("cancel") }, title = { Text(uiStr(R.string.steam_cloud_saves)) },
+                                    text = { Text(uiStr(R.string.steam_cloud_launch_failed)) },
+                                    confirmButton = { TextButton(onClick = { answer("continue") }) { Text(uiStr(R.string.steam_cloud_launch_continue)) } },
+                                    dismissButton = {
+                                        TextButton(onClick = { answer("retry") }) { Text(uiStr(R.string.steam_cloud_launch_retry)) }
+                                        TextButton(onClick = { answer("cancel") }) { Text(uiStr(R.string.steam_cloud_launch_cancel)) }
+                                    })
                             }
                         }
                         previous = reportText

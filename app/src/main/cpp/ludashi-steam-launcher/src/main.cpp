@@ -3295,16 +3295,24 @@ int main(int argc, char** argv) {
     const bool cloudEnvOn = env_int_signed("LUDASHI_STEAM_AGENT_CLOUD", 1) != 0;
     const bool agentCloud = cloudEnvOn && !offlineMode;
     if (loggedOn && engine && appId != 0 && agentCloud) {
-        const int cloudState = ludashi_launcher_cloud_run(engine, hUser, pipe, appId, 0, 120000);
-        // Do not start a new save session after an unresolved cloud conflict/failure.
-        // The user can retry or explicitly select Offline in the game's Play control.
-        if (cloudState != 0 && cloudState != 2 && cloudState != 5) {
-            log_line("[ludashi-launcher] launch blocked: Steam Cloud not ready (state=%d)", cloudState);
+        bool syncReady = false;
+        while (!syncReady) {
+            const int cloudState = ludashi_launcher_cloud_run(engine, hUser, pipe, appId, 0, 120000);
+            syncReady = cloudState == 0 || cloudState == 2 || cloudState == 5;
+            if (syncReady) break;
+            log_line("[ludashi-launcher] waiting for Cloud launch decision (state=%d)", cloudState);
+            const int choice = ludashi_launcher_cloud_choice();
+            if (choice == 1) continue;
+            if (choice == 2) {
+                _putenv_s("LUDASHI_STEAM_AGENT_CLOUD", "0");
+                log_line("[ludashi-launcher] continuing with local saves; launcher Cloud disabled for this session");
+                break;
+            }
             if (steamApiScanThread.joinable()) steamApiScanThread.join();
             ludashi_launcher_clean_shutdown_now("launch-failed");
             return 1;
         }
-        ludashi_launcher_set_cloud_context(engine, hUser, pipe, appId);
+        if (syncReady) ludashi_launcher_set_cloud_context(engine, hUser, pipe, appId);
     } else if (offlineMode && engine && appId != 0) {
         log_line("[ludashi-launcher] cloud: launch download skipped — Steam Offline Mode keeps local "
                  "saves off the cloud until the shortcut goes back online");
