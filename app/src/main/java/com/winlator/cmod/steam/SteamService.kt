@@ -121,6 +121,16 @@ object SteamSession {
         private set
     @Volatile private var recoveryBlocked = false
     private val librarySync = SteamLibrarySync()
+    private var libraryAccount = 0L
+    private var libraryCacheRestored = false
+    private var libraryCacheSaved = false
+    private var libraryMetadataAt = 0L
+    private fun libraryCache(context: Context) = SteamLibraryCache(File(context.filesDir, "steam-library-cache"))
+    private fun showCachedLibrary(context: Context, account: Long) {
+        if (libraryAccount == account) return
+        libraryAccount = account
+        library = libraryCache(context).read(account)?.snapshot ?: "{}"
+    }
     private val polling = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile private var licensesReceived = false
     @Volatile var libraryProgress = 0
@@ -150,6 +160,16 @@ object SteamSession {
                     if (s != null && signedIn) {
                         SteamAchievements.syncPending(app ?: return@work)
                         val active = s
+                        val context = app ?: return@work
+                        val account = active.steamId()
+                        if (account <= 0) return@work
+                        showCachedLibrary(context, account)
+                        if (licensesReceived && !libraryCacheRestored) {
+                            libraryCacheRestored = true
+                            libraryCache(context).read(account)?.takeIf { it.fresh(System.currentTimeMillis()) }?.let {
+                                if (active.restoreLibraryCacheJson(it.metadata)) libraryMetadataAt = it.savedAt
+                            }
+                        }
                         librarySync.step(object : SteamLibrarySync.Gateway {
                             override fun snapshot() = active.getLibrarySnapshotJson()
                             override fun packages(ids: List<Int>, tokens: List<Long>): Boolean {
@@ -169,9 +189,15 @@ object SteamSession {
                         libraryProgress = librarySync.progress; libraryLoading = librarySync.loading; libraryError = librarySync.error
                         if (!downloading) status = librarySync.message
                         val snapshot = active.getLibrarySnapshotJson()
-                        if (snapshot != library && (SteamLibrary.items(app ?: return@work, snapshot).isNotEmpty() || (!libraryLoading && libraryError.isEmpty()))) {
+                        if (!libraryLoading && libraryError.isEmpty()) {
                             library = snapshot
-                            app?.let { File(it.filesDir, "steam-library-cache.json").writeText(snapshot) }
+                            if (!libraryCacheSaved) {
+                                runCatching { libraryCache(context).write(account, snapshot, active.getLibraryCacheJson(), libraryMetadataAt.takeIf { it > 0 } ?: System.currentTimeMillis()) }
+                                    .onSuccess { libraryCacheSaved = true }
+                                    .onFailure { android.util.Log.w("SteamLibrary", "Cannot cache library", it) }
+                            }
+                        } else if (library == "{}" && SteamLibrary.items(context, snapshot).isNotEmpty()) {
+                            library = snapshot
                         }
                     }
                 } finally { polling.set(false) }
@@ -206,9 +232,10 @@ object SteamSession {
         ++authAttempt; guard.cancel(); signingIn = false; qrUrl = ""; connected = false; signedIn = false
         previous?.let { it.cancelDownload(); it.cancelLogin(); it.disconnect(); it.close() }
         if (downloading) status = "Pausing download after session loss…"
-        librarySync.reset(); licensesReceived = false; libraryLoading = true; libraryProgress = 0; libraryError = ""
+        librarySync.reset(); licensesReceived = false; libraryCacheRestored = false; libraryCacheSaved = false; libraryMetadataAt = 0L
+        libraryLoading = true; libraryProgress = 0; libraryError = ""
         restoreStage = "Finding a Steam server"
-        if (saved != null && library == "{}") library = runCatching { File(context.filesDir, "steam-library-cache.json").readText() }.getOrDefault("{}")
+        showCachedLibrary(context, saved?.optLong("id") ?: 0L)
         ca = CaBundleExtractor.ensureBundle(context)
         check(ca.isNotEmpty()) { "No trusted CA bundle available" }
         val s = LudashiSteamSession()
@@ -236,7 +263,15 @@ object SteamSession {
                 if (session !== s || closing) return
                 if (emsg in listOf(766, 767, 146, 147, 152)) SteamSocial.appEvent(context)
                 if (emsg == 766) work { if (session === s && !gameActive) SteamUserData.capturePersona(context, s.getSelfPersona()) }
-                if (emsg == 780) licensesReceived = true
+                if (emsg == 780) {
+                    val refresh = licensesReceived
+                    licensesReceived = true
+                    if (refresh) work {
+                        if (session === s) {
+                            librarySync.reset(); libraryCacheSaved = false; libraryLoading = true; libraryError = ""
+                        }
+                    }
+                }
                 if (emsg == 751 || emsg == 757 || emsg == 5500) {
                     val code = SteamLogonResult.code(body, eresult)
                     if (code != null && code != 1) {
@@ -335,7 +370,8 @@ object SteamSession {
     }
     fun retryLibrary() = work {
         check(!gameActive && app?.let { SteamSettings.enabled(it) } == true) { "Steam is disabled or paused for a running game" }
-        librarySync.reset(); libraryLoading = true; libraryProgress = 0; libraryError = ""
+        librarySync.reset(forceRefresh = true); libraryCacheRestored = true; libraryCacheSaved = false; libraryMetadataAt = 0L
+        libraryLoading = true; libraryProgress = 0; libraryError = ""
         status = "Reloading Steam library…"
     }
     fun reconnect() = work {
@@ -481,7 +517,8 @@ object SteamSession {
             session?.let { it.cancelDownload(); it.cancelLogin(); it.logOffAndDisconnect(); it.close() }
             session = null
             librarySync.reset(); licensesReceived = false; libraryLoading = true; libraryProgress = 0; libraryError = ""
-            library = "{}"; qrUrl = ""; downloading = false; status = "Disconnected"
+            library = "{}"; libraryAccount = 0L; libraryCacheRestored = false; libraryCacheSaved = false
+            qrUrl = ""; downloading = false; status = "Disconnected"
         }
     }
 }

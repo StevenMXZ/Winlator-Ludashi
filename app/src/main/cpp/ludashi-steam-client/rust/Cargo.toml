@@ -37,6 +37,7 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # its content), so reordering depots (BTreeMap's default key sort) misgroups
 # base content depots and zeroes a game's download/install size. C++ emitted
 # source order; match it.
+serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha1 = "0.10"
 sha2 = "0.10"

@@ -88,4 +88,27 @@ class SteamLibrarySyncTest {
         assertTrue(sync.error.contains("licenses"))
         assertEquals(0, gateway.packageCalls)
     }
+    @Test fun cachedMetadataCompletesWithoutAnyPicsRequests() {
+        val gateway = FakeGateway().apply {
+            json = """{"packages":[{"id":10,"pics_fetched":true}],"owned_apps":[{"id":42,"pics_fetched":true,"name":"Cached game"}]}"""
+        }
+        val sync = SteamLibrarySync()
+        sync.step(gateway, true, 0)
+        assertFalse(sync.loading)
+        assertEquals(0, gateway.packageCalls)
+        assertEquals(0, gateway.appCalls)
+        sync.reset(forceRefresh = true)
+        gateway.json = """{"packages":[{"id":10,"pics_fetched":true,"access_token":"18446744073709551615"}],"owned_apps":[]}"""
+        sync.step(gateway, true, 1)
+        assertEquals(1, gateway.packageCalls)
+    }
+    @Test fun cachedPackagesStillFetchMissingGameMetadata() {
+        val gateway = FakeGateway().apply {
+            json = """{"packages":[{"id":10,"pics_fetched":true}],"owned_apps":[{"id":41,"pics_fetched":true},{"id":42,"pics_fetched":false}]}"""
+        }
+        val sync = SteamLibrarySync()
+        sync.step(gateway, true, 0)
+        assertEquals(0, gateway.packageCalls)
+        assertEquals(1, gateway.appCalls)
+    }
 }

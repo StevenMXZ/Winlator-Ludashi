@@ -2093,6 +2093,30 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_LudashiSteamSession_nativeGetLibraryCache(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jstring {
+    let Some(handle) = (unsafe { from_session_handle_mut(handle) }) else {
+        return new_string_or_null(&mut env, "{}");
+    };
+    new_string_or_null(&mut env, &handle.core.library().cache_json())
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_LudashiSteamSession_nativeRestoreLibraryCache(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    cache: JString,
+) -> jboolean {
+    let Some(handle) = (unsafe { from_session_handle_mut(handle) }) else { return JNI_FALSE };
+    let Some(cache) = jstring_to_string(&mut env, &cache) else { return JNI_FALSE };
+    if handle.core.library().restore_cache_json(&cache).is_ok() { JNI_TRUE } else { JNI_FALSE }
+}
+
+#[no_mangle]
 pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_LudashiSteamSession_nativeStartWineBridge(
     _env: JNIEnv,
     _class: JClass,

@@ -21,7 +21,9 @@ class SteamLibrarySync {
     private var started: Long? = null
     private val packagesDone = mutableSetOf<Int>()
     private val appsDone = mutableSetOf<Int>()
-    fun reset() {
+    private var forceRefresh = false
+    fun reset(forceRefresh: Boolean = false) {
+        this.forceRefresh = forceRefresh
         loading = true; error = ""; progress = 0; message = "Loading Steam library… 0%"
         started = null; packagesDone.clear(); appsDone.clear()
     }
@@ -37,7 +39,7 @@ class SteamLibrarySync {
                 return
             }
             val pendingPackages = (0 until (packages?.length() ?: 0)).map { packages!!.getJSONObject(it) }
-                .filter { it.getInt("id") !in packagesDone }.take(100)
+                .filter { it.getInt("id") !in packagesDone && (forceRefresh || !it.optBoolean("pics_fetched")) }.take(100)
             if (pendingPackages.isNotEmpty()) {
                 val ids = pendingPackages.map { it.getInt("id") }
                 message = "Loading Steam library… $progress%"
@@ -51,7 +53,7 @@ class SteamLibrarySync {
             }
             val owned = snapshot.optJSONArray("owned_apps")
             val pendingApps = (0 until (owned?.length() ?: 0)).map { owned!!.getJSONObject(it) }
-                .filter { it.getInt("id") !in appsDone }.take(100)
+                .filter { it.getInt("id") !in appsDone && (forceRefresh || !it.optBoolean("pics_fetched")) }.take(100)
             if (pendingApps.isNotEmpty()) {
                 val ids = pendingApps.map { it.getInt("id") }
                 message = "Loading Steam library… $progress%"

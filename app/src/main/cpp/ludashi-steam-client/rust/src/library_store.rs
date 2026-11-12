@@ -4,11 +4,12 @@ use crate::pb::cmsg_client_pics::{
     PicsPackageInfoReq,
 };
 use crate::vdf::{self, KVNode};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OwnedPackage {
     pub package_id: u32,
     pub access_token: u64,
@@ -23,14 +24,14 @@ pub struct OwnedPackage {
 /// Where an app's library logo sits over its hero image
 /// (`common.library_assets_full.library_logo.logo_position`, or the compact
 /// `common.library_assets.logo_position`). Percentages arrive as decimal strings.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct LogoPosition {
     pub width_pct: f64,
     pub height_pct: f64,
     pub pinned_position: String,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AppArtwork {
     /// 92:43 store capsule (`header.jpg`, 460x215) — `common.header_image.<lang>`.
     pub header: String,
@@ -52,7 +53,7 @@ pub struct AppArtwork {
     pub logo_position: Option<LogoPosition>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct OwnedApp {
     pub app_id: u32,
     pub change_number: u32,
@@ -83,17 +84,28 @@ impl LudashiLibraryStore {
     pub fn ingest_license_list(&self, msg: &CMsgClientLicenseList) {
         {
             let mut packages = self.packages.lock().expect("library packages poisoned");
+            let current: HashSet<_> = msg.licenses.iter().map(|license| license.package_id).collect();
+            packages.retain(|id, _| current.contains(id));
             for license in &msg.licenses {
                 let slot = packages.entry(license.package_id).or_default();
                 slot.package_id = license.package_id;
                 if license.access_token != 0 {
                     slot.access_token = license.access_token;
                 }
-                if license.change_number > slot.change_number {
+                if license.change_number != slot.change_number {
                     slot.change_number = license.change_number;
+                    slot.pics_fetched = false;
+                    slot.app_ids.clear();
+                    slot.depot_ids.clear();
                 }
                 slot.license_flags = license.flags;
                 slot.license_type = license.license_type;
+            }
+            let mut apps = self.apps.lock().expect("library apps poisoned");
+            for app in apps.values_mut() {
+                let app_id = app.app_id;
+                app.source_package_ids.retain(|id| packages.get(id)
+                    .map_or(false, |package| package.app_ids.contains(&app_id)));
             }
         }
         self.notify();
@@ -307,6 +319,53 @@ impl LudashiLibraryStore {
             .count()
     }
 
+    pub fn cache_json(&self) -> String {
+        json!({"version": 1, "packages": self.packages(), "apps": self.owned_apps()}).to_string()
+    }
+
+    pub fn restore_cache_json(&self, text: &str) -> Result<(), serde_json::Error> {
+        #[derive(Deserialize)]
+        struct Cache {
+            version: u32,
+            packages: Vec<OwnedPackage>,
+            apps: Vec<OwnedApp>,
+        }
+        let cache: Cache = serde_json::from_str(text)?;
+        if cache.version != 1 {
+            return Err(<serde_json::Error as serde::de::Error>::custom("unsupported library cache"));
+        }
+        {
+            let mut packages = self.packages.lock().expect("library packages poisoned");
+            let mut apps = self.apps.lock().expect("library apps poisoned");
+            for cached in cache.packages {
+                let Some(package) = packages.get_mut(&cached.package_id) else { continue };
+                if !package.pics_fetched && cached.pics_fetched && package.change_number == cached.change_number {
+                    package.pics_fetched = true;
+                    package.app_ids = cached.app_ids;
+                    package.depot_ids = cached.depot_ids;
+                }
+            }
+            let mut sources: HashMap<u32, Vec<u32>> = HashMap::new();
+            for package in packages.values().filter(|p| p.pics_fetched) {
+                for id in &package.app_ids {
+                    sources.entry(*id).or_default().push(package.package_id);
+                }
+            }
+            for mut cached in cache.apps {
+                let Some(ids) = sources.remove(&cached.app_id) else { continue };
+                cached.source_package_ids = ids;
+                apps.entry(cached.app_id).or_insert(cached);
+            }
+            for (id, ids) in sources {
+                let app = apps.entry(id).or_default();
+                app.app_id = id;
+                app.source_package_ids = ids;
+            }
+        }
+        self.notify();
+        Ok(())
+    }
+
     pub fn snapshot_json(&self) -> String {
         let packages = self.packages();
         let apps = self.apps();
@@ -317,6 +376,7 @@ impl LudashiLibraryStore {
         json!({
             "packages": packages.iter().map(|p| json!({
                 "id": p.package_id,
+                "pics_fetched": p.pics_fetched,
                 "flags": p.license_flags,
                 "license_type": p.license_type,
                 "change_number": p.change_number,
@@ -324,6 +384,7 @@ impl LudashiLibraryStore {
             })).collect::<Vec<_>>(),
             "owned_apps": owned.iter().map(|a| json!({
                 "id": a.app_id,
+                "pics_fetched": a.pics_fetched,
                 "change_number": a.change_number,
                 "name": a.name,
                 "type": a.app_type,
@@ -845,5 +906,65 @@ mod tests {
                 .unwrap()
                 .pics_fetched
         );
+    }
+
+    fn cached_library() -> String {
+        let store = LudashiLibraryStore::default();
+        store.packages.lock().unwrap().insert(100, OwnedPackage {
+            package_id: 100, change_number: 7, access_token: u64::MAX,
+            pics_fetched: true, app_ids: vec![480], ..Default::default()
+        });
+        store.apps.lock().unwrap().insert(480, OwnedApp {
+            app_id: 480, name: "Cached game".into(), pics_fetched: true,
+            access_token: u64::MAX, source_package_ids: vec![100, 200], ..Default::default()
+        });
+        store.cache_json()
+    }
+
+    #[test]
+    fn restores_metadata_only_for_matching_live_licenses() {
+        let store = LudashiLibraryStore::default();
+        store.ingest_license_list(&CMsgClientLicenseList {
+            eresult: 1,
+            licenses: vec![License { package_id: 100, change_number: 7, access_token: 55, ..Default::default() }],
+        });
+        store.restore_cache_json(&cached_library()).unwrap();
+        assert!(store.get_pending_package_pics_request(100).is_empty());
+        assert!(store.get_pending_app_pics_request(100).is_empty());
+        assert_eq!(store.packages()[0].access_token, 55);
+        let app = store.find_app(480).unwrap();
+        assert_eq!(app.name, "Cached game");
+        assert_eq!(app.access_token, u64::MAX);
+        assert_eq!(app.source_package_ids, vec![100]);
+    }
+
+    #[test]
+    fn cache_does_not_grant_ownership_or_reuse_changed_packages() {
+        let store = LudashiLibraryStore::default();
+        store.restore_cache_json(&cached_library()).unwrap();
+        assert_eq!(store.package_count(), 0);
+        assert_eq!(store.owned_app_count(), 0);
+        store.ingest_license_list(&CMsgClientLicenseList {
+            eresult: 1,
+            licenses: vec![License { package_id: 100, change_number: 8, ..Default::default() }],
+        });
+        store.restore_cache_json(&cached_library()).unwrap();
+        assert_eq!(store.get_pending_package_pics_request(100).len(), 1);
+        assert_eq!(store.owned_app_count(), 0);
+        assert!(store.restore_cache_json("truncated {").is_err());
+    }
+
+    #[test]
+    fn refreshed_license_list_removes_revoked_games() {
+        let store = LudashiLibraryStore::default();
+        store.ingest_license_list(&CMsgClientLicenseList {
+            eresult: 1,
+            licenses: vec![License { package_id: 100, change_number: 7, ..Default::default() }],
+        });
+        store.restore_cache_json(&cached_library()).unwrap();
+        assert_eq!(store.owned_app_count(), 1);
+        store.ingest_license_list(&CMsgClientLicenseList { eresult: 1, licenses: vec![] });
+        assert_eq!(store.owned_app_count(), 0);
+        assert_eq!(store.package_count(), 0);
     }
 }

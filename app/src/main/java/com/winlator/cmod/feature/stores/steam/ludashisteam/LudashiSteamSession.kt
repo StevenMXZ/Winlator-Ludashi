@@ -638,6 +638,16 @@ class LudashiSteamSession : AutoCloseable {
         return nativeGetLibrarySnapshot(h)
     }
 
+    fun getLibraryCacheJson(): String {
+        val h = nativeHandle.get(); if (h == 0L) return "{}"
+        return nativeGetLibraryCache(h)
+    }
+
+    fun restoreLibraryCacheJson(cache: String): Boolean {
+        val h = nativeHandle.get(); if (h == 0L) return false
+        return nativeRestoreLibraryCache(h, cache)
+    }
+
     // Install or clear the native library-store observer.
     fun setLibraryObserver(observer: LudashiLibraryObserver?) {
         val h = nativeHandle.get(); if (h == 0L) return
@@ -798,6 +808,8 @@ class LudashiSteamSession : AutoCloseable {
         @JvmStatic private external fun nativeSignalAppLaunchIntent(handle: Long, appId: Int, clientId: Long, machineName: String, ignorePending: Boolean, osType: Int): String?
         @JvmStatic private external fun nativeSignalAppExitSyncDone(handle: Long, appId: Int, clientId: Long, uploadsCompleted: Boolean, uploadsRequired: Boolean)
         @JvmStatic private external fun nativeGetLibrarySnapshot(handle: Long): String
+        @JvmStatic private external fun nativeGetLibraryCache(handle: Long): String
+        @JvmStatic private external fun nativeRestoreLibraryCache(handle: Long, cache: String): Boolean
         @JvmStatic private external fun nativeSetLibraryObserver(
             handle: Long,
             observer: LudashiLibraryObserver?,
