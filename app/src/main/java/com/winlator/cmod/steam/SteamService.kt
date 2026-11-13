@@ -244,6 +244,7 @@ object SteamSession {
         val previous = session
         session = null
         ++authAttempt; pendingLogin = null; guard.cancel(); signingIn = false; qrUrl = ""; connected = false; signedIn = false
+        appMetadata.clear()
         previous?.let { it.cancelDownload(); it.cancelLogin(); it.disconnect(); it.close() }
         if (downloading) status = "Pausing download after session loss…"
         librarySync.reset(); licensesReceived = false; libraryCacheRestored = false; libraryCacheSaved = false; libraryMetadataAt = 0L
@@ -415,6 +416,7 @@ object SteamSession {
     }
     fun retryLibrary() = work {
         check(!gameActive && app?.let { SteamSettings.enabled(it) } == true) { "Steam is disabled or paused for a running game" }
+        appMetadata.clear()
         librarySync.reset(forceRefresh = true); libraryCacheRestored = true; libraryCacheSaved = false; libraryMetadataAt = 0L
         libraryLoading = true; libraryProgress = 0; libraryError = ""
         status = "Reloading Steam library…"
@@ -439,11 +441,33 @@ object SteamSession {
             status = "Sign-in cancelled"
         }
     }
+    private val appMetadata = SteamAppMetadata()
     fun info(id: Int): JSONObject {
-        val raw = session?.getPicsAppInfo(id) ?: error("No Steam metadata for $id")
-        return JSONObject(raw).getJSONObject("appinfo")
+        val active = session ?: error("Steam is starting")
+        return appMetadata.get(active, id) {
+            SteamAppMetadata.fetch(id, { appId, token -> active.getPicsAppInfo(appId, token) },
+                { appId -> active.getPicsAccessTokens(listOf(appId), emptyList()) })
+        }
     }
-    fun install(id: Int) = work {
+    @Volatile var installRequestId = 0
+        private set
+    @Volatile var installError = ""
+        private set
+
+    @Synchronized fun install(id: Int) {
+        if (installRequestId != 0) return
+        installRequestId = id
+        installError = ""
+        work {
+            try { installNow(id) }
+            catch (error: Exception) {
+                installError = error.message ?: "Steam download could not start"
+                status = installError
+                android.util.Log.e("SteamDownload", "Cannot start download for app $id", error)
+            } finally { installRequestId = 0 }
+        }
+    }
+    private fun installNow(id: Int) {
         check(app?.let { SteamSettings.enabled(it) } == true && !gameActive) { "Steam is disabled or paused for a game" }
         check(!downloading) { "A Steam download is already active" }
         val context = app ?: error("Steam is starting")
@@ -589,6 +613,7 @@ object SteamSession {
             session?.let { it.cancelDownload(); it.cancelLogin(); it.logOffAndDisconnect(); it.close() }
             session = null
             librarySync.reset(); licensesReceived = false; libraryLoading = true; libraryProgress = 0; libraryError = ""
+            appMetadata.clear()
             library = "{}"; libraryAccount = 0L; libraryCacheRestored = false; libraryCacheSaved = false
             qrUrl = ""; downloading = false; status = "Disconnected"
         }

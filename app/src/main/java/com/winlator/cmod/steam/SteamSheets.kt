@@ -84,13 +84,16 @@ object SteamSheets {
             }
             val installed = java.io.File(context.filesDir, "steam-library/$id.json").isFile
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(modifier = Modifier.weight(1f), enabled = installed || (state.signedIn && !state.downloading && !state.gameActive), onClick = {
+                Button(modifier = Modifier.weight(1f), enabled = installed || (state.signedIn && !state.downloading && !state.gameActive && SteamSession.installRequestId == 0), onClick = {
                     if (installed) { dismiss(); SteamLibrary.open(context, "steam://$id") } else SteamSession.install(id)
                 }) { Icon(Icons.Outlined.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (installed) uiStr(R.string.steam_ui_view_game) else uiStr(R.string.steam_ui_download)) }
                 FilledTonalButton(modifier = Modifier.weight(1f), onClick = {
                     favorite = !favorite; context.getSharedPreferences("steam-settings", 0).edit().putBoolean("favorite-$id", favorite).apply(); SteamGames.changed()
                 }) { Icon(if (favorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (favorite) uiStr(R.string.steam_ui_unfavorite) else uiStr(R.string.steam_ui_favorite)) }
             }
+            if (SteamSession.installRequestId == id) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            if (SteamSession.installError.isNotBlank()) Text(SteamSession.installError,
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.error)
             SteamStoreDetails(id, installed, state)
             if (state.downloading && state.id == id) SteamDownloadPanel(state)
             else if (!state.signedIn) {
