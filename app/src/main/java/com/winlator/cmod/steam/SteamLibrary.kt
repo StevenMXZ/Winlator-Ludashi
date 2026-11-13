@@ -59,12 +59,19 @@ object SteamLibrary {
         images.execute {
             try {
                 val image = if (type == "cover") "library_600x900_2x.jpg" else "header.jpg"
-                val request = Glide.with(app).downloadOnly().load("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/$image").submit()
-                try {
-                    val file = request.get(25, java.util.concurrent.TimeUnit.SECONDS)
-                    target.parentFile?.mkdirs(); file.copyTo(target, true)
-                    main.removeCallbacks(invalidateArtwork); main.postDelayed(invalidateArtwork, 500)
-                } finally { Glide.with(app).clear(request) }
+                var saved = false
+                for (url in SteamArtwork.urls("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/$image")) {
+                    val request = Glide.with(app).downloadOnly().load(url).submit()
+                    try {
+                        val file = request.get(25, java.util.concurrent.TimeUnit.SECONDS)
+                        target.parentFile?.mkdirs(); file.copyTo(target, true)
+                        main.removeCallbacks(invalidateArtwork); main.postDelayed(invalidateArtwork, 500)
+                        saved = true
+                        break
+                    } catch (_: Exception) {
+                    } finally { Glide.with(app).clear(request) }
+                }
+                if (!saved) requested.remove("$id-$type")
             } catch (_: Exception) { requested.remove("$id-$type") }
         }
     }
