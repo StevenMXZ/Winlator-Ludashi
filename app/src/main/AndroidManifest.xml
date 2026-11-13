@@ -43,6 +43,7 @@
         android:supportsRtl="true"
         tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
 
+        <activity android:name=".storage.StorageActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
         <activity android:name=".stores.StoreActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
         <activity android:name=".stores.StoreSettingsScreen" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
         <activity android:name=".stores.StoreLoginActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />

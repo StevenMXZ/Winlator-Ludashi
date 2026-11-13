@@ -12,12 +12,16 @@ import java.net.URL;
 import java.net.URLConnection;
 
 public class Downloader {
+    private static final java.util.concurrent.atomic.AtomicInteger active = new java.util.concurrent.atomic.AtomicInteger();
+    public static boolean isBusy() { return active.get() > 0; }
 
     public static boolean downloadFile(String address, File file) {
         return downloadFile(address, file, null);
     }
 
     public static boolean downloadFile(String address, File file, Callback<Integer> progressCallback) {
+        if (!com.winlator.cmod.core.ContainerSessionGate.transfer()) return false;
+        active.incrementAndGet();
         try {
             URL url = new URL(address);
             URLConnection connection = url.openConnection();
@@ -49,7 +53,7 @@ public class Downloader {
         } catch (Exception e) {
             e.printStackTrace();
             return false;
-        }
+        } finally { active.decrementAndGet(); com.winlator.cmod.core.ContainerSessionGate.transferred(); }
     }
 
     public static String downloadString(String address) {

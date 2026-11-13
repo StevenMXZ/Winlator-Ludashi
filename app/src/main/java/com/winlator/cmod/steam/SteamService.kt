@@ -16,10 +16,10 @@ class SteamService : Service() {
         super.onCreate()
         if (!SteamSettings.enabled(this)) { stopSelf(); return }
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel("steam", "Steam", NotificationManager.IMPORTANCE_LOW))
+        com.winlator.cmod.stores.DownloadNotifications.channel(this, "steam")
         val open = PendingIntent.getActivity(this, 0, Intent(this, SteamActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         startForeground(NOTIFICATION_ID, Notification.Builder(this, "steam").setSmallIcon(R.drawable.ic_steam)
-            .setContentTitle("Steam").setContentText("Steam session active").setContentIntent(open).build())
+            .setContentTitle("Ludashi · Steam").setContentText(com.winlator.cmod.ui.uiStr(R.string.ludashi_steam_session)).setContentIntent(open).build())
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         SteamSession.open(applicationContext)
@@ -486,6 +486,7 @@ object SteamSession {
         downloading = true
         downloadId = id; downloadName = name; downloadDone = 0; downloadTotal = 0
         status = "Downloading $name…"
+        com.winlator.cmod.stores.DownloadNotifications.update(context, SteamService.NOTIFICATION_ID, "steam", "Steam", name, 0, 0, com.winlator.cmod.ui.uiStr(R.string.gog_downloading), true)
         try {
             s.downloadApp(id, depots.map { it.id }.toIntArray(), depots.map { it.manifest }.toLongArray(),
                 branch, dir.absolutePath, false, ca, SteamDownloadSettings.network(SteamDownloadSettings.tier(context)), object : LudashiDownloadListener {
@@ -494,6 +495,8 @@ object SteamSession {
                         downloadMeter?.update(depotId, depotDone, depotTotal, depotsDone, verifying, SystemClock.elapsedRealtime())
                         val reading = downloadReading()
                         downloadDone = reading?.done ?: depotDone; downloadTotal = reading?.total ?: depotTotal
+                        if (!closing && downloading && !gameActive && downloadId == id) com.winlator.cmod.stores.DownloadNotifications.update(context, SteamService.NOTIFICATION_ID, "steam", "Steam", name, downloadDone, downloadTotal,
+                            com.winlator.cmod.ui.uiStr(if (verifying) R.string.steam_download_verifying else R.string.gog_downloading))
                         status = "$name: depot ${depotsDone + 1}/$depotsTotal — ${if (depotTotal > 0) depotDone * 100 / depotTotal else 0}%" + if (verifying) " (verifying)" else ""
                     }
                     override fun onComplete(success: Boolean, error: String, bytesWritten: Long, depotsCompleted: Int, depotsSkipped: Int) {
@@ -514,6 +517,7 @@ object SteamSession {
                             } finally {
                                 downloading = false
                                 downloadMeter = null
+                                if (!closing) com.winlator.cmod.stores.DownloadNotifications.update(context, SteamService.NOTIFICATION_ID, "steam", "Steam", name, 0, 0, status, true, false)
                             }
                             if (finalized) {
                                 runCatching {
@@ -526,7 +530,11 @@ object SteamSession {
                         }
                     }
                 }, SteamDownloadSettings.processing(SteamDownloadSettings.tier(context)))
-        } catch (e: Exception) { downloading = false; throw e }
+        } catch (e: Exception) {
+            downloading = false; downloadMeter = null
+            if (!closing) com.winlator.cmod.stores.DownloadNotifications.update(context, SteamService.NOTIFICATION_ID, "steam", "Steam", name, 0, 0, e.message.orEmpty(), true, false)
+            throw e
+        }
     }
     fun cancel() = work { session?.cancelDownload() }
     fun discardPaused(id: Int) = work {

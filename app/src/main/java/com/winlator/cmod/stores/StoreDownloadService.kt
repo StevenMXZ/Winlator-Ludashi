@@ -15,9 +15,8 @@ class StoreDownloadService : Service() {
     override fun onCreate() {
         super.onCreate()
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel("store-downloads", "Store downloads", NotificationManager.IMPORTANCE_LOW))
-        startForeground(312, Notification.Builder(this, "store-downloads").setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("Ludashi").setContentText(getString(com.winlator.cmod.R.string.gog_preparing)).build())
+        DownloadNotifications.channel(this, "store-downloads")
+        startForeground(312, DownloadNotifications.build(this, "store-downloads", "itch.io", getString(com.winlator.cmod.R.string.gog_preparing)))
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val selected = LudashiStore.find(intent?.getStringExtra("store"))
@@ -28,7 +27,7 @@ class StoreDownloadService : Service() {
             return START_NOT_STICKY
         }
         store = selected
-        startForeground(312, Notification.Builder(this, "store-downloads").setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(selected.title).setContentText(getString(com.winlator.cmod.R.string.gog_preparing)).build())
+        startForeground(312, DownloadNotifications.build(this, "store-downloads", selected.title, getString(com.winlator.cmod.R.string.gog_preparing)))
         StoreSessions.cancel(selected); StoreSessions.fresh(selected)
         val container = intent.getIntExtra("container", 0)
         val upload = intent.getStringExtra("upload")?.takeIf { it.isNotBlank() }?.let { runCatching { JSONObject(it) }.getOrNull() }
@@ -41,9 +40,7 @@ class StoreDownloadService : Service() {
             val pending = File(StoreDownloadPreferences.folder(this@StoreDownloadService, selected.id), folder.name)
             staging.deleteRecursively(); staging.mkdirs(); pending.mkdirs()
             state.update { it.copy(busy = true, loading = false, active = game.id, stage = getString(com.winlator.cmod.R.string.gog_preparing), done = 0, total = 0, speed = 0, error = "") }
-            val open = PendingIntent.getActivity(this@StoreDownloadService, 0, Intent(this@StoreDownloadService, StoreActivity::class.java).putExtra("store", selected.id).putExtra("tab", 1), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            getSystemService(NotificationManager::class.java).notify(312, Notification.Builder(this@StoreDownloadService, "store-downloads")
-                .setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(game.title).setContentText(selected.title).setContentIntent(open).build())
+            DownloadNotifications.update(this@StoreDownloadService, 312, "store-downloads", selected.title, game.title, 0, 0, state.value.stage, true)
             StoreTransfers.save(this@StoreDownloadService, game, "preparing", 0, 0, container, upload?.toString().orEmpty())
             try {
                 StoreNetwork.check(this@StoreDownloadService, selected)
@@ -54,6 +51,7 @@ class StoreDownloadService : Service() {
                     val speed = meter.update(done)
                     val now = android.os.SystemClock.elapsedRealtime()
                     if (now - last >= 200) { state.update { it.copy(done = done, speed = speed) }; last = now }
+                    DownloadNotifications.update(this@StoreDownloadService, 312, "store-downloads", selected.title, game.title, done, state.value.total, state.value.stage)
                     if (now - lastSaved >= 1000) {
                         StoreTransfers.save(this@StoreDownloadService, game, "downloading", done, state.value.total, container, upload?.toString().orEmpty())
                         lastSaved = now
@@ -69,6 +67,7 @@ class StoreDownloadService : Service() {
                 StoreNetwork.transfer(this@StoreDownloadService, selected, url, archive, archiveValidated = !archive.extension.equals("exe", true)) { progress(it) }
                 ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
                 state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting), speed = 0) }
+                DownloadNotifications.update(this@StoreDownloadService, 312, "store-downloads", selected.title, game.title, 0, 0, state.value.stage, true)
                 StoreInstalls.extract(this@StoreDownloadService, selected, archive, staging)
                 ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
                 state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting), speed = 0) }

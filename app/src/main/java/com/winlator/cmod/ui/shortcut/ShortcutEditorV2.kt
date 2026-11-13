@@ -1505,6 +1505,11 @@ private fun renameShortcutV2(shortcut: Shortcut, requested: String) {
     val clean = requested.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
     if (clean.isBlank() || clean == shortcut.name) return
 
+    if (shortcut.getExtra("gogGameId").isNotBlank() || shortcut.getExtra("ludashiStore").isNotBlank()) {
+        shortcut.putExtra("storeDisplayName", clean)
+        shortcut.saveData()
+        return
+    }
     val parent = shortcut.file.parentFile
     val oldName = shortcut.name
     val ext = shortcut.file.extension.takeIf { it.isNotBlank() } ?: "desktop"

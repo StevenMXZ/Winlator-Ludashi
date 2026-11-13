@@ -19,10 +19,8 @@ class GogDownloadService : Service() {
     override fun onCreate() {
         super.onCreate()
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel("gog-downloads", "GOG downloads", NotificationManager.IMPORTANCE_LOW))
-        val open = PendingIntent.getActivity(this, 0, Intent(this, GogActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        startForeground(311, Notification.Builder(this, "gog-downloads").setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("GOG · Ludashi").setContentText(getString(R.string.gog_preparing)).setContentIntent(open).build())
+        com.winlator.cmod.stores.DownloadNotifications.channel(this, "gog-downloads")
+        startForeground(311, com.winlator.cmod.stores.DownloadNotifications.build(this, "gog-downloads", "GOG", getString(R.string.gog_preparing)))
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val gameId = intent?.getStringExtra("game")
@@ -30,8 +28,7 @@ class GogDownloadService : Service() {
         val installer = intent?.getStringExtra("installer")
         if (gameId == null || installer == null || containerId <= 0) { stopSelf(); return START_NOT_STICKY }
         if (!stopped.compareAndSet(false, true)) return START_NOT_STICKY
-        startForeground(311, Notification.Builder(this, "gog-downloads").setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("GOG · Ludashi").setContentText(getString(R.string.gog_preparing)).build())
+        startForeground(311, com.winlator.cmod.stores.DownloadNotifications.build(this, "gog-downloads", "GOG", getString(R.string.gog_preparing)))
         GogLibrary.cancelled = false
         GogLibrary.mutable.update { it.copy(busy = true, cancellable = true, activeId = gameId, stage = getString(R.string.gog_preparing), error = "", done = 0, total = 0, speed = 0) }
         GogLibrary.worker.execute {
@@ -87,6 +84,7 @@ class GogDownloadService : Service() {
                 { GogLibrary.cancelled }, { done, actualSize ->
                     pacer.pace(completed + done) { check(!GogLibrary.cancelled && !com.winlator.cmod.stores.StoreSessions.paused) { "Download paused" } }
                     val speed = meter.update(completed + done)
+                    com.winlator.cmod.stores.DownloadNotifications.update(this, 311, "gog-downloads", "GOG", game.title, completed + done, GogLibrary.mutable.value.total, getString(R.string.gog_downloading))
                     val now = android.os.SystemClock.elapsedRealtime()
                     if (now - lastUpdate >= 250) {
                         GogLibrary.mutable.update { it.copy(done = completed + done, speed = speed,

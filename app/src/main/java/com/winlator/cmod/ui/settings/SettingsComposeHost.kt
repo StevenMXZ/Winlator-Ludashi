@@ -3,6 +3,8 @@ package com.winlator.cmod.ui.settings
 import com.winlator.cmod.ui.uiStr
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.graphics.Color
 import android.view.View
 import androidx.compose.foundation.BorderStroke
@@ -160,6 +162,9 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
     val activity = context as? MainActivity
+    val storage = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.data?.getStringExtra("storage_action") == "containers") activity?.navigateToMainDestination(R.id.main_menu_containers)
+    }
 
     DisposableEffect(activity, landscape) {
         if (landscape) {
@@ -195,6 +200,11 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
                 NavigationRow(Icons.Outlined.Apps, uiStr(R.string.ui_components), null, callbacks::onOpenComponents)
             }
 
+            item("storage") {
+                NavigationRow(Icons.Outlined.Storage, uiStr(R.string.storage_title), uiStr(R.string.storage_summary)) {
+                    storage.launch(Intent(context, com.winlator.cmod.storage.StorageActivity::class.java))
+                }
+            }
             item("file-manager") {
                 NavigationRow(Icons.Outlined.FolderOpen, uiStr(R.string.ui_file_manager), null) {
                     activity?.navigateToMainDestination(R.id.main_menu_file_manager)
