@@ -134,7 +134,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
                             android.widget.Toast.LENGTH_LONG).show();
                     return;
                 }
-                if (started && nativeHasApplicationContent(handle)) {
+                if (started) {
                     ready = true;
                     if (readyCallback != null) readyCallback.run();
                     return;
@@ -160,6 +160,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         handle = nativeCreate(inputProxy.screenInfo.width, inputProxy.screenInfo.height, validationEnabled,
                 driverPath, libraryName, nativeLibDir, presentMode, swapRB, this.backend, displayXFlags);
         setRawInputEnabled(!inputProxy.isRelativeMouseMovement());
+        nativeWindowListener(handle, this);
         inputProxy.setXServerView(this);
         inputProxy.cursorLocker.setEnabled(false);
         inputProxy.pointer.addOnPointerMotionListener(this);
@@ -169,6 +170,14 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         updateOptions();
     }
     private Object displayTimeline;
+    @androidx.annotation.Keep
+    private void onNativeWindowMapped(int pid, String className, boolean wow64) {
+        post(() -> {
+            if (!destroyed && getContext() instanceof com.winlator.cmod.XServerDisplayActivity)
+                ((com.winlator.cmod.XServerDisplayActivity)getContext()).assignNativeTaskAffinity(pid, className, wow64);
+        });
+    }
+    private static native void nativeWindowListener(long handle, NativeX11View view);
     private void startDisplayTimeline() {
         if (backend == 2 && !paused && !destroyed && displayTimeline == null && Build.VERSION.SDK_INT >= 33)
             displayTimeline = new DisplayTimeline33(this);
@@ -472,6 +481,5 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     private static native String nativeError(long handle);
     private static native boolean nativeHasContent(long handle);
     private static native long nativeFocusHandle(long handle);
-    private static native boolean nativeHasApplicationContent(long handle);
     private static native boolean nativeHasWindow(long handle, long hwnd);
 }

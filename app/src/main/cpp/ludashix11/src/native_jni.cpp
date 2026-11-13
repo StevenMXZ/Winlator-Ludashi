@@ -25,8 +25,57 @@ struct JavaString {
     JavaString(JNIEnv* e, jstring s) : env(e), value(s), text(e->GetStringUTFChars(s, nullptr)) {}
     ~JavaString() { if (text) env->ReleaseStringUTFChars(value, text); }
 };
+struct WindowListener {
+    JavaVM* vm{};
+    jobject view{};
+    jmethodID mapped{};
+    ~WindowListener() {
+        JNIEnv* env{};
+        bool attached = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK;
+        if (attached && vm->functions->AttachCurrentThread(vm, reinterpret_cast<void**>(&env), nullptr) != JNI_OK) return;
+        env->DeleteGlobalRef(view);
+        if (attached) vm->DetachCurrentThread();
+    }
+    void notify(xorg::Window* window) {
+        auto property = [&](const char* name) {
+            auto atom = xorg::Atom::GetID(name);
+            return atom >= 0 ? window->GetProperty(atom) : nullptr;
+        };
+        u32 pid{};
+        if (auto* p = property("_NET_WM_PID"); p && p->GetData().size() >= sizeof(pid))
+            memcpy(&pid, p->GetData().data(), sizeof(pid));
+        auto* wow = property("_NET_WM_WOW64");
+        bool isWow = wow && !wow->GetData().empty() && wow->GetData()[0] == 1;
+        std::vector<jchar> name;
+        if (auto* p = property("WM_CLASS"))
+            for (u8 c : p->GetData()) { if (!c) break; name.push_back(c); }
+        if (!pid && name.empty()) return;
+        JNIEnv* env{};
+        bool attached = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK;
+        if (attached && vm->functions->AttachCurrentThread(vm, reinterpret_cast<void**>(&env), nullptr) != JNI_OK) return;
+        auto text = env->NewString(name.data(), jsize(name.size()));
+        if (text) {
+            env->CallVoidMethod(view, mapped, jint(pid), text, jboolean(isWow));
+            env->DeleteLocalRef(text);
+        }
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        if (attached) vm->DetachCurrentThread();
+    }
+};
 }
 #define JNI_NAME(name) Java_com_winlator_cmod_widget_NativeX11View_##name
+extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeWindowListener)(JNIEnv* env, jclass, jlong handle, jobject view) {
+    auto server = session(handle); if (!server) return;
+    auto listener = std::make_shared<WindowListener>();
+    env->GetJavaVM(&listener->vm);
+    listener->view = env->NewGlobalRef(view);
+    auto cls = env->GetObjectClass(view);
+    listener->mapped = env->GetMethodID(cls, "onNativeWindowMapped", "(ILjava/lang/String;Z)V");
+    env->DeleteLocalRef(cls);
+    if (!listener->view || !listener->mapped) return;
+    auto lock = server->Lock();
+    server->GetWindowManager().onWindowMapped = [listener](xorg::Window* window) { listener->notify(window); };
+}
 extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeCreate)(JNIEnv* env, jclass, jint width, jint height, jboolean validation,
         jstring driverPath, jstring libraryName, jstring nativeLibDir, jint presentMode, jboolean swapRB, jint backend, jint flags) {
     try {
@@ -90,10 +139,6 @@ extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeOptions)(JNIEnv*, jclass, jlong
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeMagnifierZoom)(JNIEnv*, jclass, jlong handle, jfloat zoom) {
     auto server = session(handle); if (!server) return;
     static_cast<xorg::NativeScreen&>(server->GetScreen()).SetMagnifierZoom(zoom);
-}
-extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(nativeHasApplicationContent)(JNIEnv*, jclass, jlong handle) {
-    auto server = session(handle); if (!server) return false;
-    return static_cast<xorg::NativeScreen&>(server->GetScreen()).HasApplicationContent();
 }
 extern "C" JNIEXPORT jstring JNICALL JNI_NAME(nativeError)(JNIEnv* env, jclass, jlong handle) {
     auto server = session(handle); if (!server) return env->NewStringUTF("");

@@ -425,6 +425,7 @@ void WindowManager::MapWindow(const XClient* caller_client, Window* window) {
         }
     }
     window->attributes.mapped = true;
+    if (onWindowMapped) onWindowMapped(window);
     xEvent event{};
     event.u.mapNotify.event = window->id;
     event.u.mapNotify.window = window->id;

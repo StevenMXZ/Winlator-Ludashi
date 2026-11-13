@@ -145,6 +145,25 @@ int main(int argc, char** argv) {
     xorg::XServer server(nullptr, xorg::ScreenInfo(1280, 720, 4), false, config);
     std::unique_ptr<xorg::NativeDisplayXBridge> displayX;
     if (std::getenv("LUDASHI_HOST_DISPLAYX")) displayX = std::make_unique<xorg::NativeDisplayXBridge>(server);
+    if (std::string(argv[1]) == "--window-map-listener") {
+        int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+        xorg::XClient client(server, sockets[0]);
+        auto& wm = server.GetWindowManager();
+        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
+                                      0, InputOutput, 24, 0, nullptr);
+        int mapped = 0;
+        wm.onWindowMapped = [&](xorg::Window* value) { assert(value == window.get()); assert(value->IsMapped()); ++mapped; };
+        wm.MapWindow(&client, window.get());
+        wm.MapWindow(&client, window.get());
+        assert(mapped == 1);
+        wm.UnmapWindow(window.get());
+        wm.MapWindow(&client, window.get());
+        assert(mapped == 2);
+        wm.onWindowMapped = {};
+        close(sockets[1]);
+        std::cout << "PASS: window affinity notification follows map/remap, not duplicate map requests\n";
+        return 0;
+    }
     if (std::string(argv[1]) == "--displayx-timeline") {
         int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
         xorg::XClient client(server, sockets[0]);

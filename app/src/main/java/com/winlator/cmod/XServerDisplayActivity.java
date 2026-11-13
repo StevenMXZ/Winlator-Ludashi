@@ -3595,16 +3595,18 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private void assignTaskAffinity(Window window) {
+        assignNativeTaskAffinity(window.getProcessId(), window.getClassName(), window.isWoW64());
+    }
+
+    public void assignNativeTaskAffinity(int processId, String className, boolean wow64) {
         if (taskAffinityMask == 0 || taskAffinityMaskWoW64 == 0)
             return;
-        int processId = window.getProcessId();
-        String className = window.getClassName();
-        int processAffinity = window.isWoW64() ? taskAffinityMaskWoW64 : taskAffinityMask;
+        int processAffinity = wow64 ? taskAffinityMaskWoW64 : taskAffinityMask;
 
         if (processId > 0) {
             winHandler.setProcessAffinity(processId, processAffinity);
         } else if (!className.isEmpty()) {
-            winHandler.setProcessAffinity(window.getClassName(), processAffinity);
+            winHandler.setProcessAffinity(className, processAffinity);
         }
     }
 
