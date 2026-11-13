@@ -25,6 +25,13 @@ struct JavaString {
     JavaString(JNIEnv* e, jstring s) : env(e), value(s), text(e->GetStringUTFChars(s, nullptr)) {}
     ~JavaString() { if (text) env->ReleaseStringUTFChars(value, text); }
 };
+bool attach(JavaVM* vm, JNIEnv** env) {
+#ifdef __ANDROID__
+    return vm->AttachCurrentThread(env, nullptr) == JNI_OK;
+#else
+    return vm->AttachCurrentThread(reinterpret_cast<void**>(env), nullptr) == JNI_OK;
+#endif
+}
 struct WindowListener {
     JavaVM* vm{};
     jobject view{};
@@ -32,7 +39,7 @@ struct WindowListener {
     ~WindowListener() {
         JNIEnv* env{};
         bool attached = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK;
-        if (attached && vm->functions->AttachCurrentThread(vm, reinterpret_cast<void**>(&env), nullptr) != JNI_OK) return;
+        if (attached && !attach(vm, &env)) return;
         env->DeleteGlobalRef(view);
         if (attached) vm->DetachCurrentThread();
     }
@@ -52,7 +59,7 @@ struct WindowListener {
         if (!pid && name.empty()) return;
         JNIEnv* env{};
         bool attached = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK;
-        if (attached && vm->functions->AttachCurrentThread(vm, reinterpret_cast<void**>(&env), nullptr) != JNI_OK) return;
+        if (attached && !attach(vm, &env)) return;
         auto text = env->NewString(name.data(), jsize(name.size()));
         if (text) {
             env->CallVoidMethod(view, mapped, jint(pid), text, jboolean(isWow));
