@@ -34,6 +34,7 @@ object StoreSessions {
     internal fun cancelled(store: LudashiStore) = cancellations.getValue(store).get()
     internal fun fresh(store: LudashiStore) { cancellations.getValue(store).set(false) }
     fun cancel(store: LudashiStore) {
+        ItchCatalog.cancel()
         generations.getValue(store).incrementAndGet()
         cancellations.getValue(store).set(true)
         tasks.remove(store)?.cancel()
@@ -125,7 +126,7 @@ object StoreSessions {
     internal suspend fun refreshNow(context: Context, store: LudashiStore) {
         StoreNetwork.check(context, store)
         state(store).update { it.copy(loading = true, error = "") }
-        val loaded = if (store == LudashiStore.ITCH) ItchConnector.library(context) else AmazonConnector.library(context)
+        val loaded = ItchConnector.library(context)
         currentCoroutineContext().ensureActive()
         StoreNetwork.check(context, store)
         val custom = state(store).value.games.filter { it.metadata.optBoolean("custom") }
@@ -138,7 +139,7 @@ object StoreSessions {
         cancel(store)
         scope.launch {
             StoreVault.clear(context, store)
-            val domain = if (store == LudashiStore.ITCH) "itch.io" else "amazon.com"
+            val domain = "itch.io"
             val cookies = android.webkit.CookieManager.getInstance()
             for (host in listOf(domain, "www.$domain")) {
                 val address = "https://$host"
@@ -156,12 +157,13 @@ object StoreSessions {
         state(store).update { it.copy(games = emptyList(), signedIn = true) }
         refreshNow(context, store)
     }
-    internal fun addItch(context: Context, url: String) { run(context, LudashiStore.ITCH) {
-        val game = ItchConnector.lookup(context, url)
-        val games = (state(LudashiStore.ITCH).value.games + game).distinctBy { it.id }
-        atomicStoreFile(cache(context, LudashiStore.ITCH) ?: error("Sign in first"), JSONArray().apply { games.forEach { put(it.json()) } }.toString())
-        state(LudashiStore.ITCH).update { it.copy(games = games) }
-    } }
+    internal fun keepGame(context: Context, game: StoreGame) {
+        val store = game.store
+        val selected = game.copy(metadata = JSONObject(game.metadata.toString()).put("custom", true))
+        val games = (state(store).value.games.filterNot { it.id == game.id } + selected)
+        atomicStoreFile(cache(context, store) ?: error("Sign in first"), JSONArray().apply { games.forEach { put(it.json()) } }.toString())
+        state(store).update { it.copy(games = games) }
+    }
     internal fun allGames(snapshot: StoreSnapshot): List<StoreGame> =
         (snapshot.games + snapshot.installed.values.mapNotNull { runCatching { StoreGame.parse(it.getJSONObject("game")) }.getOrNull() }).distinctBy { it.id }
     private val badges = ConcurrentHashMap<LudashiStore, android.graphics.Bitmap>()
@@ -191,7 +193,7 @@ object StoreSessions {
     fun requestArt(context: Context, path: String) {
         val store = LudashiStore.fromPath(path) ?: return
         if (paused || !store.enabled(context)) return
-        val game = allGames(state(store).value).find { it.id == Uri.decode(path.substringAfter("://")) } ?: return
+        val game = allGames(state(store).value).find { it.id == Uri.decode(path.substringAfter("://")) } ?: ItchCatalog.game(Uri.decode(path.substringAfter("://"))) ?: return
         val target = File(context.cacheDir, "${store.id}-art/${game.key}.jpg")
         if (target.isFile || game.image.isBlank() || !artwork.add(path)) return
         scope.launch(operation(store)) {

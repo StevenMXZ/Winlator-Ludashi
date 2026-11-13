@@ -95,15 +95,6 @@ internal object ItchConnector {
             .map { it.absUrl("href") }.distinct().forEach(::readPages)
         return games.values.toList()
     }
-    fun lookup(context: Context, url: String): StoreGame {
-        if (ItchApi.key(context).isNotBlank()) return ItchApi.lookup(context, url)
-        val normalized = gameUrl(url)
-        val page = Jsoup.parse(html(context, normalized), normalized)
-        val title = page.selectFirst("meta[property=og:title]")?.attr("content")?.substringBefore(" by ")
-            ?: page.selectFirst(".game_title")?.text() ?: error("Could not identify the itch.io game")
-        val image = page.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
-        return StoreGame(store, normalized, title, normalizeImage(image), JSONObject().put("custom", true))
-    }
     fun information(context: Context, url: String): JSONObject {
         val page = Jsoup.parse(html(context, gameUrl(url)))
         return JSONObject().put("description", page.selectFirst(".formatted_description")?.text().orEmpty())

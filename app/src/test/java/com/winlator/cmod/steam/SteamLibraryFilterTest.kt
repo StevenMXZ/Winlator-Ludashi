@@ -54,9 +54,9 @@ class SteamLibraryFilterTest {
         val gog = item("gog://1234").copy(containerName = "GOG · Installed")
         val local = item("/local.desktop")
         val itch = item("itch://example")
-        val amazon = item("amazon://example").copy(containerName = "Amazon · Installed")
-        assertEquals(listOf(gog, local, amazon, steam, itch), filterLibraryItems(listOf(steam, gog, local, itch, amazon), LibraryFilter.All))
-        assertEquals(listOf(itch, amazon), filterLibraryStores(listOf(steam, gog, local, itch, amazon), 24))
+        val installedItch = item("itch://installed").copy(containerName = "itch.io · Installed")
+        assertEquals(listOf(gog, local, installedItch, steam, itch), filterLibraryItems(listOf(steam, gog, local, itch, installedItch), LibraryFilter.All))
+        assertEquals(listOf(itch, installedItch), filterLibraryStores(listOf(steam, gog, local, itch, installedItch), 8))
     }
 
 }

@@ -2,9 +2,8 @@
     <string name="store_library_subtitle">Sua biblioteca %1$s no Ludashi</string>
     <string name="store_sign_in">Entrar na %1$s</string>
     <string name="store_sign_out">Sair da %1$s</string>
-    <string name="store_add_itch">Adicionar jogo da itch.io</string>
     <string name="store_add">Adicionar</string>
-    <string name="store_empty">Nenhum jogo para mostrar. Entre ou atualize sua biblioteca.</string>
+    <string name="store_empty">Sua biblioteca está vazia. Encontre jogos em Descobrir ou atualize suas compras.</string>
     <string name="store_current_version">Versão atual</string>
     <string name="store_no_windows">Nenhum download compatível com Windows está disponível.</string>
     <string name="store_choose_download">Escolher download</string>
@@ -28,4 +27,26 @@
     <string name="store_search_executable">Buscar executáveis</string>
     <string name="store_show_all_executables">Mostrar todos os executáveis, incluindo ferramentas auxiliares</string>
     <string name="store_no_executables">Nenhum executável encontrado. Tente mostrar todos os arquivos.</string>
+    <string name="store_no_game_info">Nenhuma informação adicional disponível.</string>
+    <string name="store_discover">Descobrir</string>
+    <string name="store_discover_search">Buscar jogos na itch.io</string>
+    <string name="store_new_games">Novidades</string>
+    <string name="store_on_sale">Ofertas</string>
+    <string name="store_free_games">Jogos grátis</string>
+    <string name="store_popular">Populares</string>
+    <string name="store_top_rated">Mais bem avaliados</string>
+    <string name="store_top_sellers">Mais vendidos</string>
+    <string name="store_new_popular">Novos e populares</string>
+    <string name="store_tags">Tag</string>
+    <string name="store_any_price">Qualquer preço</string>
+    <string name="store_paid_games">Jogos pagos</string>
+    <string name="store_see_all">Ver todos</string>
+    <string name="store_catalog_empty">Nenhum jogo encontrado. Tente outra busca ou filtro.</string>
+    <string name="store_load_more">Carregar mais</string>
+    <string name="store_free">Grátis</string>
+    <string name="store_view_on_itch">Ver na itch.io</string>
+    <string name="store_apply">Aplicar</string>
+    <string name="store_add_library">Adicionar à biblioteca</string>
+    <string name="store_get_game">Obter jogo na itch.io</string>
+    <string name="store_itch_search_login">Entre com sua chave de API da itch.io para buscar jogos.</string>
 </resources>

@@ -115,16 +115,15 @@ internal fun LibraryRoot(
     val filter = if (selectedFilter == LibraryFilter.Steam) LibraryFilter.All else selectedFilter
     val context = LocalContext.current
     val storePrefs = remember(context) { context.getSharedPreferences("library_compose_state", 0) }
-    var storeMask by rememberSaveable { mutableStateOf(storePrefs.getInt("store-mask", 31)) }
+    var storeMask by rememberSaveable { mutableStateOf(storePrefs.getInt("store-mask", 15)) }
     val changeStores: (Int) -> Unit = { mask -> storeMask = mask; storePrefs.edit().putInt("store-mask", mask).apply() }
     LaunchedEffect(Unit) {
-        if (storePrefs.getInt("store-mask-version", 0) < 2) {
-            if (storeMask == 7) changeStores(31)
-            storePrefs.edit().putInt("store-mask-version", 2).apply()
-        }
+        if ((storeMask and 16) != 0) changeStores((storeMask and 15).takeIf { it != 0 } ?: 15)
+        if (storePrefs.getInt("store-mask-version", 0) < 2 && storeMask == 7) changeStores(15)
+        storePrefs.edit().putInt("store-mask-version", 3).apply()
         if (filterName == LibraryFilter.Steam.name) {
             filterName = LibraryFilter.All.name
-            changeStores(if (steamFilterAvailable) 2 else 31)
+            changeStores(if (steamFilterAvailable) 2 else 15)
         }
     }
     val visible = remember(items, filter, query, storeMask) {
@@ -399,8 +398,8 @@ private fun LibraryFilters(filter: LibraryFilter, select: (LibraryFilter) -> Uni
                 Spacer(Modifier.width(6.dp)); Text(uiStr(R.string.steam_ui_stores)); Icon(Icons.Outlined.ExpandMore, null)
             }
             DropdownMenu(expanded, { expanded = false }) {
-                DropdownMenuItem(text = { Text(uiStr(R.string.gog_all_stores)) }, leadingIcon = { Checkbox(mask == 31, null) }, onClick = { stores(if (mask == 31) 0 else 31) })
-                listOf(1 to uiStr(R.string.gog_local_games), 2 to "Steam", 4 to "GOG", 8 to "itch.io", 16 to "Amazon").forEach { (bit, name) ->
+                DropdownMenuItem(text = { Text(uiStr(R.string.gog_all_stores)) }, leadingIcon = { Checkbox(mask == 15, null) }, onClick = { stores(if (mask == 15) 0 else 15) })
+                listOf(1 to uiStr(R.string.gog_local_games), 2 to "Steam", 4 to "GOG", 8 to "itch.io").forEach { (bit, name) ->
                     DropdownMenuItem(text = { Text(name) }, leadingIcon = { Checkbox(mask and bit != 0, null) }, onClick = { stores(mask xor bit) })
                 }
                 DropdownMenuItem(text = { Text(uiStr(R.string.gog_manage_stores)) }, onClick = {

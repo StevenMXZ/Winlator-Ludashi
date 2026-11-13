@@ -59,36 +59,17 @@ class StoreDownloadService : Service() {
                         lastSaved = now
                     }
                 }
-                if (selected == LudashiStore.AMAZON) {
-                    val base = AmazonConnector.download(this@StoreDownloadService, game)
-                    val files = AmazonFiles.parse(StoreNetwork.bytes(this@StoreDownloadService, selected, AmazonConnector.append(base, "manifest.proto")))
-                    val total = files.fold(0L) { size, file -> Math.addExact(size, file.size) }
-                    check(folder.usableSpace > total + 64L * 1024 * 1024) { "Not enough space for this game" }
-                    state.update { it.copy(total = total, stage = getString(com.winlator.cmod.R.string.gog_downloading)) }
-                    var completed = 0L
-                    for (file in files) {
-                        ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
-                        val part = File(pending, file.hex)
-                        StoreNetwork.transfer(this@StoreDownloadService, selected, AmazonConnector.append(base, "files/${file.hex}"), part,
-                            file.size, file.algorithm, file.hash) { progress(completed + it) }
-                        val target = safeStorePath(staging, file.path)
-                        target.parentFile?.mkdirs()
-                        check(part.renameTo(target)) { "Could not finalize a game file" }
-                        completed += file.size; state.update { it.copy(done = completed) }
-                    }
-                } else {
-                    val source = upload ?: error("Choose a Windows download")
-                    val selectedUpload = StoreUpload(source.getString("id"), source.getString("name"), source.optLong("size"))
-                    val url = ItchConnector.file(this@StoreDownloadService, game, selectedUpload)
-                    val filename = selectedUpload.name
-                    require(filename.isNotBlank() && filename.none { it in "/\\\r\n\u0000" } && filename !in listOf(".", ".."))
-                    val archive = File(pending, filename)
-                    state.update { it.copy(total = selectedUpload.size, stage = getString(com.winlator.cmod.R.string.gog_downloading)) }
-                    StoreNetwork.transfer(this@StoreDownloadService, selected, url, archive, archiveValidated = !archive.extension.equals("exe", true)) { progress(it) }
-                    ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
-                    state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting), speed = 0) }
-                    StoreInstalls.extract(this@StoreDownloadService, selected, archive, staging)
-                }
+                val source = upload ?: error("Choose a Windows download")
+                val selectedUpload = StoreUpload(source.getString("id"), source.getString("name"), source.optLong("size"))
+                val url = ItchConnector.file(this@StoreDownloadService, game, selectedUpload)
+                val filename = selectedUpload.name
+                require(filename.isNotBlank() && filename.none { it in "/\\\r\n\u0000" } && filename !in listOf(".", ".."))
+                val archive = File(pending, filename)
+                state.update { it.copy(total = selectedUpload.size, stage = getString(com.winlator.cmod.R.string.gog_downloading)) }
+                StoreNetwork.transfer(this@StoreDownloadService, selected, url, archive, archiveValidated = !archive.extension.equals("exe", true)) { progress(it) }
+                ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
+                state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting), speed = 0) }
+                StoreInstalls.extract(this@StoreDownloadService, selected, archive, staging)
                 ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
                 state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting), speed = 0) }
                 StoreTransfers.save(this@StoreDownloadService, game, "installing", state.value.done, state.value.total, container, upload?.toString().orEmpty())

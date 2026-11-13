@@ -46,25 +46,4 @@ class ItchConnectorTest {
         for (url in listOf("https://itch.io.evil.test/game", "http://author.itch.io/game", "https://author.itch.io/game/purchase", "https://evil.test/game"))
             assertThrows(IllegalArgumentException::class.java) { ItchConnector.gameUrl(url) }
     }
-    @Test fun amazonLoginHasPkceAndOnlyAcceptsTheExpectedRedirectHost() {
-        val login = AmazonConnector.Login("SERIAL", "a-valid-code-verifier")
-        val url = android.net.Uri.parse(login.url())
-        assertEquals("S256", url.getQueryParameter("openid.oa2.code_challenge_method"))
-        assertEquals(login.challenge, url.getQueryParameter("openid.oa2.code_challenge"))
-        assertEquals("device:${login.clientId}", url.getQueryParameter("openid.oa2.client_id"))
-        assertEquals("accepted", AmazonConnector.callback("https://www.amazon.com/?openid.oa2.authorization_code=accepted"))
-        assertNull(AmazonConnector.callback("https://www.amazon.com.evil.test/?openid.oa2.authorization_code=bad"))
-    }
-    @Test fun amazonPaginationDoesNotSilentlyKeepAPartialLibrary() {
-        val visited = mutableListOf<String?>()
-        val games = AmazonConnector.pages { cursor ->
-            visited.add(cursor)
-            org.json.JSONObject(if (cursor == null) """{"entitlements":[{"id":"entitlement-1","product":{"id":"product-1","title":"First","productDetail":{"iconUrl":"https://images.test/1.png"}}}],"nextToken":"second"}"""
-                else """{"entitlements":[{"id":"entitlement-2","product":{"id":"product-2","title":"Second"}}]}""")
-        }
-        assertEquals(listOf(null, "second"), visited)
-        assertEquals(listOf("First", "Second"), games.map { it.title })
-        assertEquals("entitlement-1", games.first().metadata.getString("entitlement"))
-        assertThrows(IllegalStateException::class.java) { AmazonConnector.pages { org.json.JSONObject("""{"entitlements":[],"nextToken":"repeat"}""") } }
-    }
 }

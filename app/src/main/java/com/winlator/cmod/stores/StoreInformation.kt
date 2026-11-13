@@ -45,12 +45,6 @@ import java.io.File
             }.getOrDefault(initial) }.let { if (it.length() > 0) value = it }
         }
     }
-    val description = remember(information) {
-        val raw = information.optJSONObject("description")?.optString("lead").orEmpty().ifBlank {
-            information.optJSONObject("description")?.optString("full").orEmpty().ifBlank { information.optString("description") }
-        }
-        Jsoup.parse(raw).text().take(2500)
-    }
     val developer = remember(information) {
         information.optString("developer").ifBlank {
             val rows = information.optJSONArray("developers")
@@ -61,13 +55,17 @@ import java.io.File
         }
     }
     val publisher = information.optJSONObject("publisher")?.optString("name") ?: information.optString("publisher")
-    val release = information.optString("release_date").ifBlank { information.optString("releaseDate") }
+    val release = remember(information) {
+        val raw = information.optString("release_date").ifBlank { information.optString("releaseDate") }
+        runCatching { java.time.LocalDate.parse(raw.take(10)).format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM)) }.getOrDefault(raw)
+    }
     AlertDialog(onDismissRequest = { show = false }, title = { Text(uiStr(R.string.steam_ui_game_info)) }, text = {
-        Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodySmall)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (developer.isNotBlank()) Text(uiStr(R.string.steam_ui_developer) + ": " + developer, style = MaterialTheme.typography.bodySmall)
             if (publisher.isNotBlank()) Text(uiStr(R.string.steam_ui_publisher) + ": " + publisher, style = MaterialTheme.typography.bodySmall)
             if (release.isNotBlank()) Text(uiStr(R.string.steam_ui_release, release), style = MaterialTheme.typography.bodySmall)
+            record.optString("language").takeIf { it.isNotBlank() }?.let { Text(uiStr(R.string.store_download_language) + ": " + it) }
+            if (developer.isBlank() && publisher.isBlank() && release.isBlank() && record.optString("language").isBlank()) Text(uiStr(R.string.store_no_game_info))
         }
     }, confirmButton = { TextButton(onClick = { show = false }) { Text(uiStr(R.string.ui_close)) } })
 }

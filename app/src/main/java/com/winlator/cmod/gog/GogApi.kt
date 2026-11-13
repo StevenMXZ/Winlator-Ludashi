@@ -11,7 +11,7 @@ import java.security.MessageDigest
 
 internal object GogApi {
     private val connections = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
-    fun cancelWork() { connections.toList().forEach { connection -> runCatching { connection.disconnect() } } }
+    fun cancelWork() { val active = connections.toList(); if (active.isEmpty()) return; com.winlator.cmod.stores.StoreNetwork.closeOffMain { active.forEach { connection -> runCatching { connection.disconnect() } } } }
     private fun track(connection: HttpURLConnection) {
         check(!com.winlator.cmod.stores.StoreSessions.paused) { "Store requests are paused while a game runs" }
         connections.add(connection)

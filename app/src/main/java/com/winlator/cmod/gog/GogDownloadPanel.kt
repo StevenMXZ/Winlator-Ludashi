@@ -32,7 +32,7 @@ import java.io.File
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 val art = remember(id, state.revision) { File(context.cacheDir, "gog-art/$id.jpg").takeIf { it.isFile } }
                 AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
-                    update = { Glide.with(it).load(art ?: record.optString("image")).error(R.drawable.ic_gog).into(it) }, onRelease = { Glide.with(it).clear(it) }, modifier = Modifier.size(54.dp))
+                    update = { Glide.with(it).load(art ?: record.optString("image")).error(R.drawable.ic_gog).into(it) }, onRelease = { Glide.with(it.context.applicationContext).clear(it) }, modifier = Modifier.size(54.dp))
                 Column(Modifier.weight(1f)) { Text(record.optString("title"), style = MaterialTheme.typography.titleSmall); Text(status, style = MaterialTheme.typography.bodySmall) }
                 if (active) TextButton(enabled = state.cancellable, onClick = { GogLibrary.cancelled = true; GogApi.cancelWork() }) { Text(uiStr(R.string.cancel)) }
                 else if (record.optString("status") != "completed" && state.signedIn && !state.busy) TextButton(onClick = {

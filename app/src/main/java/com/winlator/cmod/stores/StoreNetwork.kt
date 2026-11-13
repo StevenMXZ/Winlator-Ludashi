@@ -5,19 +5,26 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import org.bouncycastle.crypto.digests.SHAKEDigest
 import java.io.File
-import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 internal object StoreNetwork {
     private val clients = ConcurrentHashMap<LudashiStore, OkHttpClient>()
     private val calls = ConcurrentHashMap<LudashiStore, MutableSet<Call>>()
-    fun stopIfIdle(store: LudashiStore) { if (calls[store].isNullOrEmpty()) clients[store]?.connectionPool?.evictAll() }
+    private val closing = java.util.concurrent.Executors.newSingleThreadExecutor { work -> Thread(work, "ludashi-store-close").apply { isDaemon = true } }
+    internal fun closeOffMain(work: () -> Unit) { closing.execute { runCatching(work).onFailure { android.util.Log.w("Stores", "Could not close a store connection", it) } } }
+    fun stopIfIdle(store: LudashiStore) {
+        if (calls[store].isNullOrEmpty()) clients[store]?.let { client -> closeOffMain { client.connectionPool.evictAll() } }
+    }
     fun stop(store: LudashiStore) {
-        calls[store]?.toList()?.forEach { it.cancel() }
-        clients[store]?.connectionPool?.evictAll()
+        val active = calls[store]?.toList().orEmpty()
+        val client = clients.remove(store)
+        if (active.isNotEmpty() || client != null) closeOffMain { active.forEach { runCatching { it.cancel() } }; client?.connectionPool?.evictAll() }
+    }
+    fun stopTagged(store: LudashiStore, tag: String) {
+        val active = calls[store]?.filter { it.request().tag() == tag }.orEmpty()
+        if (active.isNotEmpty()) closeOffMain { active.forEach { runCatching { it.cancel() } } }
     }
     fun check(context: Context, store: LudashiStore) {
         check(store.enabled(context) && !StoreSessions.paused && StoreSessions.live(store)) { "Store operation cancelled" }
@@ -90,7 +97,7 @@ internal object StoreNetwork {
             bytes.toByteArray()
         }
     fun transfer(context: Context, store: LudashiStore, url: String, destination: File, expected: Long = -1,
-        algorithm: Int = 0, hash: ByteArray? = null, archiveValidated: Boolean = false, progress: (Long) -> Unit) {
+        archiveValidated: Boolean = false, progress: (Long) -> Unit) {
         val rate = StoreDownloadPreferences.limit(context, store.id)
         var failure: Exception? = null
         for (attempt in 0..2) {
@@ -100,10 +107,8 @@ internal object StoreNetwork {
                     val transport = response.body?.contentLength() ?: -1L
                     if (expected >= 0 && transport >= 0) check(expected == transport) { "Store download length does not match its manifest" }
                     val required = if (expected >= 0) expected else transport
-                    check(required >= 0 || hash != null || archiveValidated) { "Download has no verifiable length or hash" }
+                    check(required >= 0 || archiveValidated) { "Download has no verifiable length" }
                     destination.parentFile?.mkdirs()
-                    val sha = MessageDigest.getInstance("SHA-256")
-                    val shake = if (algorithm == 1) SHAKEDigest(128) else null
                     var done = 0L
                     val pacer = TransferPacer(rate)
                     response.body!!.byteStream().use { input -> destination.outputStream().use { output ->
@@ -112,16 +117,11 @@ internal object StoreNetwork {
                             check(context, store)
                             val count = input.read(buffer); if (count < 0) break
                             output.write(buffer, 0, count)
-                            if (shake != null) shake.update(buffer, 0, count) else sha.update(buffer, 0, count)
                             done += count; pacer.pace(done) { check(context, store) }; progress(done)
                         }
                         output.fd.sync()
                     } }
                     check(required < 0 || done == required) { "Incomplete store download" }
-                    if (hash != null) {
-                        val actual = if (shake != null) ByteArray(hash.size).also { shake.doFinal(it, 0, it.size) } else sha.digest()
-                        check(MessageDigest.isEqual(actual, hash)) { "Store download hash did not match" }
-                    }
                 }
                 return
             } catch (error: Exception) { destination.delete(); failure = error; check(context, store) }

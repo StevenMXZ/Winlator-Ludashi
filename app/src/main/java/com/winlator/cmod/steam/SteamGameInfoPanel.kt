@@ -81,7 +81,7 @@ import java.util.Date
                     LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         items(achievements, key = { it.key }) { achievement ->
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                AndroidView(factory = { ImageView(it) }, update = { Glide.with(it).load(achievement.icon).into(it) }, onRelease = { Glide.with(it).clear(it) }, modifier = Modifier.size(40.dp))
+                                AndroidView(factory = { ImageView(it) }, update = { Glide.with(it).load(achievement.icon).into(it) }, onRelease = { Glide.with(it.context.applicationContext).clear(it) }, modifier = Modifier.size(40.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(achievement.title, style = MaterialTheme.typography.labelLarge)
                                     Text(achievement.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

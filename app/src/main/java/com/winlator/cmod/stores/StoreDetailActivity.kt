@@ -53,6 +53,8 @@ class StoreDetailFragment : Fragment() {
             var revision by remember { mutableIntStateOf(0) }
             var error by remember { mutableStateOf("") }
             var choose by remember { mutableStateOf(false) }
+            var launchAfterChoice by remember { mutableStateOf(false) }
+            var pendingLaunch by remember { mutableStateOf(false) }
             var busy by remember { mutableStateOf(false) }
             val context = requireContext()
             val gog by GogLibrary.state.collectAsStateWithLifecycle()
@@ -70,7 +72,7 @@ class StoreDetailFragment : Fragment() {
                 fun launch() {
                     if (busy) return
                     val shortcut = item.shortcut
-                    if (shortcut == null) { choose = true; return }
+                    if (shortcut == null) { launchAfterChoice = true; choose = true; return }
                     val prefs = context.getSharedPreferences(if (storeId == "gog") "gog-settings" else "ludashi-store-games", 0)
                     val key = if (storeId == "gog") "last-run-$gameId" else "$storeId-${storeHash(gameId).take(32)}-last"
                     prefs.edit().putLong(key, System.currentTimeMillis()).apply()
@@ -78,10 +80,12 @@ class StoreDetailFragment : Fragment() {
                     else LudashiStore.find(storeId)?.let { store -> StoreSessions.state(store).update { it.copy(revision = it.revision + 1) } }
                     startActivity(Intent(context, XServerDisplayActivity::class.java).putExtra("container_id", shortcut.container.id).putExtra("shortcut_path", shortcut.file.path).putExtra("shortcut_name", shortcut.name))
                 }
-                val callbacks = object : GameDetailCallbacks {
+                LaunchedEffect(pendingLaunch, item.shortcut) { if (pendingLaunch && item.shortcut != null) { pendingLaunch = false; launch() } }
+                val callbacks = object : StoreDetailCallbacks {
+                    override fun onStoreExecutable() { launchAfterChoice = false; choose = true }
                     override fun onPlay() = launch()
                     override fun onConfigure() {
-                        if (item.shortcut == null) choose = true else com.winlator.cmod.ui.shortcut.ShortcutSettingsComposeDialog.show(this@StoreDetailFragment, item.shortcut)
+                        if (item.shortcut == null) { launchAfterChoice = false; choose = true } else com.winlator.cmod.ui.shortcut.ShortcutSettingsComposeDialog.show(this@StoreDetailFragment, item.shortcut)
                     }
                     override fun onArguments() {
                         startActivity(Intent(context, XServerDisplayActivity::class.java).putExtra("container_id", item.record.getInt("container")))
@@ -103,13 +107,16 @@ class StoreDetailFragment : Fragment() {
                 }
                 val prefs = context.getSharedPreferences(if (storeId == "gog") "gog-settings" else "ludashi-store-games", 0)
                 val favorite = prefs.getBoolean(if (storeId == "gog") "favorite-$gameId" else "$storeId-${storeHash(gameId).take(32)}-favorite", false)
-                GameDetailComposeHost.StoreContent(item.title, item.brand, item.artwork?.path, favorite, item.shortcut, callbacks, item.record.optLong("installedSize").takeIf { it > 0 }?.let { if (it >= 1073741824L) "%.1f GiB".format(it / 1073741824.0) else "%.1f MiB".format(it / 1048576.0) } ?: if (StoreSessions.paused) "—" else null, installed = item.installed, installOptions = { StoreInstallOptions(storeId, gameId, item.record) }) {
+                GameDetailComposeHost.StoreContent(item.title, item.brand, item.artwork?.path, favorite, item.shortcut, callbacks, item.record.optLong("installedSize").takeIf { it > 0 }?.let { if (it >= 1073741824L) "%.1f GiB".format(it / 1073741824.0) else "%.1f MiB".format(it / 1048576.0) } ?: if (StoreSessions.paused) "—" else null, installed = item.installed, executable = item.record.optString("executable"), installOptions = { StoreInstallOptions(storeId, gameId, item.record) }) {
                     StoreInformation(storeId, gameId, item.record)
-                    if (item.installed) TextButton(onClick = { choose = true }) { Text(uiStr(R.string.gog_choose_executable)) }
+                    if (storeId == "itch") {
+                        val description = item.record.optJSONObject("game")?.optJSONObject("metadata")?.optJSONObject("information")?.optString("description").orEmpty()
+                        if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
                 }
                 if (choose) StoreExecutablePicker(item.title,
                     item.record.getJSONArray("executables").let { options -> (0 until options.length()).map { options.getString(it) } },
-                    item.record.optString("executable"), busy, { choose = false }) { path ->
+                    item.record.optString("executable"), busy, { choose = false; launchAfterChoice = false }) { path ->
                                 busy = true
                                 scope.launch {
                                     val result = withContext(Dispatchers.IO) { runCatching {
@@ -128,7 +135,7 @@ class StoreDetailFragment : Fragment() {
                                         } finally { com.winlator.cmod.core.ContainerSessionGate.edited(cid) }
                                     } }
                                     busy = false
-                                    result.onSuccess { choose = false; revision++ }.onFailure { notice(it.message.orEmpty()) }
+                                    result.onSuccess { choose = false; pendingLaunch = launchAfterChoice; revision++ }.onFailure { notice(it.message.orEmpty()) }
                                 }
                 }
             }
@@ -155,7 +162,8 @@ class StoreDetailFragment : Fragment() {
         val store = LudashiStore.find(storeId) ?: error("Unknown store")
         val file = File(StoreSessions.records(context, store), "${storeHash(gameId).take(32)}.json")
         if (!file.isFile) {
-            val game = StoreSessions.state(store).value.games.find { it.id == gameId } ?: error("Game not found in the library")
+            val game = StoreSessions.state(store).value.games.find { it.id == gameId } ?: ItchCatalog.selected(context, gameId) ?: error("Game not found in the library")
+            StoreSessions.requestArt(context, game.uri)
             return Detail(game.title, store.title, File(context.cacheDir, "$storeId-art/${game.key}.jpg").takeIf { it.isFile }, JSONObject().put("game", game.json()), null, false)
         }
         val record = JSONObject(file.readText())

@@ -9,7 +9,7 @@ import java.io.File
 import java.security.MessageDigest
 
 enum class LudashiStore(val id: String, val title: String, val icon: Int, val bit: Int) {
-    ITCH("itch", "itch.io", R.drawable.ic_itch, 8), AMAZON("amazon", "Amazon", R.drawable.ic_amazon, 16);
+    ITCH("itch", "itch.io", R.drawable.ic_itch, 8);
     fun enabled(context: Context): Boolean {
         revision.intValue
         return context.getSharedPreferences("ludashi-stores", 0).getBoolean("$id-enabled", true)

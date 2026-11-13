@@ -48,14 +48,16 @@ interface GameDetailCallbacks {
     fun onHome()
 }
 
+interface StoreDetailCallbacks : GameDetailCallbacks { fun onStoreExecutable() }
+
 interface SteamDetailCallbacks : GameDetailCallbacks { fun onSteamMode(mode: String); fun onSteamExecutable() }
 
 // Layout and statistics adapted from teldommm/WinLite. Ludashi keeps its original
 // artwork selection/crop (including offline icons) and all six user-selected palettes.
 object GameDetailComposeHost {
     @Composable
-    fun StoreContent(title: String, brand: String, artwork: String?, favorite: Boolean, shortcut: Shortcut?, callbacks: GameDetailCallbacks, installedSize: String?, installed: Boolean = true, installOptions: @Composable () -> Unit = {}, information: @Composable () -> Unit) {
-        CompositionLocalProvider(LocalStoreInformation provides information, LocalStoreSize provides installedSize, LocalStoreDetail provides true, LocalStoreInstalled provides installed, LocalStoreInstallOptions provides installOptions) {
+    fun StoreContent(title: String, brand: String, artwork: String?, favorite: Boolean, shortcut: Shortcut?, callbacks: GameDetailCallbacks, installedSize: String?, installed: Boolean = true, executable: String = "", installOptions: @Composable () -> Unit = {}, information: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalStoreInformation provides information, LocalStoreSize provides installedSize, LocalStoreDetail provides true, LocalStoreInstalled provides installed, LocalStoreExecutable provides executable, LocalStoreInstallOptions provides installOptions) {
             GameDetailScreen(title, brand, artwork, null, favorite, shortcut, callbacks)
         }
     }
@@ -82,6 +84,7 @@ object GameDetailComposeHost {
 }
 
 private val LocalStoreDetail = compositionLocalOf { false }
+private val LocalStoreExecutable = compositionLocalOf { "" }
 private val LocalStoreInstalled = compositionLocalOf { true }
 private val LocalStoreInstallOptions = compositionLocalOf<@Composable () -> Unit> { {} }
 private val LocalStoreSize = compositionLocalOf<String?> { null }
@@ -201,7 +204,7 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
                 shape = WinZShapes.ExtraLarge, color = Color.Black.copy(.48f), border = BorderStroke(1.dp, Color.White.copy(.18f))) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (LocalStoreInstalled.current) {
-                        PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
+                        PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { if (callbacks is StoreDetailCallbacks) callbacks.onStoreExecutable() else (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
                     Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         LandscapeAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), Modifier.weight(1f), callbacks::onConfigure)
                         LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
@@ -247,7 +250,7 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
             if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth())
             LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
             if (LocalStoreInstalled.current) {
-                PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
+                PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { if (callbacks is StoreDetailCallbacks) callbacks.onStoreExecutable() else (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
                 DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)
                 DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
                 DetailAction(Icons.Outlined.Backup, savesLabel(), callbacks::onSaves)
@@ -277,9 +280,9 @@ private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit, chooseEx
             Icon(Icons.Outlined.PlayArrow, null); Spacer(Modifier.width(8.dp))
             Text(if (!LocalSteamReady.current) stringResource(R.string.steam_ui_configure_first)
                 else if (steam) stringResource(if (mode == "RealSteam") R.string.steam_ui_client else R.string.steam_ui_offline)
-                else stringResource(R.string.ui_play), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                else stringResource(if (LocalStoreDetail.current && LocalStoreExecutable.current.isBlank()) R.string.steam_ui_choose_exe else R.string.ui_play), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (steam) IconButton(onClick = chooseExecutable, enabled = !modeBusy, modifier = Modifier.size(40.dp)) {
+        if (steam || LocalStoreDetail.current) IconButton(onClick = chooseExecutable, enabled = !modeBusy, modifier = Modifier.size(40.dp)) {
             Icon(Icons.Outlined.FolderOpen, stringResource(R.string.steam_ui_choose_exe), Modifier.size(20.dp))
         }
         if (steam) Box {

@@ -1067,8 +1067,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
 
-Amazon manifest and distribution protocol reference: GameNative (GPL-3.0).
-https://github.com/utkarshdalal/GameNative
 itch.io public API protocol reference: DroidDeck (GPL-3.0).
 https://github.com/Droid-Deck/DroidDeck
 itch.io session and download protocol reference: WinNative (GPL-3.0).

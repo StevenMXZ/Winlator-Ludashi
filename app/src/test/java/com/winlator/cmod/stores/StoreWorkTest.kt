@@ -44,7 +44,7 @@ class StoreWorkTest {
     }
     @Test fun disablingAStoreBlocksRequestsWithoutDeletingItsCredentialsOrGameFiles() {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
-        val store = LudashiStore.AMAZON
+        val store = LudashiStore.ITCH
         store.setEnabled(context, false)
         try {
             assertFalse(store.enabled(context))

@@ -146,7 +146,7 @@ import java.io.File
 }
 
 @Composable internal fun SteamArt(url: String, modifier: Modifier) {
-    AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } }, update = { if (it.tag != url) { it.tag = url; SteamArtwork.request(it.context, url).into(it) } }, onRelease = { Glide.with(it).clear(it) }, modifier = modifier)
+    AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } }, update = { if (it.tag != url) { it.tag = url; SteamArtwork.request(it.context, url).into(it) } }, onRelease = { Glide.with(it.context.applicationContext).clear(it) }, modifier = modifier)
 }
 
 @Composable private fun SteamDownloadsScreen(state: SteamUiSnapshot, openGame: (Int) -> Unit, modifier: Modifier) {

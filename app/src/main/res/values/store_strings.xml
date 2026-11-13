@@ -2,9 +2,8 @@
     <string name="store_library_subtitle">Your %1$s library on Ludashi</string>
     <string name="store_sign_in">Sign in to %1$s</string>
     <string name="store_sign_out">Sign out of %1$s</string>
-    <string name="store_add_itch">Add an itch.io game</string>
     <string name="store_add">Add</string>
-    <string name="store_empty">No games to show. Sign in or refresh your library.</string>
+    <string name="store_empty">Your library is empty. Find games in Discover or refresh your purchases.</string>
     <string name="store_current_version">Current version</string>
     <string name="store_no_windows">No supported Windows download is available.</string>
     <string name="store_choose_download">Choose a download</string>
@@ -28,4 +27,26 @@
     <string name="store_search_executable">Search executables</string>
     <string name="store_show_all_executables">Show all executables, including support tools</string>
     <string name="store_no_executables">No matching executable. Try showing all files.</string>
+    <string name="store_no_game_info">No additional game information is available.</string>
+    <string name="store_discover">Discover</string>
+    <string name="store_discover_search">Search itch.io games</string>
+    <string name="store_new_games">New releases</string>
+    <string name="store_on_sale">On sale</string>
+    <string name="store_free_games">Free games</string>
+    <string name="store_popular">Popular</string>
+    <string name="store_top_rated">Top rated</string>
+    <string name="store_top_sellers">Top sellers</string>
+    <string name="store_new_popular">New and popular</string>
+    <string name="store_tags">Tag</string>
+    <string name="store_any_price">Any price</string>
+    <string name="store_paid_games">Paid games</string>
+    <string name="store_see_all">See all</string>
+    <string name="store_catalog_empty">No games found. Try another search or filter.</string>
+    <string name="store_load_more">Load more</string>
+    <string name="store_free">Free</string>
+    <string name="store_view_on_itch">View on itch.io</string>
+    <string name="store_apply">Apply</string>
+    <string name="store_add_library">Add to library</string>
+    <string name="store_get_game">Get game on itch.io</string>
+    <string name="store_itch_search_login">Sign in with your itch.io API key to search games.</string>
 </resources>

@@ -113,7 +113,7 @@ class GogActivity : ImmersiveSteamActivity() {
                         OutlinedCard(onClick = ::openGame, shape = RoundedCornerShape(16.dp)) {
                             AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
                                 update = { Glide.with(it).load(cachedArt ?: game.image).error(R.drawable.ic_gog).into(it) },
-                                onRelease = { Glide.with(it).clear(it) }, modifier = Modifier.fillMaxWidth().padding(6.dp).aspectRatio(460f / 215f).clip(RoundedCornerShape(12.dp)))
+                                onRelease = { Glide.with(it.context.applicationContext).clear(it) }, modifier = Modifier.fillMaxWidth().padding(6.dp).aspectRatio(460f / 215f).clip(RoundedCornerShape(12.dp)))
                             Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(game.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)

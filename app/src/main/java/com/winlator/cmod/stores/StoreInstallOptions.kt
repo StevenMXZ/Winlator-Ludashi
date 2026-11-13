@@ -17,6 +17,7 @@ import com.winlator.cmod.R
 import com.winlator.cmod.container.ContainerManager
 import com.winlator.cmod.gog.*
 import com.winlator.cmod.ui.uiStr
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -33,6 +34,7 @@ internal fun preferredStoreUpload(uploads: List<StoreUpload>, locale: Locale): I
 
 @Composable internal fun StoreInstallOptions(storeId: String, gameId: String, record: JSONObject) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val gog by GogLibrary.state.collectAsStateWithLifecycle()
     val extra = LudashiStore.find(storeId)
     val remote = extra?.let { StoreSessions.state(it).collectAsStateWithLifecycle().value }
@@ -54,16 +56,19 @@ internal fun preferredStoreUpload(uploads: List<StoreUpload>, locale: Locale): I
         }
     }
     val game = remember(record) { if (extra != null) StoreGame.parse(record.getJSONObject("game")) else null }
+    var resolved by remember(game) { mutableStateOf(game) }
+    val canDownload = extra == null || game?.metadata?.let { it.optBoolean("free") || it.optBoolean("owned") || it.optString("downloadKey").isNotBlank() || (remote?.games?.any { existing -> existing.id == gameId && !existing.metadata.optBoolean("catalog") && !existing.metadata.optBoolean("custom") } == true) } == true
     LaunchedEffect(storeId, gameId, signedIn, retry) {
         loading = true; error = ""
         val result = withContext(Dispatchers.IO) { runCatching {
             val list = ContainerManager(context).containers
-            val files = if (!signedIn) emptyList() else if (extra == null) GogApi.installers(GogApi.get(context, "https://api.gog.com/products/$gameId?expand=downloads"))
-                else if (extra == LudashiStore.ITCH) ItchConnector.uploads(context, game!!).map { JSONObject().put("id", it.id).put("name", it.name).put("size", it.size).put("metadata", it.metadata) }
-                else listOf(JSONObject().put("id", "current").put("name", uiStr(R.string.store_current_version)))
-            list to files
+            val ready = if (extra != null && signedIn && canDownload) ItchApi.resolve(context, game!!) else game
+            val files = if (!signedIn || !canDownload) emptyList() else if (extra == null) GogApi.installers(GogApi.get(context, "https://api.gog.com/products/$gameId?expand=downloads"))
+                else ItchConnector.uploads(context, ready!!).map { JSONObject().put("id", it.id).put("name", it.name).put("size", it.size).put("metadata", it.metadata) }
+            Triple(list, files, ready)
         } }
-        result.onSuccess { (list, files) ->
+        result.onSuccess { (list, files, ready) ->
+            resolved = ready
             containers = list; container = list.firstOrNull()?.id ?: 0; downloads = files
             val locale = StoreDownloadPreferences.locale(context, storeId)
             selected = if (extra == null) StoreDownloadPreferences.installerIndex(files, locale) else preferredStoreUpload(files.map { StoreUpload(it.getString("id"), it.getString("name"), it.optLong("size"), it.optJSONObject("metadata") ?: JSONObject()) }, locale)
@@ -71,6 +76,18 @@ internal fun preferredStoreUpload(uploads: List<StoreUpload>, locale: Locale): I
         loading = false
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (extra != null) {
+            val inLibrary = remote?.games?.any { it.id == gameId } == true
+            if (!inLibrary && canDownload && signedIn) OutlinedButton(enabled = !loading && !busy, onClick = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { runCatching { StoreSessions.keepGame(context, resolved ?: game!!) } }.onFailure { error = it.message.orEmpty() }
+                }
+            }, modifier = Modifier.fillMaxWidth()) { Text(uiStr(R.string.store_add_library)) }
+            OutlinedButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(gameId))) }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text(uiStr(if (canDownload) R.string.store_view_on_itch else R.string.store_get_game))
+            }
+        }
+        if (!canDownload) return@Column
         if (busy) {
             if (extra == null && gog.activeId == gameId) GogDownloadPanel(gog)
             else if (extra != null && remote?.active == gameId) StoreTransferPanel(extra, remote)
@@ -101,7 +118,12 @@ internal fun preferredStoreUpload(uploads: List<StoreUpload>, locale: Locale): I
         }
         Button(enabled = signedIn && !loading && !busy && !StoreSessions.paused && container > 0 && downloads.isNotEmpty(), modifier = Modifier.fillMaxWidth(), onClick = {
             if (extra == null) context.startForegroundService(Intent(context, GogDownloadService::class.java).putExtra("game", gameId).putExtra("container", container).putExtra("installer", downloads[selected].toString()))
-            else context.startForegroundService(Intent(context, StoreDownloadService::class.java).putExtra("store", storeId).putExtra("game", game!!.json().toString()).putExtra("container", container).putExtra("upload", downloads[selected].toString()))
+            else scope.launch {
+                val selectedGame = resolved ?: game!!
+                val result = withContext(Dispatchers.IO) { runCatching { StoreSessions.keepGame(context, selectedGame) } }
+                result.onSuccess { context.startForegroundService(Intent(context, StoreDownloadService::class.java).putExtra("store", storeId).putExtra("game", selectedGame.json().toString()).putExtra("container", container).putExtra("upload", downloads[selected].toString())) }
+                    .onFailure { error = it.message.orEmpty() }
+            }
         }) { Icon(Icons.Outlined.Download, null); Spacer(Modifier.width(8.dp)); Text(uiStr(R.string.gog_download_install)) }
     }
 }
