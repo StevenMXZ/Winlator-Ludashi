@@ -217,7 +217,7 @@ public class ContainerManager {
     }
 
 
-    private void removeContainer(Container container) {
+    public void removeContainer(Container container) {
         if (FileUtils.delete(container.getRootDir())) containers.remove(container);
     }
 

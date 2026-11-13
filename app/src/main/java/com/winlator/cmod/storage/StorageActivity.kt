@@ -1,10 +1,9 @@
 package com.winlator.cmod.storage
 
-import android.app.Activity
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.os.StatFs
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
@@ -28,7 +27,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.repeatOnLifecycle
-import com.winlator.cmod.OnboardingActivity
 import com.winlator.cmod.R
 import com.winlator.cmod.steam.ImmersiveSteamActivity
 import com.winlator.cmod.steam.SteamGames
@@ -70,12 +68,29 @@ class StorageActivity : ImmersiveSteamActivity() {
                 finally { scanning = false }
             }
         }
+        BackHandler(working) {}
         BackHandler(selected != null && !working) { selected = null }
-        fun manage(category: StorageCategory) {
-            if (category == StorageCategory.COMPONENTS) startActivity(Intent(this@StorageActivity, OnboardingActivity::class.java).putExtra(OnboardingActivity.EXTRA_COMPONENT_MANAGER, true))
-            else if (category == StorageCategory.CONTAINERS) { setResult(Activity.RESULT_OK, Intent().putExtra("storage_action", "containers")); finish() }
-            else startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        var message by remember { mutableStateOf("") }
+        var restoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
+        fun archive(uri: android.net.Uri, restore: Boolean) {
+            if (working) return
+            working = true; error = ""; message = ""
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) {
+                        val job = currentCoroutineContext()
+                        if (restore) StorageBackup.restore(applicationContext, uri) { job.ensureActive() }
+                        else StorageBackup.backup(applicationContext, uri) { job.ensureActive() }
+                    }
+                    message = uiStr(if (restore) R.string.storage_restore_done else R.string.storage_backup_done)
+                    SteamGames.changed()
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { error = failure.message.orEmpty() }
+                finally { working = false; refresh++ }
+            }
         }
+        val backup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-tar")) { uri -> uri?.let { archive(it, false) } }
+        val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> restoreUri = uri }
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(enabled = !working, onClick = { if (selected == null) finish() else selected = null }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, uiStr(R.string.steam_ui_back)) }
@@ -83,6 +98,7 @@ class StorageActivity : ImmersiveSteamActivity() {
                 IconButton(enabled = !scanning && !working, onClick = { error = ""; refresh++ }) { Icon(Icons.Outlined.Refresh, uiStr(R.string.storage_refresh)) }
             }
             if (scanning || working) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (message.isNotBlank()) Text(message, Modifier.padding(18.dp), color = MaterialTheme.colorScheme.primary)
             if (error.isNotBlank() || scanError.isNotBlank()) Text(error.ifBlank { scanError }, Modifier.padding(horizontal = 18.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.error)
             val data = snapshot
             if (data == null && scanning) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text(uiStr(R.string.storage_calculating)) }
@@ -95,7 +111,7 @@ class StorageActivity : ImmersiveSteamActivity() {
                                     Canvas(Modifier.fillMaxSize()) {
                                         var start = -90f
                                         val stroke = 13.dp.toPx()
-                                        StorageCategory.entries.forEach { category ->
+                                        visibleCategories.forEach { category ->
                                             val sweep = if (data.total == 0L) 0f else (data.bytes(category).toDouble() / data.total * 360).toFloat()
                                             if (sweep > 0) drawArc(categoryColor(category), start, (sweep - 2).coerceAtLeast(1f), false, Offset(stroke / 2, stroke / 2), androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke), style = Stroke(stroke, cap = StrokeCap.Round))
                                             start += sweep
@@ -107,8 +123,6 @@ class StorageActivity : ImmersiveSteamActivity() {
                                     }
                                 }
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("Ludashi", style = MaterialTheme.typography.titleLarge)
-                                    Text(uiStr(R.string.storage_managed), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     val free = remember(refresh, data) { runCatching { StatFs(filesDir.path).availableBytes }.getOrDefault(0) }
                                     Text(uiStr(R.string.storage_available, bytes(free)), style = MaterialTheme.typography.labelLarge)
                                 }
@@ -117,12 +131,16 @@ class StorageActivity : ImmersiveSteamActivity() {
                     }
                     if (data.unreadable > 0) item { Text(uiStr(R.string.storage_unreadable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     item {
-                        val caches = data.entries.filter { it.target.category == StorageCategory.CACHE && it.target.removable }
-                        FilledTonalButton(enabled = !scanning && !working && caches.isNotEmpty(), modifier = Modifier.fillMaxWidth(), onClick = { confirmation = caches }) {
-                            Icon(Icons.Outlined.CleaningServices, null); Spacer(Modifier.width(8.dp)); Text(uiStr(R.string.storage_clear_cache, bytes(data.bytes(StorageCategory.CACHE))))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            FilledTonalButton(enabled = !scanning && !working, modifier = Modifier.weight(1f), onClick = { backup.launch("Ludashi-backup-${java.time.LocalDate.now()}.tar") }) {
+                                Icon(Icons.Outlined.Backup, null); Spacer(Modifier.width(8.dp)); Text(uiStr(R.string.storage_backup))
+                            }
+                            OutlinedButton(enabled = !scanning && !working, modifier = Modifier.weight(1f), onClick = { restore.launch(arrayOf("application/x-tar", "application/octet-stream")) }) {
+                                Icon(Icons.Outlined.Restore, null); Spacer(Modifier.width(8.dp)); Text(uiStr(R.string.storage_restore))
+                            }
                         }
                     }
-                    items(StorageCategory.entries.filter { data.bytes(it) > 0 }, key = { it.name }) { category ->
+                    items(visibleCategories.filter { data.bytes(it) > 0 }, key = { it.name }) { category ->
                         CategoryRow(category, data.bytes(category), data.total) { selected = category }
                     }
                 } else {
@@ -130,10 +148,6 @@ class StorageActivity : ImmersiveSteamActivity() {
                     val entries = data.entries.filter { it.target.category == category }.sortedByDescending { it.bytes }
                     item {
                         Text(bytes(data.bytes(category)), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        Text(categoryHelp(category), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    if (category in listOf(StorageCategory.COMPONENTS, StorageCategory.CONTAINERS, StorageCategory.SYSTEM, StorageCategory.OTHER)) item {
-                        OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { manage(category) }) { Text(uiStr(when (category) { StorageCategory.COMPONENTS -> R.string.storage_manage_components; StorageCategory.CONTAINERS -> R.string.storage_manage_containers; else -> R.string.storage_app_details })) }
                     }
                     items(entries, key = { it.target.file.path }) { entry ->
                         OutlinedCard(shape = RoundedCornerShape(18.dp)) {
@@ -152,12 +166,19 @@ class StorageActivity : ImmersiveSteamActivity() {
                 }
             }
         }
+        restoreUri?.let { uri ->
+            AlertDialog(onDismissRequest = { restoreUri = null }, title = { Text(uiStr(R.string.storage_restore)) },
+                text = { Text(uiStr(R.string.storage_restore_confirm)) },
+                confirmButton = { Button(enabled = !working && !scanning, onClick = { restoreUri = null; archive(uri, true) }) { Text(uiStr(R.string.storage_restore)) } },
+                dismissButton = { TextButton(onClick = { restoreUri = null }) { Text(uiStr(R.string.cancel)) } })
+        }
         confirmation?.let { entries ->
             val game = entries.any { it.target.category == StorageCategory.GAMES }
             val cache = entries.all { it.target.category == StorageCategory.CACHE }
             AlertDialog(onDismissRequest = { if (!working) confirmation = null }, title = { Text(uiStr(if (game) R.string.steam_ui_uninstall else R.string.storage_remove_title)) },
                 text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(if (cache) uiStr(R.string.storage_cache_help) else entries.joinToString("\n") { it.target.title })
+                    if (entries.any { it.target.category == StorageCategory.CONTAINERS }) Text(uiStr(R.string.storage_remove_container))
                     Text(bytes(entries.sumOf { it.bytes }), fontWeight = FontWeight.Bold)
                     if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
                 } }, confirmButton = { Button(enabled = !working, onClick = {
@@ -172,6 +193,8 @@ class StorageActivity : ImmersiveSteamActivity() {
         }
     }
 }
+
+private val visibleCategories = StorageCategory.entries.filter { it !in listOf(StorageCategory.SYSTEM, StorageCategory.OTHER) }
 
 @Composable private fun CategoryRow(category: StorageCategory, used: Long, total: Long, open: () -> Unit) {
     OutlinedCard(onClick = open, shape = RoundedCornerShape(18.dp)) {
@@ -189,10 +212,6 @@ private fun categoryTitle(category: StorageCategory) = uiStr(when (category) {
     StorageCategory.GAMES -> R.string.storage_games; StorageCategory.COMPONENTS -> R.string.storage_components; StorageCategory.CONTAINERS -> R.string.storage_containers
     StorageCategory.DOWNLOADS -> R.string.storage_downloads; StorageCategory.CACHE -> R.string.storage_cache; StorageCategory.BACKUPS -> R.string.storage_backups
     StorageCategory.LOGS -> R.string.storage_logs; StorageCategory.SYSTEM -> R.string.storage_system; StorageCategory.OTHER -> R.string.storage_other
-})
-private fun categoryHelp(category: StorageCategory) = uiStr(when (category) {
-    StorageCategory.GAMES -> R.string.storage_games_help; StorageCategory.CACHE -> R.string.storage_cache_help; StorageCategory.CONTAINERS -> R.string.storage_containers_help
-    StorageCategory.SYSTEM -> R.string.storage_system_help; StorageCategory.OTHER -> R.string.storage_other_help; else -> R.string.storage_items_help
 })
 private fun categoryIcon(category: StorageCategory) = when (category) {
     StorageCategory.GAMES -> Icons.Outlined.SportsEsports; StorageCategory.COMPONENTS -> Icons.Outlined.Extension; StorageCategory.CONTAINERS -> Icons.Outlined.Dns

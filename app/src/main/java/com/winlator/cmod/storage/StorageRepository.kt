@@ -19,26 +19,29 @@ internal object StorageRepository {
     fun caches(context: Context) = (listOf(context.cacheDir, context.codeCacheDir) + context.externalCacheDirs.filterNotNull()).distinctBy { it.canonicalPath }
     private fun targets(context: Context): List<StorageTarget> {
         val files = context.filesDir
-        val result = mutableListOf(StorageTarget(context.dataDir, StorageCategory.OTHER, "Ludashi"))
+        val result = mutableListOf<StorageTarget>()
         fun node(file: File, category: StorageCategory, title: String, source: String = "", id: String = "", removable: Boolean = false) {
             if (file.exists() && !Files.isSymbolicLink(file.toPath())) result.add(StorageTarget(file.canonicalFile, category, title, source, id, removable))
         }
-        node(File(files, "imagefs"), StorageCategory.SYSTEM, "Wine / Linux")
-        context.applicationInfo.sourceDir?.let { node(File(it), StorageCategory.SYSTEM, "Ludashi APK") }
-        context.applicationInfo.splitSourceDirs.orEmpty().forEach { node(File(it), StorageCategory.SYSTEM, File(it).name) }
-        node(File(context.applicationInfo.nativeLibraryDir), StorageCategory.SYSTEM, "Ludashi native libraries")
-        context.getExternalFilesDirs(null).filterNotNull().forEach { node(it, StorageCategory.OTHER, "Ludashi") }
         caches(context).forEach { node(it, StorageCategory.CACHE, it.name, "cache", removable = true) }
-        val components = listOf(File(files, "contents"), File(files, "opengl-bundled-v1"), File(files, "imagefs/opt/installed-wine"))
-        for (root in components) {
-            node(root, StorageCategory.COMPONENTS, root.name)
-            root.listFiles().orEmpty().filter { it.isDirectory && !it.name.startsWith('.') && !Files.isSymbolicLink(it.toPath()) }.forEach { type ->
-                if (root.name == "contents") type.listFiles().orEmpty().filter { it.isDirectory && !it.name.startsWith('.') }.forEach { version -> node(version, StorageCategory.COMPONENTS, "${type.name} · ${version.name}") }
-                else node(type, StorageCategory.COMPONENTS, type.name)
+        val manager = com.winlator.cmod.contents.ContentsManager(context).apply { syncContents() }
+        for (type in com.winlator.cmod.contents.ContentProfile.ContentType.values()) {
+            manager.getInstalledProfiles(type).forEach { profile ->
+                node(com.winlator.cmod.contents.ContentsManager.getInstallDir(context, profile), StorageCategory.COMPONENTS,
+                    "$type · ${profile.verName}", "component", com.winlator.cmod.contents.ContentsManager.getEntryName(profile), true)
             }
         }
+        com.winlator.cmod.core.ProtonPackageManager.getInstalledIdentifiers(context).forEach { id ->
+            node(com.winlator.cmod.core.ProtonPackageManager.getInstallDir(context, id), StorageCategory.COMPONENTS, id, "proton", id, true)
+        }
+        File(files, "contents/adrenotools").listFiles().orEmpty().filter { it.isDirectory && File(it, "meta.json").isFile }.forEach {
+            node(it, StorageCategory.COMPONENTS, json(File(it, "meta.json"))?.optString("name").orEmpty().ifBlank { it.name }, "driver", it.name, true)
+        }
+        File(files, "opengl-bundled-v1").listFiles().orEmpty().filter { it.isDirectory && !it.name.startsWith('.') }.forEach {
+            node(it, StorageCategory.COMPONENTS, it.name, "bundled-gl", it.name, true)
+        }
         val containers = ContainerManager(context).containers
-        containers.forEach { node(it.rootDir, StorageCategory.CONTAINERS, it.name, "container", it.id.toString()) }
+        containers.forEach { node(it.rootDir, StorageCategory.CONTAINERS, it.name, "container", it.id.toString(), true) }
         node(File(files, "steam-library/common"), StorageCategory.DOWNLOADS, "Steam")
         for (record in records(File(files, "steam-library"))) {
             val id = record.nameWithoutExtension.toIntOrNull() ?: continue
@@ -108,7 +111,7 @@ internal object StorageRepository {
     }
     fun scan(context: Context, check: () -> Unit): StorageSnapshot {
         val targets = targets(context)
-        return StorageScanner.measure(listOf(context.dataDir) + targets.map { it.file }, targets, check).also { cached = it }
+        return StorageScanner.measure(targets.map { it.file }, targets, check).let { StorageSnapshot(it.entries.filter { e -> e.target.category !in listOf(StorageCategory.SYSTEM, StorageCategory.OTHER) }, it.unreadable) }.also { cached = it }
     }
     fun remove(context: Context, entry: StorageEntry) {
         check(!busy()) { com.winlator.cmod.ui.uiStr(com.winlator.cmod.R.string.storage_busy) }
@@ -127,6 +130,29 @@ internal object StorageRepository {
                             StorageScanner.clear(target.file, keep)
                             if (target.source == "partial") target.file.delete()
                         }
+                        "container" -> {
+                            val manager = ContainerManager(context)
+                            val container = manager.containers.first { it.id.toString() == target.id }
+                            manager.removeContainer(container)
+                            check(!container.rootDir.exists()) { "Could not remove the container" }
+                        }
+                        "component" -> {
+                            val manager = com.winlator.cmod.contents.ContentsManager(context).apply { syncContents() }
+                            val profile = manager.getProfileByEntryName(target.id) ?: error("Component is no longer installed")
+                            check(com.winlator.cmod.core.WineRuntimeGuard.canRemove(context, profile)) { "This runtime is used by a container" }
+                            manager.removeContent(profile)
+                            check(!target.file.exists()) { "Could not remove the component" }
+                        }
+                        "proton" -> {
+                            check(!com.winlator.cmod.core.WineRuntimeGuard.isInUse(context, target.id)) { "This runtime is used by a container" }
+                            com.winlator.cmod.core.ProtonPackageManager.deletePackage(context, target.id)
+                            check(!target.file.exists()) { "Could not remove the runtime" }
+                        }
+                        "driver" -> {
+                            com.winlator.cmod.contents.AdrenotoolsManager(context).removeDriver(target.id)
+                            check(!target.file.exists()) { "Could not remove the driver" }
+                        }
+                        "bundled-gl" -> check(com.winlator.cmod.core.FileUtils.delete(target.file)) { "Could not remove the component" }
                         "backup", "log" -> check(target.file.delete()) { "Could not remove the save backup" }
                         "steam-partial" -> SteamStorage.removePending(context, target.id.toInt(), target.file.name)
                     }

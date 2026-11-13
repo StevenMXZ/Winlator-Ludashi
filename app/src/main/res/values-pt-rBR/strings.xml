@@ -683,4 +683,10 @@
     <string name="steam_cloud_launch_retry">Tentar novamente</string>
     <string name="steam_cloud_launch_cancel">Cancelar inicialização</string>
     <string name="ui_lossless_dxbc_translation_failed">Não foi possível converter os shaders DXBC desta DLL. O cache LSFG anterior foi preservado.</string>
+    <string name="storage_backup">Backup</string>
+    <string name="storage_restore">Restaurar backup</string>
+    <string name="storage_backup_done">Backup salvo.</string>
+    <string name="storage_restore_done">Backup restaurado. Reinicie o Ludashi para recarregar todas as configurações.</string>
+    <string name="storage_restore_confirm">Restaurar componentes, jogos, saves e configurações? Arquivos existentes serão substituídos. Containers não são incluídos.</string>
+    <string name="storage_remove_container">Jogos e saves dentro deste container também serão removidos.</string>
 </resources>

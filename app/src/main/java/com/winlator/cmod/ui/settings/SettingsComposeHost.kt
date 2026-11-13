@@ -191,7 +191,7 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("language") { GroupCard { AppLanguagePreference() } }
 
             item("stores") {
-                NavigationRow(Icons.Outlined.Storefront, uiStr(R.string.steam_ui_stores), uiStr(R.string.steam_ui_stores_summary)) {
+                NavigationRow(Icons.Outlined.Storefront, uiStr(R.string.steam_ui_stores), null) {
                     context.startActivity(Intent(context, com.winlator.cmod.steam.StoresActivity::class.java))
                 }
             }
@@ -200,11 +200,6 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
                 NavigationRow(Icons.Outlined.Apps, uiStr(R.string.ui_components), null, callbacks::onOpenComponents)
             }
 
-            item("storage") {
-                NavigationRow(Icons.Outlined.Storage, uiStr(R.string.storage_title), uiStr(R.string.storage_summary)) {
-                    storage.launch(Intent(context, com.winlator.cmod.storage.StorageActivity::class.java))
-                }
-            }
             item("file-manager") {
                 NavigationRow(Icons.Outlined.FolderOpen, uiStr(R.string.ui_file_manager), null) {
                     activity?.navigateToMainDestination(R.id.main_menu_file_manager)
@@ -317,6 +312,11 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("imagefs-title") { SectionTitle(stringResource(R.string.imagefs)) }
             item("imagefs") { NavigationRow(Icons.Outlined.Refresh, stringResource(R.string.reinstall_imagefs), null, callbacks::onReinstallImageFs) }
 
+            item("storage") {
+                NavigationRow(Icons.Outlined.Storage, uiStr(R.string.storage_title), null) {
+                    storage.launch(Intent(context, com.winlator.cmod.storage.StorageActivity::class.java))
+                }
+            }
             item("labs") {
                 NavigationRow(Icons.Outlined.Memory, uiStr(R.string.ui_labs), null) {
                     context.startActivity(Intent(context, WinlatorLabsActivity::class.java))

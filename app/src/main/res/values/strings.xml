@@ -776,4 +776,10 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="steam_cloud_launch_retry">Try again</string>
     <string name="steam_cloud_launch_cancel">Cancel launch</string>
     <string name="ui_lossless_dxbc_translation_failed">The DXBC shaders in this DLL could not be converted. Your previous LSFG cache was kept.</string>
+    <string name="storage_backup">Backup</string>
+    <string name="storage_restore">Restore backup</string>
+    <string name="storage_backup_done">Backup saved.</string>
+    <string name="storage_restore_done">Backup restored. Restart Ludashi to reload all settings.</string>
+    <string name="storage_restore_confirm">Restore components, games, saves and settings? Existing files will be replaced. Containers are not included.</string>
+    <string name="storage_remove_container">Games and saves inside this container will also be removed.</string>
 </resources>
