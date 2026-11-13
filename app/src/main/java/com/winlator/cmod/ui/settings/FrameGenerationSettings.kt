@@ -151,6 +151,7 @@ private fun losslessStatusText(status: Int): String = when (status) {
     LosslessScaling.STATUS_UNREADABLE_FILE -> uiStr(R.string.ui_the_selected_file_could_not_be_read)
     LosslessScaling.STATUS_NOT_PORTABLE_EXECUTABLE -> uiStr(R.string.ui_the_selected_file_is_not_a_valid_lossless_dll)
     LosslessScaling.STATUS_MISSING_SHADERS -> uiStr(R.string.ui_this_lossless_dll_does_not_contain_the_required_spir_v_shaders_im)
+    LosslessScaling.STATUS_TRANSLATION_FAILED -> uiStr(R.string.ui_lossless_dxbc_translation_failed)
     LosslessScaling.STATUS_INVALID_SHADERS -> uiStr(R.string.ui_the_selected_dll_contains_invalid_spir_v_shaders)
     LosslessScaling.STATUS_CACHE_UNUSABLE -> uiStr(R.string.ui_the_lsfg_shader_cache_could_not_be_created)
     else -> uiStr(R.string.ui_lossless_dll_has_not_been_imported)

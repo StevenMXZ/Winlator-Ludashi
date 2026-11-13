@@ -682,4 +682,5 @@
     <string name="steam_cloud_launch_continue">Iniciar sem sincronizar</string>
     <string name="steam_cloud_launch_retry">Tentar novamente</string>
     <string name="steam_cloud_launch_cancel">Cancelar inicialização</string>
+    <string name="ui_lossless_dxbc_translation_failed">Não foi possível converter os shaders DXBC desta DLL. O cache LSFG anterior foi preservado.</string>
 </resources>

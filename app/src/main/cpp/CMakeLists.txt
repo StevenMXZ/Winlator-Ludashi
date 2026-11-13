@@ -243,6 +243,7 @@ include_directories(
 )
 
 add_subdirectory(wfg)
+add_subdirectory(lsfg-import)
 
 add_library(vulkan_renderer SHARED
         winlator/renderer/vulkan/vulkan_jni.cpp
@@ -288,7 +289,10 @@ target_compile_options(vulkan_renderer PRIVATE
         -Wall -Wextra -fvisibility=hidden
 )
 
+target_compile_definitions(vulkan_renderer PRIVATE LSFG_DXBC_TRANSLATION=1)
+
 target_link_libraries(vulkan_renderer
+        lsfg_dxbc
         wfg
         log
         android

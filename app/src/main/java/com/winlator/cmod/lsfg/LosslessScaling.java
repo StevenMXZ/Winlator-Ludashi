@@ -18,10 +18,12 @@ public final class LosslessScaling {
     public static final int STATUS_MISSING_SHADERS = 4;
     public static final int STATUS_INVALID_SHADERS = 5;
     public static final int STATUS_CACHE_UNUSABLE = 6;
+    public static final int STATUS_TRANSLATION_FAILED = 7;
 
     public static final int VARIANT_NONE = 0;
     public static final int VARIANT_FP16 = 1;
     public static final int VARIANT_FP32 = 2;
+    public static final int VARIANT_DXBC = 3;
 
     private static final String TAG = "LosslessScaling";
     private static final String STORE_DIR = "lsfg";
@@ -66,6 +68,7 @@ public final class LosslessScaling {
         switch (variant) {
             case VARIANT_FP16: return "spirv-fp16";
             case VARIANT_FP32: return "spirv-fp32";
+            case VARIANT_DXBC: return "dxbc-translated";
             default: return "none";
         }
     }
@@ -82,7 +85,13 @@ public final class LosslessScaling {
         try {
             int status = nativeBuildCache(dll.getAbsolutePath(), pending32.getAbsolutePath(), false);
             if (status != STATUS_OK) return status;
-            boolean onlyFp16 = nativeCacheVariant(pending32.getAbsolutePath()) == VARIANT_FP16;
+            int variant = nativeCacheVariant(pending32.getAbsolutePath());
+            if (variant == VARIANT_DXBC) {
+                if (!pending32.renameTo(getCacheFile(context, false))) return STATUS_CACHE_UNUSABLE;
+                deleteQuietly(getCacheFile(context, true));
+                return STATUS_OK;
+            }
+            boolean onlyFp16 = variant == VARIANT_FP16;
             if (onlyFp16) {
                 if (!pending32.renameTo(getCacheFile(context, true))) return STATUS_CACHE_UNUSABLE;
                 deleteQuietly(getCacheFile(context, false));

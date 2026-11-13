@@ -1,4 +1,7 @@
 #include "lsfg_dll.h"
+#ifdef LSFG_DXBC_TRANSLATION
+#include "lsfg_dxbc.h"
+#endif
 
 #include <android/log.h>
 #include <fcntl.h>
@@ -475,6 +478,15 @@ static LsfgVariant select_variant(const ResourceTable* table, bool prefer_fp16) 
     return LSFG_VARIANT_NONE;
 }
 
+static bool has_dxbc_chain(const ResourceTable* table) {
+    size_t count = 0;
+    const uint32_t* ids = build_shader_ids(&count);
+    for (size_t i = 0; i < count; i++) {
+        if (table->size[ids[i]] < 32 || memcmp(table->data[ids[i]], "DXBC", 4)) return false;
+    }
+    return true;
+}
+
 static uint32_t variant_offset(LsfgVariant variant) {
     return variant == LSFG_VARIANT_FP16 ? VARIANT_FP16_OFFSET : VARIANT_FP32_OFFSET;
 }
@@ -530,7 +542,8 @@ LsfgStatus lsfg_build_cache(const char* dll_path, const char* cache_path, bool p
     }
 
     const LsfgVariant variant = select_variant(table, prefer_fp16);
-    if (variant == LSFG_VARIANT_NONE) {
+    const bool translate = variant == LSFG_VARIANT_NONE;
+    if (translate && !has_dxbc_chain(table)) {
         free(table);
         pe_close(&image, fd, mapped_size);
         return LSFG_MISSING_SHADERS;
@@ -538,20 +551,26 @@ LsfgStatus lsfg_build_cache(const char* dll_path, const char* cache_path, bool p
 
     LsfgModuleSet set;
     memset(&set, 0, sizeof(set));
-    set.variant = variant;
+    set.variant = translate ? LSFG_VARIANT_DXBC : variant;
 
-    const uint32_t offset = variant_offset(variant);
+    const uint32_t offset = translate ? 0 : variant_offset(variant);
     size_t id_count = 0;
     const uint32_t* ids = build_shader_ids(&id_count);
     for (size_t i = 0; i < id_count; i++) {
         const uint32_t resource_id = ids[i] + offset;
         uint32_t* words = NULL;
         uint32_t word_count = 0;
-        const bool ok = adopt_spirv(table->data[resource_id], table->size[resource_id],
-                                    &words, &word_count);
+        bool ok = false;
+        if (translate) {
+#ifdef LSFG_DXBC_TRANSLATION
+            ok = lsfg_translate_dxbc(table->data[resource_id], table->size[resource_id], &words, &word_count);
+#endif
+        } else {
+            ok = adopt_spirv(table->data[resource_id], table->size[resource_id], &words, &word_count);
+        }
         if (!ok) {
             LSFG_LOGE("SPIR-V shader %u is invalid", ids[i]);
-            status = LSFG_INVALID_SHADERS;
+            status = translate ? LSFG_TRANSLATION_FAILED : LSFG_INVALID_SHADERS;
             break;
         }
         set.modules[set.count].id = ids[i];
@@ -591,7 +610,7 @@ LsfgStatus lsfg_load_modules(const char* cache_path, LsfgModuleSet* out_set) {
     CacheHeader header;
     if (fread(&header, sizeof(header), 1, file) != 1 || header.magic != CACHE_MAGIC ||
         header.version != CACHE_VERSION || header.module_count != LSFG_SHADER_COUNT ||
-        (header.variant != LSFG_VARIANT_FP16 && header.variant != LSFG_VARIANT_FP32)) {
+        (header.variant != LSFG_VARIANT_FP16 && header.variant != LSFG_VARIANT_FP32 && header.variant != LSFG_VARIANT_DXBC)) {
         fclose(file);
         return LSFG_CACHE_UNUSABLE;
     }

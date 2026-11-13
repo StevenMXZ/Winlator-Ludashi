@@ -79,10 +79,12 @@ class ShaderImportTests(unittest.TestCase):
             'static inline int __android_log_print(int p, const char* t, const char* f, ...) '
             '{ (void)p; (void)t; (void)f; return 0; }\n')
         source = Path(__file__).resolve().parents[1] / 'lsfg_dll.c'
-        library = cls.directory / 'libimport.so'
-        subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu11', '-shared', '-fPIC',
-                        '-Wall', '-Wextra', '-Werror', '-I', str(cls.directory), str(source),
-                        '-o', str(library)], check=True)
+        library = os.environ.get('LSFG_IMPORT_LIBRARY')
+        if not library:
+            library = cls.directory / 'libimport.so'
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=gnu11', '-shared', '-fPIC',
+                            '-Wall', '-Wextra', '-Werror', '-I', str(cls.directory), str(source),
+                            '-o', str(library)], check=True)
         cls.lib = ctypes.CDLL(str(library))
         cls.lib.lsfg_build_cache.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_bool]
         cls.lib.lsfg_build_cache.restype = ctypes.c_int
@@ -118,12 +120,35 @@ class ShaderImportTests(unittest.TestCase):
                 finally:
                     self.lib.lsfg_release_modules(ctypes.byref(modules))
 
-    def test_dxbc_only_and_incomplete_native_sets_are_rejected(self):
-        for resources in [variants(0, shader=b'DXBC' + bytes(28)),
-                          {key: value for key, value in variants(49).items() if key != 304}]:
-            with self.subTest(count=len(resources)):
-                status, _ = self.build(resources)
-                self.assertEqual(status, 4)
+    def test_incomplete_native_set_is_rejected(self):
+        resources = {key: value for key, value in variants(49).items() if key != 304}
+        status, _ = self.build(resources)
+        self.assertEqual(status, 4)
+
+    @unittest.skipUnless(os.environ.get('LSFG_IMPORT_LIBRARY'), 'DXBC compiler not built')
+    def test_dxbc_compute_import_and_cache_reload(self):
+        tokens = [0x50050, 7, (4 << 24) | 155, 1, 1, 1, (1 << 24) | 62]
+        code = struct.pack('<7I', *tokens)
+        shader = (b'DXBC' + bytes(16) + struct.pack('<4I', 1, 44 + len(code), 1, 36)
+                  + b'SHEX' + struct.pack('<I', len(code)) + code)
+        for preferred in [False, True]:
+            status, cache = self.build(variants(0, shader=shader), preferred)
+            self.assertEqual(status, 0)
+            modules = ModuleSet()
+            self.assertEqual(self.lib.lsfg_load_modules(os.fsencode(cache), ctypes.byref(modules)), 0)
+            try:
+                self.assertEqual(modules.variant, 3)
+                self.assertEqual(modules.count, 25)
+                self.assertEqual([m.id for m in modules.modules], IDS)
+                for module in modules.modules:
+                    self.assertEqual(module.words[0], MAGIC)
+                    validator = os.environ.get('SPIRV_VAL')
+                    if validator:
+                        output = self.directory / 'compute.spv'
+                        output.write_bytes(ctypes.string_at(module.words, module.word_count * 4))
+                        subprocess.run([validator, '--target-env', 'vulkan1.3', str(output)], check=True)
+            finally:
+                self.lib.lsfg_release_modules(ctypes.byref(modules))
 
     def test_malformed_shader_does_not_replace_an_existing_cache(self):
         status, cache = self.build(variants(49))
@@ -135,14 +160,22 @@ class ShaderImportTests(unittest.TestCase):
         self.assertEqual(status, 5)
         self.assertEqual(cache.read_bytes(), before)
 
-    def test_legacy_translated_and_truncated_caches_are_rejected(self):
+    def test_dxbc_failure_does_not_replace_a_valid_native_cache(self):
+        status, cache = self.build(variants(49))
+        self.assertEqual(status, 0)
+        before = cache.read_bytes()
+        status, _ = self.build(variants(0, shader=b'DXBC' + bytes(28)))
+        self.assertEqual(status, 7)
+        self.assertEqual(cache.read_bytes(), before)
+
+    def test_legacy_unknown_and_truncated_caches_are_rejected(self):
         status, cache = self.build(variants(98))
         self.assertEqual(status, 0)
         original = cache.read_bytes()
         legacy = bytearray(original)
         struct.pack_into('<I', legacy, 4, 1)
         translated = bytearray(original)
-        struct.pack_into('<I', translated, 12, 3)
+        struct.pack_into('<I', translated, 12, 4)
         for invalid in [bytes(legacy), bytes(translated), original[:10], original[:-4]]:
             cache.write_bytes(invalid)
             modules = ModuleSet()

@@ -775,4 +775,5 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="steam_cloud_launch_continue">Start without syncing</string>
     <string name="steam_cloud_launch_retry">Try again</string>
     <string name="steam_cloud_launch_cancel">Cancel launch</string>
+    <string name="ui_lossless_dxbc_translation_failed">The DXBC shaders in this DLL could not be converted. Your previous LSFG cache was kept.</string>
 </resources>
