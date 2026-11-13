@@ -553,8 +553,12 @@ void VulkanRendererContext::createSwapchain() {
                                frameGenCompositeFormatSupported;
     const bool wantsFrameGen = frameGenRequested && frameGenerationDeviceSupported() && frameGenSurfaceSupported;
 
-    uint32_t imgCount=caps.minImageCount+1;
-    if (caps.maxImageCount>0&&imgCount>caps.maxImageCount) imgCount=caps.maxImageCount;
+    // min+1 is the image the next frame acquires. Dynamic also queues the
+    // refresh the game missed; that present needs an image that is free now.
+    // Without it the acquire waits for the next refresh and the game slows.
+    uint32_t imgCount = caps.minImageCount + 2;
+    if (caps.maxImageCount > 0 && imgCount > caps.maxImageCount) imgCount = caps.maxImageCount;
+    if (imgCount < caps.minImageCount) imgCount = caps.minImageCount;
 
     uint32_t pmCount=0;
     vk_.GetPhysicalDeviceSurfacePresentModesKHR(physicalDevice,surface,&pmCount,nullptr);

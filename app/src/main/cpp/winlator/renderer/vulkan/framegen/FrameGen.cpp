@@ -291,6 +291,13 @@ struct FrameGenState {
     bool     slotPresented = false;
     uint32_t heldCf = 0;
     uint32_t heldImg = 0;
+    // The extra present of a Draw. Draw is still watching the slot above, so
+    // this image cannot reuse that slot's semaphore: acquiring with it waits
+    // until the compose just queued finishes, and on FIFO that is the next
+    // refresh. A separate semaphore can take a free image immediately.
+    VkCommandBuffer sideCmd = VK_NULL_HANDLE;
+    VkSemaphore     sideAcquire = VK_NULL_HANDLE;
+    VkFence         sideFence = VK_NULL_HANDLE;
 
     // Ring and timing
     int  prevSlot = -1, curSlot = -1;
@@ -333,6 +340,11 @@ struct FrameGenState {
     // Fractional refresh left over from earlier gaps. A 45 fps frame on a
     // 60 Hz panel spans 1.33 refreshes; flooring each gap generates nothing.
     double genFrac = 0.0;
+    // Arrival interval with the previous fill's wait removed, so a blocked
+    // present does not look like the game itself got slower and ask for
+    // still more frames.
+    double gameIvMs = 0.0;
+    double dynHeldMs = 0.0;
     int    stillCount = 0;
     Clock::time_point lastProbe{};
     void readScd(int slot);
@@ -398,8 +410,12 @@ struct FrameGenState {
     void prepare(VulkanRendererContext* c, FrameBuild& fb);
     void retireTextures(VulkanRendererContext* c, int slot);
     bool presentCompose(VulkanRendererContext* c, VkDescriptorSet ds, const FrameBuild& fb,
-                        bool withCursorUpload, VkSemaphore extraWait = VK_NULL_HANDLE);
-    bool takeSwapchainImage(VulkanRendererContext* c, uint32_t cf, uint32_t& imgIdx);
+                        bool withCursorUpload, VkSemaphore extraWait = VK_NULL_HANDLE,
+                        uint64_t acquireTimeout = UINT64_MAX, uint64_t fenceTimeout = UINT64_MAX);
+    bool presentSide(VulkanRendererContext* c, VkDescriptorSet ds, const FrameBuild& fb,
+                     bool withCursorUpload, VkSemaphore extraWait);
+    bool takeSwapchainImage(VulkanRendererContext* c, uint32_t cf, uint32_t& imgIdx,
+                            uint64_t acquireTimeout = UINT64_MAX, uint64_t fenceTimeout = UINT64_MAX);
     void endXpp(VulkanRendererContext* c);
     void recordCompute(VulkanRendererContext* c, VkCommandBuffer cb, int slot, int prev, int cur,
                        const float* phases, int k, int genBase, bool needPrevPyr);
@@ -431,6 +447,8 @@ struct FrameGenState {
         haveDynX = haveDynV = dynStalled = false;
         dynShown = VK_NULL_HANDLE;
         genFrac = 0.0;
+        gameIvMs = 0.0;
+        dynHeldMs = 0.0;
     }
     // Keeps only this frame, shown as is.
     void restartDyn(int slot, Clock::time_point ct) {
@@ -729,6 +747,9 @@ bool FrameGenState::createPipelines(VulkanRendererContext* c) {
     }
     for (int j = 0; j < kGenImages; ++j)
         if (vk.CreateFence(c->device, &fi, nullptr, &interpFence[j]) != VK_SUCCESS) return false;
+    cbs.commandBufferCount = 1;
+    if (vk.AllocateCommandBuffers(c->device, &cbs, &sideCmd) != VK_SUCCESS) return false;
+    if (vk.CreateFence(c->device, &fi, nullptr, &sideFence) != VK_SUCCESS) return false;
 
     if (tsValid) {
         VkQueryPoolCreateInfo qi{};
@@ -741,7 +762,8 @@ bool FrameGenState::createPipelines(VulkanRendererContext* c) {
     VkSemaphoreCreateInfo semInfo{};
     semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     if (vk.CreateSemaphore(c->device, &semInfo, nullptr, &sceneDone) != VK_SUCCESS ||
-        vk.CreateSemaphore(c->device, &semInfo, nullptr, &computeDone) != VK_SUCCESS)
+        vk.CreateSemaphore(c->device, &semInfo, nullptr, &computeDone) != VK_SUCCESS ||
+        vk.CreateSemaphore(c->device, &semInfo, nullptr, &sideAcquire) != VK_SUCCESS)
         return false;
     return true;
 }
@@ -1076,6 +1098,12 @@ void FrameGenState::destroyPipelines(VulkanRendererContext* c) {
         if (interpFence[j]) vk.DestroyFence(c->device, interpFence[j], nullptr);
         interpFence[j] = VK_NULL_HANDLE;
     }
+    if (sideFence) vk.DestroyFence(c->device, sideFence, nullptr);
+    if (sideAcquire) vk.DestroySemaphore(c->device, sideAcquire, nullptr);
+    sideFence = VK_NULL_HANDLE;
+    sideAcquire = VK_NULL_HANDLE;
+    if (sideCmd) vk.FreeCommandBuffers(c->device, c->cmdPool, 1, &sideCmd);
+    sideCmd = VK_NULL_HANDLE;
     if (sceneCb[0]) vk.FreeCommandBuffers(c->device, c->cmdPool, kRing, sceneCb);
     if (fgCb[0])    vk.FreeCommandBuffers(c->device, c->cmdPool, kRing, fgCb);
     if (interpCb[0]) vk.FreeCommandBuffers(c->device, c->cmdPool, kGenImages, interpCb);
@@ -1605,11 +1633,18 @@ void FrameGenState::prepare(VulkanRendererContext* c, FrameBuild& fb) {
     fb.curH = c->cursorTexH;
 }
 
-bool FrameGenState::takeSwapchainImage(VulkanRendererContext* c, uint32_t cf, uint32_t& imgIdx) {
+bool FrameGenState::takeSwapchainImage(VulkanRendererContext* c, uint32_t cf, uint32_t& imgIdx,
+                                       uint64_t acquireTimeout, uint64_t fenceTimeout) {
     auto& vk = c->vk_;
     VkResult fs = vk.GetFenceStatus(c->device, c->inFlightFences[cf]);
     if (fs == VK_NOT_READY) {
-        if (vk.WaitForFences(c->device, 1, &c->inFlightFences[cf], VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+        // The fence is the previous submit's GPU work, not the display.
+        // A short acquire timeout must not give up before that work finishes,
+        // or the extra frame is never queued and the output stays at the
+        // game's own rate.
+        VkResult w = vk.WaitForFences(c->device, 1, &c->inFlightFences[cf], VK_TRUE, fenceTimeout);
+        if (w == VK_TIMEOUT) return false;
+        if (w != VK_SUCCESS) {
             c->fbResized.store(true);
             c->swapchainRetryPending.store(true);
             return false;
@@ -1620,8 +1655,9 @@ bool FrameGenState::takeSwapchainImage(VulkanRendererContext* c, uint32_t cf, ui
         return false;
     }
 
-    VkResult res = vk.AcquireNextImageKHR(c->device, c->swapchain, UINT64_MAX,
+    VkResult res = vk.AcquireNextImageKHR(c->device, c->swapchain, acquireTimeout,
                                           c->imgAvailSems[cf], VK_NULL_HANDLE, &imgIdx);
+    if (res == VK_TIMEOUT || res == VK_NOT_READY) return false;
     if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_ERROR_SURFACE_LOST_KHR) {
         c->fbResized.store(true);
         return false;
@@ -1656,7 +1692,8 @@ void FrameGenState::endXpp(VulkanRendererContext* c) {
 
 bool FrameGenState::presentCompose(VulkanRendererContext* c, VkDescriptorSet ds,
                                    const FrameBuild& fb, bool withCursorUpload,
-                                   VkSemaphore extraWait) {
+                                   VkSemaphore extraWait, uint64_t acquireTimeout,
+                                   uint64_t fenceTimeout) {
     auto& vk = c->vk_;
     auto fail = [&]() {
         c->fbResized.store(true);
@@ -1685,7 +1722,7 @@ bool FrameGenState::presentCompose(VulkanRendererContext* c, VkDescriptorSet ds,
         }
         imgIdx = heldImg;
         heldAcquire = false;
-    } else if (!takeSwapchainImage(c, cf, imgIdx)) {
+    } else if (!takeSwapchainImage(c, cf, imgIdx, acquireTimeout, fenceTimeout)) {
         return false;
     }
 
@@ -1765,6 +1802,123 @@ bool FrameGenState::presentCompose(VulkanRendererContext* c, VkDescriptorSet ds,
     } else {
         c->currentFrame = (cf + 1) % MAX_FRAMES_IN_FLIGHT;
     }
+    ++outCount;
+    return true;
+}
+
+// Queues one more image in this Draw without touching the slot Draw is
+// watching. The image has to be free already: blocking until the refresh
+// holds the game thread and the source rate falls.
+bool FrameGenState::presentSide(VulkanRendererContext* c, VkDescriptorSet ds,
+                                const FrameBuild& fb, bool withCursorUpload,
+                                VkSemaphore extraWait) {
+    auto& vk = c->vk_;
+    if (sideCmd == VK_NULL_HANDLE || sideAcquire == VK_NULL_HANDLE || sideFence == VK_NULL_HANDLE)
+        return false;
+    if (c->fbResized.load() || c->swapchain == VK_NULL_HANDLE) return false;
+
+    // A fill from the previous frame may still be on the GPU. That is a
+    // compose, not the display. If it is not done quickly, skip this one.
+    if (vk.GetFenceStatus(c->device, sideFence) == VK_NOT_READY &&
+        vk.WaitForFences(c->device, 1, &sideFence, VK_TRUE, 5000000ull) != VK_SUCCESS)
+        return false;
+
+    uint32_t imgIdx = 0;
+    const VkResult acquired = vk.AcquireNextImageKHR(c->device, c->swapchain, 8000000ull,
+                                                     sideAcquire, VK_NULL_HANDLE, &imgIdx);
+    if (acquired == VK_TIMEOUT || acquired == VK_NOT_READY) return false;
+    if (acquired == VK_ERROR_OUT_OF_DATE_KHR || acquired == VK_ERROR_SURFACE_LOST_KHR) {
+        c->fbResized.store(true);
+        return false;
+    }
+    if ((acquired != VK_SUCCESS && acquired != VK_SUBOPTIMAL_KHR) ||
+        imgIdx >= c->swapchainImages.size() || imgIdx >= c->renderDoneSems.size()) {
+        c->fbResized.store(true);
+        c->swapchainRetryPending.store(true);
+        return false;
+    }
+
+    // Acquire signaled sideAcquire and dequeued the image. Anything short of a
+    // present has to drop both, or the next fill signals the semaphore twice
+    // and the image never returns to the swapchain.
+    auto abandon = [&]() {
+        vk.DestroySemaphore(c->device, sideAcquire, nullptr);
+        sideAcquire = VK_NULL_HANDLE;
+        VkSemaphoreCreateInfo sci{};
+        sci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        if (vk.CreateSemaphore(c->device, &sci, nullptr, &sideAcquire) != VK_SUCCESS)
+            sideAcquire = VK_NULL_HANDLE;
+        if (vk.GetFenceStatus(c->device, sideFence) != VK_SUCCESS) {
+            vk.DestroyFence(c->device, sideFence, nullptr);
+            sideFence = VK_NULL_HANDLE;
+            VkFenceCreateInfo fi{};
+            fi.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+            if (vk.CreateFence(c->device, &fi, nullptr, &sideFence) != VK_SUCCESS)
+                sideFence = VK_NULL_HANDLE;
+        }
+        c->fbResized.store(true);
+        c->swapchainRetryPending.store(true);
+        return false;
+    };
+
+    if (c->imgInFlight.size() != c->swapchainImages.size())
+        c->imgInFlight.assign(c->swapchainImages.size(), VK_NULL_HANDLE);
+
+    vk.ResetCommandBuffer(sideCmd, 0);
+    composeDraws.resize(1);
+    VulkanRendererContext::DrawEntry& de = composeDraws[0];
+    de = {};
+    de.ds = ds;
+    de.w = (int)W;
+    de.h = (int)H;
+
+    FrameGenPass pass;
+    pass.compose = true;
+    try {
+        c->recordCmdBuf(sideCmd, imgIdx, composeDraws, c->frameAhbTransitions,
+                        c->framePreUpload, c->framePostUpload,
+                        fb.curUpload, withCursorUpload && fb.hasCurUpload,
+                        fb.ox, fb.oy, fb.sx, fb.sy, fb.cw, fb.ch,
+                        fb.ptrX, fb.ptrY, fb.curHotX, fb.curHotY, fb.curW, fb.curH, fb.curVis,
+                        VkRect2D{{0, 0}, c->swapchainExt}, 0, false, &pass);
+    } catch (const std::exception& e) {
+        FG_LOGE("side compose record failed: %s", e.what());
+        return abandon();
+    }
+
+    VkSemaphore wSem[2] = {sideAcquire, extraWait};
+    VkSemaphore sSem[] = {c->renderDoneSems[imgIdx]};
+    VkPipelineStageFlags wStage[2] = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT};
+    VkSubmitInfo si{};
+    si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    si.waitSemaphoreCount = extraWait ? 2 : 1;
+    si.pWaitSemaphores = wSem;
+    si.pWaitDstStageMask = wStage;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &sideCmd;
+    si.signalSemaphoreCount = 1;
+    si.pSignalSemaphores = sSem;
+
+    vk.ResetFences(c->device, 1, &sideFence);
+    if (vk.QueueSubmit(c->graphicsQueue, 1, &si, sideFence) != VK_SUCCESS)
+        return abandon();
+    c->imgInFlight[imgIdx] = sideFence;
+
+    VkSwapchainKHR scs[] = {c->swapchain};
+    VkPresentInfoKHR pi{};
+    pi.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    pi.waitSemaphoreCount = 1;
+    pi.pWaitSemaphores = sSem;
+    pi.swapchainCount = 1;
+    pi.pSwapchains = scs;
+    pi.pImageIndices = &imgIdx;
+    const VkResult presented = vk.QueuePresentKHR(c->graphicsQueue, &pi);
+    if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_ERROR_SURFACE_LOST_KHR ||
+        presented == VK_SUBOPTIMAL_KHR)
+        c->fbResized.store(true);
     ++outCount;
     return true;
 }
@@ -2131,17 +2285,25 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
     if (newContent && !dupFrame) {
         if (haveArrival) {
             double iv = msBetween(lastArrival, arrival);
+            double gameIv = iv;
+            if (dynHeldMs > 0.0) {
+                if (gameIv > dynHeldMs + 1.0) gameIv -= dynHeldMs;
+                dynHeldMs = 0.0;
+            }
             if (iv > 250.0) {
                 gap = true;
                 intervalMs = intervalDev = 0.0;
                 intervalSamples = 0;
                 kApplied = -1;
+                gameIvMs = 0.0;
             } else {
                 if (intervalMs > 0.0) {
                     const double dev = std::abs(iv - intervalMs);
                     intervalDev = intervalDev > 0.0 ? intervalDev * 0.9 + dev * 0.1 : dev;
                 }
                 intervalMs = intervalMs > 0.0 ? intervalMs * 0.85 + iv * 0.15 : iv;
+                if (gameIv > 1.0)
+                    gameIvMs = gameIvMs > 0.0 ? gameIvMs * 0.85 + gameIv * 0.15 : gameIv;
                 ++intervalSamples;
             }
         }
@@ -2382,22 +2544,21 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         holdMs = std::min(std::max(late - snap, 0.0) + lead + kQueueMs, kMaxHoldMs);
     }
 
-    // Refreshes the previous image stayed up, minus the one this real frame
-    // takes. Anything past that is a frame the display cannot show.
+    // Missing refreshes of the game's own period, not of a gap stretched by
+    // the time this thread spent blocked in a previous present.
     int genBudget = 0;
-    if (!dupFrame && !dyn[dynCount - 1].cut && dynCount >= 2) {
-        const double gapMs = msBetween(dyn[dynCount - 2].ct, dyn[dynCount - 1].ct);
-        const double span = gapMs / p;
+    const double period = gameIvMs > 1.0 ? gameIvMs : intervalMs;
+    if (!dupFrame && !dyn[dynCount - 1].cut && dynCount >= 2 && period > 1.0) {
+        const double span = period / p;
         const int whole = (int)std::floor(span);
         genFrac += span - whole;
         const int carry = (int)std::floor(genFrac);
         genFrac -= carry;
-        // The real frame takes one refresh. The rest, including a fraction
-        // saved from earlier gaps, is what brings 45 fps up to 60.
         genBudget = std::max(0, std::min(kMaxGen, whole - 1 + carry));
     }
     lastK = genBudget;
     int shownGen = 0;
+    auto done = [&]() { return finish(); };
 
     for (;;) {
         if (!vsyncBase(base)) break;
@@ -2429,9 +2590,9 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         if (haveDynX && x < dynX) x = dynX;
 
         VkDescriptorSet ds = composeScene[last.slot];
-        // floor(gap / refresh) - 1 images, evenly spaced, then the real frame.
-        // The content clock used to keep easing past that and present frames
-        // the refresh has no slot for.
+        // The missing refreshes of this arrival, then the real frame.
+        // Stopping there is what keeps a later vsync from getting a frame the
+        // panel has no time to show.
         bool wantInterp = false, needField = false;
         int slotA = -1, slotB = -1, genImg = -1;
         float interpT = 0.f;
@@ -2457,14 +2618,16 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         const double untilFrame = intervalMs - msBetween(lastArrival, now);
         if (wantInterp && untilFrame > copyMs) copyInterp();
 
-        // The image is already acquired, or this present will block in acquire
-        // until the refresh. Sleeping the Java lead as well misses that vsync.
+        // The held image is paced to its vsync. A later image is a different
+        // swapchain image, queued now: sleeping until the refresh lets the
+        // next game frame arrive first, and FIFO then has nothing for the
+        // refresh the game missed.
         if (!blockingAcquire) {
+            if (contentSerial.load(std::memory_order_relaxed) != lastSerial)
+                return done();
             const auto due = v - ms(lead);
             while (Clock::now() < due)
-                if (!paceUntil(due)) return finish();
-        } else if (contentSerial.load(std::memory_order_relaxed) != lastSerial) {
-            return finish();
+                if (!paceUntil(due)) return done();
         }
         copyInterp();
 
@@ -2472,7 +2635,17 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         dynX = x;
         dynV = v;
         haveDynX = haveDynV = true;
-        if (ds != dynShown) present(ds);
+        if (ds != dynShown) {
+            if (blockingAcquire) {
+                if (!presentSide(c, ds, fb, cursorUpload, waitScene ? sceneDone : VK_NULL_HANDLE))
+                    break;
+                waitScene = false;
+                cursorUpload = false;
+                dynShown = ds;
+            } else {
+                present(ds);
+            }
+        }
         if (wantInterp) ++shownGen;
         flushAnalysis();
         const double added = std::max(0.0, msBetween(x, v) - 0.5 * p - kLatchMs);
@@ -2483,7 +2656,7 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
             break;
         }
     }
-    return finish();
+    return done();
 }
 
 // ---------------------------------------------------------------------------
