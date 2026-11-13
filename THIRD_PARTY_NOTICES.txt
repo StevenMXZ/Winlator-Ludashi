@@ -1069,6 +1069,8 @@ MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
 
 Amazon manifest and distribution protocol reference: GameNative (GPL-3.0).
 https://github.com/utkarshdalal/GameNative
+itch.io public API protocol reference: DroidDeck (GPL-3.0).
+https://github.com/Droid-Deck/DroidDeck
 itch.io session and download protocol reference: WinNative (GPL-3.0).
 https://github.com/WinNative-Emu/WinNative
 jsoup HTML parser: Copyright 2009-2024 Jonathan Hedley, MIT License.

@@ -184,8 +184,7 @@ object StoreSessions {
     fun openGame(context: Context, path: String) {
         val store = LudashiStore.fromPath(path) ?: return
         val id = Uri.decode(path.substringAfter("://"))
-        if (state(store).value.installed.containsKey(storeHash(id).take(32))) { StoreDetailActivity.open(context, store.id, id); return }
-        context.startActivity(android.content.Intent(context, StoreActivity::class.java).putExtra("store", store.id).putExtra("game", Uri.decode(path.substringAfter("://"))))
+        StoreDetailActivity.open(context, store.id, id)
     }
     private val artwork = ConcurrentHashMap.newKeySet<String>()
     private val artworkSlots = kotlinx.coroutines.sync.Semaphore(2)

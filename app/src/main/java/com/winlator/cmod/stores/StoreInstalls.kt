@@ -78,8 +78,7 @@ internal object StoreInstalls {
         val container = ContainerManager(context).getContainerById(containerId) ?: error("Container was removed")
         val target = File(container.rootDir, ".wine/drive_c/Ludashi Games/${game.store.id}-${game.key}")
         val desktop = File(container.desktopDir, "${game.store.id}-${game.key}.desktop")
-        val clean = game.title.lowercase().replace(Regex("[^a-z0-9]"), "")
-        val selected = executables.singleOrNull() ?: executables.firstOrNull { File(it).nameWithoutExtension.lowercase().replace(Regex("[^a-z0-9]"), "") == clean }.orEmpty()
+        val selected = StoreExecutables.default(executables, game.title)
         check(ContainerSessionGate.edit(containerId)) { "Exit the container before finishing this installation" }
         var moved = false
         var committed = false
@@ -118,7 +117,9 @@ internal object StoreInstalls {
         require(desktop.parentFile == container.desktopDir.canonicalFile)
         val windows = "C:\\" + target.relativeTo(drive).path.replace('/', '\\')
         val name = game.title.replace('\n', ' ').replace('\r', ' ')
-        atomicStoreFile(desktop, "[Desktop Entry]\nName=$name\nExec=wine ${com.winlator.cmod.steam.SteamCatalog.desktopExecPath(windows)}\nType=Application\nIcon=${game.store.id}-${game.key}\n\n[Extra Data]\nludashiStore=${game.store.id}\nstoreGameId=${game.id.replace('\n', ' ').replace('\r', ' ')}\n")
+        val previous = if (desktop.isFile) desktop.readText() else ""
+        val entry = updateStoreDesktop(previous, "Desktop Entry", linkedMapOf("Name" to name, "Exec" to "wine ${com.winlator.cmod.steam.SteamCatalog.desktopExecPath(windows)}", "Type" to "Application", "Icon" to "${game.store.id}-${game.key}"))
+        atomicStoreFile(desktop, updateStoreDesktop(entry, "Extra Data", mapOf("ludashiStore" to game.store.id, "storeGameId" to game.id.replace('\n', ' ').replace('\r', ' '))))
     }
     fun shortcut(context: Context, record: JSONObject): Shortcut {
         val container = ContainerManager(context).getContainerById(record.getInt("container")) ?: error("Container was removed")

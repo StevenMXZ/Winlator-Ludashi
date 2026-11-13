@@ -4,6 +4,8 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -27,7 +29,7 @@ class StoreSettingsScreen : ImmersiveSteamActivity() {
                     IconButton(onClick = { finish() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, uiStr(R.string.steam_ui_back)) }
                     Text(store.title, style = MaterialTheme.typography.headlineMedium)
                 }
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     StoreSection { ListItem(headlineContent = { Text(uiStr(R.string.store_integration, store.title)) }, trailingContent = {
                         Switch(store.enabled(this@StoreSettingsScreen), { store.setEnabled(this@StoreSettingsScreen, it) })
                     }) }
@@ -39,6 +41,7 @@ class StoreSettingsScreen : ImmersiveSteamActivity() {
                                 })
                         }
                     }
+                    if (store.enabled(this@StoreSettingsScreen)) StoreDownloadOptions(store.id, store.title)
                 }
             }
         } }

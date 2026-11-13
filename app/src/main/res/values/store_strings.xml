@@ -14,4 +14,18 @@
     <string name="store_download_paused">Paused</string>
     <string name="store_retry_download">Retry download</string>
     <string name="store_download_complete">Download complete</string>
+    <string name="store_itch_key_help">Create a personal API key on itch.io, then paste it below. Your key is stored encrypted on this device.</string>
+    <string name="store_itch_open_keys">Open itch.io API keys</string>
+    <string name="store_itch_key">API key</string>
+    <string name="store_transfer_rate">%1$s MiB/s · Remaining: %2$s</string>
+    <string name="store_estimating">Estimating…</string>
+    <string name="store_download_language">Download language</string>
+    <string name="store_app_language">App language</string>
+    <string name="store_unlimited">Automatic (no speed limit)</string>
+    <string name="store_language_fallback">Selects the app language when available, otherwise English. You can change the available package before downloading.</string>
+    <string name="store_finish_download">Finish or cancel the download first.</string>
+    <string name="store_download_folder_help">Downloaded packages are stored here temporarily. Installed games remain in the selected container. Changing this folder does not move existing downloads.</string>
+    <string name="store_search_executable">Search executables</string>
+    <string name="store_show_all_executables">Show all executables, including support tools</string>
+    <string name="store_no_executables">No matching executable. Try showing all files.</string>
 </resources>

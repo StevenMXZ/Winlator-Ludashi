@@ -4,6 +4,8 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -31,7 +33,7 @@ class GogSettingsActivity : ImmersiveSteamActivity() {
                     IconButton(onClick = { finish() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, uiStr(R.string.steam_ui_back)) }
                     Text(uiStr(R.string.gog_settings_title), style = MaterialTheme.typography.headlineMedium)
                 }
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     StoreSection {
                         ListItem(headlineContent = { Text(uiStr(R.string.gog_integration)) }, supportingContent = { Text(uiStr(R.string.gog_store_help)) }, trailingContent = {
                             Switch(enabled, { value -> error = runCatching { GogSettings.setEnabled(this@GogSettingsActivity, value) }.exceptionOrNull()?.message.orEmpty() })
@@ -44,6 +46,7 @@ class GogSettingsActivity : ImmersiveSteamActivity() {
                                 modifier = Modifier.clickable { startActivity(Intent(this@GogSettingsActivity, GogActivity::class.java).putExtra("gog_tab", tab)) })
                         }
                     }
+                    if (enabled) com.winlator.cmod.stores.StoreDownloadOptions("gog", "GOG")
                 }
             }
         } }

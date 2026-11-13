@@ -1,6 +1,10 @@
 package com.winlator.cmod.stores
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -17,9 +21,14 @@ import org.jsoup.Jsoup
 import java.io.File
 
 @Composable internal fun StoreInformation(storeId: String, gameId: String, record: JSONObject) {
+    var show by remember(storeId, gameId) { mutableStateOf(false) }
+    OutlinedButton(onClick = { show = true }, modifier = Modifier.fillMaxWidth()) {
+        Icon(Icons.Outlined.Info, null); Spacer(Modifier.width(8.dp)); Text(uiStr(R.string.steam_ui_game_info))
+    }
+    if (!show) return
     val context = LocalContext.current
     val initial = remember(record) {
-        record.optJSONObject("information") ?: record.optJSONObject("game")?.optJSONObject("metadata")?.optJSONObject("product")?.optJSONObject("productDetail")?.optJSONObject("details") ?: JSONObject()
+        record.optJSONObject("information") ?: record.optJSONObject("game")?.optJSONObject("metadata")?.optJSONObject("information") ?: record.optJSONObject("game")?.optJSONObject("metadata")?.optJSONObject("product")?.optJSONObject("productDetail")?.optJSONObject("details") ?: JSONObject()
     }
     val information by produceState(initial, storeId, gameId) {
         val file = File(context.filesDir, "store-information/$storeId-${storeHash(gameId)}.json")
@@ -28,7 +37,7 @@ import java.io.File
             withContext(Dispatchers.IO) { runCatching {
                 val result = when (storeId) {
                     "gog" -> GogApi.product(gameId, true)
-                    "itch" -> ItchConnector.information(context, gameId)
+                    "itch" -> if (ItchApi.key(context).isBlank()) ItchConnector.information(context, gameId) else initial
                     else -> initial
                 }
                 if (result.length() > 0) atomicStoreFile(file, result.toString())
@@ -53,13 +62,12 @@ import java.io.File
     }
     val publisher = information.optJSONObject("publisher")?.optString("name") ?: information.optString("publisher")
     val release = information.optString("release_date").ifBlank { information.optString("releaseDate") }
-    if (description.isNotBlank() || developer.isNotBlank() || publisher.isNotBlank() || release.isNotBlank()) OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(uiStr(R.string.steam_ui_game_info), style = MaterialTheme.typography.titleSmall)
+    AlertDialog(onDismissRequest = { show = false }, title = { Text(uiStr(R.string.steam_ui_game_info)) }, text = {
+        Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodySmall)
             if (developer.isNotBlank()) Text(uiStr(R.string.steam_ui_developer) + ": " + developer, style = MaterialTheme.typography.bodySmall)
             if (publisher.isNotBlank()) Text(uiStr(R.string.steam_ui_publisher) + ": " + publisher, style = MaterialTheme.typography.bodySmall)
             if (release.isNotBlank()) Text(uiStr(R.string.steam_ui_release, release), style = MaterialTheme.typography.bodySmall)
         }
-    }
+    }, confirmButton = { TextButton(onClick = { show = false }) { Text(uiStr(R.string.ui_close)) } })
 }

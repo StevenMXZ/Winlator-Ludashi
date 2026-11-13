@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.winlator.cmod.R
 import com.winlator.cmod.XServerDisplayActivity
 import com.winlator.cmod.container.Shortcut
@@ -31,7 +32,8 @@ import java.io.File
 class StoreDetailActivity : ImmersiveSteamActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) supportFragmentManager.beginTransaction().replace(android.R.id.content,
+        setContentView(android.widget.FrameLayout(this).apply { id = android.R.id.custom })
+        if (savedInstanceState == null) supportFragmentManager.beginTransaction().replace(android.R.id.custom,
             StoreDetailFragment().apply { arguments = Bundle().apply { putString("store", intent.getStringExtra("store")); putString("game", intent.getStringExtra("game")) } }).commit()
     }
     override fun onResume() { super.onResume(); StoreSessions.resumeForLibrary() }
@@ -41,7 +43,7 @@ class StoreDetailActivity : ImmersiveSteamActivity() {
 }
 
 class StoreDetailFragment : Fragment() {
-    private data class Detail(val title: String, val brand: String, val artwork: File?, val record: JSONObject, val shortcut: Shortcut?)
+    private data class Detail(val title: String, val brand: String, val artwork: File?, val record: JSONObject, val shortcut: Shortcut?, val installed: Boolean = true)
     private val storeId get() = requireArguments().getString("store")!!
     private val gameId get() = requireArguments().getString("game")!!
     private fun notice(text: String) { if (isAdded) Toast.makeText(requireContext(), text, Toast.LENGTH_LONG).show() }
@@ -53,7 +55,11 @@ class StoreDetailFragment : Fragment() {
             var choose by remember { mutableStateOf(false) }
             var busy by remember { mutableStateOf(false) }
             val context = requireContext()
-            val detail by produceState<Detail?>(null, revision) {
+            val gog by GogLibrary.state.collectAsStateWithLifecycle()
+            val extraStore = LudashiStore.find(storeId)
+            val extra = extraStore?.let { StoreSessions.state(it).collectAsStateWithLifecycle().value }
+            val installedRecord = if (storeId == "gog") gog.installed[gameId] else extra?.installed?.get(storeHash(gameId).take(32))
+            val detail by produceState<Detail?>(null, revision, installedRecord, if (storeId == "gog") gog.revision else extra?.revision) {
                 val result = withContext(Dispatchers.IO) { runCatching { load(context) } }
                 result.onSuccess { value = it }.onFailure { error = it.message.orEmpty() }
             }
@@ -97,16 +103,13 @@ class StoreDetailFragment : Fragment() {
                 }
                 val prefs = context.getSharedPreferences(if (storeId == "gog") "gog-settings" else "ludashi-store-games", 0)
                 val favorite = prefs.getBoolean(if (storeId == "gog") "favorite-$gameId" else "$storeId-${storeHash(gameId).take(32)}-favorite", false)
-                GameDetailComposeHost.StoreContent(item.title, item.brand, item.artwork?.path, favorite, item.shortcut, callbacks, item.record.optLong("installedSize").takeIf { it > 0 }?.let { if (it >= 1073741824L) "%.1f GiB".format(it / 1073741824.0) else "%.1f MiB".format(it / 1048576.0) } ?: if (StoreSessions.paused) "—" else null) {
+                GameDetailComposeHost.StoreContent(item.title, item.brand, item.artwork?.path, favorite, item.shortcut, callbacks, item.record.optLong("installedSize").takeIf { it > 0 }?.let { if (it >= 1073741824L) "%.1f GiB".format(it / 1073741824.0) else "%.1f MiB".format(it / 1048576.0) } ?: if (StoreSessions.paused) "—" else null, installed = item.installed, installOptions = { StoreInstallOptions(storeId, gameId, item.record) }) {
                     StoreInformation(storeId, gameId, item.record)
-                    TextButton(onClick = { choose = true }) { Text(uiStr(R.string.gog_choose_executable)) }
+                    if (item.installed) TextButton(onClick = { choose = true }) { Text(uiStr(R.string.gog_choose_executable)) }
                 }
-                if (choose) AlertDialog(onDismissRequest = { if (!busy) choose = false }, title = { Text(uiStr(R.string.gog_choose_executable)) }, text = {
-                    androidx.compose.foundation.lazy.LazyColumn {
-                        val options = item.record.getJSONArray("executables")
-                        items(options.length()) { i ->
-                            val path = options.getString(i)
-                            TextButton(enabled = !busy, onClick = {
+                if (choose) StoreExecutablePicker(item.title,
+                    item.record.getJSONArray("executables").let { options -> (0 until options.length()).map { options.getString(it) } },
+                    item.record.optString("executable"), busy, { choose = false }) { path ->
                                 busy = true
                                 scope.launch {
                                     val result = withContext(Dispatchers.IO) { runCatching {
@@ -127,17 +130,19 @@ class StoreDetailFragment : Fragment() {
                                     busy = false
                                     result.onSuccess { choose = false; revision++ }.onFailure { notice(it.message.orEmpty()) }
                                 }
-                            }) { Text(path) }
-                        }
-                    }
-                }, confirmButton = { TextButton(enabled = !busy, onClick = { choose = false }) { Text(uiStr(R.string.ui_close)) } })
+                }
             }
         } }
     }
     private fun load(context: Context): Detail {
         if (storeId == "gog") {
             require(gameId.toLongOrNull()?.let { it > 0 } == true)
-            val record = JSONObject(File(GogLibrary.records(context), "$gameId.json").readText())
+            val file = File(GogLibrary.records(context), "$gameId.json")
+            if (!file.isFile) {
+                val game = GogLibrary.state.value.games.find { it.id == gameId } ?: error("Game not found in the GOG library")
+                return Detail(game.title, "GOG", File(context.cacheDir, "gog-art/$gameId.jpg").takeIf { it.isFile }, game.json(), null, false)
+            }
+            val record = JSONObject(file.readText())
             if (!record.has("installedSize") && !StoreSessions.paused) {
                 val bytes = File(record.getString("path")).walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }.filter { it.isFile }.sumOf { it.length() }
                 record.put("installedSize", bytes)
@@ -148,7 +153,12 @@ class StoreDetailFragment : Fragment() {
             return Detail(record.getString("title"), "GOG", File(context.cacheDir, "gog-art/$gameId.jpg").takeIf { it.isFile }, record, shortcut)
         }
         val store = LudashiStore.find(storeId) ?: error("Unknown store")
-        val record = JSONObject(File(StoreSessions.records(context, store), "${storeHash(gameId).take(32)}.json").readText())
+        val file = File(StoreSessions.records(context, store), "${storeHash(gameId).take(32)}.json")
+        if (!file.isFile) {
+            val game = StoreSessions.state(store).value.games.find { it.id == gameId } ?: error("Game not found in the library")
+            return Detail(game.title, store.title, File(context.cacheDir, "$storeId-art/${game.key}.jpg").takeIf { it.isFile }, JSONObject().put("game", game.json()), null, false)
+        }
+        val record = JSONObject(file.readText())
         val game = StoreGame.parse(record.getJSONObject("game"))
         return Detail(game.title, store.title, File(context.cacheDir, "$storeId-art/${game.key}.jpg").takeIf { it.isFile }, record, runCatching { StoreInstalls.shortcut(context, record) }.getOrNull())
     }

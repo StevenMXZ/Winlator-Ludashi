@@ -45,7 +45,7 @@ internal data class StoreUpload(val id: String, val name: String, val size: Long
 internal data class StoreSnapshot(
     val games: List<StoreGame> = emptyList(), val transfers: Map<String, JSONObject> = emptyMap(), val installed: Map<String, JSONObject> = emptyMap(), val signedIn: Boolean = false,
     val loading: Boolean = false, val error: String = "", val busy: Boolean = false, val active: String = "", val stage: String = "",
-    val done: Long = 0, val total: Long = 0, val revision: Int = 0
+    val done: Long = 0, val total: Long = 0, val speed: Long = 0, val revision: Int = 0
 )
 internal fun atomicStoreFile(file: File, content: String) {
     file.parentFile?.mkdirs()

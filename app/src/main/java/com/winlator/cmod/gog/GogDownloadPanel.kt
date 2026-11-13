@@ -42,6 +42,7 @@ import java.io.File
             val done = if (active) state.done else record.optLong("done")
             val total = if (active) state.total else record.optLong("total")
             if (active) { if (total > 0) LinearProgressIndicator(progress = { (done.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth()) else LinearProgressIndicator(Modifier.fillMaxWidth()) }
+            if (active && state.speed > 0) com.winlator.cmod.stores.StoreTransferStatistics(done, total, state.speed)
             if (total > 0) Text("${done / 1048576} / ${total / 1048576} MiB", style = MaterialTheme.typography.bodySmall)
             if (!active && record.optString("error").isNotBlank()) Text(record.optString("error"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }

@@ -51,7 +51,7 @@ class StoresActivity : ImmersiveSteamActivity() {
                             }
                             HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(uiStr(R.string.steam_ui_integration), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Text(uiStr(R.string.store_integration, store.title), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                                 Switch(enabled, { store.setEnabled(this@StoresActivity, it) })
                                 IconButton(onClick = { startActivity(Intent(this@StoresActivity, StoreSettingsScreen::class.java).putExtra("store", store.id)) }) { Icon(Icons.Outlined.Settings, uiStr(R.string.gog_store_settings)) }
                             }
@@ -73,7 +73,7 @@ class StoresActivity : ImmersiveSteamActivity() {
                             }
                             HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(uiStr(R.string.steam_ui_integration), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Text(uiStr(R.string.store_integration, if (gog) "GOG" else "Steam"), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                                 Switch(enabled, { value -> error = runCatching {
                                     if (gog) GogSettings.setEnabled(this@StoresActivity, value) else SteamSettings.setEnabled(this@StoresActivity, value)
                                 }.exceptionOrNull()?.message.orEmpty() })

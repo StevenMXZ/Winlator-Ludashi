@@ -75,6 +75,7 @@ internal object ItchConnector {
         return Page(games.values.toList(), next)
     }
     fun library(context: Context): List<StoreGame> {
+        if (ItchApi.key(context).isNotBlank()) return ItchApi.library(context)
         val games = linkedMapOf<String, StoreGame>()
         fun readPages(first: String) {
             var next: String? = first
@@ -95,6 +96,7 @@ internal object ItchConnector {
         return games.values.toList()
     }
     fun lookup(context: Context, url: String): StoreGame {
+        if (ItchApi.key(context).isNotBlank()) return ItchApi.lookup(context, url)
         val normalized = gameUrl(url)
         val page = Jsoup.parse(html(context, normalized), normalized)
         val title = page.selectFirst("meta[property=og:title]")?.attr("content")?.substringBefore(" by ")
@@ -108,6 +110,7 @@ internal object ItchConnector {
             .put("developer", URI(url).host.substringBefore(".itch.io"))
     }
     fun uploads(context: Context, game: StoreGame): List<StoreUpload> {
+        if (ItchApi.key(context).isNotBlank()) return ItchApi.uploads(context, game)
         val download = downloadPage(context, game.id)
         return parseUploads(html(context, download))
     }
@@ -140,6 +143,7 @@ internal object ItchConnector {
         return result.optString("url").takeIf { StoreNetwork.trustedItch(it) } ?: error("itch.io did not grant access to this download. Check ownership and sign in again.")
     }
     fun file(context: Context, game: StoreGame, upload: StoreUpload): String {
+        if (ItchApi.key(context).isNotBlank()) return ItchApi.download(game, upload)
         val page = downloadPage(context, game.id)
         val token = csrf(html(context, page))
         val response = JSONObject(html(context, "${gameUrl(game.id)}/file/${upload.id}?source=game_download&after_download_lightbox=1&as_props=1", mapOf("csrf_token" to token)))

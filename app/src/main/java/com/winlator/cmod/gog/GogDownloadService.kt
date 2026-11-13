@@ -33,7 +33,7 @@ class GogDownloadService : Service() {
         startForeground(311, Notification.Builder(this, "gog-downloads").setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("GOG · Ludashi").setContentText(getString(R.string.gog_preparing)).build())
         GogLibrary.cancelled = false
-        GogLibrary.mutable.update { it.copy(busy = true, cancellable = true, activeId = gameId, stage = getString(R.string.gog_preparing), error = "", done = 0, total = 0) }
+        GogLibrary.mutable.update { it.copy(busy = true, cancellable = true, activeId = gameId, stage = getString(R.string.gog_preparing), error = "", done = 0, total = 0, speed = 0) }
         GogLibrary.worker.execute {
             try { install(gameId, containerId, JSONObject(installer)) }
             catch (error: Exception) {
@@ -61,12 +61,14 @@ class GogDownloadService : Service() {
         val game = GogLibrary.mutable.value.games.find { it.id == id } ?: GogLibrary.mutable.value.transfers[id]?.let { GogGame.parse(it) } ?: error("GOG game is missing from the library")
         GogTransfers.save(this, game, "preparing", 0, 0, containerId, installer.toString())
         val container = ContainerManager(this).getContainerById(containerId) ?: error("Container no longer exists")
-        val downloads = File(filesDir, "gog-downloads/$id").apply { mkdirs() }
+        val downloads = File(com.winlator.cmod.stores.StoreDownloadPreferences.folder(this, "gog"), id).apply { mkdirs() }
         val parts = installer.getJSONArray("files")
         val total = (0 until parts.length()).sumOf { parts.getJSONObject(it).optLong("size").coerceAtLeast(0) }
         check(downloads.usableSpace > total + 64L * 1024 * 1024) { "Not enough space for the GOG installer" }
         GogLibrary.mutable.update { it.copy(total = total) }
         var completed = 0L
+        val meter = com.winlator.cmod.stores.TransferMeter()
+        val pacer = com.winlator.cmod.stores.TransferPacer(com.winlator.cmod.stores.StoreDownloadPreferences.limit(this, "gog"))
         var lastUpdate = 0L
         var lastSaved = 0L
         val files = mutableListOf<File>()
@@ -83,9 +85,11 @@ class GogDownloadService : Service() {
             val integrity = GogApi.integrity(this, link)
             GogApi.download(address, temporary, integrity,
                 { GogLibrary.cancelled }, { done, actualSize ->
+                    pacer.pace(completed + done) { check(!GogLibrary.cancelled && !com.winlator.cmod.stores.StoreSessions.paused) { "Download paused" } }
+                    val speed = meter.update(completed + done)
                     val now = android.os.SystemClock.elapsedRealtime()
                     if (now - lastUpdate >= 250) {
-                        GogLibrary.mutable.update { it.copy(done = completed + done,
+                        GogLibrary.mutable.update { it.copy(done = completed + done, speed = speed,
                             total = completed + actualSize.coerceAtLeast(done) + (i + 1 until parts.length()).sumOf { index -> parts.getJSONObject(index).optLong("size").coerceAtLeast(0) }) }
                         lastUpdate = now
                     }
@@ -110,7 +114,7 @@ class GogDownloadService : Service() {
         try {
             check(!destination.exists()) { "A GOG installation already exists at this location" }
             if (staging.exists()) staging.deleteRecursively()
-            GogLibrary.mutable.update { it.copy(stage = getString(R.string.gog_extracting), cancellable = false) }
+            GogLibrary.mutable.update { it.copy(stage = getString(R.string.gog_extracting), speed = 0, cancellable = false) }
             GogTransfers.save(this, game, "installing", completed, completed, containerId, installer.toString())
             val result = Innoextract.extract(this, setup, staging, {}, {}, { com.winlator.cmod.stores.StoreSessions.trackProcess("gog", it) })
             check(result.exitCode == 0) { "The GOG installer could not be extracted (code ${result.exitCode}). Its files were kept for retry." }
@@ -125,10 +129,10 @@ class GogDownloadService : Service() {
             val tasks = info?.optJSONArray("playTasks") ?: JSONArray()
             val task = (0 until tasks.length()).map { tasks.getJSONObject(it) }
                 .firstOrNull { it.optBoolean("isPrimary") && it.optString("path").replace('\\', '/') in executables }
-            val selected = task?.optString("path")?.replace('\\', '/') ?: executables.singleOrNull().orEmpty()
+            val selected = task?.optString("path")?.replace('\\', '/') ?: com.winlator.cmod.stores.StoreExecutables.default(executables, game.title)
             check(payload.renameTo(destination)) { "Cannot finalize GOG game files" }
             moved = true
-            val record = game.json().put("path", destination.canonicalPath).put("container", containerId)
+            val record = game.json().put("language", installer.optString("language")).put("path", destination.canonicalPath).put("container", containerId)
                 .put("executables", JSONArray(executables)).put("executable", selected)
                 .put("arguments", task?.optString("arguments").orEmpty()).put("shortcut", File(container.desktopDir, "GOG-$id.desktop").path)
             record.put("installedSize", payloadSize(destination))
@@ -190,7 +194,10 @@ class GogDownloadService : Service() {
             val wine = "C:\\" + target.relativeTo(drive).path.replace('/', '\\')
             val safeTitle = record.getString("title").replace('\n', ' ').replace('\r', ' ')
             val args = record.optString("arguments").replace('\n', ' ').replace('\r', ' ')
-            GogLibrary.atomic(File(record.getString("shortcut")), "[Desktop Entry]\nName=$safeTitle\nExec=wine ${com.winlator.cmod.steam.SteamCatalog.desktopExecPath(wine)}\nType=Application\nIcon=gog-$id\n\n[Extra Data]\ngogGameId=$id\nexecArgs=$args\n")
+            val desktop = File(record.getString("shortcut"))
+            val previous = if (desktop.isFile) desktop.readText() else ""
+            val entry = com.winlator.cmod.stores.updateStoreDesktop(previous, "Desktop Entry", linkedMapOf("Name" to safeTitle, "Exec" to "wine ${com.winlator.cmod.steam.SteamCatalog.desktopExecPath(wine)}", "Type" to "Application", "Icon" to "gog-$id"))
+            GogLibrary.atomic(desktop, com.winlator.cmod.stores.updateStoreDesktop(entry, "Extra Data", if (previous.isBlank()) mapOf("gogGameId" to id, "execArgs" to args) else mapOf("gogGameId" to id)))
         }
     }
 }

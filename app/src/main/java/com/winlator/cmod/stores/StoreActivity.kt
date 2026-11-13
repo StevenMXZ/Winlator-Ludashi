@@ -8,8 +8,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,8 +27,6 @@ import com.winlator.cmod.R
 import com.winlator.cmod.steam.ImmersiveSteamActivity
 import com.winlator.cmod.ui.theme.WinZTheme
 import com.winlator.cmod.ui.uiStr
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 
@@ -55,7 +51,7 @@ class StoreActivity : ImmersiveSteamActivity() {
         var query by rememberSaveable { mutableStateOf("") }
         var grid by rememberSaveable { mutableStateOf(true) }
         var menu by remember { mutableStateOf(false) }
-        var selected by remember { mutableStateOf(StoreSessions.allGames(state).find { it.id == intent.getStringExtra("game") }) }
+        LaunchedEffect(Unit) { intent.getStringExtra("game")?.let { StoreDetailActivity.open(this@StoreActivity, store.id, it) } }
         var add by remember { mutableStateOf(false) }
         var address by rememberSaveable { mutableStateOf("") }
         val login = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -103,7 +99,7 @@ class StoreActivity : ImmersiveSteamActivity() {
                     items(visible, key = { it.id }) { game ->
                         LaunchedEffect(game.id) { StoreSessions.requestArt(applicationContext, game.uri) }
                         val art = remember(game.key, state.revision) { File(cacheDir, "${store.id}-art/${game.key}.jpg").takeIf { it.isFile } }
-                        fun open() { if (game.key in state.installed) StoreDetailActivity.open(this@StoreActivity, store.id, game.id) else selected = game }
+                        fun open() { StoreDetailActivity.open(this@StoreActivity, store.id, game.id) }
                         OutlinedCard(onClick = ::open, shape = RoundedCornerShape(16.dp)) {
                             AndroidView(factory = { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP } },
                                 update = { Glide.with(it).load(art ?: game.image).error(store.icon).into(it) }, onRelease = { Glide.with(it).clear(it) },
@@ -121,53 +117,8 @@ class StoreActivity : ImmersiveSteamActivity() {
                 }
             }
         }
-        selected?.let { game -> InstallDialog(store, state, game) { selected = null } }
         if (add) AlertDialog(onDismissRequest = { add = false }, title = { Text(uiStr(R.string.store_add_itch)) }, text = { OutlinedTextField(address, { address = it }, label = { Text("https://creator.itch.io/game") }, singleLine = true) },
             confirmButton = { TextButton(onClick = { StoreSessions.addItch(applicationContext, address); add = false }) { Text(uiStr(R.string.store_add)) } }, dismissButton = { TextButton(onClick = { add = false }) { Text(uiStr(R.string.cancel)) } })
-    }
-    @Composable private fun InstallDialog(store: LudashiStore, state: StoreSnapshot, game: StoreGame, close: () -> Unit) {
-        var loading by remember { mutableStateOf(true) }
-        var error by remember { mutableStateOf("") }
-        var versions by remember { mutableStateOf<List<StoreUpload>>(emptyList()) }
-        var version by remember { mutableIntStateOf(0) }
-        var containers by remember { mutableStateOf<List<com.winlator.cmod.container.Container>>(emptyList()) }
-        var container by remember { mutableIntStateOf(0) }
-        val preview = remember(game.id) { JSONObject().put("game", game.json()) }
-        var showVersions by remember { mutableStateOf(false) }
-        var showContainers by remember { mutableStateOf(false) }
-        LaunchedEffect(game.id) {
-            val result = withContext(Dispatchers.IO) { runCatching {
-                val containers = com.winlator.cmod.container.ContainerManager(this@StoreActivity).containers
-                val files = if (store == LudashiStore.ITCH) ItchConnector.uploads(applicationContext, game) else listOf(StoreUpload("current", uiStr(R.string.store_current_version), 0))
-                containers to files
-            } }
-            result.onSuccess { (list, files) -> containers = list; container = list.firstOrNull()?.id ?: 0; versions = files }
-                .onFailure { error = it.message.orEmpty() }
-            loading = false
-        }
-        AlertDialog(onDismissRequest = close, title = { Text(game.title) }, text = {
-            Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-                if (!loading && versions.isEmpty()) Text(uiStr(R.string.store_no_windows))
-                Box {
-                    OutlinedButton(enabled = !loading && versions.isNotEmpty(), onClick = { showVersions = true }) { Text(versions.getOrNull(version)?.name ?: uiStr(R.string.store_choose_download)) }
-                    DropdownMenu(showVersions, { showVersions = false }) { versions.forEachIndexed { index, item -> DropdownMenuItem(text = { Text(item.name) }, onClick = { version = index; showVersions = false }) } }
-                }
-                Box {
-                    OutlinedButton(enabled = !loading, onClick = { showContainers = true }) { Text(containers.find { it.id == container }?.name ?: uiStr(R.string.gog_choose_container)) }
-                    DropdownMenu(showContainers, { showContainers = false }) { containers.forEach { item -> DropdownMenuItem(text = { Text(item.name) }, onClick = { container = item.id; showContainers = false }) } }
-                }
-                StoreInformation(store.id, game.id, preview)
-            }
-        }, confirmButton = {
-            Button(enabled = !loading && state.signedIn && !state.busy && !StoreSessions.paused && container > 0 && versions.isNotEmpty(), onClick = {
-                val upload = versions[version]
-                startForegroundService(Intent(this@StoreActivity, StoreDownloadService::class.java).putExtra("store", store.id).putExtra("game", game.json().toString())
-                    .putExtra("container", container).putExtra("upload", JSONObject().put("id", upload.id).put("name", upload.name).put("size", upload.size).toString()))
-                close()
-            }) { Text(uiStr(R.string.gog_download_install)) }
-        }, dismissButton = { TextButton(onClick = close) { Text(uiStr(R.string.ui_close)) } })
     }
 }
 
@@ -192,6 +143,7 @@ class StoreActivity : ImmersiveSteamActivity() {
                 }) { Text(uiStr(R.string.store_retry_download)) }
             }
             if (active) { if (total > 0) LinearProgressIndicator(progress = { (done.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth()) else LinearProgressIndicator(Modifier.fillMaxWidth()) }
+            if (active && state.speed > 0) StoreTransferStatistics(done, total, state.speed)
             if (total > 0) Text("${done / 1048576} / ${total / 1048576} MiB")
             if (!active && transfer?.optString("error").orEmpty().isNotBlank()) Text(transfer!!.optString("error"), color = MaterialTheme.colorScheme.error)
         }

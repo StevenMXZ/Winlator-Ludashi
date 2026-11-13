@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
+import com.winlator.cmod.ui.bindOverlayOwners
 import com.winlator.cmod.R
 import com.winlator.cmod.ui.theme.WinZTheme
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +23,7 @@ object ConfirmActionDialog {
         val root = activity.findViewById<ViewGroup>(android.R.id.content)
         val tag = "confirm-destructive-action"
         if (root.findViewWithTag<android.view.View>(tag) != null) return
-        val view = ComposeView(activity).apply { this.tag = tag; setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed) }
+        val view = ComposeView(activity).apply { bindOverlayOwners(activity); this.tag = tag; setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed) }
         val close = { view.disposeComposition(); root.removeView(view) }
         view.setContent { WinZTheme {
             var busy by remember { mutableStateOf(false) }

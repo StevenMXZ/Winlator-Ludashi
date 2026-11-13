@@ -54,8 +54,8 @@ interface SteamDetailCallbacks : GameDetailCallbacks { fun onSteamMode(mode: Str
 // artwork selection/crop (including offline icons) and all six user-selected palettes.
 object GameDetailComposeHost {
     @Composable
-    fun StoreContent(title: String, brand: String, artwork: String?, favorite: Boolean, shortcut: Shortcut?, callbacks: GameDetailCallbacks, installedSize: String?, information: @Composable () -> Unit) {
-        CompositionLocalProvider(LocalStoreInformation provides information, LocalStoreSize provides installedSize) {
+    fun StoreContent(title: String, brand: String, artwork: String?, favorite: Boolean, shortcut: Shortcut?, callbacks: GameDetailCallbacks, installedSize: String?, installed: Boolean = true, installOptions: @Composable () -> Unit = {}, information: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalStoreInformation provides information, LocalStoreSize provides installedSize, LocalStoreDetail provides true, LocalStoreInstalled provides installed, LocalStoreInstallOptions provides installOptions) {
             GameDetailScreen(title, brand, artwork, null, favorite, shortcut, callbacks)
         }
     }
@@ -81,6 +81,9 @@ object GameDetailComposeHost {
     }
 }
 
+private val LocalStoreDetail = compositionLocalOf { false }
+private val LocalStoreInstalled = compositionLocalOf { true }
+private val LocalStoreInstallOptions = compositionLocalOf<@Composable () -> Unit> { {} }
 private val LocalStoreSize = compositionLocalOf<String?> { null }
 private val LocalStoreInformation = compositionLocalOf<@Composable () -> Unit> { {} }
 private val LocalSteamInfoId = compositionLocalOf<Int?> { null }
@@ -197,17 +200,19 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
             Surface(Modifier.align(Alignment.BottomEnd).padding(18.dp).width(panelWidth).heightIn(max = (maxHeight - 116.dp).coerceAtLeast(100.dp)),
                 shape = WinZShapes.ExtraLarge, color = Color.Black.copy(.48f), border = BorderStroke(1.dp, Color.White.copy(.18f))) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
+                    if (LocalStoreInstalled.current) {
+                        PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
                     Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         LandscapeAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), Modifier.weight(1f), callbacks::onConfigure)
                         LandscapeAction(Icons.Outlined.Dns, stringResource(R.string.ui_container), Modifier.weight(1f), callbacks::onArguments)
                         LandscapeAction(Icons.Outlined.Backup, savesLabel(), Modifier.weight(1f), callbacks::onSaves)
                         LandscapeAction(Icons.Outlined.Home, stringResource(R.string.ui_home), Modifier.weight(1f), callbacks::onHome)
-                        LandscapeAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall) else stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
+                        LandscapeAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current || LocalStoreDetail.current) stringResource(R.string.steam_ui_uninstall) else stringResource(R.string.remove), Modifier.weight(1f), callbacks::onRemove, true)
                     }
+                    } else LocalStoreInstallOptions.current()
                 }
             }
-            if (stats.hasAny || LocalSteamDetail.current) {
+            if (stats.hasAny || LocalSteamDetail.current || LocalStoreDetail.current) {
                 Column(
                     Modifier.align(Alignment.BottomStart).padding(18.dp)
                         .width(minOf(statsWidth, 440.dp))
@@ -240,14 +245,16 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
         }
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth())
-            LocalStoreInformation.current()
             LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
-            PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
-            DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)
-            DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
-            DetailAction(Icons.Outlined.Backup, savesLabel(), callbacks::onSaves)
-            DetailAction(Icons.Outlined.Home, stringResource(R.string.ui_add_to_home), callbacks::onHome)
-            DetailAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current) stringResource(R.string.steam_ui_uninstall) else stringResource(R.string.remove), callbacks::onRemove, true)
+            if (LocalStoreInstalled.current) {
+                PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
+                DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)
+                DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
+                DetailAction(Icons.Outlined.Backup, savesLabel(), callbacks::onSaves)
+                DetailAction(Icons.Outlined.Home, stringResource(R.string.ui_add_to_home), callbacks::onHome)
+                DetailAction(Icons.Outlined.DeleteOutline, if (LocalSteamDetail.current || LocalStoreDetail.current) stringResource(R.string.steam_ui_uninstall) else stringResource(R.string.remove), callbacks::onRemove, true)
+            } else LocalStoreInstallOptions.current()
+            LocalStoreInformation.current()
             Spacer(Modifier.height(12.dp))
         }
     }

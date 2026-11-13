@@ -14,4 +14,18 @@
     <string name="store_download_paused">Pausado</string>
     <string name="store_retry_download">Tentar download novamente</string>
     <string name="store_download_complete">Download concluído</string>
+    <string name="store_itch_key_help">Crie uma chave de API pessoal na itch.io e cole abaixo. Sua chave é armazenada criptografada neste aparelho.</string>
+    <string name="store_itch_open_keys">Abrir chaves de API da itch.io</string>
+    <string name="store_itch_key">Chave de API</string>
+    <string name="store_transfer_rate">%1$s MiB/s · Restante: %2$s</string>
+    <string name="store_estimating">Calculando…</string>
+    <string name="store_download_language">Idioma do download</string>
+    <string name="store_app_language">Idioma do aplicativo</string>
+    <string name="store_unlimited">Automático (sem limite de velocidade)</string>
+    <string name="store_language_fallback">Seleciona o idioma do app quando disponível; caso contrário, inglês. Você pode escolher outro pacote disponível antes do download.</string>
+    <string name="store_finish_download">Conclua ou cancele o download primeiro.</string>
+    <string name="store_download_folder_help">Os pacotes baixados ficam temporariamente aqui. Os jogos instalados ficam no container selecionado. Alterar esta pasta não move downloads existentes.</string>
+    <string name="store_search_executable">Buscar executáveis</string>
+    <string name="store_show_all_executables">Mostrar todos os executáveis, incluindo ferramentas auxiliares</string>
+    <string name="store_no_executables">Nenhum executável encontrado. Tente mostrar todos os arquivos.</string>
 </resources>

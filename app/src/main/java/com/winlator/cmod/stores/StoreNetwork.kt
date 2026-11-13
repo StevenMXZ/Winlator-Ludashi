@@ -34,11 +34,15 @@ internal object StoreNetwork {
             require(next.url.isHttps) { "Store requests require HTTPS" }
             val client = clients.computeIfAbsent(store) { OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
                 .connectTimeout(15, TimeUnit.SECONDS).readTimeout(45, TimeUnit.SECONDS).build() }
-            if (store == LudashiStore.ITCH && trustedItch(next.url.toString())) {
+            if (store == LudashiStore.ITCH && next.url.host != "api.itch.io" && trustedItch(next.url.toString())) {
                 val cookies = ItchCookies.header(context, next.url)
                 val builder = next.newBuilder().removeHeader("Cookie")
                 if (cookies.isNotBlank()) builder.header("Cookie", cookies)
                 next = builder.build()
+            }
+            if (store == LudashiStore.ITCH && next.url.host == "api.itch.io") {
+                val key = ItchApi.key(context)
+                if (key.isNotBlank() && next.header("Authorization") == null) next = next.newBuilder().header("Authorization", "Bearer $key").build()
             }
             val call = client.newCall(next)
             val active = calls.computeIfAbsent(store) { ConcurrentHashMap.newKeySet() }
@@ -46,7 +50,7 @@ internal object StoreNetwork {
             try {
                 check(context, store)
                 call.execute().use { response ->
-                    if (store == LudashiStore.ITCH && trustedItch(next.url.toString())) ItchCookies.accept(context, next.url, response.headers)
+                    if (store == LudashiStore.ITCH && next.url.host != "api.itch.io" && trustedItch(next.url.toString())) ItchCookies.accept(context, next.url, response.headers)
                     if (response.code in listOf(301, 302, 303, 307, 308)) {
                         val location = response.header("Location") ?: error("Store returned an invalid redirect")
                         val url = next.url.resolve(location) ?: error("Store returned an invalid redirect URL")
@@ -87,6 +91,7 @@ internal object StoreNetwork {
         }
     fun transfer(context: Context, store: LudashiStore, url: String, destination: File, expected: Long = -1,
         algorithm: Int = 0, hash: ByteArray? = null, archiveValidated: Boolean = false, progress: (Long) -> Unit) {
+        val rate = StoreDownloadPreferences.limit(context, store.id)
         var failure: Exception? = null
         for (attempt in 0..2) {
             check(context, store)
@@ -100,6 +105,7 @@ internal object StoreNetwork {
                     val sha = MessageDigest.getInstance("SHA-256")
                     val shake = if (algorithm == 1) SHAKEDigest(128) else null
                     var done = 0L
+                    val pacer = TransferPacer(rate)
                     response.body!!.byteStream().use { input -> destination.outputStream().use { output ->
                         val buffer = ByteArray(256 * 1024)
                         while (true) {
@@ -107,7 +113,7 @@ internal object StoreNetwork {
                             val count = input.read(buffer); if (count < 0) break
                             output.write(buffer, 0, count)
                             if (shake != null) shake.update(buffer, 0, count) else sha.update(buffer, 0, count)
-                            done += count; progress(done)
+                            done += count; pacer.pace(done) { check(context, store) }; progress(done)
                         }
                         output.fd.sync()
                     } }

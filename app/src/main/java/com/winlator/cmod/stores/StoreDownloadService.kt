@@ -38,20 +38,22 @@ class StoreDownloadService : Service() {
             val state = StoreSessions.state(selected)
             val folder = File(filesDir, "store-transfers/${selected.id}-${game.key}-${java.util.UUID.randomUUID()}").apply { mkdirs() }
             val staging = File(folder, "payload")
-            val pending = File(folder, "pending")
+            val pending = File(StoreDownloadPreferences.folder(this@StoreDownloadService, selected.id), folder.name)
             staging.deleteRecursively(); staging.mkdirs(); pending.mkdirs()
-            state.update { it.copy(busy = true, loading = false, active = game.id, stage = getString(com.winlator.cmod.R.string.gog_preparing), done = 0, total = 0, error = "") }
+            state.update { it.copy(busy = true, loading = false, active = game.id, stage = getString(com.winlator.cmod.R.string.gog_preparing), done = 0, total = 0, speed = 0, error = "") }
             val open = PendingIntent.getActivity(this@StoreDownloadService, 0, Intent(this@StoreDownloadService, StoreActivity::class.java).putExtra("store", selected.id).putExtra("tab", 1), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             getSystemService(NotificationManager::class.java).notify(312, Notification.Builder(this@StoreDownloadService, "store-downloads")
                 .setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(game.title).setContentText(selected.title).setContentIntent(open).build())
             StoreTransfers.save(this@StoreDownloadService, game, "preparing", 0, 0, container, upload?.toString().orEmpty())
             try {
                 StoreNetwork.check(this@StoreDownloadService, selected)
+                val meter = TransferMeter()
                 var last = 0L
                 var lastSaved = 0L
                 fun progress(done: Long) {
+                    val speed = meter.update(done)
                     val now = android.os.SystemClock.elapsedRealtime()
-                    if (now - last >= 200) { state.update { it.copy(done = done) }; last = now }
+                    if (now - last >= 200) { state.update { it.copy(done = done, speed = speed) }; last = now }
                     if (now - lastSaved >= 1000) {
                         StoreTransfers.save(this@StoreDownloadService, game, "downloading", done, state.value.total, container, upload?.toString().orEmpty())
                         lastSaved = now
@@ -84,11 +86,11 @@ class StoreDownloadService : Service() {
                     state.update { it.copy(total = selectedUpload.size, stage = getString(com.winlator.cmod.R.string.gog_downloading)) }
                     StoreNetwork.transfer(this@StoreDownloadService, selected, url, archive, archiveValidated = !archive.extension.equals("exe", true)) { progress(it) }
                     ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
-                    state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting)) }
+                    state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting), speed = 0) }
                     StoreInstalls.extract(this@StoreDownloadService, selected, archive, staging)
                 }
                 ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
-                state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting)) }
+                state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting), speed = 0) }
                 StoreTransfers.save(this@StoreDownloadService, game, "installing", state.value.done, state.value.total, container, upload?.toString().orEmpty())
                 StoreInstalls.publish(this@StoreDownloadService, game, staging, container)
                 StoreTransfers.save(this@StoreDownloadService, game, "completed", state.value.total, state.value.total, container, upload?.toString().orEmpty())
@@ -99,6 +101,7 @@ class StoreDownloadService : Service() {
                 state.update { it.copy(error = message) }
             } finally {
                 StoreSessions.discard(folder)
+                StoreSessions.discard(pending)
                 state.update { it.copy(busy = false, stage = "") }
                 StoreNetwork.stopIfIdle(selected)
                 stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(startId)

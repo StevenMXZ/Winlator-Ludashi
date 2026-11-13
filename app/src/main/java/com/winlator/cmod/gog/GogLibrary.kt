@@ -17,7 +17,7 @@ import java.util.concurrent.Executors
 internal data class GogState(
     val games: List<GogGame> = emptyList(), val transfers: Map<String, JSONObject> = emptyMap(), val installed: Map<String, JSONObject> = emptyMap(),
     val signedIn: Boolean = false, val loading: Boolean = false, val error: String = "",
-    val activeId: String = "", val stage: String = "", val done: Long = 0, val total: Long = 0,
+    val activeId: String = "", val stage: String = "", val done: Long = 0, val total: Long = 0, val speed: Long = 0,
     val busy: Boolean = false, val cancellable: Boolean = true, val revision: Int = 0
 )
 
@@ -113,8 +113,7 @@ object GogLibrary {
     }
     fun id(path: String): String? = path.removePrefix("gog://").takeIf { path.startsWith("gog://") && it.toLongOrNull()?.let { n -> n > 0 } == true }
     fun openGame(context: Context, path: String) { id(path)?.let { gameId ->
-        if (File(records(context), "$gameId.json").isFile) com.winlator.cmod.stores.StoreDetailActivity.open(context, "gog", gameId)
-        else context.startActivity(Intent(context, GogActivity::class.java).putExtra("game", gameId))
+        com.winlator.cmod.stores.StoreDetailActivity.open(context, "gog", gameId)
     } }
     private var icon: android.graphics.Bitmap? = null
     internal fun items(context: Context, snapshot: GogState): List<LibraryItem> {
