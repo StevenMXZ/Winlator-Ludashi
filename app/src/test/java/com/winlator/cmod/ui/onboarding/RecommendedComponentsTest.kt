@@ -19,6 +19,16 @@ class RecommendedComponentsTest {
         assertEquals(setOf("p11", "dxvk3"), recommendedComponentIds(catalog))
     }
 
+    @Test fun prefersProton9Arm64ecOverLegacyAndNewerPackages() {
+        val catalog = listOf(
+            item("p9", "Proton", "Proton 9 arm64ec"),
+            item("p9x86", "Proton", "Proton 9 x86_64"),
+            item("p10", "Proton", "Proton 10 arm64ec (Legacy)", true),
+            item("p11", "Proton", "Proton 11.0-7 arm64ec")
+        )
+        assertEquals(setOf("p9"), recommendedComponentIds(catalog))
+    }
+
     @Test fun fallsBackToNewestWineWhenNoProtonIsAvailable() {
         val catalog = listOf(item("old", "Wine", "wine-9.20-x86_64", true), item("new", "Wine", "wine-10.15-arm64ec"))
         assertEquals(setOf("new"), recommendedComponentIds(catalog))

@@ -136,8 +136,10 @@ internal fun recommendedComponentIds(all: List<OnboardingComponent>): Set<String
 
     val runtimeType = if (all.any { it.type == "Proton" }) "Proton" else "Wine"
     (latestRecommendedTypes + runtimeType).forEach { type ->
-        all.withIndex()
-            .filter { it.value.type == type }
+        val candidates = all.withIndex().filter { it.value.type == type }
+        val proton9 = candidates.filter { componentVersionParts(type, it.value.name).firstOrNull() == 9 }
+        val preferred = proton9.filter { it.value.name.contains("arm64ec", true) }.ifEmpty { proton9 }
+        (if (type == "Proton" && preferred.isNotEmpty()) preferred else candidates)
             .maxWithOrNull { left, right ->
                 val byVersion = compareVersionParts(
                     componentVersionParts(type, left.value.name),
