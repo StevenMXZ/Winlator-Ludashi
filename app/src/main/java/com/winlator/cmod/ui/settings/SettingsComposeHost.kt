@@ -187,7 +187,7 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
 
             item("stores") {
                 NavigationRow(Icons.Outlined.Storefront, uiStr(R.string.steam_ui_stores), uiStr(R.string.steam_ui_stores_summary)) {
-                    context.startActivity(Intent(context, com.winlator.cmod.steam.StoreSettingsActivity::class.java))
+                    context.startActivity(Intent(context, com.winlator.cmod.steam.StoresActivity::class.java))
                 }
             }
             item("environment-title") { SectionTitle(uiStr(R.string.ui_environments)) }

@@ -1,6 +1,11 @@
 package com.winlator.cmod.ui.library
 
 import com.winlator.cmod.ui.uiStr
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.outlined.ExpandMore
 import android.graphics.Bitmap
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -84,6 +89,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.winlator.cmod.MainActivity
 import com.winlator.cmod.steam.SteamActivity
@@ -106,12 +112,19 @@ internal fun LibraryRoot(
 ) {
     var filterName by rememberSaveable { mutableStateOf(LibraryFilter.All.name) }
     val selectedFilter = LibraryFilter.valueOf(filterName)
-    val filter = if (!steamFilterAvailable && selectedFilter == LibraryFilter.Steam) LibraryFilter.All else selectedFilter
-    LaunchedEffect(steamFilterAvailable) {
-        if (!steamFilterAvailable && filterName == LibraryFilter.Steam.name) filterName = LibraryFilter.All.name
+    val filter = if (selectedFilter == LibraryFilter.Steam) LibraryFilter.All else selectedFilter
+    val context = LocalContext.current
+    val storePrefs = remember(context) { context.getSharedPreferences("library_compose_state", 0) }
+    var storeMask by rememberSaveable { mutableStateOf(storePrefs.getInt("store-mask", 7)) }
+    val changeStores: (Int) -> Unit = { mask -> storeMask = mask; storePrefs.edit().putInt("store-mask", mask).apply() }
+    LaunchedEffect(Unit) {
+        if (filterName == LibraryFilter.Steam.name) {
+            filterName = LibraryFilter.All.name
+            changeStores(if (steamFilterAvailable) 2 else 7)
+        }
     }
-    val visible = remember(items, filter, query) {
-        val source = filterLibraryItems(items, filter)
+    val visible = remember(items, filter, query, storeMask) {
+        val source = filterLibraryStores(filterLibraryItems(items, filter), storeMask)
         if (query.isBlank()) source else source.filter { it.name.contains(query, true) }
     }
     val configuration = LocalConfiguration.current
@@ -139,7 +152,7 @@ internal fun LibraryRoot(
             ) {
                 LibraryAddGamesChoice("Stores", Icons.Outlined.Storefront) {
                     showAddGames.value = false
-                    activity?.startActivity(Intent(activity, SteamActivity::class.java).putExtra("steam_tab", 0))
+                    activity?.startActivity(Intent(activity, com.winlator.cmod.steam.StoresActivity::class.java))
                 }
                 LibraryAddGamesChoice("File Manager", Icons.Outlined.FolderOpen) {
                     showAddGames.value = false
@@ -164,11 +177,7 @@ internal fun LibraryRoot(
                     onGridViewChanged = cb::onGridViewChanged
                 )
                 Spacer(Modifier.height(7.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    LibraryFilter.values().filter { it != LibraryFilter.Steam || steamFilterAvailable }.forEach { option ->
-                        LibraryFilterChip(option.name, option == filter) { filterName = option.name }
-                    }
-                }
+                LibraryFilters(filter, { filterName = it.name }, storeMask, changeStores)
             },
             footerActions = { item ->
                 IconButton(onClick = { menu = item }) { Icon(Icons.Outlined.MoreVert, uiStr(R.string.ui_more_options), tint = Color.White) }
@@ -189,11 +198,7 @@ internal fun LibraryRoot(
             )
             Spacer(Modifier.height(7.dp))
         }
-        Row(Modifier.padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LibraryFilter.values().filter { it != LibraryFilter.Steam || steamFilterAvailable }.forEach { option ->
-                LibraryFilterChip(option.name, option == filter) { filterName = option.name }
-            }
-        }
+        LibraryFilters(filter, { filterName = it.name }, storeMask, changeStores)
         if (visible.isEmpty()) {
             if (query.isNotBlank() || (filter != LibraryFilter.All && items.isNotEmpty())) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -359,6 +364,49 @@ private fun LibraryAddGamesChoice(label: String, icon: ImageVector, onClick: () 
 }
 
 @Composable
+private fun LibraryStoreLabel(item: LibraryItem, onArtwork: Boolean) {
+    val gog = item.shortcutPath.startsWith("gog://")
+    val steam = item.shortcutPath.startsWith("steam://")
+    val color = if (onArtwork) Color.White.copy(.75f) else MaterialTheme.colorScheme.onSurfaceVariant
+    if (!gog && !steam) { Text(item.containerName, color = color, maxLines = 1); return }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Surface(shape = RoundedCornerShape(16.dp), color = if (gog) Color(0xFF654080).copy(.75f) else MaterialTheme.colorScheme.surfaceVariant) {
+            Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(painterResource(if (gog) R.drawable.ic_gog else R.drawable.ic_steam), null, Modifier.size(16.dp), tint = if (gog) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (gog) "GOG" else "Steam", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Text("· " + uiStr(if (item.containerName.endsWith("· Installed")) R.string.gog_installed else R.string.gog_not_installed), color = color, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+    }
+}
+
+@Composable
+private fun LibraryFilters(filter: LibraryFilter, select: (LibraryFilter) -> Unit, mask: Int, stores: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    Row(Modifier.padding(vertical = 12.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        listOf(LibraryFilter.All, LibraryFilter.Favorites, LibraryFilter.Recent).forEach { option ->
+            LibraryFilterChip(option.name, option == filter) { select(option) }
+        }
+        Box {
+            OutlinedButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
+                Icon(Icons.Outlined.SportsEsports, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp)); Text(uiStr(R.string.steam_ui_stores)); Icon(Icons.Outlined.ExpandMore, null)
+            }
+            DropdownMenu(expanded, { expanded = false }) {
+                DropdownMenuItem(text = { Text(uiStr(R.string.gog_all_stores)) }, leadingIcon = { Checkbox(mask == 7, null) }, onClick = { stores(if (mask == 7) 0 else 7) })
+                listOf(1 to uiStr(R.string.gog_local_games), 2 to "Steam", 4 to "GOG").forEach { (bit, name) ->
+                    DropdownMenuItem(text = { Text(name) }, leadingIcon = { Checkbox(mask and bit != 0, null) }, onClick = { stores(mask xor bit) })
+                }
+                DropdownMenuItem(text = { Text(uiStr(R.string.gog_manage_stores)) }, onClick = {
+                    expanded = false; context.startActivity(Intent(context, com.winlator.cmod.steam.StoresActivity::class.java))
+                })
+            }
+        }
+    }
+}
+
+@Composable
 private fun LibraryFilterChip(label: String, selected: Boolean, click: () -> Unit) {
     Surface(
         onClick = click,
@@ -407,7 +455,7 @@ internal fun CompactArtworkCard(item: LibraryItem, cb: LibraryCallbacks) {
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
                     Text(item.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(item.containerName, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    LibraryStoreLabel(item, false)
                 }
                 PlayCompat(item, cb, false)
                 MenuButtonCompat(item, cb, false)
@@ -434,7 +482,7 @@ internal fun CoverArtworkCard(item: LibraryItem, cb: LibraryCallbacks) {
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent, Color.Black.copy(.92f)))))
             Column(Modifier.align(Alignment.BottomStart).padding(start = 14.dp, end = 50.dp, bottom = 13.dp)) {
                 Text(item.name, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(item.containerName, color = Color.White.copy(.72f), style = MaterialTheme.typography.bodySmall)
+                LibraryStoreLabel(item, true)
             }
             Box(Modifier.align(Alignment.TopEnd)) { MenuButtonCompat(item, cb, true) }
             Box(Modifier.align(Alignment.BottomEnd).padding(9.dp)) { PlayCompat(item, cb, true) }

@@ -1,6 +1,8 @@
 package com.winlator.cmod.ui.library
 
 import com.winlator.cmod.steam.*
+import com.winlator.cmod.gog.GogLibrary
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.Dispatchers
@@ -150,6 +152,13 @@ object LibraryComposeHost {
                 WinZTheme {
                     CompositionLocalProvider(LocalArtworkMotion provides rememberArtworkMotionEnabled()) {
                         val steam = observeSteam()
+                        LaunchedEffect(Unit) { GogLibrary.open(context) }
+                        val gog by GogLibrary.state.collectAsState()
+                        val gogEnabled = com.winlator.cmod.gog.GogSettings.enabled(context)
+                        LaunchedEffect(gogEnabled) { if (gogEnabled) GogLibrary.open(context) }
+                        val gogItems by produceState<List<LibraryItem>>(emptyList(), gog.games, gog.installed, gog.revision, gogEnabled) {
+                            value = withContext(Dispatchers.IO) { GogLibrary.items(context, gog) }
+                        }
                         val enabled = SteamSettings.enabled(context)
                         val steamFilterAvailable = steamLibraryFilterAvailable(enabled, steam.signedIn, steam.savedAccount)
                         LaunchedEffect(enabled) {
@@ -157,22 +166,23 @@ object LibraryComposeHost {
                             if (saved) context.startForegroundService(Intent(context, SteamService::class.java))
                         }
                         val steamItems = rememberSteamLibrary(context, steam.library, enabled)
-                        val merged = remember(items.value, steamItems) {
+                        val merged = remember(items.value, steamItems, gogItems, gog.installed, gogEnabled) {
                             val knownSteam = steamItems.mapNotNull { SteamLibrary.appId(it.shortcutPath) }.toSet()
-                            val local = items.value.filter { it.steamAppId == null || it.steamAppId !in knownSteam }
+                            val gogShortcuts = if (gogEnabled) gog.installed.values.map { it.optString("shortcut") }.toSet() else emptySet()
+                            val local = items.value.filter { (it.steamAppId == null || it.steamAppId !in knownSteam) && it.shortcutPath !in gogShortcuts }
                                 .map { item ->
                                     item.steamAppId?.let { id ->
                                         item.copy(id = "steam-$id", shortcutPath = "steam://$id", containerName = "Steam · Installed")
                                     } ?: item
                                 }.distinctBy { it.id }
-                            local + steamItems
+                            local + steamItems + gogItems
                         }
                         val combined = remember(context, callbacks) { object : LibraryCallbacks {
-                            override fun onOpen(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onOpen(path) }
-                            override fun onRun(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onRun(path) }
+                            override fun onOpen(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else callbacks.onOpen(path) }
+                            override fun onRun(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else callbacks.onRun(path) }
                             override fun onGridViewChanged(value: Boolean) = callbacks.onGridViewChanged(value)
-                            override fun onAction(path: String, action: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else callbacks.onAction(path, action) }
-                            override fun onArtworkNeeded(path: String, kind: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.requestArtwork(context, path, kind) else callbacks.onArtworkNeeded(path, kind) }
+                            override fun onAction(path: String, action: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else callbacks.onAction(path, action) }
+                            override fun onArtworkNeeded(path: String, kind: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.requestArtwork(context, path, kind) else if (GogLibrary.id(path) != null) GogLibrary.requestArt(context, path) else callbacks.onArtworkNeeded(path, kind) }
                         } }
                         Column(Modifier.fillMaxSize()) {
                             val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -195,12 +205,15 @@ internal fun steamLibraryFilterAvailable(enabled: Boolean, signedIn: Boolean, sa
     enabled && (signedIn || savedAccount)
 
 internal fun filterLibraryItems(items: List<LibraryItem>, filter: LibraryFilter): List<LibraryItem> {
-    val local = items.filter { SteamLibrary.appId(it.shortcutPath) == null || it.containerName == "Steam · Installed" }
     return when (filter) {
-        LibraryFilter.All -> local
+        LibraryFilter.All -> items
         LibraryFilter.Favorites -> items.filter { it.favorite }
-        LibraryFilter.Recent -> local.sortedByDescending { it.lastRunAt }
+        LibraryFilter.Recent -> items.sortedByDescending { it.lastRunAt }
         LibraryFilter.Steam -> items.filter { SteamLibrary.appId(it.shortcutPath) != null }
     }
 }
 
+internal fun filterLibraryStores(items: List<LibraryItem>, mask: Int): List<LibraryItem> = items.filter {
+    val bit = if (it.shortcutPath.startsWith("steam://")) 2 else if (it.shortcutPath.startsWith("gog://")) 4 else 1
+    mask and bit != 0
+}

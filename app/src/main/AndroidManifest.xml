@@ -43,6 +43,11 @@
         android:supportsRtl="true"
         tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
 
+        <activity android:name=".steam.StoresActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
+        <activity android:name=".gog.GogSettingsActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
+        <activity android:name=".gog.GogActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".gog.GogLoginActivity" android:exported="false" android:theme="@style/AppThemeFullscreen" android:windowSoftInputMode="adjustResize" />
+        <service android:name=".gog.GogDownloadService" android:foregroundServiceType="dataSync" android:exported="false" />
         <activity android:name=".steam.SteamFriendsActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity android:name=".steam.StoreSettingsActivity" android:screenOrientation="sensor" android:theme="@style/AppThemeFullscreen" android:windowSoftInputMode="adjustResize" android:exported="false" />
         <activity android:name=".steam.SteamActivity" android:screenOrientation="sensor" android:theme="@style/AppThemeFullscreen" android:windowSoftInputMode="adjustResize" android:exported="false" />
