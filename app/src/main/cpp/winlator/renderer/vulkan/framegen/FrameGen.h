@@ -27,7 +27,7 @@ struct FrameGenStats {
     float gpuMs = 0.f;
     float addedLatencyMs = 0.f;
     int   generated = 0;  // generated frames per real frame
-    int   state = 0;      // 0 off, 1 active, 2 unavailable, 3 paused (GPU too slow),
+    int   state = 0;      // 0 off, 1 active, 2 unavailable, 3 GPU overload (normal renderer),
                           // 4 active with motion quality lowered for the GPU
     int   quality = 0;    // motion quality in use
 };

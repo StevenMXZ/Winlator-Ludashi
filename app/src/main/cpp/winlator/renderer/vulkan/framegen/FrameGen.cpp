@@ -330,6 +330,9 @@ struct FrameGenState {
     bool   dynStalled = false;  // stopped at the newest frame waiting for the next one
     VkDescriptorSet dynShown = VK_NULL_HANDLE;
     double holdMs = 0.0;
+    // Fractional refresh left over from earlier gaps. A 45 fps frame on a
+    // 60 Hz panel spans 1.33 refreshes; flooring each gap generates nothing.
+    double genFrac = 0.0;
     int    stillCount = 0;
     Clock::time_point lastProbe{};
     void readScd(int slot);
@@ -416,13 +419,18 @@ struct FrameGenState {
     void updateContentClock(Clock::time_point arrival);
     double lateQuantile(Clock::time_point now) const;
     double vsyncPeriodMs() const { return 1000.0 / std::max(10.0f, targetHz.load()); }
-    // Presents go out half a refresh before their vsync: room for the
-    // interpolation and the compose pass to run behind the game's GPU work.
-    double presentLeadMs() const { return 0.5 * vsyncPeriodMs() + kLatchMs + 2.0; }
+    // Java still has to acquire, so the present starts half a refresh early.
+    // X++ already holds that image; the same lead shows one frame early and
+    // the next one a refresh late.
+    double presentLeadMs() const {
+        const double latch = kLatchMs + 2.0;
+        return holdSlot ? latch : 0.5 * vsyncPeriodMs() + latch;
+    }
     void resetDyn() {
         dynCount = 0;
         haveDynX = haveDynV = dynStalled = false;
         dynShown = VK_NULL_HANDLE;
+        genFrac = 0.0;
     }
     // Keeps only this frame, shown as is.
     void restartDyn(int slot, Clock::time_point ct) {
@@ -1816,8 +1824,10 @@ int FrameGenState::planPhases(double intervalNow, Clock::time_point arrival, flo
     } else {
         overloadVotes = 0;
     }
-    // While paused, run one frame in a while to learn whether the GPU recovered.
-    if (overloaded && (newFrameCount % 24) != 0) return 0;
+    // Dynamic must not keep generating, or even present through this path: that
+    // frame does not look like the renderer with the switch off. Fixed still
+    // probes one frame in a while to see if the GPU recovered.
+    if (overloaded && (m == 1 || (newFrameCount % 24) != 0)) return 0;
 
     for (int j = 0; j < plan; ++j) phases[j] = (float)(j + 1) / (float)(plan + 1);
     return plan;
@@ -1898,7 +1908,16 @@ double FrameGenState::lateQuantile(Clock::time_point now) const {
 void FrameGenState::publishStats(bool force, int state) {
     auto now = Clock::now();
     double dt = msBetween(statsStart, now);
-    if (!force && dt < 500.0) return;
+    if (!force && dt < 500.0) {
+        // A pause has to show up at once. Refreshing the counters here would
+        // wipe the fps window every frame while the normal renderer is drawing.
+        if (stats.state != state) {
+            std::lock_guard<std::mutex> lk(statsMutex);
+            stats.state = state;
+            stats.generated = 0;
+        }
+        return;
+    }
     std::lock_guard<std::mutex> lk(statsMutex);
     if (dt > 1.0) {
         stats.srcFps = (float)(srcCount * 1000.0 / dt);
@@ -2325,7 +2344,7 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
     Clock::time_point base;
     const bool grid = vsyncBase(base);
 
-    if (!grid || !(dupFrame || (newContent && gen))) {
+    if (overloaded || !grid || !(dupFrame || (newContent && gen))) {
         // Shown as is: generation off, a redraw, or no vsync timing.
         restartDyn(slot, haveClock ? contentTime : arrival);
         haveFieldPrev = false;
@@ -2363,15 +2382,33 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         holdMs = std::min(std::max(late - snap, 0.0) + lead + kQueueMs, kMaxHoldMs);
     }
 
+    // Refreshes the previous image stayed up, minus the one this real frame
+    // takes. Anything past that is a frame the display cannot show.
+    int genBudget = 0;
+    if (!dupFrame && !dyn[dynCount - 1].cut && dynCount >= 2) {
+        const double gapMs = msBetween(dyn[dynCount - 2].ct, dyn[dynCount - 1].ct);
+        const double span = gapMs / p;
+        const int whole = (int)std::floor(span);
+        genFrac += span - whole;
+        const int carry = (int)std::floor(genFrac);
+        genFrac -= carry;
+        // The real frame takes one refresh. The rest, including a fraction
+        // saved from earlier gaps, is what brings 45 fps up to 60.
+        genBudget = std::max(0, std::min(kMaxGen, whole - 1 + carry));
+    }
+    lastK = genBudget;
+    int shownGen = 0;
+
     for (;;) {
         if (!vsyncBase(base)) break;
         const auto now = Clock::now();
         Clock::time_point v = haveDynV ? nearestVsync(base, dynV + ms(p))
                                        : vsyncAtOrAfter(base, now + ms(lead));
-        // Presents block until about the previous vsync, so being past `due` is
-        // normal; a vsync is only lost once the latch plus the GPU work no
-        // longer fit before it. The image on screen then stays one more refresh.
-        const double minAhead = kLatchMs + 2.0 + interpMsEma;
+        // A vsync is skipped only when this present cannot reach it. On X++ the
+        // acquire of every image after the first one blocks until the refresh,
+        // so that wait is not added on top of the lead.
+        const bool blockingAcquire = holdSlot && !heldAcquire;
+        const double minAhead = kLatchMs + 2.0 + (blockingAcquire ? 0.0 : interpMsEma);
         if (msBetween(now, v) < minAhead) v = vsyncAtOrAfter(base, now + ms(minAhead));
 
         // Decide the image before waiting. A real frame that lands while waiting
@@ -2391,30 +2428,20 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         }
         if (haveDynX && x < dynX) x = dynX;
 
-        int i = 0;
-        while (i < dynCount - 1 && dyn[i].ct < x) ++i;
-        VkDescriptorSet ds = composeScene[dyn[i].slot];
-        // After a long freeze (a cut) the game resumes as soon as possible.
-        // Only the vsyncs that land between two real frames are interpolated;
-        // the real frame itself is shown unchanged.
+        VkDescriptorSet ds = composeScene[last.slot];
+        // floor(gap / refresh) - 1 images, evenly spaced, then the real frame.
+        // The content clock used to keep easing past that and present frames
+        // the refresh has no slot for.
         bool wantInterp = false, needField = false;
         int slotA = -1, slotB = -1, genImg = -1;
         float interpT = 0.f;
-        if (i > 0 && x < dyn[i].ct && !dyn[i].cut) {
-            const DynFrame& a = dyn[i - 1];
-            const DynFrame& b = dyn[i];
-            const double fromA = msBetween(a.ct, x), toB = msBetween(x, b.ct);
-            if (!b.paired) {
-                if (fromA < toB) ds = composeScene[a.slot];
-            } else if (fromA <= snap) {
-                ds = composeScene[a.slot];
-            } else if (toB > snap) {
-                wantInterp = true;
-                needField = b.pending;
-                slotA = a.slot;
-                slotB = b.slot;
-                interpT = (float)(fromA / (fromA + toB));
-            }
+        if (shownGen < genBudget && dynCount >= 2 && last.paired && !last.cut) {
+            const DynFrame& a = dyn[dynCount - 2];
+            wantInterp = true;
+            needField = last.pending;
+            slotA = a.slot;
+            slotB = last.slot;
+            interpT = (float)(shownGen + 1) / (float)(genBudget + 1);
         }
         auto copyInterp = [&]() {
             if (!wantInterp || genImg >= 0) return;
@@ -2430,9 +2457,15 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         const double untilFrame = intervalMs - msBetween(lastArrival, now);
         if (wantInterp && untilFrame > copyMs) copyInterp();
 
-        const auto due = v - ms(lead);
-        while (Clock::now() < due)
-            if (!paceUntil(due)) return finish();
+        // The image is already acquired, or this present will block in acquire
+        // until the refresh. Sleeping the Java lead as well misses that vsync.
+        if (!blockingAcquire) {
+            const auto due = v - ms(lead);
+            while (Clock::now() < due)
+                if (!paceUntil(due)) return finish();
+        } else if (contentSerial.load(std::memory_order_relaxed) != lastSerial) {
+            return finish();
+        }
         copyInterp();
 
         dynStalled = false;
@@ -2440,10 +2473,12 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         dynV = v;
         haveDynX = haveDynV = true;
         if (ds != dynShown) present(ds);
+        if (wantInterp) ++shownGen;
         flushAnalysis();
         const double added = std::max(0.0, msBetween(x, v) - 0.5 * p - kLatchMs);
         latencyEma = latencyEma > 0.0 ? latencyEma * 0.95 + added * 0.05 : added;
-        if (msBetween(x, last.ct) < 0.5 && ds == composeScene[last.slot]) {
+        if (!wantInterp) {
+            dynX = last.ct;
             dynStalled = true;
             break;
         }
@@ -2483,6 +2518,18 @@ bool VulkanRendererFrameGenRender(VulkanRendererContext* c) {
         return false;
     }
 
+    // Dynamic pause leaves the frame to the normal renderer. Presenting it
+    // here, even unchanged, is a different image from the switch being off.
+    if (st->mode.load() == 1 && st->overloaded) {
+        if (st->forcedFifo) {
+            st->forcedFifo = false;
+            if (c->requestedPresentMode == VK_PRESENT_MODE_FIFO_KHR)
+                c->setPresentMode(st->userPresentMode);
+        }
+        st->publishStats(false, 3);
+        return false;
+    }
+
     try {
         if (st->renderFrame(c)) return true;
     } catch (const std::exception& e) {
@@ -2519,6 +2566,8 @@ void VulkanRendererFrameGenConfigure(VulkanRendererContext* c, bool enabled, int
     if (!c) return;
     FrameGenState* st = ensureState(c);
     st->mode.store(std::clamp(mode, 0, 1));
+    // Fixed is the way out of a Dynamic pause. Staying in Dynamic keeps it.
+    if (st->mode.load() != 1) st->overloaded = false;
     st->quality.store(std::clamp(quality, 0, 2));
     st->multiplier.store(std::clamp(multiplier, 2, 3));
     st->targetHz.store(targetHz > 1.f ? targetHz : 60.f);

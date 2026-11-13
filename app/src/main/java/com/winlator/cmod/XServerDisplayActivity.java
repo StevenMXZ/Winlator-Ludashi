@@ -2622,11 +2622,11 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private static final String[] FRAME_GEN_MULTIPLIERS = {"X2", "X3"};
     private static final String[] FRAME_GEN_QUALITY = {"Low", "Medium", "High"};
 
-    // Frame generation follows the shortcut when launched from one, otherwise the container.
+    // The live shortcut. A second Shortcut saves its own copy, and the activity's
+    // later saveData rewrites Extra Data from memory, dropping the switch.
     private String frameGenGet(String key, String fallback) {
-        String path = getIntent().getStringExtra("shortcut_path");
-        if (container != null && path != null && !path.isEmpty() && new File(path).isFile()) {
-            String v = new Shortcut(container, new File(path)).getExtra(key, "");
+        if (shortcut != null) {
+            String v = shortcut.getExtra(key, "");
             if (!v.isEmpty()) return v;
         }
         if (container == null) return fallback;
@@ -2636,11 +2636,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     private void frameGenPut(String key, String value) {
         if (container == null) return;
-        String path = getIntent().getStringExtra("shortcut_path");
-        if (path != null && !path.isEmpty() && new File(path).isFile()) {
-            Shortcut store = new Shortcut(container, new File(path));
-            store.putExtra(key, value);
-            store.saveData();
+        if (shortcut != null) {
+            shortcut.putExtra(key, value);
+            shortcut.saveData();
         } else {
             container.putExtra(key, value);
             container.saveData();
@@ -2669,6 +2667,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
         final Switch swOther = findViewById(R.id.SWEnableFrameGen);
         final View otherSettings = findViewById(R.id.LLFrameGenSettings);
         if (vkRenderer == null || sw == null || spMode == null || spMultiplier == null || spQuality == null) return;
+
+        // View-state restore must not flip these after the saved values are applied.
+        sw.setSaveEnabled(false);
+        spMode.setSaveEnabled(false);
+        spMultiplier.setSaveEnabled(false);
+        spQuality.setSaveEnabled(false);
+        if (spEngine != null) spEngine.setSaveEnabled(false);
 
         String[][] labels = {FRAME_GEN_MODES, FRAME_GEN_MULTIPLIERS, FRAME_GEN_QUALITY};
         Spinner[] spinners = {spMode, spMultiplier, spQuality};
@@ -2789,7 +2794,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                         }
                         break;
                     case 2: text = "Unavailable on this GPU"; break;
-                    case 3: text = "Paused: GPU overloaded"; break;
+                    case 3: text = "GPU overload. Switch to Fixed Mode."; break;
                     default: text = "Waiting for frames..."; break;
                 }
                 tvStats.setText(text);
