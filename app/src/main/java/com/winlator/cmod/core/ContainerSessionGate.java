@@ -15,5 +15,6 @@ public final class ContainerSessionGate {
         edits.add(id); return true;
     }
     public static synchronized void edited(int id) { edits.remove(id); }
+    public static synchronized boolean hasActiveSessions() { return !sessions.isEmpty(); }
     public static synchronized boolean anyBusy() { return !sessions.isEmpty() || !edits.isEmpty(); }
 }

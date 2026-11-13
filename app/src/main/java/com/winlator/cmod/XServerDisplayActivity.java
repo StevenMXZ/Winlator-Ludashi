@@ -462,6 +462,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             finish(); return;
         }
         ownsPrefixLease = true;
+        com.winlator.cmod.stores.StoreSessions.pauseForGame();
         containerManager.activateContainer(container);
 
         if (shortcutPath != null && !shortcutPath.isEmpty()) {

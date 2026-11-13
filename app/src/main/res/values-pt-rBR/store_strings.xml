@@ -1,0 +1,17 @@
+<resources>
+    <string name="store_library_subtitle">Sua biblioteca %1$s no Ludashi</string>
+    <string name="store_sign_in">Entrar na %1$s</string>
+    <string name="store_sign_out">Sair da %1$s</string>
+    <string name="store_add_itch">Adicionar jogo da itch.io</string>
+    <string name="store_add">Adicionar</string>
+    <string name="store_empty">Nenhum jogo para mostrar. Entre ou atualize sua biblioteca.</string>
+    <string name="store_current_version">Versão atual</string>
+    <string name="store_no_windows">Nenhum download compatível com Windows está disponível.</string>
+    <string name="store_choose_download">Escolher download</string>
+    <string name="store_no_downloads">Nenhum download ativo</string>
+    <string name="store_integration">Integração %1$s</string>
+    <string name="store_download_failed">Falha no download</string>
+    <string name="store_download_paused">Pausado</string>
+    <string name="store_retry_download">Tentar download novamente</string>
+    <string name="store_download_complete">Download concluído</string>
+</resources>

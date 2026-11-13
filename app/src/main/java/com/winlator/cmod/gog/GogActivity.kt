@@ -2,12 +2,15 @@ package com.winlator.cmod.gog
 
 import android.app.Activity
 import android.content.Intent
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.*
@@ -49,10 +52,11 @@ class GogActivity : ImmersiveSteamActivity() {
     }
     override fun onResume() {
         super.onResume()
-        if (!GogSettings.enabled(this)) finish()
+        com.winlator.cmod.stores.StoreSessions.resumeForLibrary()
+        if (!GogSettings.enabled(this)) finish() else GogLibrary.open(applicationContext)
     }
     @Composable private fun GogScreen(initialGame: String?) {
-        val state by GogLibrary.state.collectAsState()
+        val state by GogLibrary.state.collectAsStateWithLifecycle()
         var selected by rememberSaveable { mutableStateOf(initialGame) }
         var tab by rememberSaveable { mutableIntStateOf(intent.getIntExtra("gog_tab", 0).coerceIn(0, 2)) }
         var grid by rememberSaveable { mutableStateOf(true) }
@@ -65,7 +69,7 @@ class GogActivity : ImmersiveSteamActivity() {
             (state.games + state.installed.values.mapNotNull { runCatching { GogGame.parse(it) }.getOrNull() }).distinctBy { it.id }
         }
         val visible = remember(games, query, tab, state.installed) {
-            games.filter { it.title.contains(query, true) && (tab != 2 || it.id in state.installed) }.sortedBy { it.title.lowercase() }
+            games.filter { it.title.contains(query, true) && (tab != 2 || it.id in state.installed) }.sortedWith(compareByDescending<GogGame> { it.id in state.installed }.thenBy { it.title.lowercase() })
         }
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -99,17 +103,11 @@ class GogActivity : ImmersiveSteamActivity() {
                 }
             }
             if (tab == 1) {
-                if (state.busy) Card(Modifier.fillMaxWidth().padding(16.dp)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(games.find { it.id == state.activeId }?.title ?: "GOG", style = MaterialTheme.typography.titleLarge)
-                        Text(state.stage)
-                        if (state.total > 0) {
-                            LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-                            Text("${state.done / 1048576} / ${state.total / 1048576} MiB")
-                        } else LinearProgressIndicator(Modifier.fillMaxWidth())
-                        TextButton(enabled = state.cancellable, onClick = { GogLibrary.cancelled = true }) { Text(uiStr(R.string.cancel)) }
-                    }
-                } else Text(uiStr(R.string.gog_no_downloads), Modifier.padding(18.dp))
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val history = state.transfers.values.sortedByDescending { it.optLong("updated") }
+                    items(history, key = { it.optString("id") }) { transfer -> GogDownloadPanel(state, transfer) }
+                    if (history.isEmpty()) item { Text(uiStr(R.string.gog_no_downloads)) }
+                }
             } else {
                 OutlinedTextField(query, { query = it }, label = { Text(uiStr(R.string.gog_search)) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(14.dp))
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -121,7 +119,8 @@ class GogActivity : ImmersiveSteamActivity() {
                     items(visible, key = { it.id }) { game ->
                         LaunchedEffect(game.id) { GogLibrary.requestArt(applicationContext, "gog://${game.id}") }
                         val cachedArt = remember(game.id, state.revision) { File(cacheDir, "gog-art/${game.id}.jpg").takeIf { it.isFile } }
-                        OutlinedCard(onClick = { selected = game.id }, shape = RoundedCornerShape(16.dp)) {
+                        fun openGame() { if (game.id in state.installed) com.winlator.cmod.stores.StoreDetailActivity.open(this@GogActivity, "gog", game.id) else selected = game.id }
+                        OutlinedCard(onClick = ::openGame, shape = RoundedCornerShape(16.dp)) {
                             AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
                                 update = { Glide.with(it).load(cachedArt ?: game.image).error(R.drawable.ic_gog).into(it) },
                                 onRelease = { Glide.with(it).clear(it) }, modifier = Modifier.fillMaxWidth().padding(6.dp).aspectRatio(460f / 215f).clip(RoundedCornerShape(12.dp)))
@@ -130,7 +129,7 @@ class GogActivity : ImmersiveSteamActivity() {
                                     Text(game.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                                     Text(uiStr(if (game.id in state.installed) R.string.gog_installed else R.string.gog_not_installed), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                IconButton(onClick = { selected = game.id }) { Icon(if (game.id in state.installed) Icons.Outlined.PlayArrow else Icons.Outlined.Download, null) }
+                                IconButton(onClick = ::openGame) { Icon(if (game.id in state.installed) Icons.Outlined.PlayArrow else Icons.Outlined.Download, null) }
                             }
                         }
                     }
@@ -168,7 +167,7 @@ class GogActivity : ImmersiveSteamActivity() {
         }
         fun operation(action: () -> Unit) { scope.launch { loading = true; error = ""; withContext(Dispatchers.IO) { runCatching(action) }.onFailure { error = it.message.orEmpty() }; loading = false } }
         AlertDialog(onDismissRequest = { if (!loading) close() }, title = { Text(game.title) }, text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
                 if (record == null) {
@@ -188,6 +187,7 @@ class GogActivity : ImmersiveSteamActivity() {
                         }
                     }
                     Text(uiStr(R.string.gog_install_help), style = MaterialTheme.typography.bodySmall)
+                    com.winlator.cmod.stores.StoreInformation("gog", game.id, org.json.JSONObject())
                 } else {
                     Text(uiStr(R.string.gog_installed))
                     Box {

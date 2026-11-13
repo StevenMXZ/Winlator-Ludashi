@@ -2,14 +2,19 @@ package com.winlator.cmod.ui.library
 
 import com.winlator.cmod.steam.*
 import com.winlator.cmod.gog.GogLibrary
+import com.winlator.cmod.gog.GogDownloadPanel
+import com.winlator.cmod.stores.*
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import android.content.Intent
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -152,12 +157,30 @@ object LibraryComposeHost {
                 WinZTheme {
                     CompositionLocalProvider(LocalArtworkMotion provides rememberArtworkMotionEnabled()) {
                         val steam = observeSteam()
-                        LaunchedEffect(Unit) { GogLibrary.open(context) }
-                        val gog by GogLibrary.state.collectAsState()
+                        val gog by GogLibrary.state.collectAsStateWithLifecycle()
                         val gogEnabled = com.winlator.cmod.gog.GogSettings.enabled(context)
-                        LaunchedEffect(gogEnabled) { if (gogEnabled) GogLibrary.open(context) }
                         val gogItems by produceState<List<LibraryItem>>(emptyList(), gog.games, gog.installed, gog.revision, gogEnabled) {
                             value = withContext(Dispatchers.IO) { GogLibrary.items(context, gog) }
+                        }
+                        val itch by StoreSessions.state(LudashiStore.ITCH).collectAsStateWithLifecycle()
+                        val amazon by StoreSessions.state(LudashiStore.AMAZON).collectAsStateWithLifecycle()
+                        val itchEnabled = LudashiStore.ITCH.enabled(context)
+                        val amazonEnabled = LudashiStore.AMAZON.enabled(context)
+                        val libraryOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                        LaunchedEffect(libraryOwner, gogEnabled, itchEnabled, amazonEnabled) {
+                            libraryOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+                                StoreSessions.resumeForLibrary()
+                                if (gogEnabled) GogLibrary.open(context)
+                                if (itchEnabled) StoreSessions.open(context, LudashiStore.ITCH)
+                                if (amazonEnabled) StoreSessions.open(context, LudashiStore.AMAZON)
+                                awaitCancellation()
+                            }
+                        }
+                        val itchItems by produceState<List<LibraryItem>>(emptyList(), itch.games, itch.installed, itch.revision, itchEnabled) {
+                            value = withContext(Dispatchers.IO) { StoreSessions.items(context, LudashiStore.ITCH, itch) }
+                        }
+                        val amazonItems by produceState<List<LibraryItem>>(emptyList(), amazon.games, amazon.installed, amazon.revision, amazonEnabled) {
+                            value = withContext(Dispatchers.IO) { StoreSessions.items(context, LudashiStore.AMAZON, amazon) }
                         }
                         val enabled = SteamSettings.enabled(context)
                         val steamFilterAvailable = steamLibraryFilterAvailable(enabled, steam.signedIn, steam.savedAccount)
@@ -166,27 +189,34 @@ object LibraryComposeHost {
                             if (saved) context.startForegroundService(Intent(context, SteamService::class.java))
                         }
                         val steamItems = rememberSteamLibrary(context, steam.library, enabled)
-                        val merged = remember(items.value, steamItems, gogItems, gog.installed, gogEnabled) {
+                        val merged = remember(items.value, steamItems, gogItems, gog.installed, gogEnabled, itchItems, amazonItems, itch.installed, amazon.installed, itchEnabled, amazonEnabled) {
                             val knownSteam = steamItems.mapNotNull { SteamLibrary.appId(it.shortcutPath) }.toSet()
                             val gogShortcuts = if (gogEnabled) gog.installed.values.map { it.optString("shortcut") }.toSet() else emptySet()
-                            val local = items.value.filter { (it.steamAppId == null || it.steamAppId !in knownSteam) && it.shortcutPath !in gogShortcuts }
+                            val storeShortcuts = (if (itchEnabled) itch.installed.values else emptyList()) + (if (amazonEnabled) amazon.installed.values else emptyList())
+                            val knownStoreShortcuts = storeShortcuts.map { it.optString("shortcut") }.toSet()
+                            val local = items.value.filter { it.shortcutPath !in knownStoreShortcuts && (it.steamAppId == null || it.steamAppId !in knownSteam) && it.shortcutPath !in gogShortcuts }
                                 .map { item ->
                                     item.steamAppId?.let { id ->
                                         item.copy(id = "steam-$id", shortcutPath = "steam://$id", containerName = "Steam · Installed")
                                     } ?: item
                                 }.distinctBy { it.id }
-                            local + steamItems + gogItems
+                            local + steamItems + gogItems + itchItems + amazonItems
                         }
                         val combined = remember(context, callbacks) { object : LibraryCallbacks {
-                            override fun onOpen(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else callbacks.onOpen(path) }
-                            override fun onRun(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else callbacks.onRun(path) }
+                            override fun onOpen(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else if (LudashiStore.fromPath(path) != null) StoreSessions.openGame(context, path) else callbacks.onOpen(path) }
+                            override fun onRun(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else if (LudashiStore.fromPath(path) != null) StoreSessions.openGame(context, path) else callbacks.onRun(path) }
                             override fun onGridViewChanged(value: Boolean) = callbacks.onGridViewChanged(value)
-                            override fun onAction(path: String, action: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else callbacks.onAction(path, action) }
-                            override fun onArtworkNeeded(path: String, kind: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.requestArtwork(context, path, kind) else if (GogLibrary.id(path) != null) GogLibrary.requestArt(context, path) else callbacks.onArtworkNeeded(path, kind) }
+                            override fun onAction(path: String, action: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else if (LudashiStore.fromPath(path) != null) StoreSessions.openGame(context, path) else callbacks.onAction(path, action) }
+                            override fun onArtworkNeeded(path: String, kind: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.requestArtwork(context, path, kind) else if (GogLibrary.id(path) != null) GogLibrary.requestArt(context, path) else if (LudashiStore.fromPath(path) != null) StoreSessions.requestArt(context, path) else callbacks.onArtworkNeeded(path, kind) }
                         } }
                         Column(Modifier.fillMaxSize()) {
                             val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-                            if (configuration.screenWidthDp <= configuration.screenHeightDp) SteamDownloadPanel(steam)
+                            if (configuration.screenWidthDp <= configuration.screenHeightDp) {
+                                SteamDownloadPanel(steam)
+                                if (gogEnabled && gog.busy) GogDownloadPanel(gog, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                                if (itchEnabled && itch.busy) StoreTransferPanel(LudashiStore.ITCH, itch, Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                                if (amazonEnabled && amazon.busy) StoreTransferPanel(LudashiStore.AMAZON, amazon, Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                            }
                             Box(Modifier.weight(1f)) {
                                 LibraryRootWithoutEmptyDescription(merged, grid.value, query.value, selectedShortcutPath, combined, showAddGames, steamFilterAvailable)
                             }
@@ -206,7 +236,7 @@ internal fun steamLibraryFilterAvailable(enabled: Boolean, signedIn: Boolean, sa
 
 internal fun filterLibraryItems(items: List<LibraryItem>, filter: LibraryFilter): List<LibraryItem> {
     return when (filter) {
-        LibraryFilter.All -> items
+        LibraryFilter.All -> items.sortedByDescending(::isInstalledLibraryItem)
         LibraryFilter.Favorites -> items.filter { it.favorite }
         LibraryFilter.Recent -> items.sortedByDescending { it.lastRunAt }
         LibraryFilter.Steam -> items.filter { SteamLibrary.appId(it.shortcutPath) != null }
@@ -214,6 +244,11 @@ internal fun filterLibraryItems(items: List<LibraryItem>, filter: LibraryFilter)
 }
 
 internal fun filterLibraryStores(items: List<LibraryItem>, mask: Int): List<LibraryItem> = items.filter {
-    val bit = if (it.shortcutPath.startsWith("steam://")) 2 else if (it.shortcutPath.startsWith("gog://")) 4 else 1
+    val bit = if (it.shortcutPath.startsWith("steam://")) 2 else if (it.shortcutPath.startsWith("gog://")) 4 else LudashiStore.fromPath(it.shortcutPath)?.bit ?: 1
     mask and bit != 0
+}
+
+internal fun isInstalledLibraryItem(item: LibraryItem): Boolean {
+    val remote = item.shortcutPath.startsWith("steam://") || item.shortcutPath.startsWith("gog://") || LudashiStore.fromPath(item.shortcutPath) != null
+    return !remote || item.containerName.endsWith("· Installed")
 }

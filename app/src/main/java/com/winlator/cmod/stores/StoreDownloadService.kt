@@ -1,0 +1,113 @@
+package com.winlator.cmod.stores
+
+import android.app.*
+import android.content.Intent
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.update
+import org.json.JSONObject
+import java.io.File
+
+class StoreDownloadService : Service() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var job: Job? = null
+    private var store: LudashiStore? = null
+    override fun onBind(intent: Intent?) = null
+    override fun onCreate() {
+        super.onCreate()
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel("store-downloads", "Store downloads", NotificationManager.IMPORTANCE_LOW))
+        startForeground(312, Notification.Builder(this, "store-downloads").setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("Ludashi").setContentText(getString(com.winlator.cmod.R.string.gog_preparing)).build())
+    }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val selected = LudashiStore.find(intent?.getStringExtra("store"))
+        val gameJson = intent?.getStringExtra("game")
+        if (selected == null || gameJson == null) { stopSelf(); return START_NOT_STICKY }
+        if (job?.isCompleted == false) {
+            StoreSessions.state(selected).update { it.copy(error = "Another store download is active. Finish or cancel it first.") }
+            return START_NOT_STICKY
+        }
+        store = selected
+        startForeground(312, Notification.Builder(this, "store-downloads").setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(selected.title).setContentText(getString(com.winlator.cmod.R.string.gog_preparing)).build())
+        StoreSessions.cancel(selected); StoreSessions.fresh(selected)
+        val container = intent.getIntExtra("container", 0)
+        val upload = intent.getStringExtra("upload")?.takeIf { it.isNotBlank() }?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val game = runCatching { StoreGame.parse(JSONObject(gameJson)) }.getOrNull()
+        if (game == null || game.store != selected || container <= 0) { stopSelf(startId); return START_NOT_STICKY }
+        job = scope.launch(StoreSessions.operation(selected)) {
+            val state = StoreSessions.state(selected)
+            val folder = File(filesDir, "store-transfers/${selected.id}-${game.key}-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+            val staging = File(folder, "payload")
+            val pending = File(folder, "pending")
+            staging.deleteRecursively(); staging.mkdirs(); pending.mkdirs()
+            state.update { it.copy(busy = true, loading = false, active = game.id, stage = getString(com.winlator.cmod.R.string.gog_preparing), done = 0, total = 0, error = "") }
+            val open = PendingIntent.getActivity(this@StoreDownloadService, 0, Intent(this@StoreDownloadService, StoreActivity::class.java).putExtra("store", selected.id).putExtra("tab", 1), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            getSystemService(NotificationManager::class.java).notify(312, Notification.Builder(this@StoreDownloadService, "store-downloads")
+                .setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(game.title).setContentText(selected.title).setContentIntent(open).build())
+            StoreTransfers.save(this@StoreDownloadService, game, "preparing", 0, 0, container, upload?.toString().orEmpty())
+            try {
+                StoreNetwork.check(this@StoreDownloadService, selected)
+                var last = 0L
+                var lastSaved = 0L
+                fun progress(done: Long) {
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - last >= 200) { state.update { it.copy(done = done) }; last = now }
+                    if (now - lastSaved >= 1000) {
+                        StoreTransfers.save(this@StoreDownloadService, game, "downloading", done, state.value.total, container, upload?.toString().orEmpty())
+                        lastSaved = now
+                    }
+                }
+                if (selected == LudashiStore.AMAZON) {
+                    val base = AmazonConnector.download(this@StoreDownloadService, game)
+                    val files = AmazonFiles.parse(StoreNetwork.bytes(this@StoreDownloadService, selected, AmazonConnector.append(base, "manifest.proto")))
+                    val total = files.fold(0L) { size, file -> Math.addExact(size, file.size) }
+                    check(folder.usableSpace > total + 64L * 1024 * 1024) { "Not enough space for this game" }
+                    state.update { it.copy(total = total, stage = getString(com.winlator.cmod.R.string.gog_downloading)) }
+                    var completed = 0L
+                    for (file in files) {
+                        ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
+                        val part = File(pending, file.hex)
+                        StoreNetwork.transfer(this@StoreDownloadService, selected, AmazonConnector.append(base, "files/${file.hex}"), part,
+                            file.size, file.algorithm, file.hash) { progress(completed + it) }
+                        val target = safeStorePath(staging, file.path)
+                        target.parentFile?.mkdirs()
+                        check(part.renameTo(target)) { "Could not finalize a game file" }
+                        completed += file.size; state.update { it.copy(done = completed) }
+                    }
+                } else {
+                    val source = upload ?: error("Choose a Windows download")
+                    val selectedUpload = StoreUpload(source.getString("id"), source.getString("name"), source.optLong("size"))
+                    val url = ItchConnector.file(this@StoreDownloadService, game, selectedUpload)
+                    val filename = selectedUpload.name
+                    require(filename.isNotBlank() && filename.none { it in "/\\\r\n\u0000" } && filename !in listOf(".", ".."))
+                    val archive = File(pending, filename)
+                    state.update { it.copy(total = selectedUpload.size, stage = getString(com.winlator.cmod.R.string.gog_downloading)) }
+                    StoreNetwork.transfer(this@StoreDownloadService, selected, url, archive, archiveValidated = !archive.extension.equals("exe", true)) { progress(it) }
+                    ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
+                    state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting)) }
+                    StoreInstalls.extract(this@StoreDownloadService, selected, archive, staging)
+                }
+                ensureActive(); StoreNetwork.check(this@StoreDownloadService, selected)
+                state.update { it.copy(stage = getString(com.winlator.cmod.R.string.gog_extracting)) }
+                StoreTransfers.save(this@StoreDownloadService, game, "installing", state.value.done, state.value.total, container, upload?.toString().orEmpty())
+                StoreInstalls.publish(this@StoreDownloadService, game, staging, container)
+                StoreTransfers.save(this@StoreDownloadService, game, "completed", state.value.total, state.value.total, container, upload?.toString().orEmpty())
+            } catch (error: Exception) {
+                val stopped = StoreSessions.paused || !StoreSessions.live(selected)
+                val message = if (stopped) "" else error.message ?: "Store download failed"
+                StoreTransfers.save(this@StoreDownloadService, game, if (stopped) "paused" else "failed", state.value.done, state.value.total, container, upload?.toString().orEmpty(), message)
+                state.update { it.copy(error = message) }
+            } finally {
+                StoreSessions.discard(folder)
+                state.update { it.copy(busy = false, stage = "") }
+                StoreNetwork.stopIfIdle(selected)
+                stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(startId)
+            }
+        }
+        return START_NOT_STICKY
+    }
+    override fun onDestroy() {
+        store?.let { if (StoreSessions.state(it).value.busy) StoreSessions.cancel(it) else StoreNetwork.stopIfIdle(it) }
+        job?.cancel(); scope.cancel(); super.onDestroy()
+    }
+}

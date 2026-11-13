@@ -30,14 +30,24 @@ class GogDownloadService : Service() {
         val installer = intent?.getStringExtra("installer")
         if (gameId == null || installer == null || containerId <= 0) { stopSelf(); return START_NOT_STICKY }
         if (!stopped.compareAndSet(false, true)) return START_NOT_STICKY
+        startForeground(311, Notification.Builder(this, "gog-downloads").setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("GOG · Ludashi").setContentText(getString(R.string.gog_preparing)).build())
         GogLibrary.cancelled = false
         GogLibrary.mutable.update { it.copy(busy = true, cancellable = true, activeId = gameId, stage = getString(R.string.gog_preparing), error = "", done = 0, total = 0) }
         GogLibrary.worker.execute {
             try { install(gameId, containerId, JSONObject(installer)) }
-            catch (error: Exception) { GogLibrary.mutable.update { it.copy(error = error.message ?: "GOG installation failed") } }
+            catch (error: Exception) {
+                val state = GogLibrary.mutable.value
+                val paused = GogLibrary.cancelled || com.winlator.cmod.stores.StoreSessions.paused
+                val message = if (paused) "" else error.message ?: "GOG installation failed"
+                val game = state.games.find { it.id == gameId } ?: state.transfers[gameId]?.let { runCatching { GogGame.parse(it) }.getOrNull() }
+                if (game != null) runCatching { GogTransfers.save(this, game, if (paused) "paused" else "failed", state.done, state.total, containerId, installer, message) }
+                GogLibrary.mutable.update { it.copy(error = message) }
+            }
             finally {
                 GogLibrary.mutable.update { it.copy(busy = false, cancellable = true, stage = "") }
-                stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+                stopped.set(false)
+                stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(startId)
             }
         }
         return START_NOT_STICKY
@@ -48,7 +58,8 @@ class GogDownloadService : Service() {
         require(id.toLongOrNull()?.let { it > 0 } == true)
         check(Innoextract.isAvailable(this)) { "The GOG installer extractor is unavailable" }
         check(GogLibrary.mutable.value.installed[id] == null) { "This GOG game is already installed" }
-        val game = GogLibrary.mutable.value.games.find { it.id == id } ?: error("GOG game is missing from the library")
+        val game = GogLibrary.mutable.value.games.find { it.id == id } ?: GogLibrary.mutable.value.transfers[id]?.let { GogGame.parse(it) } ?: error("GOG game is missing from the library")
+        GogTransfers.save(this, game, "preparing", 0, 0, containerId, installer.toString())
         val container = ContainerManager(this).getContainerById(containerId) ?: error("Container no longer exists")
         val downloads = File(filesDir, "gog-downloads/$id").apply { mkdirs() }
         val parts = installer.getJSONArray("files")
@@ -57,6 +68,7 @@ class GogDownloadService : Service() {
         GogLibrary.mutable.update { it.copy(total = total) }
         var completed = 0L
         var lastUpdate = 0L
+        var lastSaved = 0L
         val files = mutableListOf<File>()
         for (i in 0 until parts.length()) {
             check(!GogLibrary.cancelled) { "Download paused" }
@@ -77,6 +89,11 @@ class GogDownloadService : Service() {
                             total = completed + actualSize.coerceAtLeast(done) + (i + 1 until parts.length()).sumOf { index -> parts.getJSONObject(index).optLong("size").coerceAtLeast(0) }) }
                         lastUpdate = now
                     }
+                    if (now - lastSaved >= 1000) {
+                        val current = GogLibrary.mutable.value
+                        GogTransfers.save(this, game, "downloading", current.done, current.total, containerId, installer.toString())
+                        lastSaved = now
+                    }
                 })
             check(temporary.renameTo(target)) { "Cannot finalize GOG installer" }
             files.add(target); completed += target.length()
@@ -87,14 +104,15 @@ class GogDownloadService : Service() {
         check(ContainerSessionGate.edit(containerId)) { "Exit the container before installing this game" }
         val root = File(container.rootDir, ".wine/drive_c/GOG Games").apply { mkdirs() }
         val destination = File(root, "Ludashi-$id")
-        val staging = File(root, ".ludashi-$id-installing")
+        val staging = File(root, ".ludashi-$id-installing-${java.util.UUID.randomUUID()}")
         var moved = false
         var committed = false
         try {
             check(!destination.exists()) { "A GOG installation already exists at this location" }
             if (staging.exists()) staging.deleteRecursively()
             GogLibrary.mutable.update { it.copy(stage = getString(R.string.gog_extracting), cancellable = false) }
-            val result = Innoextract.extract(this, setup, staging, {}, {})
+            GogTransfers.save(this, game, "installing", completed, completed, containerId, installer.toString())
+            val result = Innoextract.extract(this, setup, staging, {}, {}, { com.winlator.cmod.stores.StoreSessions.trackProcess("gog", it) })
             check(result.exitCode == 0) { "The GOG installer could not be extracted (code ${result.exitCode}). Its files were kept for retry." }
             check(!GogLibrary.cancelled) { "Installation cancelled" }
             val metadata = staging.walkTopDown().maxDepth(5).firstOrNull { it.name == "goggame-$id.info" && it.isFile }
@@ -113,21 +131,51 @@ class GogDownloadService : Service() {
             val record = game.json().put("path", destination.canonicalPath).put("container", containerId)
                 .put("executables", JSONArray(executables)).put("executable", selected)
                 .put("arguments", task?.optString("arguments").orEmpty()).put("shortcut", File(container.desktopDir, "GOG-$id.desktop").path)
+            record.put("installedSize", payloadSize(destination))
+            val information = File(filesDir, "store-information/gog-${com.winlator.cmod.stores.storeHash(id)}.json")
+            if (information.isFile) runCatching { record.put("information", JSONObject(information.readText())) }
             if (selected.isNotBlank()) writeShortcut(this, id, record)
+            ensureIcon(this, id, record)
             GogLibrary.atomic(File(GogLibrary.records(this), "$id.json"), record.toString())
             committed = true
-            downloads.deleteRecursively()
+            com.winlator.cmod.stores.StoreSessions.discard(downloads)
             GogLibrary.updateInstalled(this)
+            GogTransfers.save(this, game, "completed", completed, completed, containerId, installer.toString())
         } finally {
-            staging.deleteRecursively()
             if (moved && !committed) {
-                destination.deleteRecursively()
+                staging.mkdirs()
+                val incomplete = File(staging, ".incomplete-payload")
+                if (!destination.renameTo(incomplete) && !com.winlator.cmod.stores.StoreSessions.paused) destination.deleteRecursively()
                 File(container.desktopDir, "GOG-$id.desktop").delete()
             }
+            com.winlator.cmod.stores.StoreSessions.discard(staging)
             ContainerSessionGate.edited(containerId)
         }
     }
     companion object {
+        private fun payloadSize(root: File): Long = root.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }.onEach { check(!GogLibrary.cancelled && !com.winlator.cmod.stores.StoreSessions.paused) { "Installation cancelled" } }.filter { it.isFile }.sumOf { it.length() }
+        internal fun ensureIcon(context: Context, id: String, record: JSONObject) {
+            runCatching {
+                val container = ContainerManager(context).getContainerById(record.getInt("container")) ?: return
+                val iconFile = File(container.getIconsDir(64), "gog-$id.png")
+                val art = File(context.cacheDir, "gog-art/$id.jpg")
+                val bitmap = if (art.isFile) android.graphics.BitmapFactory.decodeFile(art.path) else null
+                val icon = android.graphics.Bitmap.createBitmap(64, 64, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(icon)
+                if (bitmap != null) {
+                    canvas.drawBitmap(bitmap, null, android.graphics.Rect(0, 0, 64, 64), android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)); bitmap.recycle()
+                } else context.getDrawable(com.winlator.cmod.R.drawable.ic_gog)?.apply { setBounds(0, 0, 64, 64); draw(canvas) }
+                iconFile.parentFile?.mkdirs()
+                iconFile.outputStream().use { icon.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }; icon.recycle()
+                val shortcut = File(record.getString("shortcut")).canonicalFile
+                require(shortcut.parentFile == container.desktopDir.canonicalFile)
+                if (shortcut.isFile) {
+                    val text = shortcut.readText()
+                    if (text.substringBefore("[Extra Data]").lineSequence().none { it.trim().startsWith("Icon=") })
+                        GogLibrary.atomic(shortcut, text.replaceFirst("[Desktop Entry]", "[Desktop Entry]\nIcon=gog-$id"))
+                }
+            }.onFailure { android.util.Log.w("GOG", "Could not update installed game icon", it) }
+        }
         internal fun writeShortcut(context: Context, id: String, record: JSONObject) {
             val executable = record.getString("executable")
             val candidates = record.getJSONArray("executables")
@@ -142,7 +190,7 @@ class GogDownloadService : Service() {
             val wine = "C:\\" + target.relativeTo(drive).path.replace('/', '\\')
             val safeTitle = record.getString("title").replace('\n', ' ').replace('\r', ' ')
             val args = record.optString("arguments").replace('\n', ' ').replace('\r', ' ')
-            GogLibrary.atomic(File(record.getString("shortcut")), "[Desktop Entry]\nName=$safeTitle\nExec=wine ${com.winlator.cmod.steam.SteamCatalog.desktopExecPath(wine)}\nType=Application\n\n[Extra Data]\ngogGameId=$id\nexecArgs=$args\n")
+            GogLibrary.atomic(File(record.getString("shortcut")), "[Desktop Entry]\nName=$safeTitle\nExec=wine ${com.winlator.cmod.steam.SteamCatalog.desktopExecPath(wine)}\nType=Application\nIcon=gog-$id\n\n[Extra Data]\ngogGameId=$id\nexecArgs=$args\n")
         }
     }
 }

@@ -49,5 +49,14 @@ class SteamLibraryFilterTest {
         assertTrue(filterLibraryStores(items, 0).isEmpty())
         assertEquals(listOf(gog, local), filterLibraryItems(listOf(local, gog.copy(lastRunAt = 100)), LibraryFilter.Recent).map { it.copy(lastRunAt = 0) })
     }
+    @Test fun installedGamesFromEveryStoreAppearAboveUninstalledGamesInAll() {
+        val steam = item("steam://1")
+        val gog = item("gog://1234").copy(containerName = "GOG · Installed")
+        val local = item("/local.desktop")
+        val itch = item("itch://example")
+        val amazon = item("amazon://example").copy(containerName = "Amazon · Installed")
+        assertEquals(listOf(gog, local, amazon, steam, itch), filterLibraryItems(listOf(steam, gog, local, itch, amazon), LibraryFilter.All))
+        assertEquals(listOf(itch, amazon), filterLibraryStores(listOf(steam, gog, local, itch, amazon), 24))
+    }
 
 }

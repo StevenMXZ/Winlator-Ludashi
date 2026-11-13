@@ -53,6 +53,12 @@ interface SteamDetailCallbacks : GameDetailCallbacks { fun onSteamMode(mode: Str
 // Layout and statistics adapted from teldommm/WinLite. Ludashi keeps its original
 // artwork selection/crop (including offline icons) and all six user-selected palettes.
 object GameDetailComposeHost {
+    @Composable
+    fun StoreContent(title: String, brand: String, artwork: String?, favorite: Boolean, shortcut: Shortcut?, callbacks: GameDetailCallbacks, installedSize: String?, information: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalStoreInformation provides information, LocalStoreSize provides installedSize) {
+            GameDetailScreen(title, brand, artwork, null, favorite, shortcut, callbacks)
+        }
+    }
     @JvmStatic
     fun createSteam(context: Context, title: String, artwork: String?, id: Int, callbacks: GameDetailCallbacks): ComposeView =
         ComposeView(context).apply {
@@ -75,6 +81,8 @@ object GameDetailComposeHost {
     }
 }
 
+private val LocalStoreSize = compositionLocalOf<String?> { null }
+private val LocalStoreInformation = compositionLocalOf<@Composable () -> Unit> { {} }
 private val LocalSteamInfoId = compositionLocalOf<Int?> { null }
 private val LocalSteamDetail = compositionLocalOf { false }
 private val LocalSteamReady = compositionLocalOf { true }
@@ -115,6 +123,7 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
+    val storeSize = LocalStoreSize.current
     val steamDataRevision = if (steamId != null) com.winlator.cmod.steam.SteamUserData.contentRevision.intValue else 0
     val stats by produceState(GameStats(), shortcut?.file?.path, steamId, steamDataRevision, resumeSerial) {
         val loaded = withContext(Dispatchers.IO) {
@@ -132,7 +141,7 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
         value = basic
         value = withContext(Dispatchers.IO) {
             val cached = shortcut?.let { GameStatsLoader.cachedSize(context, it) }
-            val existingSize = shortcut?.let {
+            val existingSize = storeSize ?: shortcut?.let {
                 if (cached?.fresh == true) cached.text else GameStatsLoader.sizeText(context, it)
             }
             basic.copy(sizeText = existingSize ?: steamId?.let { installedSteamSizeText(context, it) })
@@ -207,6 +216,7 @@ private fun LandscapeDetail(title: String, subtitle: String, artwork: Bitmap?, f
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth(), onArtwork = true)
+                    LocalStoreInformation.current()
                     LocalSteamInfoId.current?.let {
                         com.winlator.cmod.steam.SteamGameInfoPanel(it, landscape = true, onArtwork = true)
                     }
@@ -230,6 +240,7 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
         }
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (stats.hasAny) StatsGrid(stats, Modifier.fillMaxWidth())
+            LocalStoreInformation.current()
             LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
             PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
             DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)

@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.winlator.cmod.R
+import com.winlator.cmod.stores.*
 import com.winlator.cmod.gog.GogActivity
 import com.winlator.cmod.gog.GogSettings
 import com.winlator.cmod.gog.GogSettingsActivity
@@ -35,6 +36,27 @@ class StoresActivity : ImmersiveSteamActivity() {
                 }
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+                    LudashiStore.entries.forEach { store ->
+                        val enabled = store.enabled(this@StoresActivity)
+                        StoreSection {
+                            Row(Modifier.fillMaxWidth().clickable {
+                                startActivity(Intent(this@StoresActivity, if (enabled) StoreActivity::class.java else StoreSettingsScreen::class.java).putExtra("store", store.id))
+                            }.padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Icon(painterResource(store.icon), null, Modifier.size(52.dp), tint = Color.Unspecified)
+                                Column(Modifier.weight(1f)) {
+                                    Text(store.title, style = MaterialTheme.typography.titleLarge)
+                                    Text(uiStr(if (enabled) R.string.steam_ui_account_downloads else R.string.gog_integration_disabled), style = MaterialTheme.typography.bodySmall)
+                                }
+                                Icon(Icons.Outlined.ChevronRight, null)
+                            }
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(uiStr(R.string.steam_ui_integration), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                Switch(enabled, { store.setEnabled(this@StoresActivity, it) })
+                                IconButton(onClick = { startActivity(Intent(this@StoresActivity, StoreSettingsScreen::class.java).putExtra("store", store.id)) }) { Icon(Icons.Outlined.Settings, uiStr(R.string.gog_store_settings)) }
+                            }
+                        }
+                    }
                     listOf(false, true).forEach { gog ->
                         val enabled = if (gog) GogSettings.enabled(this@StoresActivity) else SteamSettings.enabled(this@StoresActivity)
                         val settings = if (gog) GogSettingsActivity::class.java else StoreSettingsActivity::class.java

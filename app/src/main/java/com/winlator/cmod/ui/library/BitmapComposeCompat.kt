@@ -115,12 +115,16 @@ internal fun LibraryRoot(
     val filter = if (selectedFilter == LibraryFilter.Steam) LibraryFilter.All else selectedFilter
     val context = LocalContext.current
     val storePrefs = remember(context) { context.getSharedPreferences("library_compose_state", 0) }
-    var storeMask by rememberSaveable { mutableStateOf(storePrefs.getInt("store-mask", 7)) }
+    var storeMask by rememberSaveable { mutableStateOf(storePrefs.getInt("store-mask", 31)) }
     val changeStores: (Int) -> Unit = { mask -> storeMask = mask; storePrefs.edit().putInt("store-mask", mask).apply() }
     LaunchedEffect(Unit) {
+        if (storePrefs.getInt("store-mask-version", 0) < 2) {
+            if (storeMask == 7) changeStores(31)
+            storePrefs.edit().putInt("store-mask-version", 2).apply()
+        }
         if (filterName == LibraryFilter.Steam.name) {
             filterName = LibraryFilter.All.name
-            changeStores(if (steamFilterAvailable) 2 else 7)
+            changeStores(if (steamFilterAvailable) 2 else 31)
         }
     }
     val visible = remember(items, filter, query, storeMask) {
@@ -367,13 +371,14 @@ private fun LibraryAddGamesChoice(label: String, icon: ImageVector, onClick: () 
 private fun LibraryStoreLabel(item: LibraryItem, onArtwork: Boolean) {
     val gog = item.shortcutPath.startsWith("gog://")
     val steam = item.shortcutPath.startsWith("steam://")
+    val extra = com.winlator.cmod.stores.LudashiStore.fromPath(item.shortcutPath)
     val color = if (onArtwork) Color.White.copy(.75f) else MaterialTheme.colorScheme.onSurfaceVariant
-    if (!gog && !steam) { Text(item.containerName, color = color, maxLines = 1); return }
+    if (!gog && !steam && extra == null) { Text(item.containerName, color = color, maxLines = 1); return }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Surface(shape = RoundedCornerShape(16.dp), color = if (gog) Color(0xFF654080).copy(.75f) else MaterialTheme.colorScheme.surfaceVariant) {
             Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Icon(painterResource(if (gog) R.drawable.ic_gog else R.drawable.ic_steam), null, Modifier.size(16.dp), tint = if (gog) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(if (gog) "GOG" else "Steam", style = MaterialTheme.typography.labelSmall)
+                Icon(painterResource(if (gog) R.drawable.ic_gog else extra?.icon ?: R.drawable.ic_steam), null, Modifier.size(16.dp), tint = if (gog || extra != null) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (gog) "GOG" else extra?.title ?: "Steam", style = MaterialTheme.typography.labelSmall)
             }
         }
         Text("· " + uiStr(if (item.containerName.endsWith("· Installed")) R.string.gog_installed else R.string.gog_not_installed), color = color, style = MaterialTheme.typography.bodySmall, maxLines = 1)
@@ -394,8 +399,8 @@ private fun LibraryFilters(filter: LibraryFilter, select: (LibraryFilter) -> Uni
                 Spacer(Modifier.width(6.dp)); Text(uiStr(R.string.steam_ui_stores)); Icon(Icons.Outlined.ExpandMore, null)
             }
             DropdownMenu(expanded, { expanded = false }) {
-                DropdownMenuItem(text = { Text(uiStr(R.string.gog_all_stores)) }, leadingIcon = { Checkbox(mask == 7, null) }, onClick = { stores(if (mask == 7) 0 else 7) })
-                listOf(1 to uiStr(R.string.gog_local_games), 2 to "Steam", 4 to "GOG").forEach { (bit, name) ->
+                DropdownMenuItem(text = { Text(uiStr(R.string.gog_all_stores)) }, leadingIcon = { Checkbox(mask == 31, null) }, onClick = { stores(if (mask == 31) 0 else 31) })
+                listOf(1 to uiStr(R.string.gog_local_games), 2 to "Steam", 4 to "GOG", 8 to "itch.io", 16 to "Amazon").forEach { (bit, name) ->
                     DropdownMenuItem(text = { Text(name) }, leadingIcon = { Checkbox(mask and bit != 0, null) }, onClick = { stores(mask xor bit) })
                 }
                 DropdownMenuItem(text = { Text(uiStr(R.string.gog_manage_stores)) }, onClick = {

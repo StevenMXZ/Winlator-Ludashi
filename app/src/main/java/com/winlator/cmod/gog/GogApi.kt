@@ -10,6 +10,13 @@ import java.net.URL
 import java.security.MessageDigest
 
 internal object GogApi {
+    private val connections = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
+    fun cancelWork() { connections.toList().forEach { connection -> runCatching { connection.disconnect() } } }
+    private fun track(connection: HttpURLConnection) {
+        check(!com.winlator.cmod.stores.StoreSessions.paused) { "Store requests are paused while a game runs" }
+        connections.add(connection)
+        if (com.winlator.cmod.stores.StoreSessions.paused) { connections.remove(connection); connection.disconnect(); error("Store request cancelled") }
+    }
     const val CLIENT_ID = "46899977096215655"
     private const val CLIENT_SECRET = "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9"
     const val REDIRECT = "https://embed.gog.com/on_login_success?origin=client"
@@ -37,6 +44,7 @@ internal object GogApi {
     private fun json(url: String, bearer: String? = null): JSONObject {
         require(trusted(url)) { "Invalid GOG API address" }
         val connection = URL(url).openConnection() as HttpURLConnection
+        track(connection)
         connection.instanceFollowRedirects = false
         connection.connectTimeout = 15_000; connection.readTimeout = 30_000
         connection.setRequestProperty("User-Agent", "Ludashi/5.0")
@@ -46,11 +54,11 @@ internal object GogApi {
             if (connection.responseCode == 401) throw Unauthorized()
             check(connection.responseCode == 200) { "GOG request failed (HTTP ${connection.responseCode})" }
             JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
-        } finally { connection.disconnect() }
+        } finally { connections.remove(connection); connection.disconnect() }
     }
-    fun product(id: String): JSONObject {
+    fun product(id: String, details: Boolean = false): JSONObject {
         require(id.toLongOrNull()?.let { it > 0 } == true)
-        return json("https://api.gog.com/products/$id")
+        return json("https://api.gog.com/products/$id" + if (details) "?expand=description,screenshots,downloads" else "")
     }
     @Synchronized fun get(context: Context, url: String): JSONObject {
         check(GogSettings.enabled(context)) { "GOG integration is disabled" }
@@ -121,6 +129,7 @@ internal object GogApi {
             val target = URL(url)
             require(target.protocol == "https") { "GOG checksum requires HTTPS" }
             val connection = target.openConnection() as HttpURLConnection
+            track(connection)
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 15000; connection.readTimeout = 30000
             if (trusted(url)) GogAccount.load(context)?.optString("access_token")?.takeIf { it.isNotBlank() }?.let {
@@ -133,7 +142,7 @@ internal object GogApi {
                     check(connection.responseCode == 200) { "GOG checksum request failed (HTTP ${connection.responseCode})" }
                     return checksum(connection.inputStream.bufferedReader().use { it.readText() })
                 }
-            } finally { connection.disconnect() }
+            } finally { connections.remove(connection); connection.disconnect() }
         }
         error("Too many GOG checksum redirects")
     }
@@ -152,12 +161,13 @@ internal object GogApi {
                 require(target.protocol == "https") { "GOG download requires HTTPS" }
                 val current = target.openConnection() as HttpURLConnection
                 connection = current
+                track(current)
                 current.instanceFollowRedirects = false
                 current.connectTimeout = 15_000; current.readTimeout = 30_000
                 current.setRequestProperty("Accept-Encoding", "identity")
                 if (current.responseCode in listOf(301, 302, 303, 307, 308)) {
                     address = URL(target, current.getHeaderField("Location") ?: error("Missing download redirect")).toString()
-                    current.disconnect()
+                    connections.remove(current); current.disconnect()
                     continue
                 }
                 check(current.responseCode == 200) { "GOG download failed (HTTP ${current.responseCode})" }
@@ -167,7 +177,7 @@ internal object GogApi {
             }
             error("Too many GOG download redirects")
         } catch (error: Exception) { file.delete(); throw error }
-        finally { connection?.disconnect() }
+        finally { connection?.let { connections.remove(it); it.disconnect() } }
     }
     fun receive(input: java.io.InputStream, file: File, expected: Long, md5: String?, cancelled: () -> Boolean, progress: (Long) -> Unit) {
         val digest = MessageDigest.getInstance("MD5")

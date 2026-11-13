@@ -15,7 +15,7 @@ import java.io.File
 import java.util.concurrent.Executors
 
 internal data class GogState(
-    val games: List<GogGame> = emptyList(), val installed: Map<String, JSONObject> = emptyMap(),
+    val games: List<GogGame> = emptyList(), val transfers: Map<String, JSONObject> = emptyMap(), val installed: Map<String, JSONObject> = emptyMap(),
     val signedIn: Boolean = false, val loading: Boolean = false, val error: String = "",
     val activeId: String = "", val stage: String = "", val done: Long = 0, val total: Long = 0,
     val busy: Boolean = false, val cancellable: Boolean = true, val revision: Int = 0
@@ -46,11 +46,17 @@ object GogLibrary {
         mutable.update { it.copy(installed = installed, revision = it.revision + 1) }
     }
     fun open(context: Context) {
-        if (!GogSettings.enabled(context) || initialized) return
+        if (!GogSettings.enabled(context) || initialized || com.winlator.cmod.stores.StoreSessions.paused) return
         synchronized(this) { if (initialized) return; initialized = true }
         val app = context.applicationContext
         worker.execute {
+            ContainerManager(app).containers.forEach { container ->
+                File(container.rootDir, ".wine/drive_c/GOG Games").listFiles().orEmpty().filter {
+                    it.isDirectory && it.name.matches(Regex("\\.ludashi-\\d+-installing-[0-9a-f-]{36}")) && it.lastModified() < com.winlator.cmod.stores.StoreSessions.processStarted
+                }.forEach { com.winlator.cmod.stores.StoreSessions.discard(it) }
+            }
             updateInstalled(app)
+            mutable.update { it.copy(transfers = GogTransfers.load(app)) }
             mutable.update { it.copy(signedIn = GogAccount.load(app) != null) }
             val file = cache(app)
             runCatching {
@@ -93,11 +99,23 @@ object GogLibrary {
         worker.execute {
             GogAccount.clear(context)
             mutable.update { it.copy(signedIn = false, games = emptyList(), error = "") }
-            android.webkit.CookieManager.getInstance().removeAllCookies(null)
+            val cookies = android.webkit.CookieManager.getInstance()
+            for (host in listOf("gog.com", "www.gog.com", "auth.gog.com", "embed.gog.com")) {
+                val address = "https://$host"
+                cookies.getCookie(address)?.split(';')?.forEach { cookie ->
+                    val name = cookie.substringBefore('=').trim()
+                    cookies.setCookie(address, "$name=; Domain=.gog.com; Path=/; Max-Age=0")
+                    cookies.setCookie(address, "$name=; Path=/; Max-Age=0")
+                }
+            }
+            cookies.flush()
         }
     }
     fun id(path: String): String? = path.removePrefix("gog://").takeIf { path.startsWith("gog://") && it.toLongOrNull()?.let { n -> n > 0 } == true }
-    fun openGame(context: Context, path: String) { id(path)?.let { context.startActivity(Intent(context, GogActivity::class.java).putExtra("game", it)) } }
+    fun openGame(context: Context, path: String) { id(path)?.let { gameId ->
+        if (File(records(context), "$gameId.json").isFile) com.winlator.cmod.stores.StoreDetailActivity.open(context, "gog", gameId)
+        else context.startActivity(Intent(context, GogActivity::class.java).putExtra("game", gameId))
+    } }
     private var icon: android.graphics.Bitmap? = null
     internal fun items(context: Context, snapshot: GogState): List<LibraryItem> {
         if (!GogSettings.enabled(context)) return emptyList()
@@ -109,17 +127,34 @@ object GogLibrary {
         }
         val games = (snapshot.games + snapshot.installed.values.mapNotNull { runCatching { GogGame.parse(it) }.getOrNull() }).distinctBy { it.id }
         val prefs = context.getSharedPreferences("gog-settings", 0)
+        val artNames = File(context.cacheDir, "gog-art").list()?.toSet().orEmpty()
         return games.map { game ->
             val record = snapshot.installed[game.id]
-            val art = File(context.cacheDir, "gog-art/${game.id}.jpg")
+            val art = File(context.cacheDir, "gog-art/${game.id}.jpg").takeIf { "${game.id}.jpg" in artNames }
             LibraryItem("gog-${game.id}", "gog://${game.id}", game.title,
                 "GOG · " + if (record != null) "Installed" else "Not installed",
-                art.takeIf { it.isFile }?.path, art.takeIf { it.isFile }?.path, null, icon,
+                art?.path, art?.path, null, icon,
                 prefs.getBoolean("favorite-${game.id}", false), prefs.getLong("last-run-${game.id}", 0))
         }
     }
+    internal fun uninstall(context: Context, id: String, record: JSONObject) {
+        val cid = record.getInt("container")
+        check(com.winlator.cmod.core.ContainerSessionGate.edit(cid)) { "Exit the container before uninstalling" }
+        try {
+            val container = ContainerManager(context).getContainerById(cid) ?: error("Container was removed")
+            val target = File(record.getString("path")).canonicalFile
+            require(target == File(container.rootDir, ".wine/drive_c/GOG Games/Ludashi-$id").canonicalFile)
+            check(target.deleteRecursively()) { "Could not remove game files" }
+            val shortcut = File(record.getString("shortcut")).canonicalFile
+            require(shortcut.parentFile == container.desktopDir.canonicalFile)
+            shortcut.delete()
+            File(container.getIconsDir(64), "gog-$id.png").delete()
+            check(File(records(context), "$id.json").delete())
+            updateInstalled(context)
+        } finally { com.winlator.cmod.core.ContainerSessionGate.edited(cid) }
+    }
     internal fun shortcut(context: Context, id: String): Shortcut {
-        val record = mutable.value.installed[id] ?: error("Install this GOG game first")
+        val record = mutable.value.installed[id] ?: runCatching { JSONObject(File(records(context), "$id.json").readText()) }.getOrElse { error("Install this GOG game first") }
         val container = ContainerManager(context).getContainerById(record.getInt("container")) ?: error("The game's container was removed")
         val file = File(record.getString("shortcut"))
         require(file.canonicalFile.parentFile == container.desktopDir.canonicalFile && file.isFile) { "GOG shortcut is missing" }
@@ -145,6 +180,7 @@ object GogLibrary {
                 val pending = File(target.parentFile, target.name + ".pending")
                 source.copyTo(pending, true)
                 check(pending.renameTo(target))
+                mutable.value.installed[game.id]?.let { GogDownloadService.ensureIcon(context, game.id, it) }
                 artworkChanged.removeCallbacks(artworkUpdate); artworkChanged.postDelayed(artworkUpdate, 150)
                 true
             } catch (_: Exception) { false }

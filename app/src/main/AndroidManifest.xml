@@ -43,6 +43,11 @@
         android:supportsRtl="true"
         tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
 
+        <activity android:name=".stores.StoreActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
+        <activity android:name=".stores.StoreSettingsScreen" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
+        <activity android:name=".stores.StoreLoginActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
+        <activity android:name=".stores.StoreDetailActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
+        <service android:name=".stores.StoreDownloadService" android:foregroundServiceType="dataSync" android:exported="false" />
         <activity android:name=".steam.StoresActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
         <activity android:name=".gog.GogSettingsActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
         <activity android:name=".gog.GogActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" android:windowSoftInputMode="adjustResize" />
