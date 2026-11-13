@@ -52,11 +52,14 @@ internal object ItchApi {
         error("itch.io library pagination did not finish")
     }
     fun ownedRows(body: JSONObject): JSONArray {
-        body.optJSONArray("ownedKeys")?.let { return it }
-        body.optJSONArray("owned_keys")?.let { return it }
-        val empty = (body.has("ownedKeys") && body.isNull("ownedKeys")) || (body.has("owned_keys") && body.isNull("owned_keys")) ||
-            body.keys().asSequence().all { it in setOf("page", "perPage", "per_page", "total") }
-        check(empty) { "itch.io returned an unsupported library response" }
+        val source = body.optJSONObject("data") ?: body
+        for (name in listOf("ownedKeys", "owned_keys")) {
+            if (!source.has(name) || source.isNull(name)) continue
+            return source.optJSONArray(name) ?: error("itch.io returned invalid download keys. Please retry.")
+        }
+        check(!source.has("error") && (source.optJSONArray("errors")?.length() ?: 0) == 0) {
+            "itch.io rejected the library request. Check your API key."
+        }
         return JSONArray()
     }
     fun search(context: Context, query: String, page: Int = 1, tag: String? = null): List<StoreGame> {

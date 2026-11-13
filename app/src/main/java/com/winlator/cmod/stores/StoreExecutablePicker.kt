@@ -14,14 +14,12 @@ import com.winlator.cmod.ui.uiStr
 import java.io.File
 
 @Composable internal fun StoreExecutablePicker(title: String, paths: List<String>, current: String, busy: Boolean, close: () -> Unit, select: (String) -> Unit) {
-    var query by remember { mutableStateOf("") }
     var all by remember { mutableStateOf(false) }
     var chosen by remember { mutableStateOf(current.ifBlank { StoreExecutables.default(paths, title) }) }
     val ordered = remember(paths, title) { StoreExecutables.ordered(paths, title) }
-    val visible = remember(ordered, query, all, current) { ordered.filter { (all || !StoreExecutables.helper(it) || it == current) && it.contains(query, true) } }
+    val visible = remember(ordered, all, current) { ordered.filter { (all || !StoreExecutables.helper(it) || it == current) } }
     AlertDialog(onDismissRequest = { if (!busy) close() }, title = { Text(uiStr(R.string.gog_choose_executable)) }, text = {
         Column(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(query, { query = it }, label = { Text(uiStr(R.string.store_search_executable)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(all, { all = it }); Text(uiStr(R.string.store_show_all_executables), style = MaterialTheme.typography.bodySmall) }
             LazyColumn(Modifier.weight(1f, fill = false)) {
                 items(visible, key = { it }) { path ->

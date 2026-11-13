@@ -129,11 +129,12 @@ object StoreSessions {
         val loaded = ItchConnector.library(context)
         currentCoroutineContext().ensureActive()
         StoreNetwork.check(context, store)
-        val custom = state(store).value.games.filter { it.metadata.optBoolean("custom") }
-        val games = (loaded + custom).distinctBy { it.id }
+        val games = libraryResult(loaded, state(store).value.games)
         atomicStoreFile(cache(context, store) ?: error("Store account is missing"), JSONArray().apply { games.forEach { put(it.json()) } }.toString())
         state(store).update { it.copy(games = games, signedIn = true, loading = false) }
     }
+    internal fun libraryResult(loaded: List<StoreGame>, previous: List<StoreGame>) =
+        (loaded + previous.filter { loaded.isEmpty() || it.metadata.optBoolean("custom") }).distinctBy { it.id }
     fun signOut(context: Context, store: LudashiStore) {
         if (state(store).value.busy) return
         cancel(store)

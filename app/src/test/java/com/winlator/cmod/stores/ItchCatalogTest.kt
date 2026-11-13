@@ -14,7 +14,16 @@ class ItchCatalogTest {
         assertEquals(0, ItchApi.ownedRows(JSONObject("""{"page":1,"perPage":500,"ownedKeys":null}""")).length())
         assertEquals(0, ItchApi.ownedRows(JSONObject("""{"page":1,"owned_keys":[]}""")).length())
         assertEquals(0, ItchApi.ownedRows(JSONObject("{}")).length())
-        assertThrows(IllegalStateException::class.java) { ItchApi.ownedRows(JSONObject("""{"unexpected":"response"}""")) }
+        assertEquals(0, ItchApi.ownedRows(JSONObject("""{"success":true,"page":1,"next_page":null}""")).length())
+        assertEquals(0, ItchApi.ownedRows(JSONObject("""{"data":{"owned_keys":[]}}""")).length())
+        assertThrows(IllegalStateException::class.java) { ItchApi.ownedRows(JSONObject("""{"ownedKeys":"invalid"}""")) }
+        assertThrows(IllegalStateException::class.java) { ItchApi.ownedRows(JSONObject("""{"error":"unauthorized"}""")) }
+    }
+    @Test fun anEmptyLibraryResponseKeepsPreviouslyCachedPurchasesAndFreeGames() {
+        val purchased = StoreGame(LudashiStore.ITCH, "https://author.itch.io/paid", "Purchased", "")
+        val free = StoreGame(LudashiStore.ITCH, "https://author.itch.io/free", "Free", "", JSONObject().put("custom", true))
+        assertEquals(listOf(purchased, free), StoreSessions.libraryResult(emptyList(), listOf(purchased, free)))
+        assertEquals(listOf(purchased, free), StoreSessions.libraryResult(listOf(purchased), listOf(purchased, free)))
     }
     @Test fun officialCamelCaseMetadataRetainsArtworkAndOwnership() {
         val rows = org.json.JSONArray("""[{"id":123,"game":{"id":456,"title":"Game","url":"https://author.itch.io/game","coverUrl":"https://img.itch.zone/cover.png","shortText":"Description","user":{"displayName":"Developer"}}}]""")
