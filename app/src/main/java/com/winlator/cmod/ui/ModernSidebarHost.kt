@@ -249,23 +249,31 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
                 if (adapter != null && adapter.count > 0) {
                     var expanded by remember(view) { mutableStateOf(false) }
                     val options = (0 until adapter.count).map { adapter.getItem(it).toString() }
-                    Box {
-                        OutlinedButton({ expanded = true }, Modifier.fillMaxWidth(), shape = WinZShapes.Small, enabled = view.isEnabled) {
-                            Text(options.getOrElse(view.selectedItemPosition) { options.first() }, Modifier.weight(1f))
-                            Icon(Icons.Outlined.KeyboardArrowDown, null)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.weight(1f)) {
+                            OutlinedButton({ expanded = true }, Modifier.fillMaxWidth(), shape = WinZShapes.Small, enabled = view.isEnabled) {
+                                Text(options.getOrElse(view.selectedItemPosition) { options.first() }, Modifier.weight(1f))
+                                Icon(Icons.Outlined.KeyboardArrowDown, null)
+                            }
+                            DropdownMenu(expanded, { expanded = false }) {
+                                options.forEachIndexed { index, text ->
+                                    DropdownMenuItem(text = { Text(text) }, onClick = {
+                                        expanded = false
+                                        if (index != view.selectedItemPosition) {
+                                            view.setSelection(index, false)
+                                            // A hidden Spinner never lays itself out, so dispatch its real binding
+                                            // explicitly. The binding remains responsible for saving and applying.
+                                            view.onItemSelectedListener?.onItemSelected(view, null, index, adapter.getItemId(index))
+                                            refresh()
+                                        }
+                                    })
+                                }
+                            }
                         }
-                        DropdownMenu(expanded, { expanded = false }) {
-                            options.forEachIndexed { index, text ->
-                                DropdownMenuItem(text = { Text(text) }, onClick = {
-                                    expanded = false
-                                    if (index != view.selectedItemPosition) {
-                                        view.setSelection(index, false)
-                                        // A hidden Spinner never lays itself out, so dispatch its real binding
-                                        // explicitly. The binding remains responsible for saving and applying.
-                                        view.onItemSelectedListener?.onItemSelected(view, null, index, adapter.getItemId(index))
-                                        refresh()
-                                    }
-                                })
+                        if (view.id == R.id.SPInputControlsProfile) {
+                            val edit = sidebar?.activity?.findViewById<View>(R.id.BTInputControlsSettings)
+                            IconButton(enabled = edit?.isEnabled == true, onClick = { edit?.performClick(); refresh() }) {
+                                Icon(Icons.Outlined.Settings, uiStr(R.string.controls_editor))
                             }
                         }
                     }
