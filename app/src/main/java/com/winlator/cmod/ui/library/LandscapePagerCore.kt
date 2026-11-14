@@ -38,6 +38,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
@@ -94,15 +95,26 @@ internal fun LandscapePagerCore(
 
     LaunchedEffect(items.map { it.id }, selectedShortcutPath.value) {
         val selectedPage = items.indexOfFirst { it.shortcutPath == selectedShortcutPath.value }
-        val targetPage = if (selectedPage >= 0) selectedPage else pager.currentPage.coerceIn(items.indices)
-        if (pager.currentPage != targetPage) pager.scrollToPage(targetPage)
+        if (selectedPage >= 0 && !pager.isScrollInProgress && pager.currentPage != selectedPage)
+            pager.scrollToPage(selectedPage)
     }
 
-    LaunchedEffect(pager, items) {
-        snapshotFlow { pager.currentPage }
+    val currentItems by rememberUpdatedState(items)
+    val context = LocalContext.current.applicationContext
+    LaunchedEffect(pager) {
+        var scrolled = false
+        snapshotFlow { pager.isScrollInProgress }
             .distinctUntilChanged()
-            .collect { page ->
-                items.getOrNull(page)?.let { selectedShortcutPath.value = it.shortcutPath }
+            .collect { scrolling ->
+                if (scrolling) scrolled = true
+                else if (scrolled) {
+                    scrolled = false
+                    currentItems.getOrNull(pager.settledPage)?.let { selected ->
+                        selectedShortcutPath.value = selected.shortcutPath
+                        context.getSharedPreferences("library_compose_state", android.content.Context.MODE_PRIVATE)
+                            .edit().putString("selected_shortcut_path", selected.shortcutPath).apply()
+                    }
+                }
             }
     }
 
