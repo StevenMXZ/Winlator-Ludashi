@@ -18,7 +18,13 @@ object SteamLibrary {
     private val images = Executors.newFixedThreadPool(2)
     private val requested = ConcurrentHashMap.newKeySet<String>()
     fun appId(path: String): Int? = path.removePrefix("steam://").takeIf { path.startsWith("steam://") }?.toIntOrNull()
-    fun items(context: Context, json: String, filterType: String = "game"): List<LibraryItem> {
+    fun added(context: Context, id: Int) = context.getSharedPreferences("steam-settings", 0).getBoolean("library-added-$id", false)
+    fun setAdded(context: Context, id: Int, value: Boolean) {
+        require(id > 0)
+        context.getSharedPreferences("steam-settings", 0).edit().putBoolean("library-added-$id", value).apply()
+        SteamGames.changed()
+    }
+    fun items(context: Context, json: String, filterType: String = "game", mainLibraryOnly: Boolean = false): List<LibraryItem> {
         val apps = runCatching { JSONObject(json).optJSONArray("owned_apps") }.getOrNull()
         val owned = (0 until (apps?.length() ?: 0)).mapNotNull { index ->
             apps?.optJSONObject(index)?.takeIf { it.optInt("id") > 0 }
@@ -38,6 +44,7 @@ object SteamLibrary {
         return (owned + installed.values).distinctBy { it.optInt("id") }.mapNotNull { app ->
             val id = app.optInt("id")
             val local = installed[id]
+            if (mainLibraryOnly && local == null && !preferences.getBoolean("library-added-$id", false)) return@mapNotNull null
             val type = app.optString("type").trim().ifBlank { local?.optString("type").orEmpty() }
                 .ifBlank { if (local != null) "game" else "" }
             if (!type.equals(filterType, true)) return@mapNotNull null

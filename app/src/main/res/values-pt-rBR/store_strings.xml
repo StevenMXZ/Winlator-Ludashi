@@ -49,4 +49,5 @@
     <string name="store_add_library">Adicionar à biblioteca</string>
     <string name="store_get_game">Obter jogo na itch.io</string>
     <string name="store_itch_search_login">Entre com sua chave de API da itch.io para buscar jogos.</string>
+    <string name="store_remove_library">Remover da biblioteca</string>
 </resources>

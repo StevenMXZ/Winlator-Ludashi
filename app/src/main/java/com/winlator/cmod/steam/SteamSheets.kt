@@ -76,6 +76,7 @@ object SteamSheets {
             val apps = rememberSteamLibrary(context, state.library)
             val demos = rememberSteamLibrary(context, state.library, filterType = "demo")
             val item = remember(apps, demos, id) { (apps + demos).find { app -> SteamLibrary.appId(app.shortcutPath) == id } }
+            var added by remember(id) { mutableStateOf(SteamLibrary.added(context, id)) }
             var favorite by remember { mutableStateOf(context.getSharedPreferences("steam-settings", 0).getBoolean("favorite-$id", false)) }
             Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
@@ -90,6 +91,13 @@ object SteamSheets {
                 FilledTonalButton(modifier = Modifier.weight(1f), onClick = {
                     favorite = !favorite; context.getSharedPreferences("steam-settings", 0).edit().putBoolean("favorite-$id", favorite).apply(); SteamGames.changed()
                 }) { Icon(if (favorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (favorite) uiStr(R.string.steam_ui_unfavorite) else uiStr(R.string.steam_ui_favorite)) }
+                if (!installed) OutlinedButton(modifier = Modifier.weight(1f), onClick = {
+                    added = !added; SteamLibrary.setAdded(context, id, added)
+                }) {
+                    Icon(if (added) Icons.Outlined.Check else Icons.Outlined.Add, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(uiStr(if (added) R.string.store_remove_library else R.string.store_add_library))
+                }
             }
             if (SteamSession.installRequestId == id) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
             if (SteamSession.installError.isNotBlank()) Text(SteamSession.installError,
