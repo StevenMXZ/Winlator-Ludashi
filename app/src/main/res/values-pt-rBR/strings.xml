@@ -689,4 +689,5 @@
     <string name="storage_restore_done">Backup restaurado. Reinicie o Ludashi para recarregar todas as configurações.</string>
     <string name="storage_restore_confirm">Restaurar componentes, jogos, saves e configurações? Arquivos existentes serão substituídos. Containers não são incluídos.</string>
     <string name="storage_remove_container">Jogos e saves dentro deste container também serão removidos.</string>
+    <string name="ui_hide_cursor">Esconder ponteiro do mouse</string>
 </resources>

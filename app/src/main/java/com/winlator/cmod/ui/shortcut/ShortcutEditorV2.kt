@@ -265,6 +265,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var dinput by mutableStateOf((inputType and WinHandler.FLAG_INPUT_TYPE_DINPUT.toInt()) != 0)
     var disableXInput by mutableStateOf(shortcut.getExtra("disableXinput", "0") == "1")
     var relativeMouse by mutableStateOf(shortcut.getExtra("enableRelativeMouse", "0") == "1")
+    var hideCursor by mutableStateOf(shortcut.getExtra("hideCursor", "0") == "1")
     var disableMouse by mutableStateOf(shortcut.getExtra("disableMouse", "0") == "1")
     var simulatedTouch by mutableStateOf(shortcut.getExtra("simTouchScreen", "0") == "1")
     var syncCpu by mutableStateOf(shortcut.getExtra("syncCpuTopology", if (container.isSyncCpuTopology()) "1" else "0") == "1")
@@ -1318,6 +1319,8 @@ private fun ShortcutCategoryV2(
                 SettingToggle(uiStr(R.string.ui_enable_dinput), s.dinput, s.exclusive) { s.dinput = it; if (s.exclusive && it && s.xinput) s.xinput = false; s.saveInput() }
                 SettingsDivider()
                 SettingToggle(uiStr(R.string.ui_relative_mouse), s.relativeMouse) { s.relativeMouse = it; s.extra("enableRelativeMouse", if (it) "1" else null) }
+                SettingsDivider()
+                SettingToggle(uiStr(R.string.ui_hide_cursor), s.hideCursor) { s.hideCursor = it; s.extra("hideCursor", if (it) "1" else null) }
                 SettingsDivider()
                 SettingToggle(uiStr(R.string.ui_disable_mouse), s.disableMouse) { s.disableMouse = it; s.extra("disableMouse", if (it) "1" else null) }
                 SettingsDivider()

@@ -782,4 +782,5 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="storage_restore_done">Backup restored. Restart Ludashi to reload all settings.</string>
     <string name="storage_restore_confirm">Restore components, games, saves and settings? Existing files will be replaced. Containers are not included.</string>
     <string name="storage_remove_container">Games and saves inside this container will also be removed.</string>
+    <string name="ui_hide_cursor">Hide mouse cursor</string>
 </resources>
