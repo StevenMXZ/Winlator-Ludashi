@@ -104,4 +104,22 @@ class GogApiTest {
             assertFalse(file.exists())
         } finally { directory.deleteRecursively() }
     }
+    @Test fun pausedBytesAreRetainedAndResumedWithFullChecksumValidation() {
+        val directory = Files.createTempDirectory("gog-pause").toFile()
+        val file = directory.resolve("installer.pending")
+        try {
+            var paused = false
+            assertThrows(IllegalStateException::class.java) {
+                GogApi.receive("a".byteInputStream(), file, 3, null, { paused }, { paused = true })
+            }
+            assertEquals("a", file.readText())
+            GogApi.receive("bc".byteInputStream(), file, 3, "900150983cd24fb0d6963f7d28e17f72", { false }, {}, 1)
+            assertEquals("abc", file.readText())
+            file.writeText("z")
+            assertThrows(IllegalStateException::class.java) {
+                GogApi.receive("bc".byteInputStream(), file, 3, "900150983cd24fb0d6963f7d28e17f72", { false }, {}, 1)
+            }
+            assertFalse(file.exists())
+        } finally { directory.deleteRecursively() }
+    }
 }

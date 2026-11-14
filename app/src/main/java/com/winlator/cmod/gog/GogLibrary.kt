@@ -27,6 +27,7 @@ object GogLibrary {
     internal val worker = Executors.newSingleThreadExecutor()
     @Volatile private var initialized = false
     @Volatile internal var cancelled = false
+    @Volatile internal var cancelRequested = false
     internal fun records(context: Context) = File(context.filesDir, "gog-installed").apply { mkdirs() }
     internal fun atomic(file: File, text: String) {
         file.parentFile?.mkdirs()

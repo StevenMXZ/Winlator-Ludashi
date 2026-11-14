@@ -175,8 +175,8 @@ object LibraryComposeHost {
                                 awaitCancellation()
                             }
                         }
-                        val itchItems by produceState<List<LibraryItem>>(emptyList(), itch.games, itch.installed, itch.revision, itchEnabled) {
-                            value = withContext(Dispatchers.IO) { StoreSessions.items(context, LudashiStore.ITCH, itch) }
+                        val itchItems by produceState<List<LibraryItem>>(emptyList(), itch.games, itch.installed, itch.revision, itchEnabled, showUninstalled.value) {
+                            value = withContext(Dispatchers.IO) { StoreSessions.items(context, LudashiStore.ITCH, itch, mainLibraryOnly = !showUninstalled.value) }
                         }
                         val enabled = SteamSettings.enabled(context)
                         val steamFilterAvailable = steamLibraryFilterAvailable(enabled, steam.signedIn, steam.savedAccount)

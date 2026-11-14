@@ -24,7 +24,7 @@ internal object ItchApi {
         StoreVault.save(context, LudashiStore.ITCH, JSONObject().put("apiKey", clean).put("account", user.getLong("id").toString()).put("username", user.optString("username")))
     }
     fun games(rows: JSONArray): List<StoreGame> = (0 until rows.length()).mapNotNull { index ->
-        val row = rows.getJSONObject(index)
+        val row = rows.optJSONObject(index) ?: return@mapNotNull null
         val game = row.optJSONObject("game") ?: return@mapNotNull null
         val url = game.optString("url")
         val canonical = runCatching { ItchConnector.gameUrl(url) }.getOrNull() ?: return@mapNotNull null
@@ -53,12 +53,22 @@ internal object ItchApi {
     }
     fun ownedRows(body: JSONObject): JSONArray {
         val source = body.optJSONObject("data") ?: body
-        for (name in listOf("ownedKeys", "owned_keys")) {
-            if (!source.has(name) || source.isNull(name)) continue
-            return source.optJSONArray(name) ?: error("itch.io returned invalid download keys. Please retry.")
-        }
-        check(!source.has("error") && (source.optJSONArray("errors")?.length() ?: 0) == 0) {
+        for (envelope in listOf(body, source)) check(!envelope.has("error") && (envelope.optJSONArray("errors")?.length() ?: 0) == 0) {
             "itch.io rejected the library request. Check your API key."
+        }
+        val names = listOf("owned_keys", "ownedKeys")
+        // Prefer either valid array before interpreting an alternate field.
+        for (name in names) source.optJSONArray(name)?.let { return it }
+        for (name in names) {
+            if (!source.has(name) || source.isNull(name)) continue
+            val keyed = source.optJSONObject(name)
+                ?: error("itch.io returned invalid download keys. Please retry.")
+            if (keyed.length() == 0) return JSONArray()
+            val keys = keyed.keys().asSequence().toList()
+            check(keys.all { key -> key.toLongOrNull() != null && keyed.optJSONObject(key)?.optJSONObject("game") != null }) {
+                "itch.io returned invalid download keys. Please retry."
+            }
+            return JSONArray().apply { keys.sortedBy { it.toLong() }.forEach { put(keyed.getJSONObject(it)) } }
         }
         return JSONArray()
     }

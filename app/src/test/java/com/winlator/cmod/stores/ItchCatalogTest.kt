@@ -10,6 +10,18 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [28])
 class ItchCatalogTest {
+    @Test fun acceptsEmptyObjectsKeyedRowsAndAlternateArrayWithoutDroppingGames() {
+        assertEquals(0, ItchApi.ownedRows(JSONObject("""{"ownedKeys":{}}""")).length())
+        val game = """{"id":42,"title":"Game","url":"https://author.itch.io/game"}"""
+        val row = """{"id":99,"game":$game}"""
+        val keyed = ItchApi.ownedRows(JSONObject("""{"data":{"owned_keys":{"3":$row}}}"""))
+        assertEquals("Game", ItchApi.games(keyed).single().title)
+        assertEquals("99", ItchApi.games(keyed).single().metadata.getString("downloadKey"))
+        val alternate = ItchApi.ownedRows(JSONObject("""{"owned_keys":{},"ownedKeys":[$row]}"""))
+        assertEquals(1, alternate.length())
+        assertThrows(IllegalStateException::class.java) { ItchApi.ownedRows(JSONObject("""{"owned_keys":{"unexpected":true}}""")) }
+        assertThrows(IllegalStateException::class.java) { ItchApi.ownedRows(JSONObject("""{"error":"expired","owned_keys":[]}""")) }
+    }
     @Test fun emptyOwnedKeysIsAValidAccountWithoutPurchasedGames() {
         assertEquals(0, ItchApi.ownedRows(JSONObject("""{"page":1,"perPage":500,"ownedKeys":null}""")).length())
         assertEquals(0, ItchApi.ownedRows(JSONObject("""{"page":1,"owned_keys":[]}""")).length())

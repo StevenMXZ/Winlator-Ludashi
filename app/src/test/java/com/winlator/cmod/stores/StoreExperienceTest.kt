@@ -16,6 +16,14 @@ import com.winlator.cmod.ui.bindOverlayOwners
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [28])
 class StoreExperienceTest {
+    @Test fun itchRefreshKeepsManualLibrarySelectionWhenOwnedMetadataIsRefreshed() {
+        val previous = StoreGame(LudashiStore.ITCH, "https://author.itch.io/game", "Old", metadata = JSONObject().put("custom", true))
+        val owned = previous.copy(title = "Updated", metadata = JSONObject().put("owned", true))
+        val refreshed = StoreSessions.libraryResult(listOf(owned), listOf(previous)).single()
+        assertEquals("Updated", refreshed.title)
+        assertTrue(refreshed.metadata.getBoolean("custom"))
+        assertTrue(refreshed.metadata.getBoolean("owned"))
+    }
     @Test fun savesAndUninstallOverlaysHaveTheirOwnActivityOwners() {
         val controller = org.robolectric.Robolectric.buildActivity(androidx.activity.ComponentActivity::class.java).setup()
         try {

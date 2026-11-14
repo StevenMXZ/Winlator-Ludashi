@@ -29,6 +29,7 @@ class GogDownloadService : Service() {
         if (gameId == null || installer == null || containerId <= 0) { stopSelf(); return START_NOT_STICKY }
         if (!stopped.compareAndSet(false, true)) return START_NOT_STICKY
         startForeground(311, com.winlator.cmod.stores.DownloadNotifications.build(this, "gog-downloads", "GOG", getString(R.string.gog_preparing)))
+        GogLibrary.cancelRequested = false
         GogLibrary.cancelled = false
         GogLibrary.mutable.update { it.copy(busy = true, cancellable = true, activeId = gameId, stage = getString(R.string.gog_preparing), error = "", done = 0, total = 0, speed = 0) }
         GogLibrary.worker.execute {
@@ -38,7 +39,7 @@ class GogDownloadService : Service() {
                 val paused = GogLibrary.cancelled || com.winlator.cmod.stores.StoreSessions.paused
                 val message = if (paused) "" else error.message ?: "GOG installation failed"
                 val game = state.games.find { it.id == gameId } ?: state.transfers[gameId]?.let { runCatching { GogGame.parse(it) }.getOrNull() }
-                if (game != null) runCatching { GogTransfers.save(this, game, if (paused) "paused" else "failed", state.done, state.total, containerId, installer, message) }
+                if (game != null) runCatching { GogTransfers.save(this, game, if (paused) { if (GogLibrary.cancelRequested) "cancelled" else "paused" } else "failed", state.done, state.total, containerId, installer, message) }
                 GogLibrary.mutable.update { it.copy(error = message) }
             }
             finally {
@@ -80,6 +81,14 @@ class GogDownloadService : Service() {
             val temporary = File(downloads, "$name.pending")
             GogLibrary.mutable.update { it.copy(stage = getString(R.string.gog_downloading)) }
             val integrity = GogApi.integrity(this, link)
+            if (temporary.isFile && GogApi.verifyFile(temporary, integrity)) {
+                check(temporary.renameTo(target)) { "Cannot finalize GOG installer" }
+            }
+            if (target.isFile) {
+                val valid = GogApi.verifyFile(target, integrity)
+                if (valid) { files.add(target); completed += target.length(); continue }
+                check(target.delete()) { "Cannot replace an invalid GOG installer" }
+            }
             GogApi.download(address, temporary, integrity,
                 { GogLibrary.cancelled }, { done, actualSize ->
                     pacer.pace(completed + done) { check(!GogLibrary.cancelled && !com.winlator.cmod.stores.StoreSessions.paused) { "Download paused" } }

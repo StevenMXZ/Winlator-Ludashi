@@ -154,6 +154,7 @@ internal object GogApi {
     }
     fun download(url: String, file: File, integrity: Integrity, cancelled: () -> Boolean, progress: (Long, Long) -> Unit) {
         var address = url
+        val offset = file.length()
         var connection: HttpURLConnection? = null
         try {
             for (redirect in 0..8) {
@@ -165,25 +166,56 @@ internal object GogApi {
                 current.instanceFollowRedirects = false
                 current.connectTimeout = 15_000; current.readTimeout = 30_000
                 current.setRequestProperty("Accept-Encoding", "identity")
+                if (offset > 0) current.setRequestProperty("Range", "bytes=$offset-")
                 if (current.responseCode in listOf(301, 302, 303, 307, 308)) {
                     address = URL(target, current.getHeaderField("Location") ?: error("Missing download redirect")).toString()
                     connections.remove(current); current.disconnect()
                     continue
                 }
-                check(current.responseCode == 200) { "GOG download failed (HTTP ${current.responseCode})" }
-                val length = verifiedLength(current.contentLengthLong, integrity)
-                current.inputStream.use { receive(it, file, length, integrity.md5, cancelled) { done -> progress(done, length) } }
+                val resume = offset > 0 && current.responseCode == 206
+                check(current.responseCode == 200 || resume) { "GOG download failed (HTTP ${current.responseCode})" }
+                val length = if (resume) {
+                    val range = Regex("bytes ([0-9]+)-([0-9]+)/([0-9]+)").matchEntire(current.getHeaderField("Content-Range").orEmpty())
+                        ?: error("Invalid GOG download range")
+                    check(range.groupValues[1].toLong() == offset) { "Invalid GOG download offset" }
+                    verifiedLength(range.groupValues[3].toLong(), integrity)
+                } else verifiedLength(current.contentLengthLong, integrity)
+                current.inputStream.use { receive(it, file, length, integrity.md5, cancelled, { done -> progress(done, length) }, if (resume) offset else 0) }
                 return
             }
             error("Too many GOG download redirects")
-        } catch (error: Exception) { file.delete(); throw error }
+        } catch (error: Exception) { if (!cancelled() || file.length() == 0L) file.delete(); throw error }
         finally { connection?.let { connections.remove(it); it.disconnect() } }
     }
-    fun receive(input: java.io.InputStream, file: File, expected: Long, md5: String?, cancelled: () -> Boolean, progress: (Long) -> Unit) {
+    fun verifyFile(file: File, integrity: Integrity): Boolean {
+        if (integrity.size <= 0 || file.length() != integrity.size || integrity.md5.isNullOrBlank()) return false
         val digest = MessageDigest.getInstance("MD5")
-        var received = 0L
+        file.inputStream().use { input ->
+            val buffer = ByteArray(256 * 1024)
+            while (true) {
+                check(!GogLibrary.cancelled) { "Download paused" }
+                val count = input.read(buffer); if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }.equals(integrity.md5, true)
+    }
+    fun receive(input: java.io.InputStream, file: File, expected: Long, md5: String?, cancelled: () -> Boolean, progress: (Long) -> Unit, offset: Long = 0) {
+        val digest = MessageDigest.getInstance("MD5")
+        var received = offset
         try {
-            file.outputStream().use { output ->
+            if (offset > 0) {
+                check(file.length() == offset) { "GOG partial file changed" }
+                file.inputStream().use { retained ->
+                    val buffer = ByteArray(256 * 1024)
+                    while (true) {
+                        check(!cancelled()) { "Download paused" }
+                        val count = retained.read(buffer); if (count < 0) break
+                        digest.update(buffer, 0, count)
+                    }
+                }
+            }
+            java.io.FileOutputStream(file, offset > 0).use { output ->
                 val buffer = ByteArray(256 * 1024)
                 while (true) {
                     check(!cancelled()) { "Download paused" }
@@ -197,7 +229,7 @@ internal object GogApi {
             }
             check(expected <= 0 || received == expected) { "Incomplete GOG download. Please retry." }
             if (!md5.isNullOrBlank()) check(digest.digest().joinToString("") { "%02x".format(it) }.equals(md5, true)) { "GOG download checksum did not match" }
-        } catch (error: Exception) { file.delete(); throw error }
+        } catch (error: Exception) { if (!cancelled() || file.length() == 0L) file.delete(); throw error }
     }
 
 }

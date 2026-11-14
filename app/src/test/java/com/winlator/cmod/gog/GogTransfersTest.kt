@@ -32,4 +32,18 @@ class GogTransfersTest {
         assertEquals("network", restored.getValue(game.id).getString("error"))
     }
 
+    @Test fun removesCancelledDownloadFilesAndHistoryWithoutRemovingInstalledRecord() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val id = "45678"
+        val folder = java.io.File(com.winlator.cmod.stores.StoreDownloadPreferences.folder(context, "gog"), id)
+        folder.mkdirs(); folder.resolve("part.pending").writeText("partial")
+        val installed = java.io.File(context.filesDir, "gog-installed/$id.json").apply { parentFile.mkdirs(); writeText("installed") }
+        try {
+            GogTransfers.save(context, GogGame(id, "Game", ""), "cancelled", 7, 10, 1, "{}")
+            GogTransfers.remove(context, id)
+            assertFalse(folder.exists())
+            assertFalse(GogTransfers.load(context).containsKey(id))
+            assertTrue(installed.isFile)
+        } finally { folder.deleteRecursively(); installed.delete() }
+    }
 }

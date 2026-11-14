@@ -133,8 +133,11 @@ object StoreSessions {
         atomicStoreFile(cache(context, store) ?: error("Store account is missing"), JSONArray().apply { games.forEach { put(it.json()) } }.toString())
         state(store).update { it.copy(games = games, signedIn = true, loading = false) }
     }
-    internal fun libraryResult(loaded: List<StoreGame>, previous: List<StoreGame>) =
-        (loaded + previous.filter { loaded.isEmpty() || it.metadata.optBoolean("custom") }).distinctBy { it.id }
+    internal fun libraryResult(loaded: List<StoreGame>, previous: List<StoreGame>): List<StoreGame> {
+        val added = previous.filter { it.metadata.optBoolean("custom") }.map { it.id }.toSet()
+        return (loaded.map { game -> if (game.id in added) game.copy(metadata = JSONObject(game.metadata.toString()).put("custom", true)) else game } +
+            previous.filter { loaded.isEmpty() || it.id in added }).distinctBy { it.id }
+    }
     fun signOut(context: Context, store: LudashiStore) {
         if (state(store).value.busy) return
         cancel(store)
@@ -168,7 +171,7 @@ object StoreSessions {
     internal fun allGames(snapshot: StoreSnapshot): List<StoreGame> =
         (snapshot.games + snapshot.installed.values.mapNotNull { runCatching { StoreGame.parse(it.getJSONObject("game")) }.getOrNull() }).distinctBy { it.id }
     private val badges = ConcurrentHashMap<LudashiStore, android.graphics.Bitmap>()
-    internal fun items(context: Context, store: LudashiStore, snapshot: StoreSnapshot): List<LibraryItem> {
+    internal fun items(context: Context, store: LudashiStore, snapshot: StoreSnapshot, mainLibraryOnly: Boolean = false): List<LibraryItem> {
         if (!store.enabled(context)) return emptyList()
         val fallback = badges.computeIfAbsent(store) {
             android.graphics.Bitmap.createBitmap(64, 64, android.graphics.Bitmap.Config.ARGB_8888).also { bitmap ->
@@ -177,7 +180,7 @@ object StoreSessions {
         }
         val prefs = context.getSharedPreferences("ludashi-store-games", 0)
         val artNames = File(context.cacheDir, "${store.id}-art").list()?.toSet().orEmpty()
-        return allGames(snapshot).map { game ->
+        return allGames(snapshot).filter { !mainLibraryOnly || it.key in snapshot.installed || it.metadata.optBoolean("custom") }.map { game ->
             val record = snapshot.installed[game.key]
             val art = File(context.cacheDir, "${store.id}-art/${game.key}.jpg").takeIf { "${game.key}.jpg" in artNames }
             LibraryItem("${store.id}-${game.key}", game.uri, game.title, "${store.title} · " + if (record != null) "Installed" else "Not installed",

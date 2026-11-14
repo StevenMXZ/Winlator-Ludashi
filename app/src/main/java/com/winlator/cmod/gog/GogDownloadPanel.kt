@@ -14,10 +14,16 @@ import com.bumptech.glide.Glide
 import com.winlator.cmod.R
 import com.winlator.cmod.ui.uiStr
 import org.json.JSONObject
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.io.File
 
 @Composable internal fun GogDownloadPanel(state: GogState, transfer: JSONObject? = null, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var deleting by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf("") }
     val record = transfer ?: state.transfers[state.activeId]
     if (record == null || transfer == null && !state.busy) return
     val id = record.optString("id")
@@ -25,6 +31,7 @@ import java.io.File
     val status = if (active) state.stage else uiStr(when (record.optString("status")) {
         "completed" -> R.string.store_download_complete
         "failed" -> R.string.store_download_failed
+        "cancelled" -> R.string.gog_download_cancelled
         else -> R.string.store_download_paused
     })
     OutlinedCard(modifier.fillMaxWidth()) {
@@ -34,11 +41,23 @@ import java.io.File
                 AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
                     update = { Glide.with(it).load(art ?: record.optString("image")).error(R.drawable.ic_gog).into(it) }, onRelease = { Glide.with(it.context.applicationContext).clear(it) }, modifier = Modifier.size(54.dp))
                 Column(Modifier.weight(1f)) { Text(record.optString("title"), style = MaterialTheme.typography.titleSmall); Text(status, style = MaterialTheme.typography.bodySmall) }
-                if (active) TextButton(enabled = state.cancellable, onClick = { GogLibrary.cancelled = true; GogApi.cancelWork() }) { Text(uiStr(R.string.cancel)) }
+                if (active) Column {
+                    TextButton(enabled = state.cancellable, onClick = { GogLibrary.cancelled = true; GogApi.cancelWork() }) { Text(uiStr(R.string.gog_pause_download)) }
+                    TextButton(enabled = state.cancellable, onClick = { GogLibrary.cancelRequested = true; GogLibrary.cancelled = true; GogApi.cancelWork() }) { Text(uiStr(R.string.cancel)) }
+                }
                 else if (record.optString("status") != "completed" && state.signedIn && !state.busy) TextButton(onClick = {
                     context.startForegroundService(Intent(context, GogDownloadService::class.java).putExtra("game", id).putExtra("container", record.optInt("container")).putExtra("installer", record.optString("installer")))
-                }) { Text(uiStr(R.string.store_retry_download)) }
+                }) { Text(uiStr(if (record.optString("status") == "paused") R.string.gog_resume_download else R.string.store_retry_download)) }
             }
+            if (!active && record.optString("status") != "completed") TextButton(enabled = !state.busy && !deleting, onClick = {
+                deleting = true; deleteError = ""
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { runCatching { GogLibrary.worker.submit { GogTransfers.remove(context.applicationContext, id) }.get() } }
+                    result.onFailure { deleteError = it.message.orEmpty() }
+                    deleting = false
+                }
+            }) { Text(uiStr(R.string.gog_delete_download), color = MaterialTheme.colorScheme.error) }
+            if (deleteError.isNotBlank()) Text(deleteError, color = MaterialTheme.colorScheme.error)
             val done = if (active) state.done else record.optLong("done")
             val total = if (active) state.total else record.optLong("total")
             if (active) { if (total > 0) LinearProgressIndicator(progress = { (done.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth()) else LinearProgressIndicator(Modifier.fillMaxWidth()) }
