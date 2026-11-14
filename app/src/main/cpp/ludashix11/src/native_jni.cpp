@@ -245,6 +245,10 @@ extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(nativeHasWindow)(JNIEnv*, jclass,
     auto lock = server->Lock(); return findHandle(server->GetWindowManager().GetRootWindow(), hwnd);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(nativeStartupContent)(JNIEnv*, jclass, jlong handle) {
+    auto server = session(handle); if (!server) return JNI_FALSE;
+    return static_cast<xorg::NativeScreen&>(server->GetScreen()).HasStartupContent() ? JNI_TRUE : JNI_FALSE;
+}
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeHudEnabled)(JNIEnv*, jclass, jlong handle, jboolean enabled) {
     auto server = session(handle); if (!server) return;
     auto lock = server->Lock();

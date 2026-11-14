@@ -145,6 +145,38 @@ int main(int argc, char** argv) {
     xorg::XServer server(nullptr, xorg::ScreenInfo(1280, 720, 4), false, config);
     std::unique_ptr<xorg::NativeDisplayXBridge> displayX;
     if (std::getenv("LUDASHI_HOST_DISPLAYX")) displayX = std::make_unique<xorg::NativeDisplayXBridge>(server);
+    if (std::string(argv[1]) == "--startup-content") {
+        int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+        xorg::XClient client(server, sockets[0]);
+        auto lock = server.Lock();
+        auto& wm = server.GetWindowManager();
+        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
+        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
+                                      0, InputOutput, 24, 0, nullptr);
+        const auto atom = xorg::Atom::Intern("WM_HINTS");
+        std::vector<u8> hints(9 * sizeof(u32));
+        u32 group = window->id;
+        memcpy(hints.data() + 8 * sizeof(u32), &group, sizeof(group));
+        window->ModifyProperty(atom, atom, 32, 0, hints);
+        wm.MapWindow(&client, window.get());
+        assert(!screen.HasStartupContent()); // Mapping alone is not Java's content signal.
+        wm.UnmapWindow(window.get());
+        static_cast<xorg::NativeDrawable*>(window->GetDrawable())->PublishContent();
+        screen.PostInvalidate();
+        assert(!screen.HasStartupContent()); // Unmapped content cannot end startup.
+        group = 0; memcpy(hints.data() + 8 * sizeof(u32), &group, sizeof(group));
+        window->ModifyProperty(atom, atom, 32, 0, hints);
+        wm.MapWindow(&client, window.get());
+        assert(!screen.HasStartupContent()); // Helper windows are not applicationWindow.
+        group = window->id; memcpy(hints.data() + 8 * sizeof(u32), &group, sizeof(group));
+        window->ModifyProperty(atom, atom, 32, 0, hints);
+        screen.WindowPropertyChanged(window.get(), atom);
+        assert(screen.HasStartupContent()); // Late WM_HINTS must also be recognized.
+        wm.UnmapWindow(window.get());
+        assert(screen.HasStartupContent()); // Startup completion is latched.
+        std::cout << "mapped application content and late WM_HINTS startup passed" << std::endl;
+        return 0;
+    }
     if (std::string(argv[1]) == "--window-map-listener") {
         int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
         xorg::XClient client(server, sockets[0]);

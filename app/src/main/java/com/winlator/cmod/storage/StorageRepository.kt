@@ -20,8 +20,8 @@ internal object StorageRepository {
     private fun targets(context: Context): List<StorageTarget> {
         val files = context.filesDir
         val result = mutableListOf<StorageTarget>()
-        fun node(file: File, category: StorageCategory, title: String, source: String = "", id: String = "", removable: Boolean = false) {
-            if (file.exists() && !Files.isSymbolicLink(file.toPath())) result.add(StorageTarget(file.canonicalFile, category, title, source, id, removable))
+        fun node(file: File, category: StorageCategory, title: String, source: String = "", id: String = "", removable: Boolean = false, artwork: String = "") {
+            if (file.exists() && !Files.isSymbolicLink(file.toPath())) result.add(StorageTarget(file.canonicalFile, category, title, source, id, removable, artwork))
         }
         caches(context).forEach { node(it, StorageCategory.CACHE, it.name, "cache", removable = true) }
         val manager = com.winlator.cmod.contents.ContentsManager(context).apply { syncContents() }
@@ -50,7 +50,7 @@ internal object StorageRepository {
                 val dir = SteamStorage.directory(context, data)
                 val root = SteamStorage.installationRoot(context, data)
                 require(dir.toPath().startsWith(root.toPath()) && dir != root && dir.parentFile == root)
-                node(dir, StorageCategory.GAMES, data.optJSONObject("common")?.optString("name").orEmpty().ifBlank { dir.name }, "steam", id.toString(), true)
+                node(dir, StorageCategory.GAMES, data.optJSONObject("common")?.optString("name").orEmpty().ifBlank { dir.name }, "steam", id.toString(), true, "https://shared.steamstatic.com/store_item_assets/steam/apps/$id/header.jpg")
             }
         }
         val prefs = context.getSharedPreferences("steam-settings", 0)
@@ -69,7 +69,7 @@ internal object StorageRepository {
             val container = containers.find { it.id == data.optInt("container") } ?: continue
             val expected = File(container.rootDir, ".wine/drive_c/GOG Games/Ludashi-$id")
             if (id.toLongOrNull()?.let { it > 0 } == true && File(data.optString("path")).canonicalFile == expected.canonicalFile)
-                node(expected, StorageCategory.GAMES, data.optString("title").ifBlank { "GOG-$id" }, "gog", id, true)
+                node(expected, StorageCategory.GAMES, data.optString("title").ifBlank { "GOG-$id" }, "gog", id, true, File(context.cacheDir, "gog-art/$id.jpg").takeIf { it.isFile }?.path ?: runCatching { GogGame.imageUrl(data.optString("image")) }.getOrDefault(""))
         }
         val store = LudashiStore.ITCH
         for (record in records(File(files, "ludashi-stores/itch/installed"))) {
@@ -79,7 +79,7 @@ internal object StorageRepository {
                 val container = containers.find { it.id == data.optInt("container") } ?: return@runCatching
                 val expected = File(container.rootDir, ".wine/drive_c/Ludashi Games/itch-${game.key}")
                 if (game.store == store && File(data.optString("path")).canonicalFile == expected.canonicalFile)
-                    node(expected, StorageCategory.GAMES, game.title, "itch", game.key, true)
+                    node(expected, StorageCategory.GAMES, game.title, "itch", game.key, true, game.image.ifBlank { File(context.cacheDir, "itch-art/${game.key}.jpg").path })
             }
         }
         node(File(files, "store-transfers"), StorageCategory.DOWNLOADS, "itch.io")

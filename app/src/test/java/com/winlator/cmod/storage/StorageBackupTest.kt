@@ -55,6 +55,27 @@ class StorageBackupTest {
             assertTrue(stage.resolve("0/Presets/preset.wbp").isFile)
         } finally { source.deleteRecursively(); stage.deleteRecursively() }
     }
+    @Test fun selectedPublicCategoriesExcludeUnselectedData() {
+        val source = Files.createTempDirectory("ludashi-selective").toFile()
+        val stage = Files.createTempDirectory("ludashi-restore").toFile()
+        try {
+            listOf("Components/runtime.so", "Saves/game.zip", "Games/game.exe", "Presets/input.wbp", "Containers/registry").forEach {
+                source.resolve(it).apply { parentFile.mkdirs(); writeText("data") }
+            }
+            val meta = manifest("public")
+            meta.getJSONArray("roots").getJSONObject(0).put("parts", JSONArray().put("SAVES").put("SETTINGS"))
+            val bytes = ByteArrayOutputStream().use { out ->
+                StorageBackup.write(out, listOf(meta.getJSONArray("roots").getJSONObject(0) to source), meta)
+                out.toByteArray()
+            }
+            parse(bytes, stage)
+            assertTrue(stage.resolve("0/Saves/game.zip").isFile)
+            assertTrue(stage.resolve("0/Presets/input.wbp").isFile)
+            assertFalse(stage.resolve("0/Games").exists())
+            assertFalse(stage.resolve("0/Components").exists())
+            assertFalse(stage.resolve("0/Containers").exists())
+        } finally { source.deleteRecursively(); stage.deleteRecursively() }
+    }
     @Test fun backupNeverIncludesItsOwnOutputEvenWithACustomFilename() {
         val source = Files.createTempDirectory("ludashi-backup-output").toFile()
         val stage = Files.createTempDirectory("ludashi-restore").toFile()

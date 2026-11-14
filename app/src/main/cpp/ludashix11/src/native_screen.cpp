@@ -135,6 +135,7 @@ void NativeScreen::SetUnviewableWMClasses(std::vector<std::string> classes) {
 }
 void NativeScreen::WindowPropertyChanged(Window* window, u32 atom) {
     if (!unviewableWMClasses.empty() && atom == u32(Atom::GetID("WM_CLASS"))) PostInvalidate();
+    if (!startupContent.load(std::memory_order_relaxed) && atom == u32(Atom::GetID("WM_HINTS"))) PostInvalidate();
     if (!hudEnabled || !window) return;
     // Java's HUD binds its FPS source as soon as Wine/Mesa publishes a
     // _MESA_DRV property, not when the compositor happens to draw a frame.
@@ -209,6 +210,16 @@ void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
         }
         if (external != externalFrames.end()) d = external->second.frame->drawable;
         if (i != direct.end() || external != externalFrames.end() || d->HasContent()) {
+            // Java closes startup on content from a mapped applicationWindow:
+            // WM_HINTS.window_group must name that window, not a helper window.
+            if (!startupContent.load(std::memory_order_relaxed)) {
+                const auto atom = Atom::GetID("WM_HINTS");
+                const auto* hints = atom >= 0 ? w->GetProperty(atom) : nullptr;
+                u32 group{};
+                if (hints && hints->format == 32 && hints->GetData().size() >= 9 * sizeof(u32))
+                    memcpy(&group, hints->GetData().data() + 8 * sizeof(u32), sizeof(group));
+                if (group == w->id) startupContent.store(true, std::memory_order_relaxed);
+            }
             const auto& rect = w->GetInRect();
             // Vulkan window quads force useTexAlpha=0, including depth-32 images.
             // Match that opacity when discarding fully covered layers.

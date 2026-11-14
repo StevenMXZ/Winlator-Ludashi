@@ -64,6 +64,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     };
     private Runnable readyCallback;
     private boolean ready;
+    private long startupDeadline;
     private boolean started;
     private final boolean highRefreshRate;
     private final DisplayManager displayManager;
@@ -132,9 +133,14 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
                     android.util.Log.e("LudashiX11", error);
                     android.widget.Toast.makeText(getContext(), "Native X11: " + error,
                             android.widget.Toast.LENGTH_LONG).show();
+                    ready = true;
+                    if (readyCallback != null) readyCallback.run();
                     return;
                 }
-                if (started) {
+                boolean applicationContent = started && nativeStartupContent(handle);
+                boolean timedOut = started && android.os.SystemClock.uptimeMillis() >= startupDeadline;
+                if (applicationContent || timedOut) {
+                    if (!applicationContent) android.util.Log.w("LudashiX11", "Opening display after startup fallback: no mapped application content signal");
                     ready = true;
                     if (readyCallback != null) readyCallback.run();
                     return;
@@ -243,6 +249,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         if (parent != null && !parent.isDirectory() && !parent.mkdirs())
             throw new IllegalStateException("Cannot create native X11 socket directory");
         nativeStart(handle, socket, shm);
+        startupDeadline = android.os.SystemClock.uptimeMillis() + 15000L;
         started = true;
         post(startupCheck);
     }
@@ -464,6 +471,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
             float sharpness, boolean frameGen, String cachePath, int multiplier, int targetRate,
             int flowScale, float refreshRate, int engine);
     private static native long[] nativeVisualState(long handle);
+    private static native boolean nativeStartupContent(long handle);
     private static native void nativeHudEnabled(long handle, boolean enabled);
     private static native String[] nativeHudSnapshot(long handle);
     private static native long nativeCreate(int width, int height, boolean validationEnabled,

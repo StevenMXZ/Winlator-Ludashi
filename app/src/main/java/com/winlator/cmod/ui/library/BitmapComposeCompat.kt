@@ -98,6 +98,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
+internal val LocalShowUninstalled = androidx.compose.runtime.compositionLocalOf<MutableState<Boolean>> { error("Library filter state missing") }
+
 internal fun Bitmap.asImageBitmap(): ImageBitmap = this.composeAsImageBitmap()
 
 @Composable
@@ -388,6 +390,7 @@ private fun LibraryStoreLabel(item: LibraryItem, onArtwork: Boolean) {
 private fun LibraryFilters(filter: LibraryFilter, select: (LibraryFilter) -> Unit, mask: Int, stores: (Int) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val showUninstalled = LocalShowUninstalled.current
     Row(Modifier.padding(vertical = 12.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         listOf(LibraryFilter.All, LibraryFilter.Favorites, LibraryFilter.Recent).forEach { option ->
             LibraryFilterChip(option.name, option == filter) { select(option) }
@@ -402,6 +405,12 @@ private fun LibraryFilters(filter: LibraryFilter, select: (LibraryFilter) -> Uni
                 listOf(1 to uiStr(R.string.gog_local_games), 2 to "Steam", 4 to "GOG", 8 to "itch.io").forEach { (bit, name) ->
                     DropdownMenuItem(text = { Text(name) }, leadingIcon = { Checkbox(mask and bit != 0, null) }, onClick = { stores(mask xor bit) })
                 }
+                androidx.compose.material3.HorizontalDivider()
+                DropdownMenuItem(text = { Text(uiStr(R.string.library_show_uninstalled)) },
+                    leadingIcon = { Checkbox(showUninstalled.value, null) }, onClick = {
+                        showUninstalled.value = !showUninstalled.value
+                        context.getSharedPreferences("library_compose_state", 0).edit().putBoolean("show-uninstalled", showUninstalled.value).apply()
+                    })
                 DropdownMenuItem(text = { Text(uiStr(R.string.gog_manage_stores)) }, onClick = {
                     expanded = false; context.startActivity(Intent(context, com.winlator.cmod.steam.StoresActivity::class.java))
                 })

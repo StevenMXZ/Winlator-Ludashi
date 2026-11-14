@@ -20,7 +20,15 @@ import java.nio.file.attribute.PosixFilePermissions
 import java.util.UUID
 import java.security.MessageDigest
 
+internal enum class BackupPart { COMPONENTS, GAMES, SAVES, SETTINGS }
+
 internal object StorageBackup {
+    internal fun publicPart(name: String): BackupPart = when (name.lowercase()) {
+        "saves" -> BackupPart.SAVES
+        "components", "contents", "drivers", "proton", "box64", "fexcore", "dxvk", "vkd3d", "wine" -> BackupPart.COMPONENTS
+        "shortcuts", "presets", "inputcontrols", "input controls", "profiles", "themes", "settings" -> BackupPart.SETTINGS
+        else -> BackupPart.GAMES
+    }
     private val privateRoots = setOf("contents", "opengl-bundled-v1", "gog-installed", "ludashi-stores/itch/installed", "ludashi-stores/itch/libraries")
     private val preferenceNames = listOf("steam-settings", "store-download-options", "contents_manager_prefs")
     internal fun publicRoot(context: Context): File {
@@ -39,20 +47,24 @@ internal object StorageBackup {
             }) }
         }
     }
-    private fun roots(context: Context, check: () -> Unit): List<Pair<JSONObject, File>> {
+    private fun roots(context: Context, parts: Set<BackupPart>, check: () -> Unit): List<Pair<JSONObject, File>> {
         val roots = mutableListOf<Pair<JSONObject, File>>()
         fun add(kind: String, path: String, file: File, container: Int = 0) {
             if (file.exists() && !Files.isSymbolicLink(file.toPath())) roots += JSONObject().put("kind", kind).put("path", path).put("container", container).put("original", file.canonicalPath) to file.canonicalFile
         }
-        privateRoots.forEach { add("files", it, File(context.filesDir, it)) }
-        File(context.filesDir, "steam-library").listFiles().orEmpty().filter { it.isFile && it.extension == "json" }.forEach { add("steam-record", it.name, it) }
+        privateRoots.forEach {
+            val part = if (it in setOf("contents", "opengl-bundled-v1")) BackupPart.COMPONENTS else BackupPart.GAMES
+            if (part in parts) add("files", it, File(context.filesDir, it))
+        }
+        if (BackupPart.GAMES in parts) File(context.filesDir, "steam-library").listFiles().orEmpty().filter { it.isFile && it.extension == "json" }.forEach { add("steam-record", it.name, it) }
         add("public", "", publicRoot(context))
-        ProtonPackageManager.getInstalledIdentifiers(context).forEach { add("proton", it, ProtonPackageManager.getInstallDir(context, it)) }
+        roots.lastOrNull { it.first.getString("kind") == "public" }?.first?.put("parts", JSONArray(parts.map { it.name }))
+        if (BackupPart.COMPONENTS in parts) ProtonPackageManager.getInstalledIdentifiers(context).forEach { add("proton", it, ProtonPackageManager.getInstallDir(context, it)) }
         val manager = ContainerManager(context)
-        manager.containers.forEach { c ->
+        if (BackupPart.SAVES in parts) manager.containers.forEach { c ->
             add("saves", "", File(c.rootDir, ".wine/drive_c/users/${ImageFs.USER}"), c.id)
         }
-        val snapshot = StorageRepository.scan(context, check)
+        val snapshot = if (BackupPart.GAMES in parts) StorageRepository.scan(context, check) else StorageSnapshot(emptyList())
         snapshot.entries.filter { it.target.category == StorageCategory.GAMES }.forEach { entry ->
             val file = entry.target.file.canonicalFile
             if (file.toPath().startsWith(publicRoot(context).toPath())) return@forEach
@@ -69,9 +81,10 @@ internal object StorageBackup {
         check(!StorageRepository.busy() && ContainerSessionGate.maintain()) { "Close games and finish downloads first" }
         try { return operation() } finally { StorageRepository.cached = null; ContainerSessionGate.maintained() }
     }
-    fun backup(context: Context, uri: Uri, check: () -> Unit) = locked(context) {
-        val roots = roots(context, check)
-        val manifest = JSONObject().put("format", "ludashi-data").put("version", 1).put("roots", JSONArray(roots.map { it.first })).put("settings", settings(context))
+    fun backup(context: Context, uri: Uri, parts: Set<BackupPart> = BackupPart.entries.toSet(), check: () -> Unit) = locked(context) {
+        require(parts.isNotEmpty()) { "Choose what to back up" }
+        val roots = roots(context, parts, check)
+        val manifest = JSONObject().put("format", "ludashi-data").put("version", 1).put("roots", JSONArray(roots.map { it.first })).put("settings", if (BackupPart.SETTINGS in parts) settings(context) else JSONObject())
         context.contentResolver.openFileDescriptor(uri, "w")?.use { descriptor ->
             val destination = runCatching { File(android.system.Os.readlink("/proc/self/fd/${descriptor.fd}")).canonicalFile }.getOrNull()
             android.os.ParcelFileDescriptor.AutoCloseOutputStream(descriptor).buffered().use { stream ->
@@ -92,6 +105,10 @@ internal object StorageBackup {
                     fun excluded(path: Path): Boolean {
                         if (path.toFile().canonicalFile == destination) return true
                         val rel = root.toPath().relativize(path).toString().replace('\\', '/')
+                        if (descriptor.getString("kind") == "public" && rel.isNotEmpty()) {
+                            val parts = descriptor.optJSONArray("parts")
+                            if (parts != null && (0 until parts.length()).none { parts.getString(it) == publicPart(rel.substringBefore('/')).name }) return true
+                        }
                         return descriptor.getString("kind") == "public" && (rel.substringBefore('/').lowercase() in setOf("containers", "logs", "cache", "backups") || path.fileName.toString().startsWith("Ludashi-backup-"))
                     }
                     override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {

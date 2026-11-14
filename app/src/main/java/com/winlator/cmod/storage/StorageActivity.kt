@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -70,6 +71,9 @@ class StorageActivity : ImmersiveSteamActivity() {
         }
         BackHandler(working) {}
         BackHandler(selected != null && !working) { selected = null }
+        var chooseBackup by remember { mutableStateOf(false) }
+        var backupPartNames by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(BackupPart.entries.map { it.name }) }
+        val backupParts = backupPartNames.map { BackupPart.valueOf(it) }.toSet()
         var message by remember { mutableStateOf("") }
         var restoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
         fun archive(uri: android.net.Uri, restore: Boolean) {
@@ -80,7 +84,7 @@ class StorageActivity : ImmersiveSteamActivity() {
                     withContext(Dispatchers.IO) {
                         val job = currentCoroutineContext()
                         if (restore) StorageBackup.restore(applicationContext, uri) { job.ensureActive() }
-                        else StorageBackup.backup(applicationContext, uri) { job.ensureActive() }
+                        else StorageBackup.backup(applicationContext, uri, backupParts) { job.ensureActive() }
                     }
                     message = uiStr(if (restore) R.string.storage_restore_done else R.string.storage_backup_done)
                     SteamGames.changed()
@@ -132,7 +136,7 @@ class StorageActivity : ImmersiveSteamActivity() {
                     if (data.unreadable > 0) item { Text(uiStr(R.string.storage_unreadable), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            FilledTonalButton(enabled = !scanning && !working, modifier = Modifier.weight(1f), onClick = { backup.launch("Ludashi-backup-${java.time.LocalDate.now()}.tar") }) {
+                            FilledTonalButton(enabled = !scanning && !working, modifier = Modifier.weight(1f), onClick = { chooseBackup = true }) {
                                 Icon(Icons.Outlined.Backup, null); Spacer(Modifier.width(8.dp)); Text(uiStr(R.string.storage_backup))
                             }
                             OutlinedButton(enabled = !scanning && !working, modifier = Modifier.weight(1f), onClick = { restore.launch(arrayOf("application/x-tar", "application/octet-stream")) }) {
@@ -152,7 +156,17 @@ class StorageActivity : ImmersiveSteamActivity() {
                     items(entries, key = { it.target.file.path }) { entry ->
                         OutlinedCard(shape = RoundedCornerShape(18.dp)) {
                             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Icon(categoryIcon(category), null, tint = categoryColor(category))
+                                if (category == StorageCategory.GAMES) {
+                                    androidx.compose.ui.viewinterop.AndroidView(
+                                        factory = { android.widget.ImageView(it).apply { scaleType = android.widget.ImageView.ScaleType.CENTER_CROP } },
+                                        update = { image ->
+                                            image.contentDescription = entry.target.title
+                                            val fallback = when (entry.target.source) { "gog" -> R.drawable.ic_gog; "itch" -> R.drawable.ic_itch; else -> R.drawable.ic_steam }
+                                            com.bumptech.glide.Glide.with(image).load(entry.target.artwork.ifBlank { null })
+                                            .placeholder(fallback).error(fallback).into(image) },
+                                        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)),
+                                        onRelease = { image -> com.bumptech.glide.Glide.with(image).clear(image) })
+                                } else Icon(categoryIcon(category), null, tint = categoryColor(category))
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(entry.target.title, style = MaterialTheme.typography.titleSmall)
                                     Text(bytes(entry.bytes), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -166,6 +180,23 @@ class StorageActivity : ImmersiveSteamActivity() {
                 }
             }
         }
+        if (chooseBackup) AlertDialog(onDismissRequest = { chooseBackup = false }, title = { Text(uiStr(R.string.storage_backup)) },
+            text = { Column {
+                BackupPart.entries.forEach { part ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(part in backupParts, { checked -> backupPartNames = (if (checked) backupParts + part else backupParts - part).map { it.name } })
+                        Text(uiStr(when (part) {
+                            BackupPart.COMPONENTS -> R.string.storage_components
+                            BackupPart.GAMES -> R.string.storage_games
+                            BackupPart.SAVES -> R.string.saves
+                            BackupPart.SETTINGS -> R.string.storage_settings
+                        }))
+                    }
+                }
+            } }, confirmButton = { Button(enabled = backupParts.isNotEmpty(), onClick = {
+                chooseBackup = false; backup.launch("Ludashi-backup-${java.time.LocalDate.now()}.tar")
+            }) { Text(uiStr(R.string.storage_backup)) } },
+            dismissButton = { TextButton(onClick = { chooseBackup = false }) { Text(uiStr(R.string.cancel)) } })
         restoreUri?.let { uri ->
             AlertDialog(onDismissRequest = { restoreUri = null }, title = { Text(uiStr(R.string.storage_restore)) },
                 text = { Text(uiStr(R.string.storage_restore_confirm)) },

@@ -6,7 +6,7 @@ import java.nio.file.*
 import java.nio.file.attribute.BasicFileAttributes
 
 internal enum class StorageCategory { GAMES, COMPONENTS, CONTAINERS, DOWNLOADS, CACHE, BACKUPS, LOGS, SYSTEM, OTHER }
-internal data class StorageTarget(val file: File, val category: StorageCategory, val title: String, val source: String = "", val id: String = "", val removable: Boolean = false)
+internal data class StorageTarget(val file: File, val category: StorageCategory, val title: String, val source: String = "", val id: String = "", val removable: Boolean = false, val artwork: String = "")
 internal data class StorageEntry(val target: StorageTarget, val bytes: Long)
 internal data class StorageSnapshot(val entries: List<StorageEntry>, val unreadable: Int = 0) {
     val total get() = entries.sumOf { it.bytes }

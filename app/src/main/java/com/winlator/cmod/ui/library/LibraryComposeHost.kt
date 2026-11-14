@@ -155,12 +155,14 @@ object LibraryComposeHost {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 WinZTheme {
-                    CompositionLocalProvider(LocalArtworkMotion provides rememberArtworkMotionEnabled()) {
+                    val libraryPrefs = remember { context.getSharedPreferences("library_compose_state", 0) }
+                    val showUninstalled = remember { mutableStateOf(libraryPrefs.getBoolean("show-uninstalled", false)) }
+                    CompositionLocalProvider(LocalArtworkMotion provides rememberArtworkMotionEnabled(), LocalShowUninstalled provides showUninstalled) {
                         val steam = observeSteam()
                         val gog by GogLibrary.state.collectAsStateWithLifecycle()
                         val gogEnabled = com.winlator.cmod.gog.GogSettings.enabled(context)
-                        val gogItems by produceState<List<LibraryItem>>(emptyList(), gog.games, gog.installed, gog.revision, gogEnabled) {
-                            value = withContext(Dispatchers.IO) { GogLibrary.items(context, gog, mainLibraryOnly = true) }
+                        val gogItems by produceState<List<LibraryItem>>(emptyList(), gog.games, gog.installed, gog.revision, gogEnabled, showUninstalled.value) {
+                            value = withContext(Dispatchers.IO) { GogLibrary.items(context, gog, mainLibraryOnly = !showUninstalled.value) }
                         }
                         val itch by StoreSessions.state(LudashiStore.ITCH).collectAsStateWithLifecycle()
                         val itchEnabled = LudashiStore.ITCH.enabled(context)
@@ -182,7 +184,7 @@ object LibraryComposeHost {
                             val saved = withContext(Dispatchers.IO) { enabled && SteamCredentials.load(context) != null }
                             if (saved) context.startForegroundService(Intent(context, SteamService::class.java))
                         }
-                        val steamItems = rememberSteamLibrary(context, steam.library, enabled, mainLibraryOnly = true)
+                        val steamItems = rememberSteamLibrary(context, steam.library, enabled, mainLibraryOnly = !showUninstalled.value)
                         val merged = remember(items.value, steamItems, gogItems, gog.installed, gogEnabled, itchItems, itch.installed, itchEnabled) {
                             val knownSteam = steamItems.mapNotNull { SteamLibrary.appId(it.shortcutPath) }.toSet()
                             val gogShortcuts = if (gogEnabled) gog.installed.values.map { it.optString("shortcut") }.toSet() else emptySet()

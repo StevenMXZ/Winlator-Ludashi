@@ -663,6 +663,42 @@
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                 </LinearLayout>
+                <Switch
+                    android:id="@+id/SWRelativeMouse"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginTop="18dp"
+                    android:background="@drawable/sidebar_card"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:text="@string/ui_relative_mouse"
+                    android:tag="i18n/ui_relative_mouse"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp" />
+                <Switch
+                    android:id="@+id/SWHideCursor"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/sidebar_card"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:text="@string/ui_hide_cursor"
+                    android:tag="i18n/ui_hide_cursor"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp" />
+                <Switch
+                    android:id="@+id/SWDisableMouse"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/sidebar_card"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:text="@string/ui_disable_mouse"
+                    android:tag="i18n/ui_disable_mouse"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp" />
                 <LinearLayout
                     android:id="@+id/BTSubKeyboard"
                     android:layout_width="match_parent"
@@ -701,42 +737,6 @@
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
                 </LinearLayout>
-                <Switch
-                    android:id="@+id/SWRelativeMouse"
-                    android:layout_width="match_parent"
-                    android:layout_height="56dp"
-                    android:layout_marginTop="18dp"
-                    android:background="@drawable/sidebar_card"
-                    android:paddingStart="14dp"
-                    android:paddingEnd="14dp"
-                    android:text="@string/ui_relative_mouse"
-                    android:tag="i18n/ui_relative_mouse"
-                    android:textColor="#FFFFFF"
-                    android:textSize="15sp" />
-                <Switch
-                    android:id="@+id/SWHideCursor"
-                    android:layout_width="match_parent"
-                    android:layout_height="56dp"
-                    android:layout_marginTop="10dp"
-                    android:background="@drawable/sidebar_card"
-                    android:paddingStart="14dp"
-                    android:paddingEnd="14dp"
-                    android:text="@string/ui_hide_cursor"
-                    android:tag="i18n/ui_hide_cursor"
-                    android:textColor="#FFFFFF"
-                    android:textSize="15sp" />
-                <Switch
-                    android:id="@+id/SWDisableMouse"
-                    android:layout_width="match_parent"
-                    android:layout_height="56dp"
-                    android:layout_marginTop="10dp"
-                    android:background="@drawable/sidebar_card"
-                    android:paddingStart="14dp"
-                    android:paddingEnd="14dp"
-                    android:text="@string/ui_disable_mouse"
-                    android:tag="i18n/ui_disable_mouse"
-                    android:textColor="#FFFFFF"
-                    android:textSize="15sp" />
             </LinearLayout>
         </ScrollView>
 
