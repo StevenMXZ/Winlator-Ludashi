@@ -3029,7 +3029,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         // Refresh existing containers that may have received the CI-repacked
         // Gamescope wrapper instead of the repository's common wrapper asset.
         File graphicsRuntimeMarker = new File(rootDir,
-                "usr/lib/.winlator-graphics-runtime-c7474f7e-25b50a11-v3-stock-wrapper");
+                "usr/lib/.winlator-graphics-runtime-c7474f7e-25b50a11-v6-displayx-09585d59");
         if (firstTimeBoot || !graphicsRuntimeMarker.isFile()) {
             Log.d("XServerDisplayActivity", "Installing paired Pipetto wrapper and common graphics runtime");
             TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this, "graphics_driver/wrapper" + ".tzst",
@@ -3038,7 +3038,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this, "graphics_driver/extra_libs" + ".tzst",
                     rootDir);
             FileUtils.writeString(graphicsRuntimeMarker,
-                    "wrapper=c7474f7e;extra_libs=25b50a11;layers=9d57736d;opengl=split-v1");
+                    "wrapper=c7474f7e;extra_libs=25b50a11;layers=9d57736d;opengl=split-v1;displayx=09585d59a463d2cea86837a95551fd02ee3c6e3ed3c64d9f7cae1d7bee57c75a");
         }
 
         extractOpenGLDriver(rootDir);

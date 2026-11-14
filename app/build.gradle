@@ -166,7 +166,7 @@ android {
         // We’re preserving Winlator’s request to keep targetSdkVersion at 28
         targetSdkVersion 28
 
-        versionCode 62
+        versionCode 63
         versionName "5.0"
 
         // External native build from Winlator
