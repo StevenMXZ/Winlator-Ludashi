@@ -28,6 +28,9 @@ public class ALSAComponentTest {
         ALSAComponent.install(context, root);
         File module = new File(root, "usr/lib/alsa-lib/libasound_module_pcm_android_alsa.so");
         assertTrue(module.length() > 0);
+        File platformNamespace = new File(root, "usr/lib/libtermux-platform-ns.so");
+        assertTrue(new File(root, "usr/lib/libOpenSLES.so").length() > 0);
+        assertTrue(platformNamespace.length() > 0);
         assertFalse(oldModule.exists());
         assertArrayEquals(new byte[]{9, 8, 7}, Files.readAllBytes(graphics.toPath()));
         assertFalse(new File(root, "usr/lib/alsa-lib/displayx_layer.so").exists());
@@ -35,6 +38,9 @@ public class ALSAComponentTest {
                 "usr/etc/alsa/conf.d/android_alsa.conf").toPath()), StandardCharsets.UTF_8);
         assertTrue(config.contains("type android_alsa"));
         assertTrue(config.contains("pcm.!default"));
+        assertTrue(platformNamespace.delete());
+        ALSAComponent.install(context, root);
+        assertTrue(platformNamespace.length() > 0);
         // A missing config must be repaired even if the version marker and module remain.
         assertTrue(new File(root, "usr/etc/alsa/conf.d/android_alsa.conf").delete());
         ALSAComponent.install(context, root);

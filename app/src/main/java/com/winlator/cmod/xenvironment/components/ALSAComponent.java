@@ -11,7 +11,7 @@ import java.io.File;
 
 /** Installs the direct ALSA–Oboe plugin; no Java audio server is needed. */
 public class ALSAComponent extends EnvironmentComponent {
-    private static final String VERSION = "766a84a";
+    private static final String VERSION = "c89affae";
     private final Context context;
     private final ImageFs imageFs;
 
@@ -24,16 +24,20 @@ public class ALSAComponent extends EnvironmentComponent {
         File module = new File(root, "usr/lib/alsa-lib/libasound_module_pcm_android_alsa.so");
         File config = new File(root, "usr/etc/alsa/conf.d/android_alsa.conf");
         File baseConfig = new File(root, "usr/share/alsa/alsa.conf");
+        File openSles = new File(root, "usr/lib/libOpenSLES.so");
+        File platformNamespace = new File(root, "usr/lib/libtermux-platform-ns.so");
         File marker = new File(root, "usr/lib/alsa-lib/.alsa-oboe-version");
         if (marker.isFile() && VERSION.equals(FileUtils.readString(marker)) && module.length() > 0
-                && config.length() > 0 && baseConfig.length() > 0) return;
+                && config.length() > 0 && baseConfig.length() > 0
+                && openSles.length() > 0 && platformNamespace.length() > 0) return;
 
         // The upstream audio archive also contains an unrelated DisplayX binary.
         // Install only audio files so enabling sound cannot replace the graphics layer.
         boolean extracted = TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD,
                 context, "alsa.tzst", root,
                 (file, size) -> file.getName().equals("displayx_layer.so") ? null : file);
-        if (!extracted || module.length() == 0 || config.length() == 0 || baseConfig.length() == 0)
+        if (!extracted || module.length() == 0 || config.length() == 0 || baseConfig.length() == 0
+                || openSles.length() == 0 || platformNamespace.length() == 0)
             throw new IllegalStateException("Unable to install Alsa-Oboe");
         if (!FileUtils.writeString(marker, VERSION))
             throw new IllegalStateException("Unable to record Alsa-Oboe installation");
