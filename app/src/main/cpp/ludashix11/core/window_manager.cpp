@@ -772,8 +772,10 @@ void WindowManager::ChangeWindowAttributes(XClient* client,
                                            u32 mask,
                                            const u32* values) {
     const bool redraw = window->GetAttributes().Update(window, mask, values, client);
-    if (redraw && window->GetDrawable())
+    if (redraw && window->GetDrawable()) {
         static_cast<NativeDrawable*>(window->GetDrawable())->PublishContent();
+        static_cast<NativeScreen&>(server.GetScreen()).StartupWindowUpdated(window->id);
+    }
     UpdatePointer(NotifyNormal);
     if (redraw && window->IsMapped()) {
         server.GetScreen().PostInvalidate();

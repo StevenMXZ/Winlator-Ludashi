@@ -135,7 +135,6 @@ void NativeScreen::SetUnviewableWMClasses(std::vector<std::string> classes) {
 }
 void NativeScreen::WindowPropertyChanged(Window* window, u32 atom) {
     if (!unviewableWMClasses.empty() && atom == u32(Atom::GetID("WM_CLASS"))) PostInvalidate();
-    if (!startupContent.load(std::memory_order_relaxed) && atom == u32(Atom::GetID("WM_HINTS"))) PostInvalidate();
     if (!hudEnabled || !window) return;
     // Java's HUD binds its FPS source as soon as Wine/Mesa publishes a
     // _MESA_DRV property, not when the compositor happens to draw a frame.
@@ -210,16 +209,6 @@ void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
         }
         if (external != externalFrames.end()) d = external->second.frame->drawable;
         if (i != direct.end() || external != externalFrames.end() || d->HasContent()) {
-            // Java closes startup on content from a mapped applicationWindow:
-            // WM_HINTS.window_group must name that window, not a helper window.
-            if (!startupContent.load(std::memory_order_relaxed)) {
-                const auto atom = Atom::GetID("WM_HINTS");
-                const auto* hints = atom >= 0 ? w->GetProperty(atom) : nullptr;
-                u32 group{};
-                if (hints && hints->format == 32 && hints->GetData().size() >= 9 * sizeof(u32))
-                    memcpy(&group, hints->GetData().data() + 8 * sizeof(u32), sizeof(group));
-                if (group == w->id) startupContent.store(true, std::memory_order_relaxed);
-            }
             const auto& rect = w->GetInRect();
             // Vulkan window quads force useTexAlpha=0, including depth-32 images.
             // Match that opacity when discarding fully covered layers.
@@ -258,6 +247,7 @@ void NativeScreen::MutateDrawable(Drawable* drawable, const void* callback, void
         catch (...) { restore(); throw; }
         restore();
     }
+    StartupDrawableUpdated(drawable);
     if (image->Revision() != before) {
         const bool firstContent = image->PublishContent();
         if (firstContent) PostInvalidate();
@@ -384,7 +374,34 @@ bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket, const sp<Presen
     if (DiagnosticsEnabled()) metricScenePatches.fetch_add(1, std::memory_order_relaxed);
     return true;
 }
+// Same condition as Java Window.isApplicationWindow(), evaluated on a content
+// notification, not on scene creation, mapping, focus or a startup timer.
+void NativeScreen::StartupWindowUpdated(u32 id) {
+    if (startupContent.load(std::memory_order_relaxed)) return;
+    auto* resource = server.GetResource(id);
+    if (!resource || resource->GetType() != XResourceType::Window) return;
+    auto* window = resource->As<Window>();
+    if (!window->IsMapped() || window->GetWidth() <= 1 || window->GetHeight() <= 1) return;
+    const auto atom = Atom::GetID("WM_HINTS");
+    const auto* hints = atom >= 0 ? window->GetProperty(atom) : nullptr;
+    u32 group{};
+    if (hints && hints->format == 32 && hints->GetData().size() >= 9 * sizeof(u32))
+        memcpy(&group, hints->GetData().data() + 8 * sizeof(u32), sizeof(group));
+    if (group == id) startupContent.store(true, std::memory_order_relaxed);
+}
+void NativeScreen::StartupDrawableUpdated(Drawable* drawable) {
+    if (startupContent.load(std::memory_order_relaxed)) return;
+    // A drawable has its own internal ID; it is not the X11 window resource ID.
+    // Match its owner, just as Java installs a per-window OnDrawListener.
+    const auto visit = [&](const auto& self, Window* window) -> void {
+        if (startupContent.load(std::memory_order_relaxed)) return;
+        if (window->GetDrawable() == drawable) StartupWindowUpdated(window->id);
+        for (auto* child : window->GetChildren()) self(self, child);
+    };
+    visit(visit, server.GetWindowManager().GetRootWindow());
+}
 void NativeScreen::HudFrame(u32 id) {
+    StartupWindowUpdated(id);
     if (!hudEnabled) return;
     auto* resource = server.GetResource(id);
     if (!resource || resource->GetType() != XResourceType::Window) return;

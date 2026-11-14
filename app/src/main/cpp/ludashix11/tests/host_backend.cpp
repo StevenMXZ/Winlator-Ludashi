@@ -151,30 +151,44 @@ int main(int argc, char** argv) {
         auto lock = server.Lock();
         auto& wm = server.GetWindowManager();
         auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
-        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
+        auto helper = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
                                       0, InputOutput, 24, 0, nullptr);
+        wm.MapWindow(&client, helper.get());
+        screen.MutateDrawable(helper->GetDrawable(), [] {});
+        screen.HudFrame(helper->id);
+        assert(!screen.HasStartupContent()); // A painted helper has no self window_group.
+        auto window = wm.CreateWindow(&client, 0x200002, wm.GetRootWindow(), 0, 0, 32, 32,
+                                      0, InputOutput, 24, 0, nullptr);
+        screen.MutateDrawable(window->GetDrawable(), [] {});
+        wm.MapWindow(&client, window.get());
+        assert(!screen.HasStartupContent()); // Mapping does not deliver OnDrawListener.
         const auto atom = xorg::Atom::Intern("WM_HINTS");
         std::vector<u8> hints(9 * sizeof(u32));
-        u32 group = window->id;
+        u32 group = helper->id;
         memcpy(hints.data() + 8 * sizeof(u32), &group, sizeof(group));
         window->ModifyProperty(atom, atom, 32, 0, hints);
-        wm.MapWindow(&client, window.get());
-        assert(!screen.HasStartupContent()); // Mapping alone is not Java's content signal.
-        wm.UnmapWindow(window.get());
-        static_cast<xorg::NativeDrawable*>(window->GetDrawable())->PublishContent();
-        screen.PostInvalidate();
-        assert(!screen.HasStartupContent()); // Unmapped content cannot end startup.
-        group = 0; memcpy(hints.data() + 8 * sizeof(u32), &group, sizeof(group));
-        window->ModifyProperty(atom, atom, 32, 0, hints);
-        wm.MapWindow(&client, window.get());
-        assert(!screen.HasStartupContent()); // Helper windows are not applicationWindow.
-        group = window->id; memcpy(hints.data() + 8 * sizeof(u32), &group, sizeof(group));
+        screen.MutateDrawable(window->GetDrawable(), [] {});
+        assert(!screen.HasStartupContent()); // Another window's group is not itself.
+        group = window->id;
+        memcpy(hints.data() + 8 * sizeof(u32), &group, sizeof(group));
         window->ModifyProperty(atom, atom, 32, 0, hints);
         screen.WindowPropertyChanged(window.get(), atom);
-        assert(screen.HasStartupContent()); // Late WM_HINTS must also be recognized.
+        screen.PostInvalidate();
+        assert(!screen.HasStartupContent()); // A scene/property update alone is insufficient.
         wm.UnmapWindow(window.get());
-        assert(screen.HasStartupContent()); // Startup completion is latched.
-        std::cout << "mapped application content and late WM_HINTS startup passed" << std::endl;
+        screen.MutateDrawable(window->GetDrawable(), [] {});
+        assert(!screen.HasStartupContent()); // Same mapped check as Java.
+        wm.MapWindow(&client, window.get());
+        wm.DestroyWindow(helper.get(), true); // A splash/launcher can disappear before the game paints.
+        assert(!screen.HasStartupContent());
+        // No surface, revision change or GPU completion is required: Java fires
+        // OnDrawListener even when a drawing command changes no pixels.
+        screen.MutateDrawable(window->GetDrawable(), [] {});
+        assert(screen.HasStartupContent());
+        wm.UnmapWindow(window.get());
+        assert(screen.HasStartupContent());
+        close(sockets[1]);
+        std::cout << "PASS: Java content notification semantics, late hints, two windows, no surface/GPU/timer dependency\n";
         return 0;
     }
     if (std::string(argv[1]) == "--window-map-listener") {

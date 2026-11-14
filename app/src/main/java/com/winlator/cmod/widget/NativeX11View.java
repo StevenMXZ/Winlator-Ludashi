@@ -64,7 +64,6 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     };
     private Runnable readyCallback;
     private boolean ready;
-    private long startupDeadline;
     private boolean started;
     private final boolean highRefreshRate;
     private final DisplayManager displayManager;
@@ -137,10 +136,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
                     if (readyCallback != null) readyCallback.run();
                     return;
                 }
-                boolean applicationContent = started && nativeStartupContent(handle);
-                boolean timedOut = started && android.os.SystemClock.uptimeMillis() >= startupDeadline;
-                if (applicationContent || timedOut) {
-                    if (!applicationContent) android.util.Log.w("LudashiX11", "Opening display after startup fallback: no mapped application content signal");
+                if (started && nativeStartupContent(handle)) {
                     ready = true;
                     if (readyCallback != null) readyCallback.run();
                     return;
@@ -249,7 +245,6 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         if (parent != null && !parent.isDirectory() && !parent.mkdirs())
             throw new IllegalStateException("Cannot create native X11 socket directory");
         nativeStart(handle, socket, shm);
-        startupDeadline = android.os.SystemClock.uptimeMillis() + 15000L;
         started = true;
         post(startupCheck);
     }

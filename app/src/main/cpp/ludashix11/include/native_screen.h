@@ -204,6 +204,8 @@ public:
     // Accessed only under XServer::Lock; disabled HUD adds one branch per update.
     void SetHudEnabled(bool enabled) { hudEnabled = enabled; hudWindow = 0; hudFrames = 0; }
     void HudFrame(u32 drawable);
+    void StartupWindowUpdated(u32 window);
+    void StartupDrawableUpdated(Drawable* drawable);
     u32 HudWindow() const { return hudWindow; }
     u64 HudFrames() const { return hudFrames; }
     bool HasStartupContent() const { return startupContent.load(std::memory_order_relaxed); }
