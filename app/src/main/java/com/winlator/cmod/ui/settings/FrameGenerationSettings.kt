@@ -93,7 +93,7 @@ fun FrameGenerationSettings(
         }
         if (engineIndex == 0) {
             SettingsDivider()
-            Text("Tuning frame generation is turned on and adjusted from the in-game sidebar.",
+            Text("Tuning FG is turned on and adjusted from the in-game sidebar.",
                 Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)

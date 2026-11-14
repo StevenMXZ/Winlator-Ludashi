@@ -2620,7 +2620,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private static final String FRAME_GEN_MODE_INFO =
         "The game runs uncapped and only the missing frames up to the refresh rate are generated. Uses more power.";
     private static final String[] FRAME_GEN_MULTIPLIERS = {"X2", "X3"};
-    private static final String[] FRAME_GEN_QUALITY = {"Low", "Medium", "High"};
+    private static final String[] FRAME_GEN_QUALITY = {"Low", "Medium", "High", "Extreme"};
 
     // The live shortcut. A second Shortcut saves its own copy, and the activity's
     // later saveData rewrites Extra Data from memory, dropping the switch.

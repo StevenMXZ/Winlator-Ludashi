@@ -20,7 +20,7 @@ public interface VulkanRendererControls {
     long getGeneratedFrameCount();
     void setOnFrameGenerationStateChangedListener(Runnable listener);
 
-    // Tuning engine (framegen/FrameGen.cpp). Independent of the LSFG/WFG calls above.
+    // Tuning FG (tuningFG/FrameGen.cpp). Independent of the LSFG/WFG calls above.
     default void setFrameGen(boolean enabled, int mode, int quality, int multiplier) {}
     default float[] getFrameGenStats() { return new float[0]; }
 }

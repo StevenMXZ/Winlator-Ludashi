@@ -2,7 +2,7 @@
 #include "VulkanRendererContext.h"
 #include "native_magnifier.h"
 #ifdef LUDASHI_NATIVE_X11
-#include "framegen/FrameGen.h"
+#include "tuningFG/FrameGen.h"
 #endif
 #ifdef __ANDROID__
 #include "VulkanDriver.h"

@@ -7,7 +7,7 @@
 #include "core/window_manager.h"
 #include "core/atom.h"
 #include "native_screen.h"
-#include "framegen/FrameGen.h"
+#include "tuningFG/FrameGen.h"
 #include <map>
 
 namespace {

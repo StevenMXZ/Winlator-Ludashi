@@ -137,11 +137,14 @@ static_assert(sizeof(MePC) <= kPushSize && sizeof(SelPC) <= kPushSize &&
 enum MeFlags : int32_t { kMeCoarse = 1, kMeTemporal = 2, kMeHalfPel = 4, kMeWide = 8 };
 
 // Per quality: shortcuts trade edge precision inside coherent or static regions for GPU time.
-constexpr float kCoherentTh[3] = {1.0f, 0.75f, 0.5f};
-constexpr float kStaticTh[3]   = {0.5f, 0.25f, 0.25f};
-// Short side of the motion pyramid. Resources are allocated for High; Low and
-// Medium dispatch a smaller top-left rectangle, so switching does not rebuild.
-constexpr float kShortSide[3]  = {192.f, 270.f, 360.f};
+// Extreme is High with a finer field and a slightly tighter edge search.
+constexpr int   kQualityCount = 4;
+constexpr float kCoherentTh[kQualityCount] = {1.0f, 0.75f, 0.5f, 0.35f};
+constexpr float kStaticTh[kQualityCount]   = {0.5f, 0.25f, 0.25f, 0.20f};
+constexpr int   kInterpMode[kQualityCount] = {0, 1, 2, 2};
+// Short side of the motion pyramid. Resources are allocated for Extreme; the
+// lower levels dispatch a smaller top-left rectangle, so switching does not rebuild.
+constexpr float kShortSide[kQualityCount]  = {192.f, 270.f, 360.f, 480.f};
 
 double msBetween(Clock::time_point a, Clock::time_point b) {
     return std::chrono::duration<double, std::milli>(b - a).count();
@@ -178,7 +181,7 @@ struct FrameGenState {
     // Configuration, written from any thread.
     std::atomic<bool>     enabled{false};
     std::atomic<int>      mode{0};      // 0 power saver, 1 performance
-    std::atomic<int>      quality{1};   // motion estimation detail: 0 low, 1 medium, 2 high
+    std::atomic<int>      quality{1};   // 0 low, 1 medium, 2 high, 3 extreme
     std::atomic<int>      multiplier{2};  // power saver: output frames per real frame
     std::atomic<float>    targetHz{60.f};  // display refresh rate
     std::atomic<uint64_t> contentSerial{0};
@@ -347,7 +350,7 @@ struct FrameGenState {
     double stageMs[kStamps - 1] = {};  // pyramid, motion + scene cut, select, interp + copies
     bool   overloaded = false;
     int    overloadVotes = 0;
-    int    qualityCap = 2;        // lowered when the GPU cannot keep up
+    int    qualityCap = kQualityCount - 1;        // lowered when the GPU cannot keep up
     int    userQuality = -1;      // last requested quality; a change lifts the cap
     int    effectiveQuality() const { return std::min(quality.load(), qualityCap); }
     uint32_t newFrameCount = 0;
@@ -815,7 +818,7 @@ void FrameGenState::writeCompose(VulkanRendererContext* c, VkDescriptorSet ds, V
 
 void FrameGenState::geometryFor(int quality, int& outLevels, uint32_t* ow, uint32_t* oh,
                                  uint32_t* obw, uint32_t* obh) const {
-    const int q = std::clamp(quality, 0, 2);
+    const int q = std::clamp(quality, 0, kQualityCount - 1);
     const float shortSide = (float)std::max(1u, std::min(W, H));
     const float scale = std::min(1.0f, kShortSide[q] / shortSide);
     ow[0] = std::max<uint32_t>(48, (uint32_t)std::lround((float)W * scale));
@@ -848,7 +851,7 @@ void FrameGenState::setActiveGeometry(int quality) {
     }
     for (int l = levels; l < kMaxLevels; ++l)
         lw[l] = lh[l] = bw[l] = bh[l] = 0;
-    appliedQuality = std::clamp(quality, 0, 2);
+    appliedQuality = std::clamp(quality, 0, kQualityCount - 1);
 }
 
 void FrameGenState::noteQualityChange() {
@@ -862,7 +865,7 @@ bool FrameGenState::createResources(VulkanRendererContext* c) {
     auto& vk = c->vk_;
     W = c->swapchainExt.width;
     H = c->swapchainExt.height;
-    geometryFor(2, allocLevels, alw, alh, abw, abh);
+    geometryFor(kQualityCount - 1, allocLevels, alw, alh, abw, abh);
     setActiveGeometry(effectiveQuality());
 
     const VkImageUsageFlags sceneUse = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -1135,7 +1138,7 @@ bool FrameGenState::activate(VulkanRendererContext* c) {
         c->completedSerial = c->submittedSerial;
     }
     userQuality = quality.load();
-    qualityCap = 2;
+    qualityCap = kQualityCount - 1;
     overloadVotes = 0;
     try {
         if (!createPipelines(c) || !createResources(c)) throw std::runtime_error("setup");
@@ -1265,7 +1268,7 @@ void FrameGenState::recordCompute(VulkanRendererContext* c, VkCommandBuffer cb, 
     auto rw = [&]() {
         memBarrier(c, cb, cs, cs, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
     };
-    const int q = std::clamp(appliedQuality, 0, 2);
+    const int q = std::clamp(appliedQuality, 0, kQualityCount - 1);
 
     auto estimate = [&](float phase) {
         for (int l = levels - 1; l >= 0; --l) {
@@ -1331,17 +1334,17 @@ void FrameGenState::recordCompute(VulkanRendererContext* c, VkCommandBuffer cb, 
         ipc.confHi = 0.12f;
         ipc.staticTh = kStaticTh[q];
         ipc.fieldT = fieldT;
-        ipc.mode = q;
+        ipc.mode = kInterpMode[q];
         dispatch(c, cb, pipeInterp, dsInterp[prev][cur][(genBase + j) % kGenImages], &ipc,
                  sizeof(ipc), W, H);
     };
 
     // A field anchored at the middle frame serves its own phase directly, but
     // other phases would have to invert it, which has no answer where motion
-    // covers or uncovers the background and leaves holes there. High X3 builds
-    // one field per phase. Lower levels keep the middle field and let the
+    // covers or uncovers the background and leaves holes there. High and Extreme
+    // build one field per phase. Lower levels keep the middle field and let the
     // interpolator fall back where the two warped samples disagree.
-    const bool ownFields = q == 2 && (k > 1 || (k == 1 && std::abs(phases[0] - 0.5f) > 0.01f));
+    const bool ownFields = q >= 2 && (k > 1 || (k == 1 && std::abs(phases[0] - 0.5f) > 0.01f));
     const float firstPhase = ownFields ? phases[0] : 0.5f;
     estimate(firstPhase);
 
@@ -1521,10 +1524,10 @@ void FrameGenState::submitInterp(VulkanRendererContext* c, int prev, int cur, fl
     ipc.t = t;
     ipc.confLo = 0.04f;
     ipc.confHi = 0.12f;
-    const int q = std::clamp(appliedQuality, 0, 2);
+    const int q = std::clamp(appliedQuality, 0, kQualityCount - 1);
     ipc.staticTh = kStaticTh[q];
     ipc.fieldT = 0.5f;
-    ipc.mode = q;
+    ipc.mode = kInterpMode[q];
     dispatch(c, cb, pipeInterp, dsInterp[prev][cur][img], &ipc, sizeof(ipc), W, H);
     memBarrier(c, cb, cs, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                VK_ACCESS_SHADER_READ_BIT);
@@ -2082,7 +2085,7 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
 
     if (quality.load() != userQuality) {
         userQuality = quality.load();
-        qualityCap = 2;
+        qualityCap = kQualityCount - 1;
     }
     if (W != c->swapchainExt.width || H != c->swapchainExt.height) {
         vk.DeviceWaitIdle(c->device);
@@ -2726,7 +2729,7 @@ void VulkanRendererFrameGenConfigure(VulkanRendererContext* c, bool enabled, int
     st->mode.store(std::clamp(mode, 0, 1));
     // Fixed is the way out of a Dynamic pause. Staying in Dynamic keeps it.
     if (st->mode.load() != 1) st->overloaded = false;
-    st->quality.store(std::clamp(quality, 0, 2));
+    st->quality.store(std::clamp(quality, 0, kQualityCount - 1));
     st->multiplier.store(std::clamp(multiplier, 2, 3));
     st->targetHz.store(targetHz > 1.f ? targetHz : 60.f);
     if (enabled && !st->enabled.load()) st->failed = false;

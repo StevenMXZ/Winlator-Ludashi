@@ -11,7 +11,7 @@ public final class FrameGenEngine {
     public static final String WFG = "wfg";
 
     public static final String[] IDS = {TUNING, LSFG, WFG};
-    public static final String[] LABELS = {"Tuning", "LSFG", "WFG"};
+    public static final String[] LABELS = {"Tuning FG", "LSFG", "WFG"};
 
     private FrameGenEngine() {}
 

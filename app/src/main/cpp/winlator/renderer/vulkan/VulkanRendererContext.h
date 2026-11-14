@@ -11,7 +11,7 @@
 
 #include "view_transformation.hpp"
 #include "xform.hpp"
-#include "framegen/FrameGen.h"
+#include "tuningFG/FrameGen.h"
 
 struct VkTable {
 

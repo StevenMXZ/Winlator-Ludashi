@@ -252,7 +252,7 @@
                             android:id="@+id/TVTuningFrameGenUnsupported"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Tuning frame generation needs the Vulkan renderer."
+                            android:text="Tuning FG needs the Vulkan renderer."
                             android:textColor="#B0B0B0"
                             android:textSize="12sp"
                             android:visibility="gone" />
