@@ -13,6 +13,6 @@ object GogSettings {
         check(!GogLibrary.mutable.value.busy) { "Finish or cancel the GOG download before changing this setting" }
         context.getSharedPreferences("gog-settings", 0).edit().putBoolean("enabled", enabled).apply()
         revision.intValue++
-        if (enabled) GogLibrary.open(context)
+        if (enabled) GogLibrary.open(context) else GogLibrary.pauseBackgroundWork()
     }
 }

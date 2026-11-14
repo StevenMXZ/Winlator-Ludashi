@@ -51,4 +51,44 @@ class StoreWorkTest {
             assertThrows(IllegalStateException::class.java) { StoreNetwork.check(context, store) }
         } finally { context.getSharedPreferences("ludashi-stores", 0).edit().clear().commit(); StoreSessions.fresh(store) }
     }
+    @Test fun startingAGameStopsExecutableCopyBeforeTheNextDiskWrite() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val store = LudashiStore.ITCH
+        StoreSessions.resumeForLibrary(); StoreSessions.fresh(store)
+        val output = java.io.ByteArrayOutputStream()
+        val input = object : java.io.ByteArrayInputStream(ByteArray(1024 * 1024)) {
+            override fun read(bytes: ByteArray, offset: Int, count: Int): Int {
+                val result = super.read(bytes, offset, count)
+                StoreSessions.pauseForGame()
+                return result
+            }
+        }
+        try {
+            assertThrows(IllegalStateException::class.java) { StoreInstalls.copyPayload(context, store, input, output) }
+            assertEquals(0, output.size())
+        } finally { StoreSessions.resumeForLibrary() }
+    }
+    @Suppress("UNCHECKED_CAST")
+    @Test fun cancellingQueuedArtworkReleasesItsPendingMarker() = runBlocking {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val store = LudashiStore.ITCH
+        StoreSessions.resumeForLibrary(); StoreSessions.fresh(store)
+        val state = StoreSessions.state(store); val old = state.value
+        val slots = StoreSessions::class.java.getDeclaredField("artworkSlots").apply { isAccessible = true }.get(StoreSessions) as kotlinx.coroutines.sync.Semaphore
+        val jobs = StoreSessions::class.java.getDeclaredField("artworkTasks").apply { isAccessible = true }.get(StoreSessions) as java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>
+        val markers = StoreSessions::class.java.getDeclaredField("artwork").apply { isAccessible = true }.get(StoreSessions) as MutableSet<String>
+        slots.acquire(); slots.acquire()
+        val game = StoreGame(store, "https://test.itch.io/queued-artwork", "Game", "https://img.itch.zone/queued.jpg")
+        try {
+            state.value = old.copy(games = listOf(game))
+            StoreSessions.requestArt(context, game.uri)
+            val job = jobs.getValue(game.uri)
+            StoreSessions.cancel(store)
+            kotlinx.coroutines.withTimeout(3000) { job.join() }
+            assertTrue(job.isCancelled)
+            assertFalse(markers.contains(game.uri))
+            assertFalse(jobs.containsKey(game.uri))
+            assertEquals(0, slots.availablePermits)
+        } finally { slots.release(); slots.release(); state.value = old; StoreSessions.fresh(store) }
+    }
 }

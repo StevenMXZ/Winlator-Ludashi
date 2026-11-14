@@ -48,7 +48,9 @@ internal object StoreInstalls {
             check(extracted == entries) { "Incomplete ZIP archive" }
         } else if (archive.extension.equals("exe", true)) {
             check(archive.inputStream().use { it.read() == 'M'.code && it.read() == 'Z'.code }) { "The download was not a Windows executable" }
-            archive.copyTo(safeStorePath(destination, archive.name), overwrite = true)
+            archive.inputStream().use { input ->
+                safeStorePath(destination, archive.name).outputStream().use { output -> copyPayload(context, store, input, output) }
+            }
         } else {
             check(SevenZip.isAvailable(context)) { "The archive extractor is unavailable" }
             val listing = SevenZip.newProcess(context, "l", "-slt", "-ba", archive.path).redirectErrorStream(true).start()
@@ -66,7 +68,16 @@ internal object StoreInstalls {
             process.inputStream.bufferedReader().useLines { lines -> lines.forEach { StoreNetwork.check(context, store) } }
             check(process.waitFor() == 0) { "Could not extract the game archive" }
         }
-        destination.walkTopDown().forEach { check(!java.nio.file.Files.isSymbolicLink(it.toPath())) { "Game archive contains symbolic links" } }
+        destination.walkTopDown().forEach { StoreNetwork.check(context, store); check(!java.nio.file.Files.isSymbolicLink(it.toPath())) { "Game archive contains symbolic links" } }
+    }
+    internal fun copyPayload(context: Context, store: LudashiStore, input: java.io.InputStream, output: java.io.OutputStream) {
+        val buffer = ByteArray(256 * 1024)
+        while (true) {
+            StoreNetwork.check(context, store)
+            val count = input.read(buffer); if (count < 0) return
+            StoreNetwork.check(context, store)
+            output.write(buffer, 0, count)
+        }
     }
     fun publish(context: Context, game: StoreGame, stage: File, containerId: Int): JSONObject {
         StoreNetwork.check(context, game.store)

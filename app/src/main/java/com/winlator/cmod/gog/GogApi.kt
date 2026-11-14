@@ -152,6 +152,50 @@ internal object GogApi {
         check(length > 0 || integrity.md5 != null) { "GOG did not provide a verifiable file size or checksum" }
         return length
     }
+    // Artwork may use chunked HTTP; it is bounded and validated as an image,
+    // rather than weakening the size/checksum requirements for game installers.
+    fun artwork(url: String, file: File, allowed: () -> Boolean) {
+        var address = url
+        for (redirect in 0..8) {
+            check(allowed()) { "GOG artwork cancelled" }
+            val target = URL(address)
+            require(target.protocol == "https")
+            val connection = target.openConnection() as HttpURLConnection
+            track(connection)
+            connection.instanceFollowRedirects = false
+            connection.connectTimeout = 15000; connection.readTimeout = 20000
+            try {
+                check(allowed()) { "GOG artwork cancelled" }
+                if (connection.responseCode in listOf(301, 302, 303, 307, 308)) {
+                    address = URL(target, connection.getHeaderField("Location") ?: error("Missing artwork redirect")).toString()
+                    continue
+                }
+                check(connection.responseCode == 200) { "GOG artwork request failed" }
+                connection.inputStream.use { receiveArtwork(it, file, connection.contentLengthLong, allowed) }
+                return
+            } finally { connections.remove(connection); connection.disconnect() }
+        }
+        error("Too many GOG artwork redirects")
+    }
+    internal fun receiveArtwork(input: java.io.InputStream, file: File, expected: Long, allowed: () -> Boolean) {
+        check(expected <= 20 * 1024 * 1024) { "GOG artwork is too large" }
+        var done = 0L
+        file.outputStream().use { output ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                check(allowed()) { "GOG artwork cancelled" }
+                val count = input.read(buffer); if (count < 0) break
+                done += count
+                check(done <= 20 * 1024 * 1024) { "GOG artwork is too large" }
+                check(allowed()) { "GOG artwork cancelled" }
+                output.write(buffer, 0, count)
+            }
+        }
+        check(allowed() && done > 0 && (expected <= 0 || expected == done)) { "Incomplete GOG artwork" }
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(file.path, bounds)
+        check(bounds.outWidth > 0 && bounds.outHeight > 0) { "GOG artwork is not an image" }
+    }
     fun download(url: String, file: File, integrity: Integrity, cancelled: () -> Boolean, progress: (Long, Long) -> Unit) {
         var address = url
         val offset = file.length()

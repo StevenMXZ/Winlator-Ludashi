@@ -19,6 +19,9 @@ class StoreDownloadService : Service() {
         startForeground(312, DownloadNotifications.build(this, "store-downloads", "itch.io", getString(com.winlator.cmod.R.string.gog_preparing)))
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (com.winlator.cmod.stores.StoreSessions.paused || com.winlator.cmod.core.ContainerSessionGate.hasActiveSessions()) {
+            stopSelf(startId); return START_NOT_STICKY
+        }
         val selected = LudashiStore.find(intent?.getStringExtra("store"))
         val gameJson = intent?.getStringExtra("game")
         if (selected == null || gameJson == null) { stopSelf(); return START_NOT_STICKY }

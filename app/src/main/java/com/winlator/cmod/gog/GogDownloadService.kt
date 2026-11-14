@@ -23,6 +23,9 @@ class GogDownloadService : Service() {
         startForeground(311, com.winlator.cmod.stores.DownloadNotifications.build(this, "gog-downloads", "GOG", getString(R.string.gog_preparing)))
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (com.winlator.cmod.stores.StoreSessions.paused || com.winlator.cmod.core.ContainerSessionGate.hasActiveSessions()) {
+            stopSelf(startId); return START_NOT_STICKY
+        }
         val gameId = intent?.getStringExtra("game")
         val containerId = intent?.getIntExtra("container", 0) ?: 0
         val installer = intent?.getStringExtra("installer")
@@ -50,8 +53,9 @@ class GogDownloadService : Service() {
         }
         return START_NOT_STICKY
     }
-    override fun onDestroy() { GogLibrary.cancelled = true; super.onDestroy() }
+    override fun onDestroy() { GogLibrary.cancelled = true; if (stopped.get()) GogApi.cancelWork(); super.onDestroy() }
     private fun install(id: String, containerId: Int, installer: JSONObject) {
+        check(!com.winlator.cmod.stores.StoreSessions.paused && !GogLibrary.cancelled) { "Download paused" }
         check(GogSettings.enabled(this)) { "GOG integration is disabled" }
         require(id.toLongOrNull()?.let { it > 0 } == true)
         check(Innoextract.isAvailable(this)) { "The GOG installer extractor is unavailable" }
@@ -126,9 +130,9 @@ class GogDownloadService : Service() {
             val result = Innoextract.extract(this, setup, staging, {}, {}, { com.winlator.cmod.stores.StoreSessions.trackProcess("gog", it) })
             check(result.exitCode == 0) { "The GOG installer could not be extracted (code ${result.exitCode}). Its files were kept for retry." }
             check(!GogLibrary.cancelled) { "Installation cancelled" }
-            val metadata = staging.walkTopDown().maxDepth(5).firstOrNull { it.name == "goggame-$id.info" && it.isFile }
+            val metadata = staging.walkTopDown().maxDepth(5).onEach { check(!GogLibrary.cancelled && !com.winlator.cmod.stores.StoreSessions.paused) }.firstOrNull { it.name == "goggame-$id.info" && it.isFile }
             val payload = metadata?.parentFile ?: File(staging, "app").takeIf { it.isDirectory } ?: staging
-            val executables = payload.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+            val executables = payload.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }.onEach { check(!GogLibrary.cancelled && !com.winlator.cmod.stores.StoreSessions.paused) }
                 .filter { it.isFile && it.extension.equals("exe", true) && !it.name.startsWith("unins", true) }
                 .take(256).map { it.relativeTo(payload).invariantSeparatorsPath }.toList()
             check(executables.isNotEmpty()) { "The installer did not contain a Windows executable" }

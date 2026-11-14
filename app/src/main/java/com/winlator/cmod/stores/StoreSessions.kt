@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.runtime.mutableIntStateOf
 import com.winlator.cmod.ui.library.LibraryItem
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import org.json.JSONArray
@@ -38,6 +39,7 @@ object StoreSessions {
         generations.getValue(store).incrementAndGet()
         cancellations.getValue(store).set(true)
         tasks.remove(store)?.cancel()
+        artworkTasks.entries.filter { LudashiStore.fromPath(it.key) == store }.forEach { it.value.cancel() }
         state(store).update { it.copy(loading = false) }
         StoreNetwork.stop(store)
         processes.remove(store.id)?.destroy()
@@ -47,7 +49,7 @@ object StoreSessions {
         LudashiStore.entries.forEach(::cancel)
         processes.values.forEach { it.destroy() }
         com.winlator.cmod.gog.GogLibrary.cancelled = true
-        com.winlator.cmod.gog.GogApi.cancelWork()
+        com.winlator.cmod.gog.GogLibrary.pauseBackgroundWork()
     }
     @JvmStatic fun resumeForLibrary() {
         if (paused && !com.winlator.cmod.core.ContainerSessionGate.hasActiveSessions()) {
@@ -77,8 +79,9 @@ object StoreSessions {
         val account = StoreVault.load(context, store)?.optString("account")?.takeIf { it.isNotBlank() } ?: return null
         return File(root(context, store), "libraries/${storeHash(account)}.json")
     }
-    internal fun installed(context: Context, store: LudashiStore) {
+    internal fun installed(context: Context, store: LudashiStore, check: () -> Unit = {}) {
         val records = records(context, store).listFiles().orEmpty().filter { it.extension == "json" }.mapNotNull { file ->
+            check()
             runCatching {
                 val record = JSONObject(file.readText())
                 if (File(record.getString("path")).isDirectory) file.nameWithoutExtension to record else null
@@ -94,20 +97,28 @@ object StoreSessions {
         fresh(store)
         tasks[store] = scope.launch(operation(store)) {
             try {
+                StoreNetwork.check(app, store)
                 if (staleScanned.compareAndSet(false, true)) File(app.filesDir, "store-transfers").listFiles().orEmpty()
                     .filter { it.isDirectory && it.lastModified() < processStarted }.forEach(::discard)
-                installed(app, store)
+                StoreNetwork.check(app, store)
+                installed(app, store) { StoreNetwork.check(app, store) }
+                StoreNetwork.check(app, store)
                 state(store).update { it.copy(transfers = StoreTransfers.load(app, store)) }
                 val saved = StoreVault.load(app, store)
                 state(store).update { it.copy(signedIn = saved != null) }
                 val cache = cache(app, store)
                 if (cache?.isFile == true) runCatching {
-                    val games = JSONArray(cache.readText())
-                    state(store).update { it.copy(games = (0 until games.length()).map { i -> StoreGame.parse(games.getJSONObject(i)) }) }
+                    val rows = JSONArray(cache.readText())
+                    val games = (0 until rows.length()).map { i -> StoreNetwork.check(app, store); StoreGame.parse(rows.getJSONObject(i)) }
+                    StoreNetwork.check(app, store)
+                    state(store).update { it.copy(games = games) }
                 }
                 if (saved != null && (cache?.lastModified() ?: 0) < System.currentTimeMillis() - 6 * 3600000) refreshNow(app, store)
             } catch (error: Exception) {
                 if (live(store) && !paused) state(store).update { it.copy(error = error.message.orEmpty(), loading = false) }
+            } finally {
+                if (!live(store) || paused) initialized.remove(store)
+                StoreNetwork.stopIfIdle(store)
             }
         }
     }
@@ -193,6 +204,7 @@ object StoreSessions {
         StoreDetailActivity.open(context, store.id, id)
     }
     private val artwork = ConcurrentHashMap.newKeySet<String>()
+    private val artworkTasks = ConcurrentHashMap<String, Job>()
     private val artworkSlots = kotlinx.coroutines.sync.Semaphore(2)
     fun requestArt(context: Context, path: String) {
         val store = LudashiStore.fromPath(path) ?: return
@@ -200,18 +212,26 @@ object StoreSessions {
         val game = allGames(state(store).value).find { it.id == Uri.decode(path.substringAfter("://")) } ?: ItchCatalog.game(Uri.decode(path.substringAfter("://"))) ?: return
         val target = File(context.cacheDir, "${store.id}-art/${game.key}.jpg")
         if (target.isFile || game.image.isBlank() || !artwork.add(path)) return
-        scope.launch(operation(store)) {
-            artworkSlots.acquire()
-            try {
-                StoreNetwork.check(context, store)
-                target.parentFile?.mkdirs()
-                val temporary = File(target.parentFile, target.name + ".pending")
-                val data = StoreNetwork.bytes(context, store, game.image, 20 * 1024 * 1024)
-                temporary.writeBytes(data)
-                check(temporary.renameTo(target))
-                state(store).value.installed[game.key]?.let { StoreInstalls.icon(context, game, it.getInt("container")) }
-                state(store).update { it.copy(revision = it.revision + 1) }
-            } catch (_: Exception) { } finally { artworkSlots.release(); artwork.remove(path); StoreNetwork.stopIfIdle(store) }
+        val job = scope.launch(operation(store), start = CoroutineStart.LAZY) {
+            artworkSlots.withPermit {
+                try {
+                    StoreNetwork.check(context, store)
+                    target.parentFile?.mkdirs()
+                    val temporary = File(target.parentFile, target.name + ".pending")
+                    val data = StoreNetwork.bytes(context, store, game.image, 20 * 1024 * 1024)
+                    StoreNetwork.check(context, store)
+                    temporary.writeBytes(data)
+                    StoreNetwork.check(context, store)
+                    check(temporary.renameTo(target))
+                    state(store).value.installed[game.key]?.let { StoreInstalls.icon(context, game, it.getInt("container")) }
+                    state(store).update { it.copy(revision = it.revision + 1) }
+                } catch (_: Exception) { }
+            }
         }
+        artworkTasks[path] = job
+        job.invokeOnCompletion {
+            artwork.remove(path); artworkTasks.remove(path, job); StoreNetwork.stopIfIdle(store)
+        }
+        if (paused || !live(store)) job.cancel() else job.start()
     }
 }
