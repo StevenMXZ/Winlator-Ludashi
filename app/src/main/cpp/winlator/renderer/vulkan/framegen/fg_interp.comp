@@ -123,6 +123,7 @@ float pixelChange(ivec2 p) {
 // object instead, and still gets warped so it does not vanish between frames.
 const float kOverlayChange = 3.0 / 255.0;
 const float kEdge = 0.05;
+const float kBorderVec = 10.0;  // field pixels from the border that borrow the inner vector
 
 // Spatial contrast of the current frame. Flat areas do not show the staircase
 // a bilinear warp leaves on a hard edge, so only those edges need Catmull-Rom.
@@ -167,13 +168,18 @@ void main() {
     // A field built for this phase already lives at the output pixel. A field
     // built at another time (the middle one used by Dynamic) has to be stepped
     // onto this pixel's trajectory; that step has no answer on occlusions.
+    // Along the screen border half of every match falls off the image, so the
+    // field there is unreliable and that band lags a pan. A pan or a camera
+    // turn moves the picture evenly, so the vector just inside is used.
     vec2 fpos = uv * pc.fieldSize;
-    vec4 f = fetchVecSmooth(fpos);
+    vec2 vpos = clamp(fpos, vec2(kBorderVec), pc.fieldSize - kBorderVec);
+    vec4 f = fetchVecSmooth(vpos);
     if (abs(pc.t - pc.fieldT) > 0.01) {
         fpos -= (pc.t - pc.fieldT) * f.rg;
+        vpos = clamp(fpos, vec2(kBorderVec), pc.fieldSize - kBorderVec);
         // High re-picks a vector at the stepped pixel. Lower levels reuse the
         // smooth field there; a second full search would not fit in a vsync.
-        if (pc.mode < 2) f = fetchVecSmooth(fpos);
+        if (pc.mode < 2) f = fetchVecSmooth(vpos);
     }
     vec4 mark = fetchVec(fpos);
     // Alpha 0 was marked at estimation time for a large static overlay. The
@@ -183,7 +189,7 @@ void main() {
         imageStore(outImg, gid, vec4(hold, 1.0));
         return;
     }
-    if (pc.mode >= 2) f = pickVec(fpos, uv);
+    if (pc.mode >= 2) f = pickVec(vpos, uv);
 
     vec2 vuv = f.rg / pc.fieldSize;
     vec2 pUv = uv - pc.t * vuv;

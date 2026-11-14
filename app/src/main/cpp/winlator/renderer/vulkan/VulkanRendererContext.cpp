@@ -387,11 +387,16 @@ void VulkanRendererContext::createLogicalDevice() {
         throw std::runtime_error("reading Vulkan device extensions");
 
     bool hasForeignQueue = false;
+    const char* priorityExt = nullptr;
     for (const auto& ext : availableExts) {
         RLOG("Available Vulkan device extension: %s (specVersion=%u)",
              ext.extensionName, ext.specVersion);
         if (strcmp(ext.extensionName, VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME) == 0)
             hasForeignQueue = true;
+        if (strcmp(ext.extensionName, VK_KHR_GLOBAL_PRIORITY_EXTENSION_NAME) == 0)
+            priorityExt = VK_KHR_GLOBAL_PRIORITY_EXTENSION_NAME;
+        else if (!priorityExt && strcmp(ext.extensionName, VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME) == 0)
+            priorityExt = VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME;
     }
     if (!hasForeignQueue) {
         RLOG_E("AHB requires VK_EXT_queue_family_foreign, but the selected Vulkan device does not advertise it");
@@ -480,10 +485,33 @@ void VulkanRendererContext::createLogicalDevice() {
 
     VkDeviceCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     ci.pQueueCreateInfos=&qi; ci.queueCreateInfoCount=1;
-    ci.enabledExtensionCount=(uint32_t)extList.size(); ci.ppEnabledExtensionNames=extList.data();
     ci.pEnabledFeatures = &enabledFeatures;
     ci.pNext = featureChain;
-    if (vk_.CreateDevice(physicalDevice,&ci,nullptr,&device)!=VK_SUCCESS) throw std::runtime_error("device");
+
+    // A heavy game keeps the GPU busy for a whole frame, and at normal
+    // priority every present of ours, generated or not, waits for that frame
+    // to finish. High priority lets the kernel preempt it, as it does for the
+    // system compositor.
+    VkDeviceQueueGlobalPriorityCreateInfoKHR prio{};
+    prio.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR;
+    prio.globalPriority = VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR;
+    VkResult created = VK_ERROR_INITIALIZATION_FAILED;
+    if (priorityExt) {
+        std::vector<const char*> prioExts = extList;
+        prioExts.push_back(priorityExt);
+        qi.pNext = &prio;
+        ci.enabledExtensionCount = (uint32_t)prioExts.size();
+        ci.ppEnabledExtensionNames = prioExts.data();
+        created = vk_.CreateDevice(physicalDevice, &ci, nullptr, &device);
+        qi.pNext = nullptr;
+        highPriorityQueue = created == VK_SUCCESS;
+    }
+    if (created != VK_SUCCESS) {
+        ci.enabledExtensionCount = (uint32_t)extList.size();
+        ci.ppEnabledExtensionNames = extList.data();
+        created = vk_.CreateDevice(physicalDevice, &ci, nullptr, &device);
+    }
+    if (created!=VK_SUCCESS) throw std::runtime_error("device");
     vk_.GetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)gipa(instance, "vkGetDeviceProcAddr");
     loadDeviceDispatch();
     vk_.GetDeviceQueue(device,graphicsQueueFamilyIndex,0,&graphicsQueue);

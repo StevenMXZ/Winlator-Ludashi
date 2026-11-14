@@ -17,15 +17,6 @@
 #include "fg_scd_comp.h"
 #include "fg_copy_comp.h"
 
-#define FG_TAG "Winlator_FrameGen"
-#ifdef WINLATOR_RELEASE
-#define FG_LOGI(...) do {} while (0)
-#define FG_LOGE(...) do {} while (0)
-#else
-#define FG_LOGI(...) __android_log_print(ANDROID_LOG_INFO, FG_TAG, __VA_ARGS__)
-#define FG_LOGE(...) __android_log_print(ANDROID_LOG_ERROR, FG_TAG, __VA_ARGS__)
-#endif
-
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -54,11 +45,11 @@ constexpr double   kDynOnRatio  = 0.92;
 constexpr double   kDynOffRatio = 0.98;
 constexpr int      kDynOnVotes  = 8;
 constexpr int      kDynOffVotes = 60;
-// Performance: a real frame is shown on a vsync when its timing error there is
-// at most this share of a refresh, else that vsync is interpolated. Just under
-// half a refresh gives every real frame its nearest vsync, and still only one
-// when the playout runs at its slowest speed.
-constexpr double   kSnapRefresh = 0.45;
+// A real frame is shown raw on the one vsync whose content time falls inside
+// this share of a refresh of the frame. The other vsyncs of the gap are
+// interpolated, so a frame is never replaced by a blend and never repeated
+// for the rest of its interval.
+constexpr double   kSnapRefresh = 0.5;
 constexpr double   kMaxHoldMs   = 100.0;
 // Performance playout: the shown content time follows (vsync - hold) at a speed
 // within 1 +- kSpeedRange, correcting its error over about kCatchMs, so a change
@@ -88,8 +79,12 @@ constexpr double   kDupMs       = 2.5;
 // whole length as latency to every frame.
 constexpr int      kLateSamples = 64;
 constexpr double   kLateWindowMs = 2000.0;
-constexpr double   kLateShare   = 0.9;
+constexpr double   kLateShare   = 0.75;
 constexpr double   kHitchIntervals = 2.0;
+// The hold covers at most this many clock intervals. Interpolation needs one
+// interval; covering more jitter adds that latency to every frame, while a
+// frame later than this only slows the playout briefly.
+constexpr double   kMaxLateIntervals = 1.25;
 
 // Minimum share of the screen a window must cover to count as "the game".
 constexpr float kContentAreaShare = 0.10f;
@@ -333,18 +328,14 @@ struct FrameGenState {
     DynFrame dyn[kRing] = {};
     int    dynCount = 0;
     Clock::time_point dynX{}, dynV{};
+    // Newest real frame shown. Kept apart from dynX: a real frame lands on its
+    // nearest vsync, up to half a refresh off, and moving the timeline to it
+    // either way made the playout drift.
+    Clock::time_point dynRealCt{};
     bool   haveDynX = false, haveDynV = false;
     bool   dynStalled = false;  // stopped at the newest frame waiting for the next one
     VkDescriptorSet dynShown = VK_NULL_HANDLE;
     double holdMs = 0.0;
-    // Fractional refresh left over from earlier gaps. A 45 fps frame on a
-    // 60 Hz panel spans 1.33 refreshes; flooring each gap generates nothing.
-    double genFrac = 0.0;
-    // Arrival interval with the previous fill's wait removed, so a blocked
-    // present does not look like the game itself got slower and ask for
-    // still more frames.
-    double gameIvMs = 0.0;
-    double dynHeldMs = 0.0;
     int    stillCount = 0;
     Clock::time_point lastProbe{};
     void readScd(int slot);
@@ -414,6 +405,12 @@ struct FrameGenState {
                         uint64_t acquireTimeout = UINT64_MAX, uint64_t fenceTimeout = UINT64_MAX);
     bool presentSide(VulkanRendererContext* c, VkDescriptorSet ds, const FrameBuild& fb,
                      bool withCursorUpload, VkSemaphore extraWait);
+    // The context waits on imgInFlight with no timeout. A destroyed sideFence
+    // left there hangs the next normal frame after frame gen is turned off.
+    void forgetSideFence(VulkanRendererContext* c) {
+        if (sideFence == VK_NULL_HANDLE) return;
+        for (auto& owner : c->imgInFlight) if (owner == sideFence) owner = VK_NULL_HANDLE;
+    }
     bool takeSwapchainImage(VulkanRendererContext* c, uint32_t cf, uint32_t& imgIdx,
                             uint64_t acquireTimeout = UINT64_MAX, uint64_t fenceTimeout = UINT64_MAX);
     void endXpp(VulkanRendererContext* c);
@@ -446,15 +443,12 @@ struct FrameGenState {
         dynCount = 0;
         haveDynX = haveDynV = dynStalled = false;
         dynShown = VK_NULL_HANDLE;
-        genFrac = 0.0;
-        gameIvMs = 0.0;
-        dynHeldMs = 0.0;
     }
     // Keeps only this frame, shown as is.
     void restartDyn(int slot, Clock::time_point ct) {
         dyn[0] = {slot, ct, false, false, false};
         dynCount = 1;
-        dynX = ct;
+        dynX = dynRealCt = ct;
         haveDynX = true;
         haveDynV = dynStalled = false;
         dynShown = composeScene[slot];
@@ -464,13 +458,15 @@ struct FrameGenState {
         --dynCount;
         if (dynCount > 0 && dyn[0].pending) dyn[0].pending = dyn[0].paired = false;
     }
-    // Frames before the pair on screen are not needed anymore; a spare slot must
-    // remain for the next capture even if that skips some content.
+    // A frame stays until it has been shown. Dropping on dynX threw away real
+    // frames the timeline had run past. A spare slot must remain for the next
+    // capture even if that skips some content.
     void dynTrim() {
-        while (dynCount >= 2 && haveDynX && dyn[1].ct <= dynX) dynDropOldest();
+        while (dynCount >= 2 && dyn[1].ct <= dynRealCt) dynDropOldest();
         if (dynCount >= kRing) {
             dynDropOldest();
             if (haveDynX && dynX < dyn[0].ct) dynX = dyn[0].ct;
+            if (dynRealCt < dyn[0].ct) dynRealCt = dyn[0].ct;
         }
     }
     bool dynHas(int slot) const {
@@ -1032,9 +1028,6 @@ bool FrameGenState::createResources(VulkanRendererContext* c) {
     haveFieldPrev = false;
     genHead = 0;
     resetDyn();
-    FG_LOGI("resources ready: %ux%u me=%ux%u/%ux%u blocks=%ux%u levels=%d/%d quality=%d luma=%s timestamps=%d",
-            W, H, lw[0], lh[0], alw[0], alh[0], bw[0], bh[0], levels, allocLevels, appliedQuality,
-            lumaR8 ? "r8" : "rgba8", (int)tsValid);
     return true;
 }
 
@@ -1098,6 +1091,7 @@ void FrameGenState::destroyPipelines(VulkanRendererContext* c) {
         if (interpFence[j]) vk.DestroyFence(c->device, interpFence[j], nullptr);
         interpFence[j] = VK_NULL_HANDLE;
     }
+    forgetSideFence(c);
     if (sideFence) vk.DestroyFence(c->device, sideFence, nullptr);
     if (sideAcquire) vk.DestroySemaphore(c->device, sideAcquire, nullptr);
     sideFence = VK_NULL_HANDLE;
@@ -1134,10 +1128,7 @@ void FrameGenState::destroyPipelines(VulkanRendererContext* c) {
 }
 
 bool FrameGenState::activate(VulkanRendererContext* c) {
-    if (!loadFunctions(c)) {
-        FG_LOGE("compute entry points unavailable");
-        return false;
-    }
+    if (!loadFunctions(c)) return false;
     c->vk_.DeviceWaitIdle(c->device);
     {
         std::lock_guard<std::mutex> lk(c->renderMutex);
@@ -1148,8 +1139,7 @@ bool FrameGenState::activate(VulkanRendererContext* c) {
     overloadVotes = 0;
     try {
         if (!createPipelines(c) || !createResources(c)) throw std::runtime_error("setup");
-    } catch (const std::exception& e) {
-        FG_LOGE("activation failed: %s", e.what());
+    } catch (const std::exception&) {
         c->vk_.DeviceWaitIdle(c->device);
         destroyResources(c);
         destroyPipelines(c);
@@ -1176,7 +1166,6 @@ bool FrameGenState::activate(VulkanRendererContext* c) {
     latencyEma = 0.0;
     haveFieldPrev = false;
     active = true;
-    FG_LOGI("frame generation active");
     return true;
 }
 
@@ -1198,7 +1187,6 @@ void FrameGenState::deactivate(VulkanRendererContext* c) {
     c->needsRender.store(true);
     c->dirtyCV.notify_one();
     publishStats(true, failed ? 2 : 0);
-    FG_LOGI("frame generation stopped");
 }
 
 // ---------------------------------------------------------------------------
@@ -1751,8 +1739,7 @@ bool FrameGenState::presentCompose(VulkanRendererContext* c, VkDescriptorSet ds,
                         fb.ox, fb.oy, fb.sx, fb.sy, fb.cw, fb.ch,
                         fb.ptrX, fb.ptrY, fb.curHotX, fb.curHotY, fb.curW, fb.curH, fb.curVis,
                         VkRect2D{{0, 0}, c->swapchainExt}, 0, false, &pass);
-    } catch (const std::exception& e) {
-        FG_LOGE("compose record failed: %s", e.what());
+    } catch (const std::exception&) {
         return fail();
     }
 
@@ -1849,6 +1836,7 @@ bool FrameGenState::presentSide(VulkanRendererContext* c, VkDescriptorSet ds,
         if (vk.CreateSemaphore(c->device, &sci, nullptr, &sideAcquire) != VK_SUCCESS)
             sideAcquire = VK_NULL_HANDLE;
         if (vk.GetFenceStatus(c->device, sideFence) != VK_SUCCESS) {
+            forgetSideFence(c);
             vk.DestroyFence(c->device, sideFence, nullptr);
             sideFence = VK_NULL_HANDLE;
             VkFenceCreateInfo fi{};
@@ -1882,8 +1870,7 @@ bool FrameGenState::presentSide(VulkanRendererContext* c, VkDescriptorSet ds,
                         fb.ox, fb.oy, fb.sx, fb.sy, fb.cw, fb.ch,
                         fb.ptrX, fb.ptrY, fb.curHotX, fb.curHotY, fb.curW, fb.curH, fb.curVis,
                         VkRect2D{{0, 0}, c->swapchainExt}, 0, false, &pass);
-    } catch (const std::exception& e) {
-        FG_LOGE("side compose record failed: %s", e.what());
+    } catch (const std::exception&) {
         return abandon();
     }
 
@@ -2105,7 +2092,6 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
         }
         destroyResources(c);
         if (!createResources(c)) {
-            FG_LOGE("resource rebuild failed");
             destroyResources(c);
             return false;
         }
@@ -2118,7 +2104,6 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
     if (appliedQuality != effectiveQuality()) {
         setActiveGeometry(effectiveQuality());
         noteQualityChange();
-        FG_LOGI("motion quality %d, me %ux%u", appliedQuality, lw[0], lh[0]);
     }
 
     if (c->requestedPresentMode != VK_PRESENT_MODE_FIFO_KHR) {
@@ -2176,8 +2161,7 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
         heldAcquire = true;
         try {
             c->nativeFrameReady(c->nativeFrameReadyData);
-        } catch (const std::exception& e) {
-            FG_LOGE("X++ scene latch failed: %s", e.what());
+        } catch (const std::exception&) {
             c->fbResized.store(true);
             c->swapchainRetryPending.store(true);
             xppDone = true;
@@ -2285,25 +2269,17 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
     if (newContent && !dupFrame) {
         if (haveArrival) {
             double iv = msBetween(lastArrival, arrival);
-            double gameIv = iv;
-            if (dynHeldMs > 0.0) {
-                if (gameIv > dynHeldMs + 1.0) gameIv -= dynHeldMs;
-                dynHeldMs = 0.0;
-            }
             if (iv > 250.0) {
                 gap = true;
                 intervalMs = intervalDev = 0.0;
                 intervalSamples = 0;
                 kApplied = -1;
-                gameIvMs = 0.0;
             } else {
                 if (intervalMs > 0.0) {
                     const double dev = std::abs(iv - intervalMs);
                     intervalDev = intervalDev > 0.0 ? intervalDev * 0.9 + dev * 0.1 : dev;
                 }
                 intervalMs = intervalMs > 0.0 ? intervalMs * 0.85 + iv * 0.15 : iv;
-                if (gameIv > 1.0)
-                    gameIvMs = gameIvMs > 0.0 ? gameIvMs * 0.85 + gameIv * 0.15 : gameIv;
                 ++intervalSamples;
             }
         }
@@ -2450,10 +2426,10 @@ bool FrameGenState::renderFrame(VulkanRendererContext* c) {
     return true;
 }
 
-// Performance: motion is estimated once per real frame; every vsync then gets
-// its own image, interpolated right before it is presented for the content
-// time dynX it shows. dynX follows (vsync - holdMs) at a speed close to real
-// time, so the output advances evenly whatever the cadence of the game.
+// Performance: motion is estimated once per real frame. Every vsync shows the
+// content time dynX, one refresh of it per refresh, interpolated between the
+// two real frames around it. A real frame is shown raw only when dynX is on
+// it; showing it earlier jumps a rotation. The game is not capped.
 // Returns when a new frame arrives or there is nothing newer to show.
 bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb, int slot,
                                   Clock::time_point arrival, bool newContent, bool dupFrame,
@@ -2538,30 +2514,28 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         DynFrame f{slot, contentTime, !cut, cut, !cut};
         if (cut) haveFieldPrev = false;
         dyn[dynCount++] = f;
-        // Within `snap` of a frame its vsync shows the frame itself, so the next
-        // one is not needed yet: the hold can be that much shorter.
-        const double late = std::min(lateMs, kHitchIntervals * clockIvMs);
-        holdMs = std::min(std::max(late - snap, 0.0) + lead + kQueueMs, kMaxHoldMs);
+        // One content interval of hold: the next frame is already captured
+        // when this one is shown, so the refreshes between them keep moving.
+        // Less than that shows the frame early and the following vsyncs repeat it.
+        const double cover = clockIvMs > 0.0 ? clockIvMs : lateMs;
+        const double late = std::min(std::max(lateMs, cover), kMaxLateIntervals * cover);
+        holdMs = std::min(late + lead + kQueueMs, kMaxHoldMs);
     }
 
-    // Missing refreshes of the game's own period, not of a gap stretched by
-    // the time this thread spent blocked in a previous present.
-    int genBudget = 0;
-    const double period = gameIvMs > 1.0 ? gameIvMs : intervalMs;
-    if (!dupFrame && !dyn[dynCount - 1].cut && dynCount >= 2 && period > 1.0) {
-        const double span = period / p;
-        const int whole = (int)std::floor(span);
-        genFrac += span - whole;
-        const int carry = (int)std::floor(genFrac);
-        genFrac -= carry;
-        genBudget = std::max(0, std::min(kMaxGen, whole - 1 + carry));
-    }
-    lastK = genBudget;
-    int shownGen = 0;
-    auto done = [&]() { return finish(); };
+    int made = 0;
+    auto done = [&]() {
+        if (newContent && !dupFrame) lastK = made;
+        return finish();
+    };
 
     for (;;) {
         if (!vsyncBase(base)) break;
+        dynTrim();
+        // Everything captured is on screen already: wait for the game.
+        if (dynCount < 2) {
+            dynStalled = true;
+            break;
+        }
         const auto now = Clock::now();
         Clock::time_point v = haveDynV ? nearestVsync(base, dynV + ms(p))
                                        : vsyncAtOrAfter(base, now + ms(lead));
@@ -2589,20 +2563,40 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         }
         if (haveDynX && x < dynX) x = dynX;
 
-        VkDescriptorSet ds = composeScene[last.slot];
-        // The missing refreshes of this arrival, then the real frame.
-        // Stopping there is what keeps a later vsync from getting a frame the
-        // panel has no time to show.
+        // The pair that brackets x. The image is always the content at x, so a
+        // rotation moves the same distance every refresh. Showing the raw frame
+        // on a vsync up to half a refresh away jumped that step (about 8 ms one
+        // refresh and 25 the next) and dropped the motion in between.
+        int fi = 1;
+        while (fi < dynCount - 1 && dyn[fi].ct <= x) ++fi;
+        const DynFrame& a = dyn[fi - 1];
+        const DynFrame& f = dyn[fi];
+        if (a.ct <= x && dynRealCt < a.ct) dynRealCt = a.ct;
+        const double span = std::max(1.0, msBetween(a.ct, f.ct));
+        const double t = msBetween(a.ct, x) / span;
+        VkDescriptorSet ds = composeScene[f.slot];
         bool wantInterp = false, needField = false;
         int slotA = -1, slotB = -1, genImg = -1;
         float interpT = 0.f;
-        if (shownGen < genBudget && dynCount >= 2 && last.paired && !last.cut) {
-            const DynFrame& a = dyn[dynCount - 2];
+        // Raw only at an endpoint, where it is the same picture as the blend:
+        // t = 0 is frame a, t = 1 is frame f. A cut has no field to blend.
+        bool real = f.cut || !f.paired || t <= 0.0 || t >= 1.0;
+        if (real && t <= 0.0 && !f.cut && f.paired) ds = composeScene[a.slot];
+        // Caught up to the newest frame: hold it. Presenting it again repeats
+        // the same image for the rest of the gap.
+        if (real && ds == dynShown && fi == dynCount - 1 && t >= 1.0) {
+            dynX = x;
+            dynV = v;
+            haveDynX = haveDynV = true;
+            dynStalled = true;
+            break;
+        }
+        if (!real) {
             wantInterp = true;
-            needField = last.pending;
+            needField = f.pending;
             slotA = a.slot;
-            slotB = last.slot;
-            interpT = (float)(shownGen + 1) / (float)(genBudget + 1);
+            slotB = f.slot;
+            interpT = (float)std::clamp(t, 0.0, 1.0);
         }
         auto copyInterp = [&]() {
             if (!wantInterp || genImg >= 0) return;
@@ -2618,17 +2612,14 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         const double untilFrame = intervalMs - msBetween(lastArrival, now);
         if (wantInterp && untilFrame > copyMs) copyInterp();
 
-        // The held image is paced to its vsync. A later image is a different
-        // swapchain image, queued now: sleeping until the refresh lets the
-        // next game frame arrive first, and FIFO then has nothing for the
-        // refresh the game missed.
-        if (!blockingAcquire) {
-            if (contentSerial.load(std::memory_order_relaxed) != lastSerial)
-                return done();
-            const auto due = v - ms(lead);
-            while (Clock::now() < due)
-                if (!paceUntil(due)) return done();
-        }
+        // The held image is paced to its vsync. A later image is queued a
+        // refresh ahead of its own, so the panel never waits for it, but no
+        // further: a frame arriving meanwhile is captured at once and the next
+        // call goes on from the same point of the timeline.
+        if (contentSerial.load(std::memory_order_relaxed) != lastSerial) return done();
+        const auto due = v - ms(lead + (blockingAcquire ? p : 0.0));
+        while (Clock::now() < due)
+            if (!paceUntil(due)) return done();
         copyInterp();
 
         dynStalled = false;
@@ -2646,15 +2637,11 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
                 present(ds);
             }
         }
-        if (wantInterp) ++shownGen;
+        if (real && dynRealCt < f.ct && ds == composeScene[f.slot]) dynRealCt = f.ct;
+        if (wantInterp) ++made;
         flushAnalysis();
         const double added = std::max(0.0, msBetween(x, v) - 0.5 * p - kLatchMs);
         latencyEma = latencyEma > 0.0 ? latencyEma * 0.95 + added * 0.05 : added;
-        if (!wantInterp) {
-            dynX = last.ct;
-            dynStalled = true;
-            break;
-        }
     }
     return done();
 }
@@ -2705,18 +2692,16 @@ bool VulkanRendererFrameGenRender(VulkanRendererContext* c) {
 
     try {
         if (st->renderFrame(c)) return true;
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
         // X++ already acquired, or a submit landed on a slot Draw will not
         // track if we fall through. The guard flagged a swapchain retry.
         // Presenting again here would acquire a second image on a signaled
         // semaphore. Let the next Draw recreate it.
         if (c->fbResized.load() || c->swapchainRetryPending.load()) {
-            FG_LOGE("frame aborted for swapchain retry: %s", e.what());
             std::lock_guard<std::mutex> lk(c->renderMutex);
             c->pendingFrameSerial = 0;
             return true;
         }
-        FG_LOGE("frame failed, falling back to the normal path: %s", e.what());
         std::lock_guard<std::mutex> lk(c->renderMutex);
         c->pendingFrameSerial = 0;
     }

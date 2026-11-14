@@ -45,26 +45,38 @@ vec2 toUv(vec2 pixel) {
     return min(uv, limit - guard);
 }
 
+bool inRect(vec2 p) {
+    return all(greaterThanEqual(p, vec2(0.0))) && all(lessThanEqual(p, vec2(pc.lvlSize)));
+}
+
 // Mean absolute luma difference over a 12x12 window around the block, sampled
 // on pixel corners so each bilinear tap averages a 2x2 footprint.
 // maxMean stops the sum once the candidate can no longer win. Remaining taps
-// are non-negative, so a partial sum already past the limit is final.
+// are non-negative and the mean divides by at most 36, so a partial sum
+// already past the limit is final.
+// Taps that fall off the image are skipped: a clamped edge pixel compared
+// against real content made the true vector of a pan lose along the screen
+// border, and that band stood still. Too few taps left cannot be judged.
 float blockCost(vec2 center, vec2 v, float maxMean) {
     vec2 a = center - pc.phase * v;
     vec2 b = center + (1.0 - pc.phase) * v;
     float ceilSum = maxMean * 36.0;
     bool bounded = maxMean < 1.0;
     float s = 0.0;
+    float n = 0.0;
     for (int j = 0; j < 6; ++j) {
         for (int i = 0; i < 6; ++i) {
             vec2 o = vec2(float(i * 2 - 5), float(j * 2 - 5));
+            if (!inRect(a + o) || !inRect(b + o)) continue;
             float p = textureLod(prevTex, toUv(a + o), 0.0).r;
             float c = textureLod(curTex,  toUv(b + o), 0.0).r;
             s += abs(p - c);
+            n += 1.0;
         }
         if (bounded && s >= ceilSum) return maxMean;
     }
-    return s * (1.0 / 36.0);
+    if (n < 6.0) return 2.0;
+    return s / n;
 }
 
 vec2  bestV;

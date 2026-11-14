@@ -472,6 +472,7 @@ public:
     bool frameGenDeviceSupported = false;
     bool frameGenCompositeFormatSupported = false;
     bool graphicsQueueSupportsCompute = false;
+    bool highPriorityQueue = false;
     bool frameGenSurfaceSupported = false;
     bool frameGenSwapchainStorage = false;
     bool frameGenSwapchainStorageRejected = false;
