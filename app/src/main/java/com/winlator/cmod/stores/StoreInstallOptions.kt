@@ -76,6 +76,14 @@ internal fun preferredStoreUpload(uploads: List<StoreUpload>, locale: Locale): I
         loading = false
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (extra == null && gameId !in gog.installed) {
+            val added = remember(gameId, gog.revision) { GogLibrary.added(context, gameId) }
+            OutlinedButton(onClick = { GogLibrary.setAdded(context, gameId, !added) }, modifier = Modifier.fillMaxWidth()) {
+                Icon(if (added) Icons.Outlined.Check else Icons.Outlined.Add, null)
+                Spacer(Modifier.width(8.dp))
+                Text(uiStr(if (added) R.string.store_remove_library else R.string.store_add_library))
+            }
+        }
         if (extra != null) {
             val inLibrary = remote?.games?.any { it.id == gameId } == true
             if (!inLibrary && canDownload && signedIn) OutlinedButton(enabled = !loading && !busy, onClick = {

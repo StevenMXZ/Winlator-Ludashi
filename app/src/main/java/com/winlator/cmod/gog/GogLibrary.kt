@@ -116,7 +116,17 @@ object GogLibrary {
         com.winlator.cmod.stores.StoreDetailActivity.open(context, "gog", gameId)
     } }
     private var icon: android.graphics.Bitmap? = null
-    internal fun items(context: Context, snapshot: GogState): List<LibraryItem> {
+    internal fun added(context: Context, id: String) = context.getSharedPreferences("gog-settings", 0).getBoolean("library-added-$id", false)
+    internal fun setAdded(context: Context, id: String, value: Boolean) {
+        require(id.toLongOrNull()?.let { it > 0 } == true)
+        context.getSharedPreferences("gog-settings", 0).edit().putBoolean("library-added-$id", value).apply()
+        mutable.update { it.copy(revision = it.revision + 1) }
+    }
+    internal fun libraryGames(context: Context, snapshot: GogState, mainLibraryOnly: Boolean = false): List<GogGame> {
+        val games = (snapshot.games + snapshot.installed.values.mapNotNull { runCatching { GogGame.parse(it) }.getOrNull() }).distinctBy { it.id }
+        return if (mainLibraryOnly) games.filter { it.id in snapshot.installed || added(context, it.id) } else games
+    }
+    internal fun items(context: Context, snapshot: GogState, mainLibraryOnly: Boolean = false): List<LibraryItem> {
         if (!GogSettings.enabled(context)) return emptyList()
         if (icon == null) {
             val drawable = context.getDrawable(com.winlator.cmod.R.drawable.ic_gog)
@@ -124,7 +134,7 @@ object GogLibrary {
                 drawable?.setBounds(0, 0, 64, 64); drawable?.draw(android.graphics.Canvas(it))
             }
         }
-        val games = (snapshot.games + snapshot.installed.values.mapNotNull { runCatching { GogGame.parse(it) }.getOrNull() }).distinctBy { it.id }
+        val games = libraryGames(context, snapshot, mainLibraryOnly)
         val prefs = context.getSharedPreferences("gog-settings", 0)
         val artNames = File(context.cacheDir, "gog-art").list()?.toSet().orEmpty()
         return games.map { game ->

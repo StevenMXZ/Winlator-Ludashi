@@ -160,7 +160,7 @@ object LibraryComposeHost {
                         val gog by GogLibrary.state.collectAsStateWithLifecycle()
                         val gogEnabled = com.winlator.cmod.gog.GogSettings.enabled(context)
                         val gogItems by produceState<List<LibraryItem>>(emptyList(), gog.games, gog.installed, gog.revision, gogEnabled) {
-                            value = withContext(Dispatchers.IO) { GogLibrary.items(context, gog) }
+                            value = withContext(Dispatchers.IO) { GogLibrary.items(context, gog, mainLibraryOnly = true) }
                         }
                         val itch by StoreSessions.state(LudashiStore.ITCH).collectAsStateWithLifecycle()
                         val itchEnabled = LudashiStore.ITCH.enabled(context)
