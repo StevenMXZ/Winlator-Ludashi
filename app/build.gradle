@@ -161,12 +161,12 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.winlator.cmod"
+        applicationId "com.ludashi.benchmark"
         minSdkVersion 28
         // We’re preserving Winlator’s request to keep targetSdkVersion at 28
         targetSdkVersion 28
 
-        versionCode 65
+        versionCode 30
         versionName "5.0"
 
         // External native build from Winlator
@@ -194,16 +194,6 @@ android {
         freeCompilerArgs += ['-opt-in=androidx.compose.material3.ExperimentalMaterial3Api']
     }
 
-    signingConfigs {
-        upstream {
-            storeFile file(System.getenv("LUDASHI_KEYSTORE_PATH") ?: "missing-upstream-signing.p12")
-            storeType "PKCS12"
-            storePassword System.getenv("LUDASHI_STORE_PASSWORD") ?: ""
-            keyAlias "upstream"
-            keyPassword System.getenv("LUDASHI_STORE_PASSWORD") ?: ""
-        }
-    }
-
     // Keep Winlator’s buildTypes
     buildTypes {
         debug {
@@ -211,7 +201,7 @@ android {
         }
         release {
             minifyEnabled false
-            signingConfig signingConfigs.upstream
+            signingConfig signingConfigs.debug
             crunchPngs false
         }
     }
@@ -264,7 +254,6 @@ dependencies {
     implementation 'com.google.android.material:material:1.4.0'
     implementation 'com.github.luben:zstd-jni:1.5.2-3@aar'
     implementation 'org.tukaani:xz:1.7'
-    implementation 'org.jsoup:jsoup:1.18.3'
     implementation 'org.apache.commons:commons-compress:1.20'
     implementation 'androidx.activity:activity-ktx:1.4.0'
     implementation 'androidx.fragment:fragment-ktx:1.4.0'
