@@ -786,7 +786,7 @@ private fun ContainerCategoryV2(
             }
             SettingsCard {
                 SettingToggle(uiStr(R.string.ui_dxvk_hud), !envValue(s.envVars, "DXVK_HUD").isNullOrBlank()) {
-                    s.setEnvironment(envPut(s.envVars, "DXVK_HUD", if (it) "fps,devinfo,gpuload,version" else null))
+                    s.setEnvironment(envPut(s.envVars, "DXVK_HUD", if (it) "fps,gpuload,version" else null))
                 }
             }
             SettingsCard {
