@@ -1096,8 +1096,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
 
-        if (hasFocus && cursorLock)
+        if (hasFocus && cursorLock) {
             touchpadView.requestPointerCapture();
+            touchpadView.requestFocus();
+        }
         else if (!hasFocus)
             touchpadView.releasePointerCapture();
     }
