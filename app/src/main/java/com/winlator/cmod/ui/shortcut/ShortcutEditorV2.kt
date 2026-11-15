@@ -399,7 +399,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
 
     fun updateDxvkHud(enabled: Boolean) {
         dxvkHud = enabled
-        setEnvironment(envPut(envVars, "DXVK_HUD", if (enabled) "fps,devinfo,gpuload,version" else null))
+        setEnvironment(envPut(envVars, "DXVK_HUD", if (enabled) "fps,gpuload,version" else null))
     }
 
     fun applyRenderingMode(mode: String) {
