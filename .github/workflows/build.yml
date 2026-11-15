@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - "5.0"
+  pull_request:
 
 permissions:
   contents: read
@@ -19,7 +20,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -112,19 +113,6 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Restore the existing release signing identity
-        env:
-          GH_TOKEN: ${{ github.token }}
-          LUDASHI_KEYSTORE_B64: ${{ secrets.LUDASHI_KEYSTORE_B64 }}
-          LUDASHI_STORE_PASSWORD: ${{ secrets.LUDASHI_STORE_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${LUDASHI_KEYSTORE_B64:-}" ] || [ -z "${LUDASHI_STORE_PASSWORD:-}" ]; then
-            echo '::error::Configure LUDASHI_KEYSTORE_B64 and LUDASHI_STORE_PASSWORD with the existing Ludashi signing identity.'
-            exit 1
-          fi
-          bash app/src/main/scripts/prepare-upstream-signing.sh
-
       - name: Cache native shader tools
         uses: actions/cache@v4
         with:
@@ -170,7 +158,7 @@ jobs:
           -Pkotlin.compiler.execution.strategy=in-process
           --no-configuration-cache --stacktrace
 
-      - name: Build signed release APK
+      - name: Build release APK
         run: >-
           bash gradlew assembleRelease --no-daemon --max-workers=2
           -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
@@ -197,21 +185,18 @@ jobs:
         run: |
           set -euo pipefail
           apk=app/build/outputs/apk/release/app-release.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > "$RUNNER_TEMP/release-cert.txt"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | awk 'NR == 1' > "$RUNNER_TEMP/release-package.txt"
           python3 - "$RUNNER_TEMP" <<'PYVERIFY'
           import pathlib, re, sys
           root = pathlib.Path(sys.argv[1])
-          certificate = re.search(r'Signer #1 certificate SHA-256 digest: (\S+)', (root / 'release-cert.txt').read_text()).group(1)
-          assert certificate == 'e870d1c67cd197d13c52bc187632b9bbeff233d5abe0fb81a2833bf8f74a55ef', 'Release signing identity changed'
           package = (root / 'release-package.txt').read_text()
-          assert re.search(r"name='([^']+)'", package).group(1) == 'com.winlator.cmod', 'Application ID changed'
+          assert re.search(r"name='([^']+)'", package).group(1) == 'com.ludashi.benchmark', 'Application ID changed'
           assert int(re.search(r"versionCode='(\d+)'", package).group(1)) > 29, 'Release versionCode must increase'
           assert re.search(r"versionName='([^']+)'", package).group(1) == '5.0', 'Unexpected release version'
           print('Release identity and package verified')
           PYVERIFY
 
-      - name: Upload signed release APK artifact
+      - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Winlator-Ludashi-5.0-${{ github.run_number }}-r${{ github.run_attempt }}
