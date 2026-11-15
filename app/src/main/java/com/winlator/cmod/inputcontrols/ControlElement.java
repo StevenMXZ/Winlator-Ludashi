@@ -26,6 +26,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.Arrays;
+import java.util.HashMap;
 
 public class ControlElement {
     public static final float STICK_DEAD_ZONE = 0.15f;
@@ -106,6 +107,16 @@ public class ControlElement {
     private RangeScroller scroller;
     private CubicBezierInterpolator interpolator;
     private Object touchTime;
+    private final Rect invalidateRect = new Rect();
+    private final Rect iconSrcRect = new Rect();
+    private final Rect iconDstRect = new Rect();
+    private final HashMap<String, Float> textSizeCache = new HashMap<>();
+    private float textSizeCacheWidth = -1f;
+    private String displayTextCache;
+    private String displayTextSource;
+    private Type displayTextType;
+    private Binding[] displayTextBindings;
+    private static final String[][] RANGE_TEXT_CACHE = new String[Range.values().length][];
 
     public ControlElement(InputControlsView inputControlsView) {
         this.inputControlsView = inputControlsView;
@@ -437,6 +448,18 @@ public class ControlElement {
     }
 
     private String getDisplayText() {
+        if (displayTextCache != null && displayTextSource == text && displayTextType == type && Arrays.equals(displayTextBindings, bindings)) {
+            return displayTextCache;
+        }
+        String result = computeDisplayText();
+        displayTextCache = result;
+        displayTextSource = text;
+        displayTextType = type;
+        displayTextBindings = bindings.clone();
+        return result;
+    }
+
+    private String computeDisplayText() {
         if (text != null && !text.isEmpty()) {
             return text;
         }
@@ -460,6 +483,23 @@ public class ControlElement {
     }
 
     private static String getRangeTextForIndex(Range range, int index) {
+        if (index >= 0 && index < range.max) {
+            String[] cache = RANGE_TEXT_CACHE[range.ordinal()];
+            if (cache == null) {
+                cache = new String[range.max];
+                RANGE_TEXT_CACHE[range.ordinal()] = cache;
+            }
+            String cached = cache[index];
+            if (cached == null) {
+                cached = buildRangeText(range, index);
+                cache[index] = cached;
+            }
+            return cached;
+        }
+        return buildRangeText(range, index);
+    }
+
+    private static String buildRangeText(Range range, int index) {
         String text = "";
         switch (range) {
             case FROM_A_TO_Z:
@@ -539,11 +579,7 @@ public class ControlElement {
     }
 
     private boolean isVisuallyPressed() {
-        return selected || currentPointerId != -1;
-    }
-
-    private Rect expandedBounds(Rect rect, int padding) {
-        return new Rect(rect.left - padding, rect.top - padding, rect.right + padding, rect.bottom + padding);
+        return selected;
     }
 
     private void invalidateSelf() {
@@ -551,7 +587,8 @@ public class ControlElement {
         int pad = Math.max(4, inputControlsView.getSnappingSize() * 2);
         if (type == Type.STICK) pad = Math.max(pad, rect.width() / 4);
         if (type == Type.DYNAMIC_STICK) pad = Math.max(pad, getDynamicStickRadiusPixels() * 2);
-        inputControlsView.invalidateElement(expandedBounds(rect, pad));
+        invalidateRect.set(rect.left - pad, rect.top - pad, rect.right + pad, rect.bottom + pad);
+        inputControlsView.invalidateElement(invalidateRect);
     }
 
     private void invalidateDynamicThumb(float oldX, float oldY, float newX, float newY) {
@@ -575,7 +612,16 @@ public class ControlElement {
         Paint paint = inputControlsView.getPaint();
         int alpha = (color >>> 24) & 0xff;
         setupPaint(paint, Paint.Style.FILL, withAlpha(color, alpha), 0);
-        paint.setTextSize(Math.min(getTextSizeForWidth(paint, text, maxWidth), maxSize));
+        if (maxWidth != textSizeCacheWidth || textSizeCache.size() > 64) {
+            textSizeCache.clear();
+            textSizeCacheWidth = maxWidth;
+        }
+        Float fitted = textSizeCache.get(text);
+        if (fitted == null) {
+            fitted = getTextSizeForWidth(paint, text, maxWidth);
+            textSizeCache.put(text, fitted);
+        }
+        paint.setTextSize(Math.min(fitted, maxSize));
         canvas.drawText(text, cx, cy - ((paint.descent() + paint.ascent()) * 0.5f), paint);
     }
 
@@ -737,10 +783,10 @@ public class ControlElement {
                         paint
                 );
 
-                drawDPadPiece(canvas, cx, cy - dist, piece, 0, states.length > 0 && states[0]);
-                drawDPadPiece(canvas, cx + dist, cy, piece, 1, states.length > 1 && states[1]);
-                drawDPadPiece(canvas, cx, cy + dist, piece, 2, states.length > 2 && states[2]);
-                drawDPadPiece(canvas, cx - dist, cy, piece, 3, states.length > 3 && states[3]);
+                drawDPadPiece(canvas, cx, cy - dist, piece, 0, false);
+                drawDPadPiece(canvas, cx + dist, cy, piece, 1, false);
+                drawDPadPiece(canvas, cx, cy + dist, piece, 2, false);
+                drawDPadPiece(canvas, cx - dist, cy, piece, 3, false);
                 break;
             }
 
@@ -762,21 +808,14 @@ public class ControlElement {
 
                 
                 
-                boolean isPressingSegment = currentPointerId != -1 && !scroller.isScrolling();
-                Binding pressedBinding = scroller.getBinding();
 
                 if (orientation == 0) {
                     float startX = boundingBox.left - scrollOffset % elementSize;
                     for (byte i = rangeIndex[0]; i < rangeIndex[1]; i++) {
                         int index = i % range.max;
                         String text = getRangeTextForIndex(range, index);
-                        boolean segmentPressed = isPressingSegment && pressedBinding == getRangeBindingForIndex(range, index);
                         if (startX < boundingBox.right && startX + elementSize > boundingBox.left) {
-                            if (segmentPressed) {
-                                setupPaint(paint, Paint.Style.FILL, withAlpha(getThemeColor(), 150), 0);
-                                canvas.drawRect(startX, boundingBox.top, startX + elementSize, boundingBox.bottom, paint);
-                            }
-                            drawCenteredText(canvas, text, startX + elementSize * 0.5f, y, elementSize - strokeWidth * 2, minTextSize, segmentPressed ? 0xffffffff : getThemeColor());
+                            drawCenteredText(canvas, text, startX + elementSize * 0.5f, y, elementSize - strokeWidth * 2, minTextSize, getThemeColor());
                         }
                         startX += elementSize;
                     }
@@ -785,13 +824,8 @@ public class ControlElement {
                     float startY = boundingBox.top - scrollOffset % elementSize;
                     for (byte i = rangeIndex[0]; i < rangeIndex[1]; i++) {
                         String text = getRangeTextForIndex(range, i);
-                        boolean segmentPressed = isPressingSegment && pressedBinding == getRangeBindingForIndex(range, i);
                         if (startY < boundingBox.bottom && startY + elementSize > boundingBox.top) {
-                            if (segmentPressed) {
-                                setupPaint(paint, Paint.Style.FILL, withAlpha(getThemeColor(), 150), 0);
-                                canvas.drawRect(boundingBox.left, startY, boundingBox.right, startY + elementSize, paint);
-                            }
-                            drawCenteredText(canvas, text, x, startY + elementSize * 0.5f, boundingBox.width() - strokeWidth * 2, minTextSize, segmentPressed ? 0xffffffff : getThemeColor());
+                            drawCenteredText(canvas, text, x, startY + elementSize * 0.5f, boundingBox.width() - strokeWidth * 2, minTextSize, getThemeColor());
                         }
                         startY += elementSize;
                     }
@@ -849,21 +883,16 @@ public class ControlElement {
                 canvas.drawCircle(cx, cy, outer * 0.98f, paint);
 
                 
-                setupPaint(paint, Paint.Style.STROKE, currentPointerId != -1
-                        ? withStickFeedbackAlpha(getThemeColor(), 235) : withAlpha(getThemeColor(), active ? 235 : 205),
-                        Math.max(1f, snappingSize * 0.22f * scale));
+                setupPaint(paint, Paint.Style.STROKE, withAlpha(getThemeColor(), active ? 235 : 205), Math.max(1f, snappingSize * 0.22f * scale));
                 canvas.drawCircle(cx, cy, innerRing, paint);
 
                 float thumbstickX = getCurrentPosition().x;
                 float thumbstickY = getCurrentPosition().y;
 
-                setupPaint(paint, Paint.Style.FILL, currentPointerId != -1
-                        ? withStickFeedbackAlpha(getThemeColor(), 180) : withAlpha(DARK_SURFACE, 190), 0);
+                setupPaint(paint, Paint.Style.FILL, withAlpha(DARK_SURFACE, 190), 0);
                 canvas.drawCircle(thumbstickX, thumbstickY, thumbRadius, paint);
 
-                setupPaint(paint, Paint.Style.STROKE, currentPointerId != -1
-                        ? withStickFeedbackAlpha(0xffffffff, 245) : withAlpha(EDGE_SOFT, 45),
-                        Math.max(1f, snappingSize * 0.12f * scale));
+                setupPaint(paint, Paint.Style.STROKE, withAlpha(EDGE_SOFT, 45), Math.max(1f, snappingSize * 0.12f * scale));
                 canvas.drawCircle(thumbstickX, thumbstickY, thumbRadius * 0.96f, paint);
                 break;
             }
@@ -919,9 +948,9 @@ public class ControlElement {
         int margin = (int)(inputControlsView.getSnappingSize() * (shape == Shape.CIRCLE || shape == Shape.SQUARE ? 1.65f : 0.85f) * scale);
         int halfSize = (int)((Math.min(width, height) - margin) * 0.5f);
 
-        Rect srcRect = new Rect(0, 0, icon.getWidth(), icon.getHeight());
-        Rect dstRect = new Rect((int)(cx - halfSize), (int)(cy - halfSize), (int)(cx + halfSize), (int)(cy + halfSize));
-        canvas.drawBitmap(icon, srcRect, dstRect, paint);
+        iconSrcRect.set(0, 0, icon.getWidth(), icon.getHeight());
+        iconDstRect.set((int)(cx - halfSize), (int)(cy - halfSize), (int)(cx + halfSize), (int)(cy + halfSize));
+        canvas.drawBitmap(icon, iconSrcRect, iconDstRect, paint);
         paint.setColorFilter(null);
         paint.setAlpha(255);
     }
@@ -985,24 +1014,20 @@ public class ControlElement {
     public boolean handleTouchDown(int pointerId, float x, float y) {
         if (currentPointerId == -1 && containsPoint(x, y)) {
             currentPointerId = pointerId;
-            invalidateSelf();
             if (type == Type.BUTTON) {
                 if (mouseMoveMode) {
                     setButtonBindingsActive(true);
                     inputControlsView.getTouchpadView().mouseMove(x, y, MotionEvent.ACTION_DOWN);
-                    invalidateSelf();
                     return true;
                 }
                 if (isKeepButtonPressedAfterMinTime()) touchTime = System.currentTimeMillis();
                 if (!toggleSwitch || !selected) {
                     setButtonBindingsActive(true);
                 }
-                invalidateSelf();
                 return true;
             }
             else if (type == Type.RANGE_BUTTON) {
                 scroller.handleTouchDown(x, y);
-                invalidateSelf();
                 return true;
             }
             else {
@@ -1144,8 +1169,10 @@ public class ControlElement {
                 Binding firstBinding = getBindingAt(0);
                 if (firstBinding.isGamepad()) {
                     
-                    if (interpolator == null) interpolator = new CubicBezierInterpolator();
-                    interpolator.set(0.075f, 0.95f, 0.45f, 0.95f);
+                    if (interpolator == null) {
+                        interpolator = new CubicBezierInterpolator();
+                        interpolator.set(0.075f, 0.95f, 0.45f, 0.95f);
+                    }
                     
                     float valueX = deltaX;
                     float valueY = deltaY;
@@ -1197,7 +1224,6 @@ public class ControlElement {
                 }
             }
             else {
-                boolean dpadStateChanged = false;
                 if (usesNativeGamepadDPad()) {
                     // Retain a direction until the finger moves slightly inside
                     // the threshold. This avoids rapid release/press oscillation.
@@ -1213,7 +1239,6 @@ public class ControlElement {
                     this.states[1] = right;
                     this.states[2] = down;
                     this.states[3] = left;
-                    dpadStateChanged = true;
                 }
                 else {
                     final boolean up = deltaY <= -DPAD_DEAD_ZONE;
@@ -1241,11 +1266,9 @@ public class ControlElement {
                             state = state || opposite;
                         }
                         inputControlsView.handleInputEvent(binding, state, value);
-                        dpadStateChanged |= this.states[i] != state;
                         this.states[i] = state;
                     }
                 }
-                if (dpadStateChanged) invalidateSelf();
                 return true;
             }
 
@@ -1255,7 +1278,7 @@ public class ControlElement {
         }
         else if (pointerId == currentPointerId && type == Type.RANGE_BUTTON) {
             scroller.handleTouchMove(x, y);
-            invalidateSelf();
+            if (scroller.isScrolling()) invalidateSelf();
             return true;
         }
         else return false;
@@ -1267,7 +1290,6 @@ public class ControlElement {
                 if (mouseMoveMode) {
                     inputControlsView.getTouchpadView().mouseMove(0, 0, MotionEvent.ACTION_UP);
                     setButtonBindingsActive(false);
-                    invalidateSelf();
                 }
                 else if (isKeepButtonPressedAfterMinTime() && touchTime != null) {
                     selected = (System.currentTimeMillis() - (long)touchTime) > BUTTON_MIN_TIME_TO_KEEP_PRESSED;
@@ -1320,7 +1342,6 @@ public class ControlElement {
                 }
             }
             currentPointerId = -1;
-            invalidateSelf();
             return true;
         }
         return false;
