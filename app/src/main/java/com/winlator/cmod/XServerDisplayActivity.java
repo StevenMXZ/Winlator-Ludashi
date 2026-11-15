@@ -3489,6 +3489,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
         return container;
     }
 
+    public Shortcut getShortcut() {
+        return shortcut;
+    }
+
     public void setDXWrapper(String dxwrapper) {
         this.dxwrapper = dxwrapper;
     }
