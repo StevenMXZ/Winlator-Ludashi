@@ -30,8 +30,6 @@ import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.Shortcut;
 import com.winlator.cmod.widget.XServerRendererView;
 
-import java.io.File;
-
 public class FpsLimiterControl extends LinearLayout {
     private static final String EXTRA_ENABLED = "nativeFpsLimiterEnabled";
     private static final String EXTRA_LIMIT = "nativeFpsLimit";
@@ -47,8 +45,6 @@ public class FpsLimiterControl extends LinearLayout {
     private boolean initializing = true;
     private boolean stateLoaded;
     private int bindAttempts;
-    private boolean shortcutFileResolved;
-    private File shortcutFile;
 
     public FpsLimiterControl(Context context) {
         this(context, null);
@@ -181,8 +177,7 @@ public class FpsLimiterControl extends LinearLayout {
         if (activity == null) return;
 
         if (!stateLoaded && activity.getContainer() != null) {
-            resolveShortcutFile(activity);
-            loadState(activity.getContainer());
+            loadState(activity.getContainer(), activity.getShortcut());
             stateLoaded = true;
         }
 
@@ -201,14 +196,13 @@ public class FpsLimiterControl extends LinearLayout {
         if (bindAttempts++ < 80) postDelayed(this::bindWhenReady, 100);
     }
 
-    private void loadState(Container container) {
+    private void loadState(Container container, Shortcut shortcutStore) {
         initializing = true;
 
         String savedLimit;
         String oldPreset;
         String oldEnabled;
 
-        Shortcut shortcutStore = openShortcutStore(container);
         if (shortcutStore != null) {
             savedLimit = shortcutStore.getExtra(EXTRA_LIMIT, "");
             oldPreset = shortcutStore.getExtra("graphicsFpsPreset", "");
@@ -253,8 +247,9 @@ public class FpsLimiterControl extends LinearLayout {
         int chosen = getChosenLimit();
         Container container = activity.getContainer();
         if (container != null) {
-            resolveShortcutFile(activity);
-            Shortcut shortcutStore = openShortcutStore(container);
+            // Share the session object so later sidebar saves cannot overwrite
+            // the FPS limit with a stale copy of the shortcut metadata.
+            Shortcut shortcutStore = activity.getShortcut();
             if (shortcutStore != null) {
                 shortcutStore.putExtra(EXTRA_ENABLED, null);
                 shortcutStore.putExtra(EXTRA_LIMIT, String.valueOf(chosen));
@@ -304,20 +299,6 @@ public class FpsLimiterControl extends LinearLayout {
         if (position <= 0) valueLabel.setText(R.string.ui_off);
         else if (customMode) valueLabel.setText(R.string.profile_custom);
         else valueLabel.setText((position * STEP_FPS) + " FPS");
-    }
-
-    private void resolveShortcutFile(XServerDisplayActivity activity) {
-        if (shortcutFileResolved) return;
-        shortcutFileResolved = true;
-        String path = activity.getIntent().getStringExtra("shortcut_path");
-        if (path == null || path.isEmpty()) return;
-        File candidate = new File(path);
-        if (candidate.isFile()) shortcutFile = candidate;
-    }
-
-    private Shortcut openShortcutStore(Container container) {
-        if (shortcutFile == null || !shortcutFile.isFile()) return null;
-        return new Shortcut(container, shortcutFile);
     }
 
     private void showCustomKeyboard() {
