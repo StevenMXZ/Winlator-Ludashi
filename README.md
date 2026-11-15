@@ -69,6 +69,8 @@ You can find updated components (known as `wcps`) to improve compatibility and p
   - [ptitseb](https://github.com/ptitSeb) (Box86/Box64), [Danylo](https://blogs.igalia.com/dpiliaiev/tags/mesa/) (Turnip), [alexvorxx](https://github.com/alexvorxx) (Mods/Tips) and others.
   - Frame Generation (LSFG): adapted from [Eden’s LSFG implementation](https://git.eden-emu.dev/eden-emu/eden/src/branch/master/src/video_core/frame_gen).
   - **WinNative**: credit for half of the Steam integration, from [WinNative](https://github.com/WinNative-Emu/WinNative).
+  - **KGSL GPU load monitoring**: adapted from [Bannerlator](https://github.com/The412Banner/Bannerlator), commit [`0ab0473`](https://github.com/The412Banner/Bannerlator/commit/0ab047311ccc55b2911d984727d2d57ac6c0ebf7), originally ported from [DroidDeck](https://github.com/Droid-Deck/DroidDeck) PRs [#1969](https://github.com/Droid-Deck/DroidDeck/pull/1969) and [#1981](https://github.com/Droid-Deck/DroidDeck/pull/1981). Ludashi uses the read-only GPU load fallback, without the GPU clock reader.
+  - **itch.io integration**: credits to [DroidDeck](https://github.com/Droid-Deck/DroidDeck) for API and implementation references: store, library and installation in PR [#1064](https://github.com/Droid-Deck/DroidDeck/pull/1064), commit [`7370145`](https://github.com/Droid-Deck/DroidDeck/commit/7370145f89d77b03badefb6f59c0e74710bf8d10); store browsing in PR [#1473](https://github.com/Droid-Deck/DroidDeck/pull/1473); and version selection and free-game installation in PR [#1503](https://github.com/Droid-Deck/DroidDeck/pull/1503).
 
 # License
 
