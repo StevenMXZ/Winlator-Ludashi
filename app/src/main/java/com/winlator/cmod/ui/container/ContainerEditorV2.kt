@@ -67,6 +67,7 @@ import com.winlator.cmod.box64.Box64PresetManager
 import com.winlator.cmod.container.Container
 import com.winlator.cmod.container.ContainerManager
 import com.winlator.cmod.contents.ContentsManager
+import com.winlator.cmod.contents.WrapperManager
 import com.winlator.cmod.core.OpenGLDriverDefaults
 import com.winlator.cmod.core.DefaultVersion
 import com.winlator.cmod.core.FileUtils
@@ -206,6 +207,7 @@ private class ContainerEditorStateV2(
             "freedreno"
         } else Container.DEFAULT_GRAPHICS_DRIVER
     )
+    var vkWrapper by mutableStateOf(editing?.vkWrapper ?: WrapperManager.DEFAULT_WRAPPER)
     var graphicsConfig by mutableStateOf(
         (editing?.graphicsDriverConfig ?: Container.DEFAULT_GRAPHICSDRIVERCONFIG).let { original ->
             if (readConfig(original, "version", ';').isBlank()) writeConfig(original, "version", preferredDriver, ';') else original
@@ -338,7 +340,7 @@ private class ContainerEditorStateV2(
         displayServer, renderer, rendererPresentMode, rendererDriver, filterMode, surfaceFormat, trueDisplayX,
         displayXPerformanceMode, displayXPresentAtRefreshRate, displayXPresentMode, displayXDynamicRange,
         displayXPrecisePresentation, frameGenEngine, frameGenEnabled, frameGenMultiplier,
-        frameGenTargetRate, frameGenFlowScale, graphicsDriver, freedrenoVersion, graphicsConfig,
+        frameGenTargetRate, frameGenFlowScale, graphicsDriver, vkWrapper, freedrenoVersion, graphicsConfig,
         wrapper, wrapperConfig, emulator, fexVersion, boxVersion, fexPreset, boxPreset, exclusive, xinput, dinput,
         forceSsbs, syncCpu, startup, openGlDefaultInitialized, autoMesaGlVersionOverride, envVars,
         cpu64.joinToString(), cpu32.joinToString(), components.entries.sortedBy { it.key }.joinToString()
@@ -473,6 +475,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.setSyncCpuTopology(state.syncCpu)
         container.putExtra("freedrenoVersion", state.freedrenoVersion)
         container.setGraphicsDriver(state.graphicsDriver)
+        container.setVkWrapper(state.vkWrapper)
         container.setGraphicsDriverConfig(state.graphicsConfig)
         container.putExtra("displayServer", if (state.displayServer == "X++") "native" else "java")
         container.setRendererNative(state.renderer == "EGL")
@@ -545,6 +548,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                 put("cpuListWoW64", state.cpu32.indices.filter { state.cpu32[it] }.joinToString(","))
                 if (state.syncCpu) put("syncCpuTopology", true)
                 put("graphicsDriver", state.graphicsDriver)
+                put("vkWrapper", state.vkWrapper)
                 put("graphicsDriverConfig", state.graphicsConfig)
                 put("rendererNative", state.renderer == "EGL")
                 put("rendererPresentMode", state.rendererPresentMode)
@@ -938,6 +942,14 @@ private fun ContainerCategoryV2(
                     SettingMappedChoice("Freedreno OpenGL", s.freedrenoVersion,
                         com.winlator.cmod.contents.OpenGLDriverManager(context).versionLabels(s.freedrenoVersion)) { s.freedrenoVersion = it }
                 }
+                SettingsDivider()
+                val wrapperManager = remember { WrapperManager(context) }
+                val wrapperLabels = remember { wrapperManager.labels() }
+                SettingChoice(
+                    "Vulkan Wrapper",
+                    wrapperManager.labelFor(wrapperManager.resolve(s.vkWrapper)),
+                    wrapperLabels
+                ) { s.vkWrapper = wrapperManager.identifierForLabel(it) }
                 catalog?.let { c ->
                     SettingsDivider()
                     SettingDriverChoice(uiStr(R.string.ui_driver_version), s.driverVersion, c.drivers, installing, installDriver) {
