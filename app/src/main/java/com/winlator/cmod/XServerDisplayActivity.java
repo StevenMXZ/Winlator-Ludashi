@@ -70,6 +70,7 @@ import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.contents.AdrenotoolsManager;
 import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.DefaultVersion;
+import com.winlator.cmod.core.AudioOutputSettings;
 import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.GameSaveManager;
@@ -1306,6 +1307,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.XSERVER_PATH)));
         }
 
+        if (container != null) {
+            String api = container.getExtra(AudioOutputSettings.API, AudioOutputSettings.AUTO);
+            String buffer = container.getExtra(AudioOutputSettings.BUFFER, AudioOutputSettings.AUTO);
+            String latency = container.getExtra(AudioOutputSettings.LATENCY, AudioOutputSettings.AUTO);
+            AudioOutputSettings.apply(envVars, audioDriver,
+                    shortcut != null ? shortcut.getExtra(AudioOutputSettings.API, api) : api,
+                    shortcut != null ? shortcut.getExtra(AudioOutputSettings.BUFFER, buffer) : buffer,
+                    shortcut != null ? shortcut.getExtra(AudioOutputSettings.LATENCY, latency) : latency);
+        }
         if (audioDriver.equals("alsa-oboe")) {
             environment.addComponent(new ALSAComponent(this, imageFs));
         } else if (audioDriver.equals("pulse-audio-gn")) {

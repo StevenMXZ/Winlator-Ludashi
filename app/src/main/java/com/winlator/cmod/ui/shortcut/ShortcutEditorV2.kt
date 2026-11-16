@@ -109,6 +109,8 @@ import com.winlator.cmod.ui.settings.SettingInstallChoice
 import com.winlator.cmod.ui.settings.SettingMappedChoice
 import com.winlator.cmod.ui.settings.SettingText
 import com.winlator.cmod.ui.settings.SettingToggle
+import com.winlator.cmod.ui.settings.AudioOutputOptions
+import com.winlator.cmod.ui.settings.audioOutputKeys
 import com.winlator.cmod.ui.settings.SettingsCard
 import com.winlator.cmod.ui.settings.SettingsCatalog
 import com.winlator.cmod.ui.settings.SettingsDivider
@@ -233,6 +235,11 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var builtinDecoder by mutableStateOf(shortcut.getBuiltinDecoder())
     var softwareDecoding by mutableStateOf(shortcut.getSoftwareDecoding())
     var audio by mutableStateOf(shortcut.getAudioDriver())
+    val audioOptions = mutableStateMapOf<String, String>().apply {
+        for (key in audioOutputKeys) {
+            shortcut.getExtra(key).takeIf { it.isNotEmpty() }?.let { put(key, it) }
+        }
+    }
     var wrapper by mutableStateOf(StringUtils.parseIdentifier(shortcut.getExtra("dxwrapper", container.getDXWrapper())))
     var wrapperConfig by mutableStateOf(shortcut.getExtra("dxwrapperConfig", container.getDXWrapperConfig()))
     var dxvkVersion by mutableStateOf(readConfig(wrapperConfig, "version", ',').ifBlank { DefaultVersion.DXVK })
@@ -999,6 +1006,10 @@ private fun ShortcutCategoryV2(
             SettingsCard {
                 SettingChoice(uiStr(R.string.audio_driver), audioEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(s.audio, true) } ?: s.audio, audioEntries) {
                     s.audio = StringUtils.parseIdentifier(it); s.extra("audioDriver", s.audio)
+                }
+                AudioOutputOptions(s.audio, { s.audioOptions[it].orEmpty() }, { s.shortcut.container.getExtra(it) }) { key, value ->
+                    if (value == null) s.audioOptions.remove(key) else s.audioOptions[key] = value
+                    s.extra(key, value)
                 }
                 SettingsDivider()
                 SettingToggle(uiStr(R.string.ui_fullscreen_stretched), s.fullscreen) {

@@ -38,6 +38,13 @@ public class ALSAComponentTest {
                 "usr/etc/alsa/conf.d/android_alsa.conf").toPath()), StandardCharsets.UTF_8);
         assertTrue(config.contains("type android_alsa"));
         assertTrue(config.contains("pcm.!default"));
+        File marker = new File(root, "usr/lib/alsa-lib/.alsa-oboe-version");
+        Files.write(marker.toPath(), "c89affae".getBytes(StandardCharsets.UTF_8));
+        Files.write(module.toPath(), new byte[]{1});
+        ALSAComponent.install(context, root);
+        assertEquals("99dfef7", new String(Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8));
+        assertTrue(new String(Files.readAllBytes(module.toPath()), StandardCharsets.ISO_8859_1)
+                .contains("ALSA_BUFFER_SIZE"));
         assertTrue(platformNamespace.delete());
         ALSAComponent.install(context, root);
         assertTrue(platformNamespace.length() > 0);

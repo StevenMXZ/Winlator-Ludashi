@@ -11,7 +11,7 @@ import java.io.File;
 
 /** Installs the direct ALSA–Oboe plugin; no Java audio server is needed. */
 public class ALSAComponent extends EnvironmentComponent {
-    private static final String VERSION = "c89affae";
+    private static final String VERSION = "99dfef7";
     private final Context context;
     private final ImageFs imageFs;
 

@@ -97,6 +97,10 @@
   <string name="external_controllers">"Controles externos"</string>
   <string name="graphics_driver">"Driver Gráfico"</string>
   <string name="audio_driver">"Driver de Áudio"</string>
+  <string name="audio_output_api">API de áudio</string>
+  <string name="audio_buffer_size">Tamanho do buffer de áudio</string>
+  <string name="audio_pulse_latency">Latência do PulseAudio</string>
+  <string name="audio_buffer_range">512 a 65.536 B, em passos de 512</string>
   <string name="loading">"Carregando…"</string>
   <string name="press_any_button_on_your_controller">"Pressione qualquer botão do controle"</string>
   <string name="bindings">"atribuições"</string>
