@@ -3,6 +3,7 @@ package com.winlator.cmod.container;
 import android.os.Environment;
 
 import com.winlator.cmod.box64.Box64Preset;
+import com.winlator.cmod.contentdialog.AudioConfigDialog;
 import com.winlator.cmod.contentdialog.DXVKConfigDialog;
 import com.winlator.cmod.contentdialog.WineD3DConfigDialog;
 import com.winlator.cmod.core.DefaultVersion;
@@ -54,6 +55,7 @@ public class Container {
     private String dxwrapperConfig = "";
     private String wincomponents = DEFAULT_WINCOMPONENTS;
     private String audioDriver = DEFAULT_AUDIO_DRIVER;
+    private String audioConfig = "";
     private String drives = DEFAULT_DRIVES;
     private String wineVersion = WineInfo.MAIN_WINE_VERSION.identifier();
     private boolean showFPS;
@@ -153,6 +155,14 @@ public class Container {
 
     public void setAudioDriver(String audioDriver) {
         this.audioDriver = audioDriver;
+    }
+    
+    public String getAudioConfig() {
+        return this.audioConfig;
+    }
+    
+    public void setAudioConfig(String audioConfig) {
+        this.audioConfig = audioConfig;
     }
 
     public String getWinComponents() {
@@ -429,6 +439,7 @@ public class Container {
             if (!eglConfig.isEmpty()) data.put("eglConfig", eglConfig);
             if (!displayxConfig.isEmpty()) data.put("displayxConfig", displayxConfig);
             data.put("audioDriver", audioDriver);
+            if (!audioConfig.isEmpty()) data.put("audioConfig", audioConfig);
             data.put("wincomponents", wincomponents);
             data.put("drives", drives);
             data.put("showFPS", showFPS);
@@ -538,6 +549,9 @@ public class Container {
                     break;
                 case "audioDriver" :
                     setAudioDriver(data.getString(key));
+                    break;
+                case "audioConfig":
+                    setAudioConfig(data.getString(key));
                     break;
                 case "desktopTheme" :
                     setDesktopTheme(data.getString(key));

@@ -170,6 +170,24 @@ public class ShortcutSettingsDialog extends ContentDialog {
 
         final Spinner sAudioDriver = findViewById(R.id.SAudioDriver);
         AppUtils.setSpinnerSelectionFromIdentifier(sAudioDriver, shortcut.getExtra("audioDriver", shortcut.container.getAudioDriver()));
+        
+        final View vAudioConfigDialog = findViewById(R.id.BTAudioDriverConfig);
+        vAudioConfigDialog.setOnClickListener((v) -> (new AudioConfigDialog(vAudioConfigDialog, shortcut.getExtra("audioDriver", shortcut.container.getAudioDriver()))).show());
+        vAudioConfigDialog.setTag(shortcut.getExtra("audioConfig", shortcut.container.getAudioConfig()));
+        
+        sAudioDriver.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem().toString());
+                vAudioConfigDialog.setOnClickListener((v) -> (new AudioConfigDialog(vAudioConfigDialog, audioDriver)).show());
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+
+            
         final Spinner sEmulator = findViewById(R.id.SEmulator);
         AppUtils.setSpinnerSelectionFromIdentifier(sEmulator, shortcut.getExtra("emulator", shortcut.container.getEmulator()));
         final Spinner sEmulator64 = findViewById(R.id.SEmulator64);
@@ -382,6 +400,7 @@ public class ShortcutSettingsDialog extends ContentDialog {
             String dxwrapper = StringUtils.parseIdentifier(sDXWrapper.getSelectedItem());
             String dxwrapperConfig = vDXWrapperConfig.getTag().toString();
             String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem());
+            String audioConfig = vAudioConfigDialog.getTag().toString();
             String emulator = StringUtils.parseIdentifier(sEmulator.getSelectedItem());
             String lc_all = etLC_ALL.getText().toString();
             String midiSoundFont = sMIDISoundFont.getSelectedItemPosition() == 0 ? "" : sMIDISoundFont.getSelectedItem().toString();
@@ -414,7 +433,10 @@ public class ShortcutSettingsDialog extends ContentDialog {
             shortcut.putExtra("graphicsDriverConfig", graphicsDriverConfig);
             shortcut.putExtra("dxwrapper", dxwrapper);
             shortcut.putExtra("dxwrapperConfig", dxwrapperConfig);
+            
             shortcut.putExtra("audioDriver", audioDriver);
+            shortcut.putExtra("audioConfig", audioConfig);
+            
             shortcut.putExtra("emulator", emulator);
             shortcut.putExtra("midiSoundFont", midiSoundFont);
             shortcut.putExtra("lc_all", lc_all);

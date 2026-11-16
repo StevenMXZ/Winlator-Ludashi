@@ -38,6 +38,7 @@ import com.winlator.cmod.box64.Box64PresetManager;
 import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.contentdialog.AddEnvVarDialog;
+import com.winlator.cmod.contentdialog.AudioConfigDialog;
 import com.winlator.cmod.contentdialog.ContentDialog;
 import com.winlator.cmod.contentdialog.DXVKConfigDialog;
 import com.winlator.cmod.contentdialog.DisplayXConfigDialog;
@@ -146,8 +147,6 @@ public class ContainerDetailFragment extends Fragment {
 
 
     private void applyDynamicStyles(View view, boolean isDarkMode) {
-
-
         // Update Spinners
         Spinner sScreenSize = view.findViewById(R.id.SScreenSize);
         sScreenSize.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
@@ -388,6 +387,22 @@ public class ContainerDetailFragment extends Fragment {
 
         Spinner sAudioDriver = view.findViewById(R.id.SAudioDriver);
         AppUtils.setSpinnerSelectionFromIdentifier(sAudioDriver, isEditMode() ? container.getAudioDriver() : Container.DEFAULT_AUDIO_DRIVER);
+        
+        final View vAudioConfigDialog = view.findViewById(R.id.BTAudioDriverConfig);
+        vAudioConfigDialog.setOnClickListener((v) -> (new AudioConfigDialog(vAudioConfigDialog, isEditMode() ? container.getAudioDriver() : Container.DEFAULT_AUDIO_DRIVER)).show());
+        vAudioConfigDialog.setTag(isEditMode() ? container.getAudioConfig() : AudioConfigDialog.DEFAULT_CONFIG);
+        
+        sAudioDriver.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem().toString());
+                vAudioConfigDialog.setOnClickListener((v) -> (new AudioConfigDialog(vAudioConfigDialog, audioDriver)).show());
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
 
         Spinner sEmulator = view.findViewById(R.id.SEmulator);
         AppUtils.setSpinnerSelectionFromIdentifier(sEmulator, isEditMode() ? container.getEmulator() : Container.DEFAULT_EMULATOR);
@@ -527,6 +542,7 @@ public class ContainerDetailFragment extends Fragment {
                 String dxwrapper = StringUtils.parseIdentifier(sDXWrapper.getSelectedItem());
                 String dxwrapperConfig = vDXWrapperConfig.getTag().toString();
                 String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem());
+                String audioConfig = vAudioConfigDialog.getTag().toString();
                 String emulator = StringUtils.parseIdentifier(sEmulator.getSelectedItem());
                 String wincomponents = getWinComponents(view);
                 String drives = getDrives(view);
@@ -588,6 +604,7 @@ public class ContainerDetailFragment extends Fragment {
                     container.setDXWrapper(dxwrapper);
                     container.setDXWrapperConfig(dxwrapperConfig);
                     container.setAudioDriver(audioDriver);
+                    container.setAudioConfig(audioConfig);
                     container.setEmulator(emulator);
                     container.setWinComponents(wincomponents);
                     container.setDrives(drives);
@@ -627,6 +644,7 @@ public class ContainerDetailFragment extends Fragment {
                     data.put("dxwrapper", dxwrapper);
                     data.put("dxwrapperConfig", dxwrapperConfig);
                     data.put("audioDriver", audioDriver);
+                    data.put("audioConfig", audioConfig);
                     data.put("emulator", emulator);
                     data.put("wincomponents", wincomponents);
                     data.put("drives", drives);

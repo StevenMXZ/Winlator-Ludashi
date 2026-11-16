@@ -3,6 +3,7 @@ package com.winlator.cmod;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import com.winlator.cmod.contentdialog.AudioConfigDialog;
 import com.winlator.cmod.contentdialog.DisplayXConfigDialog;
 import com.winlator.cmod.contentdialog.EGLConfigDialog;
 import static com.winlator.cmod.core.AppUtils.showToast;
@@ -154,6 +155,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     private String dxwrapper = Container.DEFAULT_DXWRAPPER;
     private KeyValueSet dxwrapperConfig;
     private KeyValueSet displayConfig;
+    private KeyValueSet audioConfig;
     private String startupSelection;
     private WineInfo wineInfo;
     private Intent notificationService;
@@ -482,6 +484,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         graphicsDriver = container.getGraphicsDriver();
         String graphicsDriverConfig = container.getGraphicsDriverConfig();
         audioDriver = container.getAudioDriver();
+        String audioConfig = container.getAudioConfig();
         emulator = container.getEmulator();
         midiSoundFont = container.getMIDISoundFont();
         dxwrapper = container.getDXWrapper();
@@ -504,6 +507,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             graphicsDriver = shortcut.getExtra("graphicsDriver", container.getGraphicsDriver());
             graphicsDriverConfig = shortcut.getExtra("graphicsDriverConfig", container.getGraphicsDriverConfig());
             audioDriver = shortcut.getExtra("audioDriver", container.getAudioDriver());
+            audioConfig = shortcut.getExtra("audioConfig", container.getAudioConfig());
             emulator = shortcut.getExtra("emulator", container.getEmulator());
             dxwrapper = shortcut.getExtra("dxwrapper", container.getDXWrapper());
             dxwrapperConfig = shortcut.getExtra("dxwrapperConfig", container.getDXWrapperConfig());
@@ -535,6 +539,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
 
         this.graphicsDriverConfig = GraphicsDriverConfigDialog.parseGraphicsDriverConfig(graphicsDriverConfig);
+        this.audioConfig = AudioConfigDialog.parseConfig(audioConfig);
         this.dxwrapperConfig = DXVKConfigDialog.parseConfig(dxwrapperConfig);
 
         if (!wineInfo.isWin64()) {
@@ -1183,6 +1188,8 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                     )
             );
         }
+        
+        AudioConfigDialog.setEnvVars(this, audioConfig, envVars);
 
         // Pass final envVars to the launcher
         guestProgramLauncherComponent.setEnvVars(envVars);

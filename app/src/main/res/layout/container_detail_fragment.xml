@@ -220,13 +220,27 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/audio_driver" />
-
-            <Spinner
-                style="@style/ComboBox"
+                
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:id="@+id/SAudioDriver"
-                android:entries="@array/audio_driver_entries" />
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
+                <Spinner
+                    style="@style/ComboBox"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:id="@+id/SAudioDriver"
+                    android:entries="@array/audio_driver_entries" />
+                
+                <ImageButton
+                    style="@style/ListMenuButton"
+                    android:id="@+id/BTAudioDriverConfig"
+                    android:src="@drawable/icon_settings"
+                    android:visibility="visible" />
+            </LinearLayout>
+            
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

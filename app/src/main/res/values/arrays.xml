@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="audio_api_entries">
+        <item>AAudio</item>
+        <item>OpenSLES</item>
+    </string-array>    
     <string-array name="builtin_decoder_entries">
         <item>FFMpeg</item>
     </string-array>    
