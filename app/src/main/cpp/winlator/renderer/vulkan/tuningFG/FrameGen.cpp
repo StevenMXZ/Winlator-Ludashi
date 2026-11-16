@@ -2531,6 +2531,106 @@ bool FrameGenState::renderDynamic(VulkanRendererContext* c, const FrameBuild& fb
         return finish();
     };
 
+    // X++ copies this frame and queues one blend for the next refresh, then
+    // returns. Staying here until the next game frame lets that frame reuse
+    // its buffer and replaces the blend with the raw capture.
+    if (holdSlot) {
+        if (!vsyncBase(base)) return done();
+        dynTrim();
+        if (dynCount < 2) {
+            dynStalled = true;
+            return done();
+        }
+        const auto now = Clock::now();
+        const Clock::time_point v = vsyncAtOrAfter(base, now + ms(lead));
+        Clock::time_point x = haveDynX ? dynX + ms(p) : dyn[dynCount - 2].ct;
+        if (x > dyn[dynCount - 1].ct) x = dyn[dynCount - 1].ct;
+
+        auto vectorReady = [&](int i) {
+            const DynFrame& fr = dyn[i];
+            return fr.paired && !fr.cut && !fr.pending &&
+                   vk.GetFenceStatus(c->device, fgFence[fr.slot]) == VK_SUCCESS;
+        };
+        int fi = 1;
+        while (fi < dynCount - 1 && dyn[fi].ct <= x) ++fi;
+        if (!vectorReady(fi)) {
+            int prev = fi - 1;
+            while (prev >= 1 && !vectorReady(prev)) --prev;
+            if (prev >= 1) {
+                fi = prev;
+                if (x > dyn[fi].ct) x = dyn[fi].ct;
+            }
+        }
+        const bool ready = vectorReady(fi);
+        if (!ready && dynShown != VK_NULL_HANDLE) {
+            present(dynShown);
+            flushAnalysis();
+            return done();
+        }
+
+        // One step on a pair whose vector has finished. The refresh after this
+        // one is queued only when the game will not deliver a frame first.
+        const double untilFrame = intervalMs - msBetween(lastArrival, now);
+        const int ahead = untilFrame > p ? 1 : 0;
+        for (int step = 0; step <= ahead; ++step) {
+            if (step == 1) {
+                x = x + ms(p);
+                if (x > dyn[dynCount - 1].ct) x = dyn[dynCount - 1].ct;
+                fi = 1;
+                while (fi < dynCount - 1 && dyn[fi].ct <= x) ++fi;
+                if (!vectorReady(fi)) {
+                    int prev = fi - 1;
+                    while (prev >= 1 && !vectorReady(prev)) --prev;
+                    if (prev >= 1) {
+                        fi = prev;
+                        if (x > dyn[fi].ct) x = dyn[fi].ct;
+                    }
+                }
+                if (!vectorReady(fi)) break;
+            }
+            const DynFrame& a = dyn[std::max(0, fi - 1)];
+            const DynFrame& f = dyn[fi];
+            Clock::time_point at = x;
+            if (!vectorReady(fi)) at = a.ct;
+            if (a.ct <= at && dynRealCt < a.ct) dynRealCt = a.ct;
+            const double span = std::max(1.0, msBetween(a.ct, f.ct));
+            const double t = msBetween(a.ct, at) / span;
+            const bool pairReady = vectorReady(fi);
+            VkDescriptorSet ds = composeScene[pairReady ? f.slot : a.slot];
+            const bool real = !pairReady || f.cut || !f.paired || t <= 0.0 || t >= 1.0;
+            if (real && t <= 0.0 && pairReady && !f.cut && f.paired) ds = composeScene[a.slot];
+            if (!real) {
+                const int genImg = genHead;
+                genHead = (genHead + 1) % kGenImages;
+                ds = composeGen[genImg];
+                submitInterp(c, a.slot, f.slot, (float)std::clamp(t, 0.0, 1.0), genImg);
+                ++made;
+            }
+            bool shown = false;
+            if (step == 0 || heldAcquire) {
+                shown = present(ds);
+            } else if (presentSide(c, ds, fb, cursorUpload, waitScene ? sceneDone : VK_NULL_HANDLE)) {
+                waitScene = false;
+                cursorUpload = false;
+                dynShown = ds;
+                shown = true;
+            }
+            if (!shown) break;
+            x = at;
+            if (pairReady && real && dynRealCt < f.ct && ds == composeScene[f.slot])
+                dynRealCt = f.ct;
+            if (step == 1 && x >= dyn[fi].ct) break;
+        }
+        dynStalled = false;
+        dynX = x;
+        dynV = v;
+        haveDynX = haveDynV = true;
+        flushAnalysis();
+        const double added = std::max(0.0, msBetween(x, v) - 0.5 * p - kLatchMs);
+        latencyEma = latencyEma > 0.0 ? latencyEma * 0.95 + added * 0.05 : added;
+        return done();
+    }
+
     for (;;) {
         if (!vsyncBase(base)) break;
         dynTrim();
