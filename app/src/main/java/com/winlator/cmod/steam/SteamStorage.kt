@@ -25,6 +25,7 @@ object SteamStorage {
         val root = prefs.getString("pending-root-$id", null)?.let(::File) ?: (if (legacy.isDirectory) legacy.parentFile else root(context)).canonicalFile.also {
             prefs.edit().putString("pending-root-$id", it.path).commit()
         }
+        prefs.edit().putString("pending-name-$id", name).apply()
         return File(root, name).canonicalFile.also { require(it.parentFile == root.canonicalFile); check(it.mkdirs() || it.isDirectory) }
     }
     fun record(info: JSONObject, dir: File, branch: String = "public", language: String = "english"): JSONObject =
@@ -56,7 +57,7 @@ object SteamStorage {
                 stream.sorted(java.util.Comparator.reverseOrder()).forEach { java.nio.file.Files.delete(it) }
             }
         }
-        prefs.edit().remove("pending-root-$id").apply()
+        prefs.edit().remove("pending-root-$id").remove("pending-name-$id").apply()
     }
 
 }

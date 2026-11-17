@@ -46,5 +46,5 @@ import java.net.URL
     if (hash.isBlank()) Icon(Icons.Outlined.Person, null, Modifier.size(40.dp))
     else AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
         update = { Glide.with(it).load("https://avatars.steamstatic.com/${hash}_medium.jpg").override(96, 96).circleCrop().into(it) },
-        onRelease = { Glide.with(it).clear(it) }, modifier = Modifier.size(40.dp))
+        onRelease = { Glide.with(it.context.applicationContext).clear(it) }, modifier = Modifier.size(40.dp))
 }

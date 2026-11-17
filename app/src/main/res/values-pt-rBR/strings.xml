@@ -678,4 +678,22 @@
     <string name="steam_download_cancel_confirm">Excluir todos os arquivos parcialmente baixados deste jogo? Esta ação não pode ser desfeita.</string>
     <string name="ui_frame_generation_engine">Gerador de quadros</string>
     <string name="ui_enable_wfg_frame_generation">Ativar geração de quadros WFG</string>
+    <string name="steam_cloud_launch_failed">O Steam Cloud não concluiu a sincronização. Tente novamente ou inicie com os saves locais. Ao iniciar sem sincronizar, o launcher não enviará saves automaticamente nesta sessão.</string>
+    <string name="steam_cloud_launch_continue">Iniciar sem sincronizar</string>
+    <string name="steam_cloud_launch_retry">Tentar novamente</string>
+    <string name="steam_cloud_launch_cancel">Cancelar inicialização</string>
+    <string name="ui_lossless_dxbc_translation_failed">Não foi possível converter os shaders DXBC desta DLL. O cache LSFG anterior foi preservado.</string>
+    <string name="storage_backup">Backup</string>
+    <string name="storage_restore">Restaurar backup</string>
+    <string name="storage_backup_done">Backup salvo.</string>
+    <string name="storage_restore_done">Backup restaurado. Reinicie o Ludashi para recarregar todas as configurações.</string>
+    <string name="storage_restore_confirm">Restaurar componentes, jogos, saves e configurações? Arquivos existentes serão substituídos. Containers não são incluídos.</string>
+    <string name="storage_remove_container">Jogos e saves dentro deste container também serão removidos.</string>
+    <string name="ui_hide_cursor">Esconder ponteiro do mouse</string>
+    <string name="library_show_uninstalled">Não instalados</string>
+    <string name="storage_settings">Configurações</string>
+<string name="gog_pause_download">Pausar</string>
+<string name="gog_resume_download">Continuar</string>
+<string name="gog_delete_download">Excluir download</string>
+<string name="gog_download_cancelled">Cancelado</string>
 </resources>

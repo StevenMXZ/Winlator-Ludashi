@@ -208,20 +208,22 @@ void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
             externalFrames.erase(external); external = externalFrames.end();
         }
         if (external != externalFrames.end()) d = external->second.frame->drawable;
-        const auto& rect = w->GetInRect();
-        // Vulkan window quads force useTexAlpha=0, including depth-32 images.
-        // Match that opacity when discarding fully covered layers.
-        frame.entries.push_back({d, i == direct.end() ? nullptr : i->second, d->Pixels(), d->Revision(),
-                rect.left, rect.top, true, w->id, int(w->GetWidth()), int(w->GetHeight()), {}});
-        if (external != externalFrames.end()) {
-            frame.entries.back().ticket.reset();
-            frame.entries.back().external = external->second.frame;
-        }
-        if (i != direct.end() && external == externalFrames.end()) {
-            frame.entries.back().x += i->second->x;
-            frame.entries.back().y += i->second->y;
-            frame.tickets[w->id] = i->second;
-        }
+        if (i != direct.end() || external != externalFrames.end() || d->HasContent()) {
+            const auto& rect = w->GetInRect();
+            // Vulkan window quads force useTexAlpha=0, including depth-32 images.
+            // Match that opacity when discarding fully covered layers.
+            frame.entries.push_back({d, i == direct.end() ? nullptr : i->second, d->Pixels(), d->Revision(),
+                    rect.left, rect.top, true, w->id, int(w->GetWidth()), int(w->GetHeight()), {}});
+            if (external != externalFrames.end()) {
+                frame.entries.back().ticket.reset();
+                frame.entries.back().external = external->second.frame;
+            }
+            if (i != direct.end() && external == externalFrames.end()) {
+                frame.entries.back().x += i->second->x;
+                frame.entries.back().y += i->second->y;
+                frame.tickets[w->id] = i->second;
+            }
+        } else d->AwaitContent();
     }
     // Hiding a window's own content must not hide its mapped children: Wine
     // game windows can be parented beneath the filtered Explorer desktop.
@@ -245,7 +247,12 @@ void NativeScreen::MutateDrawable(Drawable* drawable, const void* callback, void
         catch (...) { restore(); throw; }
         restore();
     }
-    if (image->Revision() != before) DrawableChanged(drawable);
+    StartupDrawableUpdated(drawable);
+    if (image->Revision() != before) {
+        const bool firstContent = image->PublishContent();
+        if (firstContent) PostInvalidate();
+        else DrawableChanged(drawable);
+    }
 }
 void NativeScreen::DrawableChanged(Drawable* drawable) {
     // Called under XServer::Lock: pixels changed, but geometry/visibility did not.
@@ -367,22 +374,40 @@ bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket, const sp<Presen
     if (DiagnosticsEnabled()) metricScenePatches.fetch_add(1, std::memory_order_relaxed);
     return true;
 }
+// Same condition as Java Window.isApplicationWindow(), evaluated on a content
+// notification, not on scene creation, mapping, focus or a startup timer.
+void NativeScreen::StartupWindowUpdated(u32 id) {
+    if (startupContent.load(std::memory_order_relaxed)) return;
+    auto* resource = server.GetResource(id);
+    if (!resource || resource->GetType() != XResourceType::Window) return;
+    auto* window = resource->As<Window>();
+    if (!window->IsMapped() || window->GetWidth() <= 1 || window->GetHeight() <= 1) return;
+    const auto atom = Atom::GetID("WM_HINTS");
+    const auto* hints = atom >= 0 ? window->GetProperty(atom) : nullptr;
+    u32 group{};
+    if (hints && hints->format == 32 && hints->GetData().size() >= 9 * sizeof(u32))
+        memcpy(&group, hints->GetData().data() + 8 * sizeof(u32), sizeof(group));
+    if (group == id) startupContent.store(true, std::memory_order_relaxed);
+}
+void NativeScreen::StartupDrawableUpdated(Drawable* drawable) {
+    if (startupContent.load(std::memory_order_relaxed)) return;
+    // A drawable has its own internal ID; it is not the X11 window resource ID.
+    // Match its owner, just as Java installs a per-window OnDrawListener.
+    const auto visit = [&](const auto& self, Window* window) -> void {
+        if (startupContent.load(std::memory_order_relaxed)) return;
+        if (window->GetDrawable() == drawable) StartupWindowUpdated(window->id);
+        for (auto* child : window->GetChildren()) self(self, child);
+    };
+    visit(visit, server.GetWindowManager().GetRootWindow());
+}
 void NativeScreen::HudFrame(u32 id) {
-    if (!hudEnabled && HasApplicationContent()) return;
+    StartupWindowUpdated(id);
+    if (!hudEnabled) return;
     auto* resource = server.GetResource(id);
     if (!resource || resource->GetType() != XResourceType::Window) return;
     auto* window = resource->As<Window>();
     if (window->IsRoot() || window->IsInputOnly() || window->GetWidth() <= 1 ||
         window->GetHeight() <= 1 || IsWindowFiltered(window)) return;
-    if (!HasApplicationContent() && window->IsAllAncestorsMapped()) {
-        auto* hints = window->GetProperty(Atom::GetID("WM_HINTS"));
-        if (hints && hints->format == 32 && hints->GetData().size() >= 9 * sizeof(u32)) {
-            u32 group{};
-            memcpy(&group, hints->GetData().data() + 8 * sizeof(u32), sizeof(group));
-            if (group == window->id) applicationContent.store(true, std::memory_order_release);
-        }
-    }
-    if (!hudEnabled) return;
     // A filtered Wine/Explorer desktop may contain the actual game window.
     // Like Collect(), reject only the filtered drawable itself, never a mapped
     // child merely because one of its ancestors has a filtered WM_CLASS.

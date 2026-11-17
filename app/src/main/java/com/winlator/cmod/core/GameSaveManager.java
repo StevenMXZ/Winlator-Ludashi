@@ -107,7 +107,12 @@ public final class GameSaveManager {
 
     public static File getGameDir(Shortcut shortcut) {
         File root = new File(Environment.getExternalStorageDirectory(), "Winlator/Saves");
-        return new File(root, sanitize(shortcut.name));
+        File named = new File(root, sanitize(shortcut.name));
+        if (!named.isDirectory() && (!shortcut.getExtra("gogGameId").isEmpty() || !shortcut.getExtra("ludashiStore").isEmpty())) {
+            File legacy = new File(root, sanitize(FileUtils.getBasename(shortcut.file.getPath())));
+            if (legacy.isDirectory()) return legacy;
+        }
+        return named;
     }
 
     public static boolean isEnabled(Shortcut shortcut) {

@@ -19,7 +19,7 @@ class Window;
 class WindowManager;
 
 struct WindowAttributes {
-    u32 win_gravity{CenterGravity};
+    u32 win_gravity{NorthWestGravity};
     u32 backing_store{NotUseful};
     bool mapped{};
     bool save_under{};

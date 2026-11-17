@@ -18,6 +18,13 @@ public:
     u32 GetStride() override { return stride; }
     AHardwareBuffer* HardwareBuffer() const { return buffer; }
     sp<const std::vector<u8>> Pixels() const { return pixels; }
+    bool HasContent() const { return contentReady || buffer != nullptr; }
+    void AwaitContent() { scenePending = true; }
+    bool PublishContent() {
+        const bool changed = scenePending && !HasContent();
+        contentReady = true; scenePending = false;
+        return changed;
+    }
     u64 Revision() const { return revision; }
     u64 ID() const { return id; }
 private:
@@ -27,7 +34,7 @@ private:
     u32 stride{};
     u64 revision{1}, id{};
     void* mapped{};
-    bool locked{};
+    bool locked{}, contentReady{}, scenePending{};
 };
 }
 

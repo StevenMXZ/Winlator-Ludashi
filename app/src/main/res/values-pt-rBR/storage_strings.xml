@@ -1,0 +1,36 @@
+<resources>
+    <string name="storage_title">Armazenamento</string>
+    <string name="storage_summary">Jogos, componentes, containers e arquivos temporários</string>
+    <string name="storage_busy">Feche os containers e pause os downloads antes de gerenciar o armazenamento.</string>
+    <string name="storage_refresh">Analisar novamente</string>
+    <string name="storage_calculating">Calculando o uso de armazenamento…</string>
+    <string name="storage_used">Em uso</string>
+    <string name="storage_managed">Arquivos gerenciados pelo Ludashi, incluindo jogos registrados no armazenamento externo.</string>
+    <string name="storage_available">%1$s livres no armazenamento interno</string>
+    <string name="storage_unreadable">Alguns locais não puderam ser lidos. Seus arquivos não estão incluídos nos totais.</string>
+    <string name="storage_clear_cache">Limpar cache · %1$s</string>
+    <string name="storage_manage_components">Gerenciar componentes</string>
+    <string name="storage_manage_containers">Gerenciar containers</string>
+    <string name="storage_app_details">Configurações do app no Android</string>
+    <string name="storage_empty">Nenhum arquivo nesta categoria.</string>
+    <string name="storage_remove_title">Remover os arquivos selecionados?</string>
+    <string name="storage_games">Jogos</string>
+    <string name="storage_components">Componentes</string>
+    <string name="storage_containers">Containers</string>
+    <string name="storage_downloads">Downloads e instaladores</string>
+    <string name="storage_cache">Cache</string>
+    <string name="storage_backups">Backups de saves</string>
+    <string name="storage_logs">Logs</string>
+    <string name="storage_system">App e arquivos do sistema</string>
+    <string name="storage_other">Outros dados do app</string>
+    <string name="storage_games_help">Instalações registradas da Steam, GOG e itch.io. A desinstalação remove a instalação do jogo selecionado.</string>
+    <string name="storage_cache_help">Remove arquivos temporários e artes em cache. Jogos, componentes e backups de saves são preservados. O cache pode ser baixado ou recriado depois.</string>
+    <string name="storage_containers_help">Prefixos Wine e instalações locais dentro dos containers. Os jogos listados em Jogos são contabilizados separadamente.</string>
+    <string name="storage_system_help">Ludashi, suas bibliotecas nativas e o sistema base. Estes arquivos são necessários para o app funcionar.</string>
+    <string name="storage_other_help">Informações de conta, configurações, metadados da biblioteca e outros arquivos persistentes do app.</string>
+    <string name="storage_items_help">Confira os arquivos e seus locais antes de removê-los.</string>
+    <string name="ludashi_download_channel">Downloads do Ludashi</string>
+    <string name="ludashi_download_channel_help">Progresso de downloads da Steam, GOG e itch.io.</string>
+    <string name="ludashi_downloads">Downloads do Ludashi</string>
+    <string name="ludashi_steam_session">Conexão Steam ativa</string>
+</resources>

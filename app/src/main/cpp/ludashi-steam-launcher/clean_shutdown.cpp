@@ -660,6 +660,10 @@ extern "C" int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,
                 "cloud: IsCloudEnabledForAccount=%d IsCloudEnabledForApp(%u)=%d "
                 "(-1 = slot not callable)", accOn, appId, appOn);
             ludashi_log(rsbuf);
+            if (accOn == 0 || appOn == 0) {
+                cs_report(appId, onExit ? "exit" : "launch", kSyncDisabled);
+                return kSyncDisabled;
+            }
         }
     }
     if (!rs) {
@@ -958,6 +962,26 @@ extern "C" int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,
     }
     cs_report(appId, phase, finalState, lastSyncTransfers);
     return finalState;
+}
+
+extern "C" int ludashi_launcher_cloud_choice(void) {
+    for (int waited = 0; waited < 600000; waited += 100) {
+        if (ludashi_launcher_shutdown_started() || GetFileAttributesA(kSentinelPath) != INVALID_FILE_ATTRIBUTES) return 0;
+        FILE* f = fopen("C:\\ludashi-steam-cloud-launch-answer.txt", "rb");
+        if (f) {
+            char answer[32] = {};
+            fread(answer, 1, sizeof(answer) - 1, f);
+            fclose(f);
+            DeleteFileA("C:\\ludashi-steam-cloud-launch-answer.txt");
+            return strcmp(answer, "retry") == 0 ? 1 : strcmp(answer, "continue") == 0 ? 2 : 0;
+        }
+        if (g_bgetcallback && g_freelastcallback) {
+            char cb[64];
+            for (int n = 0; n < 128 && g_bgetcallback(g_pipe, cb); ++n) g_freelastcallback(g_pipe);
+        }
+        Sleep(100);
+    }
+    return 0;
 }
 
 extern "C" void ludashi_launcher_clean_shutdown_now(const char* reason) {

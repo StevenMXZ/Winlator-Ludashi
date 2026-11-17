@@ -18,7 +18,13 @@ void Mouse::MoveBy(s16 dx, s16 dy) {
     auto lock = server.Lock();
     if (rawEnabled) server.SendRawMotion(dx, dy);
     absoluteAnchored = false;
-    WarpTo(x + dx, y + dy);
+    const auto elastic = [this](s32 position, u32 extent) -> s32 {
+        if (position < 0) return static_cast<s32>(std::ceil(std::max(position, -s32(max_distance)) * damping));
+        if (position >= s32(extent)) return static_cast<s32>(std::floor(
+            extent + std::min(position - s32(extent), s32(max_distance)) * damping));
+        return position;
+    };
+    WarpTo(elastic(x, screen_width) + dx, elastic(y, screen_height) + dy);
 }
 
 void Mouse::MoveTo(s16 new_x, s16 new_y) {

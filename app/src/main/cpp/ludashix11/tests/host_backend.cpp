@@ -104,7 +104,8 @@ public:
                 memcpy(&next, pixels.data() + (pixels.size() > row ? row : 0), 4);
             }
             std::cerr << "HostCursor w=" << frame.cursor->GetWidth() << " h=" << frame.cursor->GetHeight()
-                      << " first=" << first << " row1=" << next << " last=" << last << '\n';
+                      << " first=" << first << " row1=" << next << " last=" << last
+                      << " cursor_x=" << frame.cursorX << " cursor_y=" << frame.cursorY << '\n';
         }
         {
             std::lock_guard lock(pendingMutex);
@@ -144,6 +145,71 @@ int main(int argc, char** argv) {
     xorg::XServer server(nullptr, xorg::ScreenInfo(1280, 720, 4), false, config);
     std::unique_ptr<xorg::NativeDisplayXBridge> displayX;
     if (std::getenv("LUDASHI_HOST_DISPLAYX")) displayX = std::make_unique<xorg::NativeDisplayXBridge>(server);
+    if (std::string(argv[1]) == "--startup-content") {
+        int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+        xorg::XClient client(server, sockets[0]);
+        auto lock = server.Lock();
+        auto& wm = server.GetWindowManager();
+        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
+        auto helper = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
+                                      0, InputOutput, 24, 0, nullptr);
+        wm.MapWindow(&client, helper.get());
+        screen.MutateDrawable(helper->GetDrawable(), [] {});
+        screen.HudFrame(helper->id);
+        assert(!screen.HasStartupContent()); // A painted helper has no self window_group.
+        auto window = wm.CreateWindow(&client, 0x200002, wm.GetRootWindow(), 0, 0, 32, 32,
+                                      0, InputOutput, 24, 0, nullptr);
+        screen.MutateDrawable(window->GetDrawable(), [] {});
+        wm.MapWindow(&client, window.get());
+        assert(!screen.HasStartupContent()); // Mapping does not deliver OnDrawListener.
+        const auto atom = xorg::Atom::Intern("WM_HINTS");
+        std::vector<u8> hints(9 * sizeof(u32));
+        u32 group = helper->id;
+        memcpy(hints.data() + 8 * sizeof(u32), &group, sizeof(group));
+        window->ModifyProperty(atom, atom, 32, 0, hints);
+        screen.MutateDrawable(window->GetDrawable(), [] {});
+        assert(!screen.HasStartupContent()); // Another window's group is not itself.
+        group = window->id;
+        memcpy(hints.data() + 8 * sizeof(u32), &group, sizeof(group));
+        window->ModifyProperty(atom, atom, 32, 0, hints);
+        screen.WindowPropertyChanged(window.get(), atom);
+        screen.PostInvalidate();
+        assert(!screen.HasStartupContent()); // A scene/property update alone is insufficient.
+        wm.UnmapWindow(window.get());
+        screen.MutateDrawable(window->GetDrawable(), [] {});
+        assert(!screen.HasStartupContent()); // Same mapped check as Java.
+        wm.MapWindow(&client, window.get());
+        wm.DestroyWindow(helper.get(), true); // A splash/launcher can disappear before the game paints.
+        assert(!screen.HasStartupContent());
+        // No surface, revision change or GPU completion is required: Java fires
+        // OnDrawListener even when a drawing command changes no pixels.
+        screen.MutateDrawable(window->GetDrawable(), [] {});
+        assert(screen.HasStartupContent());
+        wm.UnmapWindow(window.get());
+        assert(screen.HasStartupContent());
+        close(sockets[1]);
+        std::cout << "PASS: Java content notification semantics, late hints, two windows, no surface/GPU/timer dependency\n";
+        return 0;
+    }
+    if (std::string(argv[1]) == "--window-map-listener") {
+        int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+        xorg::XClient client(server, sockets[0]);
+        auto& wm = server.GetWindowManager();
+        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
+                                      0, InputOutput, 24, 0, nullptr);
+        int mapped = 0;
+        wm.onWindowMapped = [&](xorg::Window* value) { assert(value == window.get()); assert(value->IsMapped()); ++mapped; };
+        wm.MapWindow(&client, window.get());
+        wm.MapWindow(&client, window.get());
+        assert(mapped == 1);
+        wm.UnmapWindow(window.get());
+        wm.MapWindow(&client, window.get());
+        assert(mapped == 2);
+        wm.onWindowMapped = {};
+        close(sockets[1]);
+        std::cout << "PASS: window affinity notification follows map/remap, not duplicate map requests\n";
+        return 0;
+    }
     if (std::string(argv[1]) == "--displayx-timeline") {
         int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
         xorg::XClient client(server, sockets[0]);
@@ -151,6 +217,8 @@ int main(int argc, char** argv) {
         auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
         auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
                                       0, InputOutput, 24, 0, nullptr);
+        auto* initial = static_cast<xorg::NativeDrawable*>(window->GetDrawable());
+        screen.MutateDrawable(initial, [&] { initial->FillRect(0, 0, 32, 32, 0xff000000); });
         screen.SetFrameTimeline(42);
         wm.MapWindow(&client, window.get());
         screen.UpdateSurface(new ANativeWindow);
@@ -179,27 +247,6 @@ int main(int argc, char** argv) {
         screen.UpdateSurface(nullptr);
         close(sockets[1]);
         std::cout << "PASS: DisplayX native timeline pacing, FIFO bypass and older-Android fallback\n";
-        return 0;
-    }
-    if (std::string(argv[1]) == "--startup-content") {
-        int sockets[2]; if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) return 2;
-        xorg::XClient client(server, sockets[0]);
-        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
-        auto& wm = server.GetWindowManager();
-        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 1280, 720,
-                                      0, InputOutput, 24, 0, nullptr);
-        wm.MapWindow(&client, window.get());
-        if (screen.HasApplicationContent()) return 40;
-        screen.HudFrame(window->id);
-        if (screen.HasApplicationContent()) return 41;
-        std::vector<u8> hints(9 * sizeof(u32));
-        memcpy(hints.data() + 8 * sizeof(u32), &window->id, sizeof(u32));
-        window->AddProperty(xorg::Atom::GetID("WM_HINTS"), xorg::Atom::GetID("WM_HINTS"), 32, 0, hints);
-        if (screen.HasApplicationContent()) return 42;
-        screen.HudFrame(window->id);
-        if (!screen.HasApplicationContent()) return 43;
-        close(sockets[1]);
-        std::cout << "PASS: native startup waits for application content, not socket startup or window mapping\n";
         return 0;
     }
     if (std::string(argv[1]) == "--framegen-options") {

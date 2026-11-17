@@ -1,0 +1,36 @@
+<resources>
+    <string name="storage_title">Storage</string>
+    <string name="storage_summary">Games, components, containers and temporary files</string>
+    <string name="storage_busy">Close containers and pause downloads before managing storage.</string>
+    <string name="storage_refresh">Analyze again</string>
+    <string name="storage_calculating">Calculating storage usage…</string>
+    <string name="storage_used">Used</string>
+    <string name="storage_managed">Files managed by Ludashi, including registered games on external storage.</string>
+    <string name="storage_available">%1$s free on internal storage</string>
+    <string name="storage_unreadable">Some locations could not be read. Their files are not included in these totals.</string>
+    <string name="storage_clear_cache">Clear cache · %1$s</string>
+    <string name="storage_manage_components">Manage components</string>
+    <string name="storage_manage_containers">Manage containers</string>
+    <string name="storage_app_details">Android app settings</string>
+    <string name="storage_empty">No files in this category.</string>
+    <string name="storage_remove_title">Remove selected files?</string>
+    <string name="storage_games">Games</string>
+    <string name="storage_components">Components</string>
+    <string name="storage_containers">Containers</string>
+    <string name="storage_downloads">Downloads and installers</string>
+    <string name="storage_cache">Cache</string>
+    <string name="storage_backups">Save backups</string>
+    <string name="storage_logs">Logs</string>
+    <string name="storage_system">App and system files</string>
+    <string name="storage_other">Other app data</string>
+    <string name="storage_games_help">Registered Steam, GOG and itch.io installations. Uninstalling removes the selected game installation.</string>
+    <string name="storage_cache_help">Removes temporary files and cached artwork. Games, components and save backups are kept. Cached files may be downloaded or rebuilt later.</string>
+    <string name="storage_containers_help">Wine prefixes and local installations inside containers. Store games shown under Games are counted separately.</string>
+    <string name="storage_system_help">Ludashi, its native libraries and the base runtime. These files are required for the app to run.</string>
+    <string name="storage_other_help">Account information, settings, library metadata and other persistent app files.</string>
+    <string name="storage_items_help">Review the files and their locations before removing them.</string>
+    <string name="ludashi_download_channel">Ludashi downloads</string>
+    <string name="ludashi_download_channel_help">Download progress for Steam, GOG and itch.io.</string>
+    <string name="ludashi_downloads">Ludashi downloads</string>
+    <string name="ludashi_steam_session">Steam connection active</string>
+</resources>

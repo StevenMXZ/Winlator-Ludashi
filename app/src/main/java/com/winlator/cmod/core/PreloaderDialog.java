@@ -47,6 +47,9 @@ public class PreloaderDialog {
 
     private final Activity activity;
     private Dialog dialog;
+    private Runnable launchCancel;
+
+    public void setLaunchCancel(Runnable action) { launchCancel = action; }
     private Bitmap artworkBitmap;
     private volatile String theGamesDbRequestKey;
 
@@ -82,6 +85,8 @@ public class PreloaderDialog {
             configureStandardPreloader(textResId);
         }
 
+        dialog.setCancelable(textResId == R.string.starting_up && launchCancel != null);
+        dialog.setOnCancelListener(d -> { if (launchCancel != null) launchCancel.run(); });
         dialog.show();
         Window window = dialog.getWindow();
         if (window != null) {

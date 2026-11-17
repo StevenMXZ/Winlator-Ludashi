@@ -177,47 +177,6 @@ private fun Sidebar(state: ModernSidebarController) {
 }
 
 @Composable
-private fun ExclusiveInputRow(state: ModernSidebarController) {
-    val activity = state.activity
-    @Suppress("UNUSED_VARIABLE") val revision = state.revision
-    Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(uiStr(R.string.ui_exclusive_input), style = MaterialTheme.typography.bodyMedium)
-                if (activity.isExclusiveInputBusy) Text(uiStr(R.string.ui_applying), style = MaterialTheme.typography.bodySmall)
-            }
-            Switch(activity.isExclusiveInputEnabled, { activity.changeExclusiveInput(it, state::refresh) },
-                enabled = activity.canChangeExclusiveInput())
-        }
-    }
-}
-
-@Composable
-private fun InputApiRow(state: ModernSidebarController) {
-    val activity = state.activity
-    @Suppress("UNUSED_VARIABLE") val revision = state.revision
-    val canEdit = activity.canChangeExclusiveInput() && activity.isExclusiveInputEnabled
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(uiStr(R.string.ui_enable_xinput), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                Switch(activity.isSidebarXInputEnabled, { enabled ->
-                    state.activity.changeSidebarInputApis(enabled, if (enabled) false else activity.isSidebarDInputEnabled, state::refresh)
-                }, enabled = canEdit)
-            }
-        }
-        Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(uiStr(R.string.ui_enable_dinput), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                Switch(activity.isSidebarDInputEnabled, { enabled ->
-                    state.activity.changeSidebarInputApis(if (enabled) false else activity.isSidebarXInputEnabled, enabled, state::refresh)
-                }, enabled = canEdit)
-            }
-        }
-    }
-}
-
-@Composable
 private fun RailButton(selected: Boolean, click: () -> Unit, cellSize: androidx.compose.ui.unit.Dp, icon: @Composable () -> Unit) {
     val fill by animateColorAsState(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, WinZMotion.standard(150), label = "railSelection")
     Surface(click, Modifier.size(cellSize), shape = WinZShapes.Medium,
@@ -290,23 +249,31 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
                 if (adapter != null && adapter.count > 0) {
                     var expanded by remember(view) { mutableStateOf(false) }
                     val options = (0 until adapter.count).map { adapter.getItem(it).toString() }
-                    Box {
-                        OutlinedButton({ expanded = true }, Modifier.fillMaxWidth(), shape = WinZShapes.Small, enabled = view.isEnabled) {
-                            Text(options.getOrElse(view.selectedItemPosition) { options.first() }, Modifier.weight(1f))
-                            Icon(Icons.Outlined.KeyboardArrowDown, null)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.weight(1f)) {
+                            OutlinedButton({ expanded = true }, Modifier.fillMaxWidth(), shape = WinZShapes.Small, enabled = view.isEnabled) {
+                                Text(options.getOrElse(view.selectedItemPosition) { options.first() }, Modifier.weight(1f))
+                                Icon(Icons.Outlined.KeyboardArrowDown, null)
+                            }
+                            DropdownMenu(expanded, { expanded = false }) {
+                                options.forEachIndexed { index, text ->
+                                    DropdownMenuItem(text = { Text(text) }, onClick = {
+                                        expanded = false
+                                        if (index != view.selectedItemPosition) {
+                                            view.setSelection(index, false)
+                                            // A hidden Spinner never lays itself out, so dispatch its real binding
+                                            // explicitly. The binding remains responsible for saving and applying.
+                                            view.onItemSelectedListener?.onItemSelected(view, null, index, adapter.getItemId(index))
+                                            refresh()
+                                        }
+                                    })
+                                }
+                            }
                         }
-                        DropdownMenu(expanded, { expanded = false }) {
-                            options.forEachIndexed { index, text ->
-                                DropdownMenuItem(text = { Text(text) }, onClick = {
-                                    expanded = false
-                                    if (index != view.selectedItemPosition) {
-                                        view.setSelection(index, false)
-                                        // A hidden Spinner never lays itself out, so dispatch its real binding
-                                        // explicitly. The binding remains responsible for saving and applying.
-                                        view.onItemSelectedListener?.onItemSelected(view, null, index, adapter.getItemId(index))
-                                        refresh()
-                                    }
-                                })
+                        if (view.id == R.id.SPInputControlsProfile) {
+                            val edit = sidebar?.activity?.findViewById<View>(R.id.BTInputControlsSettings)
+                            IconButton(enabled = edit?.isEnabled == true, onClick = { edit?.performClick(); refresh() }) {
+                                Icon(Icons.Outlined.Settings, uiStr(R.string.controls_editor))
                             }
                         }
                     }
@@ -332,10 +299,6 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
             }
             view is TextView -> if (view.text.isNotBlank()) Text(view.text.toString(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             view is ViewGroup -> LegacyFields(view, revision, active, refresh, heading, sidebar)
-        }
-        if (view.id == R.id.SWEnableTouchscreenHaptics && sidebar != null) {
-            ExclusiveInputRow(sidebar)
-            InputApiRow(sidebar)
         }
     }
 }

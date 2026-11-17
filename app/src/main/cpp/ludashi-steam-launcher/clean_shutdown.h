@@ -25,6 +25,8 @@ void ludashi_launcher_set_cloud_context(void* engine, int hUser, int hPipe, unsi
 int ludashi_launcher_cloud_run(void* engine, int hUser, int hPipe,
                           unsigned int appId, int onExit, int timeoutMs);
 
+int ludashi_launcher_cloud_choice(void);
+
 void ludashi_launcher_clean_shutdown_now(const char* reason);
 
 void ludashi_launcher_wait_clean_shutdown(int maxMs);

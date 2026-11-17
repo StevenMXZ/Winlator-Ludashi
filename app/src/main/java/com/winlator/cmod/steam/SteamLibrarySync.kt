@@ -6,8 +6,8 @@ import org.json.JSONObject
 class SteamLibrarySync {
     interface Gateway {
         fun snapshot(): String
-        fun packages(ids: List<Int>, tokens: List<Long>): Boolean
-        fun apps(ids: List<Int>, tokens: List<Long>): Boolean
+        fun packages(ids: List<Int>, tokens: List<Long>): Set<Int>?
+        fun apps(ids: List<Int>, tokens: List<Long>): Set<Int>?
         fun tokens(ids: List<Int>): Map<Int, Long>
     }
     var loading = true
@@ -21,9 +21,12 @@ class SteamLibrarySync {
     private var started: Long? = null
     private val packagesDone = mutableSetOf<Int>()
     private val appsDone = mutableSetOf<Int>()
-    fun reset() {
+    private val attempts = mutableMapOf<String, Int>()
+    private var forceRefresh = false
+    fun reset(forceRefresh: Boolean = false) {
+        this.forceRefresh = forceRefresh
         loading = true; error = ""; progress = 0; message = "Loading Steam library… 0%"
-        started = null; packagesDone.clear(); appsDone.clear()
+        started = null; packagesDone.clear(); appsDone.clear(); attempts.clear()
     }
     fun step(gateway: Gateway, licensesReceived: Boolean, now: Long) {
         if (!loading) return
@@ -37,29 +40,27 @@ class SteamLibrarySync {
                 return
             }
             val pendingPackages = (0 until (packages?.length() ?: 0)).map { packages!!.getJSONObject(it) }
-                .filter { it.getInt("id") !in packagesDone }.take(100)
+                .filter { it.getInt("id") !in packagesDone && (forceRefresh || !it.optBoolean("pics_fetched")) }.take(100)
             if (pendingPackages.isNotEmpty()) {
                 val ids = pendingPackages.map { it.getInt("id") }
                 message = "Loading Steam library… $progress%"
-                check(gateway.packages(ids, pendingPackages.map { it.optString("access_token", "0").toULong().toLong() })) {
-                    "Steam package metadata request failed. Try loading the library again."
-                }
-                packagesDone.addAll(ids)
+                val received = gateway.packages(ids, pendingPackages.map { it.optString("access_token", "0").toULong().toLong() })
+                    ?: error("Steam package metadata request failed. Try loading the library again.")
+                confirm("package", ids, received, packagesDone)
                 progress = maxOf(progress, packagesDone.size * 50 / packages!!.length())
                 message = "Loading Steam library… $progress%"
                 return
             }
             val owned = snapshot.optJSONArray("owned_apps")
             val pendingApps = (0 until (owned?.length() ?: 0)).map { owned!!.getJSONObject(it) }
-                .filter { it.getInt("id") !in appsDone }.take(100)
+                .filter { it.getInt("id") !in appsDone && (forceRefresh || !it.optBoolean("pics_fetched")) }.take(100)
             if (pendingApps.isNotEmpty()) {
                 val ids = pendingApps.map { it.getInt("id") }
                 message = "Loading Steam library… $progress%"
                 val tokens = gateway.tokens(ids)
-                check(gateway.apps(ids, pendingApps.map { tokens[it.getInt("id")] ?: it.optString("access_token", "0").toULong().toLong() })) {
-                    "Steam game metadata request failed. Try loading the library again."
-                }
-                appsDone.addAll(ids)
+                val received = gateway.apps(ids, pendingApps.map { tokens[it.getInt("id")] ?: it.optString("access_token", "0").toULong().toLong() })
+                    ?: error("Steam game metadata request failed. Try loading the library again.")
+                confirm("game", ids, received, appsDone)
                 progress = maxOf(progress, (50 + appsDone.size * 50 / owned!!.length()).coerceAtMost(99))
                 message = "Loading Steam library… $progress%"
                 return
@@ -69,6 +70,15 @@ class SteamLibrarySync {
         } catch (e: Exception) {
             loading = false; error = e.message ?: "Steam library could not be loaded"
             message = error
+        }
+    }
+    private fun confirm(kind: String, requested: List<Int>, received: Set<Int>, done: MutableSet<Int>) {
+        done.addAll(requested.filter { it in received })
+        for (id in requested.filter { it !in received }) {
+            val key = "$kind:$id"
+            val count = (attempts[key] ?: 0) + 1
+            attempts[key] = count
+            check(count < 3) { "Steam returned incomplete $kind metadata. Reload the library to retry." }
         }
     }
 }

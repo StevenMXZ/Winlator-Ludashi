@@ -3,6 +3,8 @@ package com.winlator.cmod.ui.settings
 import com.winlator.cmod.ui.uiStr
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.graphics.Color
 import android.view.View
 import androidx.compose.foundation.BorderStroke
@@ -160,6 +162,9 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
     val activity = context as? MainActivity
+    val storage = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.data?.getStringExtra("storage_action") == "containers") activity?.navigateToMainDestination(R.id.main_menu_containers)
+    }
 
     DisposableEffect(activity, landscape) {
         if (landscape) {
@@ -186,8 +191,8 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("language") { GroupCard { AppLanguagePreference() } }
 
             item("stores") {
-                NavigationRow(Icons.Outlined.Storefront, uiStr(R.string.steam_ui_stores), uiStr(R.string.steam_ui_stores_summary)) {
-                    context.startActivity(Intent(context, com.winlator.cmod.steam.StoreSettingsActivity::class.java))
+                NavigationRow(Icons.Outlined.Storefront, uiStr(R.string.steam_ui_stores), null) {
+                    context.startActivity(Intent(context, com.winlator.cmod.steam.StoresActivity::class.java))
                 }
             }
             item("environment-title") { SectionTitle(uiStr(R.string.ui_environments)) }
@@ -307,6 +312,11 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("imagefs-title") { SectionTitle(stringResource(R.string.imagefs)) }
             item("imagefs") { NavigationRow(Icons.Outlined.Refresh, stringResource(R.string.reinstall_imagefs), null, callbacks::onReinstallImageFs) }
 
+            item("storage") {
+                NavigationRow(Icons.Outlined.Storage, uiStr(R.string.storage_title), null) {
+                    storage.launch(Intent(context, com.winlator.cmod.storage.StorageActivity::class.java))
+                }
+            }
             item("labs") {
                 NavigationRow(Icons.Outlined.Memory, uiStr(R.string.ui_labs), null) {
                     context.startActivity(Intent(context, WinlatorLabsActivity::class.java))

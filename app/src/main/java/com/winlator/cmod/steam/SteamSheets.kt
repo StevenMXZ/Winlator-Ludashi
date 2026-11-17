@@ -76,21 +76,32 @@ object SteamSheets {
             val apps = rememberSteamLibrary(context, state.library)
             val demos = rememberSteamLibrary(context, state.library, filterType = "demo")
             val item = remember(apps, demos, id) { (apps + demos).find { app -> SteamLibrary.appId(app.shortcutPath) == id } }
+            var added by remember(id) { mutableStateOf(SteamLibrary.added(context, id)) }
             var favorite by remember { mutableStateOf(context.getSharedPreferences("steam-settings", 0).getBoolean("favorite-$id", false)) }
             Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
-                    update = { Glide.with(it).load("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900_2x.jpg").into(it) }, modifier = Modifier.size(32.dp, 48.dp))
+                    update = { SteamArtwork.request(it.context, "https://shared.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900_2x.jpg").into(it) }, modifier = Modifier.size(32.dp, 48.dp))
                 Text(item?.name ?: uiStr(R.string.steam_ui_game), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             }
             val installed = java.io.File(context.filesDir, "steam-library/$id.json").isFile
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(modifier = Modifier.weight(1f), enabled = installed || (state.signedIn && !state.downloading && !state.gameActive), onClick = {
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(modifier = Modifier.widthIn(min = 150.dp), enabled = installed || (state.signedIn && !state.downloading && !state.gameActive && SteamSession.installRequestId == 0), onClick = {
                     if (installed) { dismiss(); SteamLibrary.open(context, "steam://$id") } else SteamSession.install(id)
                 }) { Icon(Icons.Outlined.Download, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (installed) uiStr(R.string.steam_ui_view_game) else uiStr(R.string.steam_ui_download)) }
-                FilledTonalButton(modifier = Modifier.weight(1f), onClick = {
+                FilledTonalButton(modifier = Modifier.widthIn(min = 150.dp), onClick = {
                     favorite = !favorite; context.getSharedPreferences("steam-settings", 0).edit().putBoolean("favorite-$id", favorite).apply(); SteamGames.changed()
                 }) { Icon(if (favorite) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (favorite) uiStr(R.string.steam_ui_unfavorite) else uiStr(R.string.steam_ui_favorite)) }
+                if (!installed) OutlinedButton(modifier = Modifier.widthIn(min = 150.dp), onClick = {
+                    added = !added; SteamLibrary.setAdded(context, id, added)
+                }) {
+                    Icon(if (added) Icons.Outlined.Check else Icons.Outlined.Add, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(uiStr(if (added) R.string.store_remove_library else R.string.store_add_library), maxLines = 1)
+                }
             }
+            if (SteamSession.installRequestId == id) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            if (SteamSession.installError.isNotBlank()) Text(SteamSession.installError,
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.error)
             SteamStoreDetails(id, installed, state)
             if (state.downloading && state.id == id) SteamDownloadPanel(state)
             else if (!state.signedIn) {

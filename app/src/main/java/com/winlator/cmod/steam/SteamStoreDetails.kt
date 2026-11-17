@@ -7,6 +7,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,9 @@ import com.winlator.cmod.R
 import com.winlator.cmod.ui.uiStr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runInterruptible
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -31,7 +35,9 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 internal object SteamStoreMetadata {
+    private val cache = android.util.LruCache<Int, String>(32)
     fun fetch(id: Int): JSONObject {
+        cache.get(id)?.let { return JSONObject(it) }
         val connection = URL("https://store.steampowered.com/api/appdetails?appids=$id&cc=us&l=english").openConnection() as HttpURLConnection
         connection.connectTimeout = 10000
         connection.readTimeout = 12000
@@ -39,18 +45,21 @@ internal object SteamStoreMetadata {
         return try {
             if (connection.responseCode != 200) return JSONObject()
             val text = connection.inputStream.bufferedReader().use { it.readText().take(1500000) }
-            JSONObject(text).optJSONObject(id.toString())?.optJSONObject("data") ?: JSONObject()
+            val data = JSONObject(text).optJSONObject(id.toString())?.optJSONObject("data") ?: return JSONObject()
+            cache.put(id, data.toString())
+            data
         } finally { connection.disconnect() }
     }
     fun cloudListing(id: Int): JSONObject {
         val future = CompletableFuture<JSONObject>()
         SteamSession.work {
+            if (future.isCancelled) return@work
             try {
                 check(SteamSession.signedIn && !SteamSession.gameActive)
                 future.complete(JSONObject(SteamSession.session?.getCloudFileList(id) ?: error("Steam Cloud unavailable")))
             } catch (error: Throwable) { future.completeExceptionally(error) }
         }
-        return future.get(35, TimeUnit.SECONDS)
+        return try { future.get(35, TimeUnit.SECONDS) } finally { future.cancel(false) }
     }
 }
 
@@ -62,16 +71,16 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
     var language by remember(id) { mutableStateOf(SteamInstallOptions.language(context, id)) }
     var branchMenu by remember { mutableStateOf(false) }
     var languageMenu by remember { mutableStateOf(false) }
-    val data by produceState(Pair(JSONObject(), JSONObject()), id, state.signedIn, installed) {
+    val pics by produceState(JSONObject(), id, state.signedIn, installed) {
         value = withContext(Dispatchers.IO) {
-            Pair(
-                runCatching { if (installed) SteamGames.info(context, id) else if (state.signedIn) SteamSession.info(id) else JSONObject() }.getOrDefault(JSONObject()),
-                runCatching { SteamStoreMetadata.fetch(id) }.getOrDefault(JSONObject())
-            )
+            runCatching { if (installed) SteamGames.info(context, id) else if (state.signedIn) SteamSession.info(id) else JSONObject() }.getOrDefault(JSONObject())
         }
     }
-    val pics = data.first
-    val store = data.second
+    val store by produceState(JSONObject(), id) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { SteamStoreMetadata.fetch(id) }.getOrDefault(JSONObject())
+        }
+    }
     val branches = remember(pics) { SteamCatalog.branches(pics) }
     val languages = remember(pics) { SteamCatalog.languages(pics) }
     val downloadSize = remember(pics, branch, language) {
@@ -80,9 +89,10 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
     val installedSize by produceState<Long?>(null, id, installed) {
         value = if (!installed) null else withContext(Dispatchers.IO) {
             runCatching {
+                val coroutine = currentCoroutineContext()
                 val dir = SteamGames.directory(context, id)
                 dir.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }
-                    .filter { it.isFile }.sumOf { it.length() }
+                    .onEach { coroutine.ensureActive() }.filter { it.isFile }.sumOf { it.length() }
             }.getOrNull()
         }
     }
@@ -93,8 +103,8 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
     val cached = rememberSteamGameSnapshot(context, id)
     val ach = cached.achievements
     var showCloud by remember(id) { mutableStateOf(false) }
-    val shortcut = remember(installed, id, SteamGames.version) {
-        if (installed) SteamGames.shortcut(context, id) else null
+    val shortcut by produceState<com.winlator.cmod.container.Shortcut?>(null, installed, id, SteamGames.version) {
+        value = if (installed) withContext(Dispatchers.IO) { SteamGames.shortcut(context, id) } else null
     }
     val tabs = listOf(
         uiStr(R.string.steam_store_details),
@@ -189,15 +199,17 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
                             }
                     } else {
                         Text(uiStr(R.string.steam_ui_ach_count, ach.count { it.unlocked }, ach.size))
-                        ach.forEach { achievement ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Icon(if (achievement.unlocked) Icons.Outlined.CheckCircle else Icons.Outlined.Lock,
-                                    null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                                Column {
-                                    Text(achievement.title, style = MaterialTheme.typography.labelLarge)
-                                    if (achievement.description.isNotBlank())
-                                        Text(achievement.description, style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 210.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(ach) { achievement ->
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Icon(if (achievement.unlocked) Icons.Outlined.CheckCircle else Icons.Outlined.Lock,
+                                        null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Column {
+                                        Text(achievement.title, style = MaterialTheme.typography.labelLarge)
+                                        if (achievement.description.isNotBlank())
+                                            Text(achievement.description, style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
                             }
                         }
@@ -213,6 +225,7 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
                     val dlcNames by produceState<Map<Int, String>>(emptyMap(), id, ids.joinToString(","), state.signedIn) {
                         value = if (!state.signedIn || ids.isEmpty()) emptyMap() else withContext(Dispatchers.IO) {
                             ids.take(16).mapNotNull { dlcId ->
+                                currentCoroutineContext().ensureActive()
                                 val name = runCatching { SteamSession.info(dlcId).optJSONObject("common")?.optString("name") }
                                     .getOrNull().orEmpty()
                                 if (name.isNotBlank()) dlcId to name else null
@@ -232,7 +245,7 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
                 }
                 3 -> {
                     val cloud by produceState<Pair<JSONObject?, String>>(null to "", id, state.signedIn, state.gameActive, tab) {
-                        value = if (state.signedIn && !state.gameActive) withContext(Dispatchers.IO) {
+                        value = if (state.signedIn && !state.gameActive) runInterruptible(Dispatchers.IO) {
                             runCatching { SteamStoreMetadata.cloudListing(id) }
                                 .fold({ it to "" }, { null to (it.message ?: "Steam Cloud unavailable") })
                         } else null to ""
@@ -283,7 +296,7 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
             }
         }
     }
-    if (showCloud && shortcut != null) {
-        SteamNativeCloudPanel(id, shortcut.container, { showCloud = false })
+    shortcut?.takeIf { showCloud }?.let {
+        SteamNativeCloudPanel(id, it.container, { showCloud = false })
     }
 }

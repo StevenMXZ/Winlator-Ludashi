@@ -52,11 +52,11 @@ class StoreSettingsActivity : ImmersiveSteamActivity() {
             Column(Modifier.fillMaxSize().storeBackground().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { finish() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, uiStr(R.string.steam_ui_back)) }
-                    Text(uiStr(R.string.steam_ui_stores), style = MaterialTheme.typography.titleLarge)
+                    Text(uiStr(R.string.gog_steam_settings_title), style = MaterialTheme.typography.titleLarge)
                 }
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     StoreSection {
-                        Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(enabled = SteamSettings.enabled(this@StoreSettingsActivity)) { startActivity(Intent(this@StoreSettingsActivity, SteamActivity::class.java)) }.padding(18.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(painterResource(R.drawable.ic_steam), null, Modifier.size(56.dp), tint = Color.White)
                             Column(Modifier.weight(1f)) {
                                 Text("Steam", style = MaterialTheme.typography.titleLarge)

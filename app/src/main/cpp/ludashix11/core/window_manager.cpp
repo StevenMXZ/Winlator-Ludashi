@@ -425,6 +425,7 @@ void WindowManager::MapWindow(const XClient* caller_client, Window* window) {
         }
     }
     window->attributes.mapped = true;
+    if (onWindowMapped) onWindowMapped(window);
     xEvent event{};
     event.u.mapNotify.event = window->id;
     event.u.mapNotify.window = window->id;
@@ -771,6 +772,10 @@ void WindowManager::ChangeWindowAttributes(XClient* client,
                                            u32 mask,
                                            const u32* values) {
     const bool redraw = window->GetAttributes().Update(window, mask, values, client);
+    if (redraw && window->GetDrawable()) {
+        static_cast<NativeDrawable*>(window->GetDrawable())->PublishContent();
+        static_cast<NativeScreen&>(server.GetScreen()).StartupWindowUpdated(window->id);
+    }
     UpdatePointer(NotifyNormal);
     if (redraw && window->IsMapped()) {
         server.GetScreen().PostInvalidate();
@@ -835,8 +840,6 @@ Cursor* WindowManager::UpdatePointerPosition(s32 x, s32 y, u32 mode, bool notify
             y = in_rect.bottom - 1;
         }
     }
-    const auto clamp_x = std::clamp(x, 0, root_window->width - 1);
-    const auto clamp_y = std::clamp(y, 0, root_window->height - 1);
     if (grab_pointer_window) {
         window = grab_pointer_window;
     } else {
@@ -845,9 +848,12 @@ Cursor* WindowManager::UpdatePointerPosition(s32 x, s32 y, u32 mode, bool notify
     if (grab_cursor) {
         cursor = grab_cursor.get();
     } else {
-        cursor = window->GetCursor();
+        Window* cursorWindow = GetPointerWindow(x, y);
+        if (grab_pointer_window && cursorWindow != grab_pointer_window &&
+            !grab_pointer_window->IsAncestorOf(cursorWindow)) cursorWindow = grab_pointer_window;
+        cursor = cursorWindow->GetCursor();
     }
-    server.GetScreen().UpdateCursor(cursor->GetDrawable(), clamp_x - cursor->GetHotspotX(), clamp_y - cursor->GetHotspotY());
+    server.GetScreen().UpdateCursor(cursor->GetDrawable(), x - cursor->GetHotspotX(), y - cursor->GetHotspotY());
     if (window != motion_window) {
         motion_window->LeaveEnterNotify(x, y, window, mode);
         motion_window = window;

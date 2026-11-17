@@ -33,7 +33,7 @@ public final class ShortcutPresetManager {
          "frameGenTargetRate","frameGenFlowScale","sharpnessEffect","sharpnessLevel",
          "sharpnessDenoise"},
         {"controlsProfile","inputType","exclusiveXInput","disableXinput",
-         "enableRelativeMouse","disableMouse","simTouchScreen","syncCpuTopology","cpuList"}
+         "enableRelativeMouse","disableMouse","hideCursor","simTouchScreen","syncCpuTopology","cpuList"}
     };
 
     public static Map<String, String> readExtra(InputStream input) throws IOException {

@@ -41,6 +41,7 @@ public class Shortcut {
         this.file = file;
 
         String execArgs = "";
+        String desktopName = "";
         Bitmap icon = null;
         File iconFile = null;
         String wmClass = "";
@@ -63,6 +64,7 @@ public class Shortcut {
 
                 if (section.equals("Desktop Entry")) {
                     if (key.equals("Exec")) execArgs = value;
+                    if (key.equals("Name")) desktopName = value;
                     if (key.equals("Icon")) {
                         for (File iconDir : iconDirs) {
                             File potentialIcon = new File(iconDir, value+".png");
@@ -102,7 +104,8 @@ public class Shortcut {
             }
         } catch (Exception e) {}
 
-        this.name = FileUtils.getBasename(file.getPath());
+        this.name = com.winlator.cmod.core.ShortcutNames.resolve(FileUtils.getBasename(file.getPath()), desktopName,
+                extraData.has("gogGameId") || extraData.has("ludashiStore"), getExtra("storeDisplayName"));
 
         this.icon = icon;
         this.iconFile = iconFile;

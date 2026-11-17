@@ -152,6 +152,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private static final boolean DISABLE_TOUCHSCREEN_AUTO_HIDE = true;
     private static final HashMap<String, Boolean> WINE_XRANDR_SUPPORT_CACHE = new HashMap<>();
     private final AtomicBoolean exiting = new AtomicBoolean(false);
+    private final Object startupLock = new Object();
+    private boolean launchCancelled;
 
     public static String NOTIFICATION_CHANNEL_ID = "Winlator";
     public static int NOTIFICATION_ID = -1;
@@ -223,6 +225,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     private boolean isPaused = false;
     private boolean isRelativeMouseMovement = false;
     private boolean isMouseDisabled = false;
+    private boolean isCursorHidden = false;
     private boolean simulateTouchScreen = false;
 
     private SensorManager sensorManager;
@@ -461,6 +464,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             finish(); return;
         }
         ownsPrefixLease = true;
+        com.winlator.cmod.stores.StoreSessions.pauseForGame();
         containerManager.activateContainer(container);
 
         if (shortcutPath != null && !shortcutPath.isEmpty()) {
@@ -557,6 +561,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             Log.d("XServerDisplayActivity", "XInput Disabled from Shortcut: " + xinputDisabledFromShortcut);
 
             simulateTouchScreen = shortcut.getExtra("simTouchScreen").equals("1");
+            isCursorHidden = shortcut.getExtra("hideCursor").equals("1");
             isRelativeMouseMovement = shortcut.getExtra("enableRelativeMouse").equals("1");
             isMouseDisabled = shortcut.getExtra("disableMouse").equals("1");
         }
@@ -575,6 +580,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         boolean removeLoadingBarWhenBootingGames = PreferenceManager.getDefaultSharedPreferences(this)
                 .getBoolean("remove_loading_bar_when_booting_games", false);
+        preloaderDialog.setLaunchCancel(() -> {
+            if (exiting.get()) return;
+            launchCancelled = true;
+            preloaderDialog.close();
+            exit();
+        });
         if (!removeLoadingBarWhenBootingGames) preloaderDialog.show(R.string.starting_up);
 
         inputControlsManager = new InputControlsManager(this);
@@ -611,9 +622,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             @Override
             public void onUpdateWindowContent(Window window) {
                 if (!winStarted[0] && window.isApplicationWindow()) {
-                    if (!simulateTouchScreen) {
-                        xServerView.setCursorVisible(true);
-                    }
+                    applyCursorVisibility();
                     preloaderDialog.closeOnUiThread();
                     winStarted[0] = true;
                 }
@@ -705,6 +714,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, builder.build());
 
         Runnable runnable = () -> {
+            if (exiting.get()) return;
             setupUI();
             setupSidebarInputControls();
             if (controlsProfile.isEmpty()) {
@@ -712,29 +722,32 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 simulateConfirmInputControlsDialog();
             }
             Executors.newSingleThreadExecutor().execute(() -> {
-                setupWineSystemFiles();
-                try {
-                    extractGraphicsDriverFiles();
-                } catch (IllegalStateException error) {
-                    Log.e("OpenGLDriver", "Driver startup failed", error);
-                    runOnUiThread(() -> {
-                        android.widget.Toast.makeText(this, error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
-                        exit();
-                    });
-                    return;
-                }
-                changeWineAudioDriver();
-                applyGameRefreshRateUnlock();
-                try {
-                    setupXEnvironment();
-                } catch (PackageManager.NameNotFoundException e) {
-                    throw new RuntimeException(e);
-                } catch (IllegalStateException e) {
-                    Log.e("LudashiX11", "Display startup failed", e);
-                    runOnUiThread(() -> {
-                        android.widget.Toast.makeText(this, e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
-                        exit();
-                    });
+                synchronized (startupLock) {
+                    if (exiting.get()) return;
+                    setupWineSystemFiles();
+                    try {
+                        extractGraphicsDriverFiles();
+                    } catch (IllegalStateException error) {
+                        Log.e("OpenGLDriver", "Driver startup failed", error);
+                        runOnUiThread(() -> {
+                            android.widget.Toast.makeText(this, error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                            exit();
+                        });
+                        return;
+                    }
+                    changeWineAudioDriver();
+                    applyGameRefreshRateUnlock();
+                    try {
+                        setupXEnvironment();
+                    } catch (PackageManager.NameNotFoundException e) {
+                        throw new RuntimeException(e);
+                    } catch (IllegalStateException e) {
+                        Log.e("LudashiX11", "Display startup failed", e);
+                        runOnUiThread(() -> {
+                            android.widget.Toast.makeText(this, e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                            exit();
+                        });
+                    }
                 }
             });
         };
@@ -950,7 +963,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
         savePlaytimeData();
         handler.removeCallbacks(savePlaytimeRunnable);
 
-        if (shortcut != null && "RealSteam".equals(shortcut.getExtra("steamLaunchMode")) && !shortcut.getExtra("steamAppId").isEmpty()) {
+        if (launchCancelled) {
+            new Thread(() -> {
+                synchronized (startupLock) { }
+                runOnUiThread(this::finishExitAfterSteam);
+            }, "CancelGameLaunch").start();
+        } else if (shortcut != null && "RealSteam".equals(shortcut.getExtra("steamLaunchMode")) && !shortcut.getExtra("steamAppId").isEmpty()) {
             new Thread(() -> {
                 com.winlator.cmod.steam.SteamCloud.awaitShutdown(this, shortcut);
                 runOnUiThread(this::finishExitAfterSteam);
@@ -1052,107 +1070,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     private boolean ownsPrefixLease;
-    private boolean exclusiveInputBusy;
-
-    public boolean isExclusiveInputEnabled() {
-        return shortcut != null ? shortcut.getExtra("exclusiveXInput", container.isExclusiveXInput() ? "1" : "0").equals("1")
-                : container.isExclusiveXInput();
-    }
-
-    public boolean isExclusiveInputBusy() { return exclusiveInputBusy; }
-    public boolean canChangeExclusiveInput() { return winHandler != null && winHandler.isSessionReady() && !exclusiveInputBusy; }
-    public boolean isSidebarXInputEnabled() {
-        return winHandler != null && (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_XINPUT) != 0;
-    }
-    public boolean isSidebarDInputEnabled() {
-        return winHandler != null && (winHandler.getInputType() & WinHandler.FLAG_INPUT_TYPE_DINPUT) != 0;
-    }
-
-    public void changeExclusiveInput(boolean enabled, Runnable refreshed) {
-        if (!canChangeExclusiveInput() || enabled == isExclusiveInputEnabled()) return;
-        boolean xinput = isSidebarXInputEnabled(), dinput = isSidebarDInputEnabled();
-        if (!enabled) {
-            xinput = true;
-            dinput = true;
-        } else if (xinput && dinput) {
-            dinput = false;
-        }
-        applySidebarJoystickSettings(xinput, dinput, enabled, refreshed);
-    }
-
-    public void changeSidebarInputApis(boolean xinput, boolean dinput, Runnable refreshed) {
-        if (!canChangeExclusiveInput() || !isExclusiveInputEnabled() || (xinput && dinput)) return;
-        if (xinput == isSidebarXInputEnabled() && dinput == isSidebarDInputEnabled()) return;
-        applySidebarJoystickSettings(xinput, dinput, true, refreshed);
-    }
-
-    private void applySidebarJoystickSettings(boolean xinput, boolean dinput, boolean exclusive, Runnable refreshed) {
-        if (!canChangeExclusiveInput()) return;
-        final boolean previousExclusive = isExclusiveInputEnabled();
-        final boolean previousDinput = isSidebarDInputEnabled();
-        final byte previousType = winHandler.getInputType();
-        final byte nextType = (byte)((previousType &
-                ~(WinHandler.FLAG_INPUT_TYPE_XINPUT | WinHandler.FLAG_INPUT_TYPE_DINPUT)) |
-                (xinput ? WinHandler.FLAG_INPUT_TYPE_XINPUT : 0) |
-                (dinput ? WinHandler.FLAG_INPUT_TYPE_DINPUT : 0));
-
-        // Keep the focus of the original Wine HWND when regedit opens a console.
-        Window focused = xServer.windowManager.getFocusedWindow();
-        while (focused != null && focused.getHandle() == 0) focused = focused.getParent();
-        final Window focusTarget = focused;
-        final com.winlator.cmod.widget.NativeX11View nativeFocus = xServerView instanceof com.winlator.cmod.widget.NativeX11View
-                ? (com.winlator.cmod.widget.NativeX11View) xServerView : null;
-        final long focusHandle = nativeFocus != null ? nativeFocus.getFocusedWindowHandle()
-                : focused != null ? focused.getHandle() : 0;
-        File driveC = new File(container.getRootDir(), ".wine/drive_c");
-        exclusiveInputBusy = true;
-        refreshed.run();
-        winHandler.holdGamepadsNeutral();
-
-        com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC, dinput, exclusive, ok -> {
-            if (isFinishing() || isDestroyed()) return;
-            if (ok) {
-                // Set the transport mode before reconnecting devices, so the new API is used.
-                winHandler.setInputType(nextType);
-                winHandler.setXInputDisabled(!xinput);
-            }
-            Runnable finish = () -> winHandler.reconnectGamepads(() -> {
-                if (isFinishing() || isDestroyed()) return;
-                if (ok) {
-                    if (shortcut != null) {
-                        shortcut.putExtra("exclusiveXInput", exclusive ? "1" : "0");
-                        shortcut.putExtra("inputType", String.valueOf(nextType & 0xff));
-                        shortcut.putExtra("disableXinput", xinput ? null : "1");
-                        shortcut.saveData();
-                    } else {
-                        container.setExclusiveXInput(exclusive);
-                        container.setInputType(nextType & 0xff);
-                        container.saveData();
-                    }
-                }
-                exclusiveInputBusy = false;
-                if (nativeFocus != null && nativeFocus.hasWindowHandle(focusHandle)) {
-                    winHandler.bringToFront("", focusHandle);
-                } else if (focusTarget != null && focusTarget.attributes.isMapped()
-                        && xServer.windowManager.getWindow(focusTarget.id) == focusTarget
-                        && focusTarget.getHandle() == focusHandle) {
-                    winHandler.bringToFront("", focusHandle);
-                }
-                refreshed.run();
-                android.widget.Toast.makeText(this,
-                        ok ? "Controller input updated. Some games may need a restart."
-                           : "Could not apply controller input. Previous settings restored.",
-                        android.widget.Toast.LENGTH_LONG).show();
-            });
-            if (ok) finish.run();
-            else com.winlator.cmod.winhandler.LiveJoystickSettings.apply(winHandler, driveC,
-                    previousDinput, previousExclusive, ignored -> {
-                        winHandler.setInputType(previousType);
-                        finish.run();
-                    });
-        });
-    }
-
     private void showVibrationDialog() {
         if (winHandler == null)
             return;
@@ -1379,6 +1296,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                             UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.PULSE_SERVER_PATH)));
         }
 
+        if (exiting.get()) return;
         com.winlator.cmod.steam.SteamLaunch.apply(this, shortcut, envVars);
         guestProgramLauncherComponent.setEnvVars(envVars);
         guestProgramLauncherComponent.setTerminationCallback((status) -> runOnUiThread(this::exit));
@@ -1390,18 +1308,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
         }
 
-        java.util.concurrent.CountDownLatch gamepadsPrepared = new java.util.concurrent.CountDownLatch(1);
-        runOnUiThread(() -> {
-            try { winHandler.prepareGamepadsForWine(); }
-            finally { gamepadsPrepared.countDown(); }
-        });
-        try {
-            if (!gamepadsPrepared.await(3, java.util.concurrent.TimeUnit.SECONDS))
-                throw new IllegalStateException("Controller preparation timed out");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Controller preparation interrupted", e);
-        }
+        if (exiting.get()) return;
         environment.startEnvironmentComponents();
 
         winHandler.start();
@@ -1481,7 +1388,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     : (container != null ? container.getRendererFilterMode() : 0));
             nativeView.setReadyCallback(() -> {
                 preloaderDialog.closeOnUiThread();
-                if (!simulateTouchScreen) nativeView.setCursorVisible(true);
+                applyCursorVisibility();
             });
             xServerView = nativeView;
         } else if (useDisplayX || useEGL) {
@@ -1773,6 +1680,19 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 isRelativeMouseMovement = checked;
                 if (xServer != null)
                     xServer.setRelativeMouseMovement(isRelativeMouseMovement);
+            });
+        }
+
+        Switch swHideCursor = findViewById(R.id.SWHideCursor);
+        if (swHideCursor != null) {
+            swHideCursor.setChecked(isCursorHidden);
+            swHideCursor.setOnCheckedChangeListener((btn, checked) -> {
+                isCursorHidden = checked;
+                applyCursorVisibility();
+                if (shortcut != null) {
+                    shortcut.putExtra("hideCursor", checked ? "1" : null);
+                    shortcut.saveData();
+                }
             });
         }
 
@@ -2289,9 +2209,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 ? String.valueOf(Math.max(0, upscaler.getSelectedItemPosition()) + 2) : "0"},
             {"graphicsPostFXMode", String.valueOf(Math.max(0, postFx.getSelectedItemPosition()))},
             {"graphicsSharpness", String.valueOf(sharpness.getValue())},
-            {"graphicsFpsPreset", String.valueOf(fps != null ? Math.max(0, fps.getSelectedItemPosition()) : 0)},
             {"graphicsColorMode", "0"}
         };
+        // The modern FPS control owns nativeFpsLimit. Its replacement spinner
+        // is absent, so do not create an "Off" override of the container preset.
+        if (fps != null) {
+            String preset = String.valueOf(Math.max(0, fps.getSelectedItemPosition()));
+            if (shortcut != null) shortcut.putExtra("graphicsFpsPreset", preset);
+            else container.putExtra("graphicsFpsPreset", preset);
+        }
         for (String[] value : values) {
             if (shortcut != null) shortcut.putExtra(value[0], value[1]);
             else container.putExtra(value[0], value[1]);
@@ -3171,7 +3097,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
 
         inputControlsView.setProfile(profile);
-        profile.prepareGamepad();
         inputControlsView.setVisibility(View.VISIBLE);
         inputControlsView.requestFocus();
 
@@ -3291,7 +3216,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         // Refresh existing containers that may have received the CI-repacked
         // Gamescope wrapper instead of the repository's common wrapper asset.
         File graphicsRuntimeMarker = new File(rootDir,
-                "usr/lib/.winlator-graphics-runtime-c7474f7e-25b50a11-v3-stock-wrapper");
+                "usr/lib/.winlator-graphics-runtime-c7474f7e-25b50a11-v6-displayx-09585d59");
         if (firstTimeBoot || !graphicsRuntimeMarker.isFile()) {
             Log.d("XServerDisplayActivity", "Installing paired Pipetto wrapper and common graphics runtime");
             TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this, "graphics_driver/wrapper" + ".tzst",
@@ -3300,7 +3225,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, this, "graphics_driver/extra_libs" + ".tzst",
                     rootDir);
             FileUtils.writeString(graphicsRuntimeMarker,
-                    "wrapper=c7474f7e;extra_libs=25b50a11;layers=9d57736d;opengl=split-v1");
+                    "wrapper=c7474f7e;extra_libs=25b50a11;layers=9d57736d;opengl=split-v1;displayx=09585d59a463d2cea86837a95551fd02ee3c6e3ed3c64d9f7cae1d7bee57c75a");
         }
 
         extractOpenGLDriver(rootDir);
@@ -3719,6 +3644,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
         return container;
     }
 
+    public Shortcut getShortcut() {
+        return shortcut;
+    }
+
     public void setDXWrapper(String dxwrapper) {
         this.dxwrapper = dxwrapper;
     }
@@ -3869,17 +3798,23 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (modernHud != null) modernHud.onFrame();
     }
 
+    private void applyCursorVisibility() {
+        if (xServerView != null) xServerView.setCursorVisible(!isCursorHidden && !simulateTouchScreen);
+    }
+
     private void assignTaskAffinity(Window window) {
+        assignNativeTaskAffinity(window.getProcessId(), window.getClassName(), window.isWoW64());
+    }
+
+    public void assignNativeTaskAffinity(int processId, String className, boolean wow64) {
         if (taskAffinityMask == 0 || taskAffinityMaskWoW64 == 0)
             return;
-        int processId = window.getProcessId();
-        String className = window.getClassName();
-        int processAffinity = window.isWoW64() ? taskAffinityMaskWoW64 : taskAffinityMask;
+        int processAffinity = wow64 ? taskAffinityMaskWoW64 : taskAffinityMask;
 
         if (processId > 0) {
             winHandler.setProcessAffinity(processId, processAffinity);
         } else if (!className.isEmpty()) {
-            winHandler.setProcessAffinity(window.getClassName(), processAffinity);
+            winHandler.setProcessAffinity(className, processAffinity);
         }
     }
 

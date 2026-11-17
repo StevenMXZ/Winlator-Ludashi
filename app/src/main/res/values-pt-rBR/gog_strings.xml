@@ -1,0 +1,33 @@
+<resources>
+    <string name="gog_library_subtitle">Sua biblioteca GOG no Ludashi</string>
+    <string name="gog_sign_in">Entrar na GOG</string>
+    <string name="gog_sign_out">Sair da GOG</string>
+    <string name="gog_games">Jogos</string>
+    <string name="gog_installed">Instalado</string>
+    <string name="gog_not_installed">Não instalado</string>
+    <string name="gog_search">Buscar jogos</string>
+    <string name="gog_empty_library">Nenhum jogo para mostrar. Entre ou atualize sua biblioteca.</string>
+    <string name="gog_no_downloads">Nenhum download GOG ativo</string>
+    <string name="gog_preparing">Preparando download…</string>
+    <string name="gog_downloading">Baixando…</string>
+    <string name="gog_extracting">Instalando…</string>
+    <string name="gog_no_windows_installer">Nenhum instalador offline para Windows está disponível para este jogo.</string>
+    <string name="gog_installer">Idioma e versão do instalador</string>
+    <string name="gog_choose_container">Escolher container</string>
+    <string name="gog_choose_executable">Escolher o executável do jogo</string>
+    <string name="gog_install_help">Baixa o instalador offline para Windows e instala o jogo no container selecionado. Alguns jogos precisam de componentes adicionais ou configuração manual.</string>
+    <string name="gog_shortcut_settings">Configurações do atalho</string>
+    <string name="gog_toggle_favorite">Marcar/desmarcar favorito</string>
+    <string name="gog_download_install">Baixar e instalar</string>
+    <string name="gog_play">Jogar</string>
+    <string name="gog_uninstall_help">Remover os arquivos do jogo e seu atalho? Os arquivos dentro da pasta do jogo, incluindo saves nela, serão removidos.</string>
+    <string name="gog_all_stores">Todas as lojas</string>
+    <string name="gog_local_games">Jogos locais</string>
+    <string name="gog_manage_stores">Gerenciar lojas</string>
+    <string name="gog_store_help">Entre, veja sua biblioteca e instale jogos Windows sem DRM.</string>
+    <string name="gog_integration">Integração GOG</string>
+    <string name="gog_integration_disabled">Integração desativada</string>
+    <string name="gog_store_settings">Configurações da loja</string>
+    <string name="gog_settings_title">Configurações da GOG</string>
+    <string name="gog_steam_settings_title">Configurações da Steam</string>
+</resources>

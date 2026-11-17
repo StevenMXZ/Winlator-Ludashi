@@ -1586,7 +1586,11 @@ impl CMClientCore {
                     self.state
                         .store(ClientState::LoggedOn as u8, Ordering::Relaxed);
                     self.steam_id
-                        .store(resp.client_supplied_steamid, Ordering::Relaxed);
+                        .store(if resp.client_supplied_steamid != 0 {
+                            resp.client_supplied_steamid
+                        } else {
+                            header.steamid
+                        }, Ordering::Relaxed);
                     self.session_id
                         .store(header.client_sessionid, Ordering::Relaxed);
                     self.family_group_id
@@ -1994,6 +1998,21 @@ mod tests {
         assert!(core.build_logoff().is_none());
         core.set_state(ClientState::LoggedOn);
         assert_eq!(core.build_logoff().unwrap().emsg, EMsg::CLIENT_LOG_OFF);
+    }
+
+    #[test]
+    fn qr_logon_uses_confirmed_header_identity_when_no_supplied_id_is_returned() {
+        let core = CMClientCore::default();
+        let mut body = Vec::new();
+        Writer::new(&mut body).int32_field(1, 1);
+        let header = CMsgProtoBufHeader {
+            steamid: 76561198000000001,
+            client_sessionid: 42,
+            ..Default::default()
+        };
+        assert_eq!(core.route_inbound(EMsg::CLIENT_LOGON_RESPONSE, &header, &body), InboundAction::LogonOk);
+        assert_eq!(core.steam_id(), 76561198000000001);
+        assert_eq!(core.session_id(), 42);
     }
 
     #[test]

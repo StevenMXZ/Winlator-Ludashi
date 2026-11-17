@@ -644,14 +644,12 @@ void XClient::ProcGrabPointer() {
             throw BadWindowError(req->confineTo);
         }
     }
-    Cursor* cursor;
+    Cursor* cursor{};
     if (req->cursor != None) {
         cursor = GetResourceAs<Cursor>(req->cursor);
         if (!cursor) {
             throw BadCursorError(req->cursor);
         }
-    } else {
-        cursor = window->GetCursor();
     }
     auto& wm = server.GetWindowManager();
     const u32 status = wm.GrabPointer(this,

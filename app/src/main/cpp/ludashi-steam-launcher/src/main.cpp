@@ -1954,12 +1954,16 @@ static std::string redist_silent_args(const std::filesystem::path& installer) {
     if (name.find("dxsetup") != std::string::npos) return " /silent";
     if (name.find("ue4prereq") != std::string::npos) return " /quiet /norestart";
     if (name.find("physx") != std::string::npos) return " /quiet /norestart";
+    if (name.find("vcredist") != std::string::npos) return " /q";
     return " /quiet /norestart";
 }
 
 static RedistInstallResult run_redist_installer(const std::filesystem::path& installer,
                                                 DWORD* outExitCode) {
-    std::string cmd = "\"" + installer.string() + "\"" + redist_silent_args(installer);
+    std::string ext = installer.extension().string();
+    for (char& c : ext) c = (char) std::tolower((unsigned char) c);
+    std::string cmd = (ext == ".msi" ? "msiexec.exe /i " : "") +
+        std::string("\"") + installer.string() + "\"" + redist_silent_args(installer);
     std::vector<char> cmdVec(cmd.begin(), cmd.end());
     cmdVec.push_back('\0');
 
@@ -3295,16 +3299,24 @@ int main(int argc, char** argv) {
     const bool cloudEnvOn = env_int_signed("LUDASHI_STEAM_AGENT_CLOUD", 1) != 0;
     const bool agentCloud = cloudEnvOn && !offlineMode;
     if (loggedOn && engine && appId != 0 && agentCloud) {
-        const int cloudState = ludashi_launcher_cloud_run(engine, hUser, pipe, appId, 0, 120000);
-        // Do not start a new save session after an unresolved cloud conflict/failure.
-        // The user can retry or explicitly select Offline in the game's Play control.
-        if (cloudState != 0 && cloudState != 2 && cloudState != 5) {
-            log_line("[ludashi-launcher] launch blocked: Steam Cloud not ready (state=%d)", cloudState);
+        bool syncReady = false;
+        while (!syncReady) {
+            const int cloudState = ludashi_launcher_cloud_run(engine, hUser, pipe, appId, 0, 120000);
+            syncReady = cloudState == 0 || cloudState == 2 || cloudState == 5;
+            if (syncReady) break;
+            log_line("[ludashi-launcher] waiting for Cloud launch decision (state=%d)", cloudState);
+            const int choice = ludashi_launcher_cloud_choice();
+            if (choice == 1) continue;
+            if (choice == 2) {
+                _putenv_s("LUDASHI_STEAM_AGENT_CLOUD", "0");
+                log_line("[ludashi-launcher] continuing with local saves; launcher Cloud disabled for this session");
+                break;
+            }
             if (steamApiScanThread.joinable()) steamApiScanThread.join();
             ludashi_launcher_clean_shutdown_now("launch-failed");
             return 1;
         }
-        ludashi_launcher_set_cloud_context(engine, hUser, pipe, appId);
+        if (syncReady) ludashi_launcher_set_cloud_context(engine, hUser, pipe, appId);
     } else if (offlineMode && engine && appId != 0) {
         log_line("[ludashi-launcher] cloud: launch download skipped — Steam Offline Mode keeps local "
                  "saves off the cloud until the shortcut goes back online");

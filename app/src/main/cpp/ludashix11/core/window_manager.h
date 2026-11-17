@@ -1,6 +1,7 @@
 #pragma once
 
 #include <X11/X.h>
+#include <functional>
 #include "base/types.h"
 #include "core/mouse.h"
 #include "core/screen_info.h"
@@ -53,6 +54,7 @@ public:
     void CompositeCopy(Window* source, Window* destination, s16 x, s16 y);
 
     void MapWindow(const XClient* caller_client, Window* window);
+    std::function<void(Window*)> onWindowMapped;
 
     void UnmapWindow(Window* window, bool invalidate = true);
 

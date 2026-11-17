@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.Fragment
+import com.winlator.cmod.ui.bindOverlayOwners
 import com.winlator.cmod.container.Shortcut
 import com.winlator.cmod.core.GameSaveManager
 import com.winlator.cmod.ui.theme.*
@@ -48,6 +49,7 @@ object GameSavesComposeDialog {
 
         lateinit var composeView: ComposeView
         composeView = ComposeView(activity).apply {
+            bindOverlayOwners(activity)
             tag = VIEW_TAG
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
@@ -58,6 +60,7 @@ object GameSavesComposeDialog {
                     LaunchedEffect(visibleState.currentState) {
                         if (!visibleState.currentState && !visibleState.targetState) {
                             (composeView.parent as? ViewGroup)?.removeView(composeView)
+                            composeView.disposeComposition()
                         }
                     }
                     val dismiss: () -> Unit = { if (!busy) visibleState.targetState = false }
