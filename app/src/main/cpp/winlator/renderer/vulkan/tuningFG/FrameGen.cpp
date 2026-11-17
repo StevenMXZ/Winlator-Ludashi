@@ -1807,14 +1807,14 @@ bool FrameGenState::presentSide(VulkanRendererContext* c, VkDescriptorSet ds,
         return false;
     if (c->fbResized.load() || c->swapchain == VK_NULL_HANDLE) return false;
 
-    // A fill from the previous frame may still be on the GPU. That is a
-    // compose, not the display. If it is not done quickly, skip this one.
-    if (vk.GetFenceStatus(c->device, sideFence) == VK_NOT_READY &&
-        vk.WaitForFences(c->device, 1, &sideFence, VK_TRUE, 5000000ull) != VK_SUCCESS)
+    // Skip when the previous side fill or a swapchain image is still busy.
+    // Any wait here runs on the game thread and caps the source near half the
+    // refresh (about 30 fps on 60 Hz) — the 30-60 lock the HUD was showing.
+    if (vk.GetFenceStatus(c->device, sideFence) != VK_SUCCESS)
         return false;
 
     uint32_t imgIdx = 0;
-    const VkResult acquired = vk.AcquireNextImageKHR(c->device, c->swapchain, 8000000ull,
+    const VkResult acquired = vk.AcquireNextImageKHR(c->device, c->swapchain, 0,
                                                      sideAcquire, VK_NULL_HANDLE, &imgIdx);
     if (acquired == VK_TIMEOUT || acquired == VK_NOT_READY) return false;
     if (acquired == VK_ERROR_OUT_OF_DATE_KHR || acquired == VK_ERROR_SURFACE_LOST_KHR) {
