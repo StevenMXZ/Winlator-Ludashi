@@ -355,7 +355,27 @@ public class WinHandler {
         });
     }
 
+    /** Receives rumble for network (Moonlight) gamepads instead of vibrating the phone. */
+    public interface RemoteRumbleListener {
+        void onRumble(int remoteIndex, int strong, int weak, int durationMs);
+    }
+
+    private volatile RemoteRumbleListener remoteRumbleListener;
+
+    public void setRemoteRumbleListener(RemoteRumbleListener listener) {
+        remoteRumbleListener = listener;
+    }
+
     private void triggerVibration(int strong, int weak, int durationMs, int slot) {
+    if (isValidSlot(slot)) {
+        RemoteRumbleListener remote = remoteRumbleListener;
+        for (Map.Entry<Integer, Integer> entry : deviceToSlot.entrySet()) {
+            if (entry.getValue() == slot && entry.getKey() <= REMOTE_DEVICE_BASE) {
+                if (remote != null) remote.onRumble(REMOTE_DEVICE_BASE - entry.getKey(), strong, weak, durationMs);
+                return;
+            }
+        }
+    }
     if (!isValidSlot(slot) || !vibrationEnabledSlots[slot])
         return;
 
@@ -635,6 +655,18 @@ public void setVibrationEnabledForSlot(int slot, boolean enabled) {
         }
         Log.w("WinHandler", "No slots available for device " + deviceId);
         return -1;
+    }
+
+    private static final int REMOTE_DEVICE_BASE = -1000;
+
+    /** Gamepad from the network (Moonlight stream): each remote controller gets its own slot. */
+    public void sendRemoteGamepadState(int remoteIndex, GamepadState state) {
+        int slot = assignSlot(REMOTE_DEVICE_BASE - remoteIndex);
+        if (slot >= 0 && writers[slot] != null) writers[slot].writeGamepadState(state);
+    }
+
+    public void releaseRemoteGamepad(int remoteIndex) {
+        releaseSlot(REMOTE_DEVICE_BASE - remoteIndex);
     }
 
     private void releaseSlot(int deviceId) {

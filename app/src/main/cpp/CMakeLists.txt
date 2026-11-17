@@ -308,11 +308,37 @@ target_link_libraries(vulkan_renderer
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ludashix11
                  ${CMAKE_CURRENT_BINARY_DIR}/ludashix11)
 
-add_subdirectory(ludashi-steam-client)
-add_dependencies(winlator ludashisteam_rust_build)
-# Package the optional backend through a separate native target. The emulator core
-# must not load Steam as a DT_NEEDED dependency when the feature is disabled.
-add_library(steam_optional SHARED steam_optional.c)
-target_link_options(steam_optional PRIVATE "-Wl,--no-as-needed")
-target_link_libraries(steam_optional ludashisteam)
-add_dependencies(steam_optional ludashisteam_rust_build)
+# Moonlight host: ENet (cgutman/enet, MIT) + JNI bridge for the control stream.
+set(ENET_NO_INSTALL ON CACHE BOOL "" FORCE)
+add_subdirectory(enet ${CMAKE_CURRENT_BINARY_DIR}/enet)
+# libopus (xiph, BSD-3-Clause) for Moonlight audio: 5 ms low-delay frames.
+set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+add_subdirectory(opus ${CMAKE_CURRENT_BINARY_DIR}/opus)
+# nanors (MIT) Reed-Solomon for video FEC, same sources as moonlight-common-c.
+add_library(ludashi_stream SHARED ludashi_stream/enet_jni.c ludashi_stream/opus_jni.c ludashi_stream/fec_jni.c
+        nanors/rs.c nanors/deps/obl/oblas_common.c nanors/deps/obl/oblas_lite.c)
+target_include_directories(ludashi_stream PRIVATE enet/include opus/include nanors nanors/deps nanors/deps/obl)
+target_link_libraries(ludashi_stream enet opus log)
+
+# Steam backend is Rust; build it only when cargo is available (stream fork builds without it).
+find_program(LUDASHI_CARGO cargo)
+if(LUDASHI_CARGO)
+    set(LUDASHI_ENABLE_STEAM_DEFAULT ON)
+else()
+    set(LUDASHI_ENABLE_STEAM_DEFAULT OFF)
+endif()
+option(LUDASHI_ENABLE_STEAM "Build the Rust Steam client (needs cargo)" ${LUDASHI_ENABLE_STEAM_DEFAULT})
+
+if(LUDASHI_ENABLE_STEAM)
+    add_subdirectory(ludashi-steam-client)
+    add_dependencies(winlator ludashisteam_rust_build)
+    # Package the optional backend through a separate native target. The emulator core
+    # must not load Steam as a DT_NEEDED dependency when the feature is disabled.
+    add_library(steam_optional SHARED steam_optional.c)
+    target_link_options(steam_optional PRIVATE "-Wl,--no-as-needed")
+    target_link_libraries(steam_optional ludashisteam)
+    add_dependencies(steam_optional ludashisteam_rust_build)
+else()
+    message(STATUS "Steam client disabled: cargo not found")
+endif()
