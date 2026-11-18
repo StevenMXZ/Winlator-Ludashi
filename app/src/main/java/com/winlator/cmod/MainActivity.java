@@ -65,29 +65,13 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     public final PreloaderDialog preloaderDialog = new PreloaderDialog(this);
     private boolean editInputControls = false;
     private int selectedProfileId;
-    private Intent notificationService;
     private SharedPreferences sharedPreferences;
     private ContainerManager containerManager;
     private boolean isDarkMode;
 
-    private void createNotificationChannel() {
-    	String name = "Winlator";
-        String description = "Winlator XServer Messages";
-        int importance = NotificationManager.IMPORTANCE_LOW;
-        NotificationChannel channel = new NotificationChannel(NOTIFICATION_CHANNEL_ID, name, importance);
-        channel.setDescription(description);
-        NotificationManager notificationManager = getSystemService(NotificationManager.class);
-        notificationManager.createNotificationChannel(channel);
-    }
-
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        notificationService = new Intent(this, NotificationService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED))
-        	createNotificationChannel();
 
         // Get shared preferences
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
@@ -152,39 +136,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             onNavigationItemSelected(navigationView.getMenu().findItem(menuItemId));
             navigationView.setCheckedItem(menuItemId);
             
-            if (!ImageFsInstaller.installIfNeeded(this, () -> requestAppPermissions())) {
-                if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
-                    startForegroundService(notificationService);
-            }
-        }
-    }
-
-    private void showAllFilesAccessDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("All Files Access Required")
-                .setMessage("In order to grant access to additional storage devices such as USB storage device, the All Files Access permission must be granted. Press Okay to grant All Files Access in your Android Settings.")
-                .setPositiveButton("Okay", (dialog, which) -> {
-                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                    intent.setData(Uri.parse("package:" + getPackageName()));
-                    startActivity(intent);
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-
-        if (requestCode == PERMISSION_POST_NOTIFICATIONS_REQUEST_CODE) {
-        	if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED)
-        		startForegroundService(notificationService);
-        }
-        else if (requestCode == PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED)
-                requestAppPermissions();
-            else
-                finish();
+           ImageFsInstaller.installIfNeeded(this, null);
         }
     }
 
@@ -202,30 +154,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             show(new ContainersFragment(), true);  // Pass `true` to trigger the reverse animation
         else
             super.onBackPressed();
-    }
-
-    private void requestAppPermissions() {
-        boolean hasWritePermission = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-        boolean hasReadPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-        boolean hasManageStoragePermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager();
-        boolean hasPostNotificationPermission = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
-
-        
-        if (!hasWritePermission || !hasReadPermission) {
-            String[] permissions = new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE};
-            ActivityCompat.requestPermissions(this, permissions, PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE);
-            return;
-        }
-
-        if (!hasPostNotificationPermission) {
-            createNotificationChannel();
-        	String[] permissions = new String[]{ Manifest.permission.POST_NOTIFICATIONS };                                             
-            ActivityCompat.requestPermissions(this, permissions, PERMISSION_POST_NOTIFICATIONS_REQUEST_CODE);
-        }
-        
-        if (!hasManageStoragePermission) {
-            showAllFilesAccessDialog();
-        }
     }
 
     @Override

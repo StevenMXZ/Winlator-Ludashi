@@ -6,6 +6,7 @@ import android.util.SparseArray;
 
 import com.winlator.cmod.xconnector.XConnectorEpoll;
 
+import dalvik.annotation.optimization.FastNative;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
@@ -106,12 +107,13 @@ public class SysVSharedMemory {
         catch (ErrnoException e) {}
         return -1;
     }
-
+    
+    @FastNative
     public static native int createMemoryFd(String name, int size);
-
+    @FastNative
     private static native int ashmemCreateRegion(int index, long size);
-
+    @FastNative
     public static native ByteBuffer mapSHMSegment(int fd, long size, int offset, boolean readonly);
-
+    @FastNative
     public static native void unmapSHMSegment(ByteBuffer data, long size);
 }

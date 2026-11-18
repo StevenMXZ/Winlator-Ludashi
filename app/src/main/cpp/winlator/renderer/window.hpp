@@ -14,23 +14,36 @@ struct Window {
     int height;
     int x;
     int y;
+    int z_order;
     std::string className;
     bool mapped;
     bool inputOutput;
+    bool compositeRedirected;
     bool hasContent;
     std::unique_ptr<struct Drawable> drawable;
     Window *parent;
     Cursor *cursor;
     bool enabled;
     std::vector<Window *> children;
-    jobject attributes;
-    jobject windowObj;
     std::unordered_map<int, std::unique_ptr<struct Drawable>> directContents;
-    Drawable *currentDirectContent;
+    Drawable *externalContent;
     ASurfaceControl *control;
+    Window *surface;
         
-    bool hasDirectContents() {
-        return !directContents.empty();
+    bool hasExternalContents() {
+        return externalContent != nullptr;
+    }
+    
+    bool isSurface() {
+        return hasExternalContents() && width > 1 && height > 1;
+    }
+    
+    bool hasSurface() {
+        return surface != nullptr;
+    }
+    
+    bool isHidden() {
+        return hasSurface() && this->width == surface->width && this->height == surface->height;
     }
     
     int getRootX() {
@@ -51,6 +64,44 @@ struct Window {
             window = window->parent;
         }
         return rootY;
+    }
+    
+    bool isAncestorOf(Window *w) {
+        auto window = this;
+        
+        while (window != nullptr) {
+            if (window == w)
+                return true;
+            
+            window = window->parent;    
+        }
+        
+        return false;
+    }
+    
+    bool isSibling(Window *w) {
+        return this->parent == w->parent;
+    }
+    
+    Window *getWindowSibling(Window *w) {
+        auto window = this;
+        
+        while (window != nullptr) {
+            if (window->isSibling(w))
+                return window;
+                
+            window = window->parent;     
+        }
+        
+        return window;
+    }
+    
+    bool hasSiblings() {
+        return this->parent->children.size() > 1;
+    }
+    
+    bool isOnTop() {
+        return this->parent->children.back() == this;
     }
 };
 

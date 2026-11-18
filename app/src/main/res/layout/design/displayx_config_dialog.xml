@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<org.appdevforall.codeonthego.layouteditor.editor.palette.containers.ScrollViewDesign
+	xmlns:android="http://schemas.android.com/apk/res/android"
+	android:layout_width="wrap_content"
+	android:layout_height="wrap_content">
+
+	<org.appdevforall.codeonthego.layouteditor.editor.palette.layouts.LinearLayoutDesign
+		android:layout_width="300dp"
+		android:layout_height="wrap_content"
+		android:orientation="vertical">
+
+		<org.appdevforall.codeonthego.layouteditor.editor.palette.text.TextViewDesign
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="Surface Format"
+			android:textAppearance="?android:attr/textAppearanceMedium"
+			android:paddingBottom="8dp" />
+
+		<org.appdevforall.codeonthego.layouteditor.editor.palette.containers.SpinnerDesign
+			style="@style/ComboBox"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:entries="@array/surface_format_entries"
+			android:id="@+id/SSurfaceFormat"
+			android:spinnerMode="dialog" />
+
+		<org.appdevforall.codeonthego.layouteditor.editor.palette.buttons.CheckBoxDesign
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:id="@+id/CBEnableTrueDisplayX"
+			android:text="Bypass X11 Protocol" />
+
+		<org.appdevforall.codeonthego.layouteditor.editor.palette.buttons.CheckBoxDesign
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:id="@+id/CBEnablePerfMode"
+			android:text="Enable Performance Mode" />
+
+		<org.appdevforall.codeonthego.layouteditor.editor.palette.buttons.CheckBoxDesign
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:id="@+id/CBPresentRR"
+			android:text="Present at refresh rate" />
+
+	</org.appdevforall.codeonthego.layouteditor.editor.palette.layouts.LinearLayoutDesign>
+
+</org.appdevforall.codeonthego.layouteditor.editor.palette.containers.ScrollViewDesign>

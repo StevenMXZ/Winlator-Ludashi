@@ -4,58 +4,51 @@ import com.winlator.cmod.xserver.XServer;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class XOutputStream {
-    private static final byte[] ZERO = new byte[64];
-    public ByteBuffer buffer;
-    public final ClientSocket clientSocket;
+import dalvik.annotation.optimization.CriticalNative;
+
+public class XOutputStream implements XStreamLock {
     private final ReentrantLock lock = new ReentrantLock();
-    private int ancillaryFd = -1;
+    private final long nativePtr;
 
-    public XOutputStream(int initialCapacity) {
-        this(null, initialCapacity);
+    static {
+        System.loadLibrary("winlator");
     }
 
-    public XOutputStream(ClientSocket clientSocket, int initialCapacity) {
-        this.clientSocket = clientSocket;
-        buffer = ByteBuffer.allocateDirect(initialCapacity);
-    }
-
-    public void setByteOrder(ByteOrder byteOrder) {
-        buffer.order(byteOrder);
+    public XOutputStream(int clientFd, int initialCapacity) {
+        nativePtr = nativeAllocate(clientFd, initialCapacity);
     }
 
     public void setAncillaryFd(int ancillaryFd) {
-        this.ancillaryFd = ancillaryFd;
+        setAncillaryFd(nativePtr, ancillaryFd);
     }
 
     public void writeByte(byte value) {
-        ensureSpaceIsAvailable(1);
-        buffer.put(value);
+        writeByte(nativePtr, value);
     }
 
     public void writeShort(short value) {
-        ensureSpaceIsAvailable(2);
-        buffer.putShort(value);
+        writeShort(nativePtr, value);
     }
 
     public void writeInt(int value) {
-        ensureSpaceIsAvailable(4);
-        buffer.putInt(value);
+        writeInt(nativePtr, value);
+    }
+    
+    public void writeIntPair(int p1, int p2) {
+         writeInt(p1);
+         writeInt(p2);
     }
 
     public void writeLong(long value) {
-        ensureSpaceIsAvailable(8);
-        buffer.putLong(value);
+        writeLong(nativePtr, value);
     }
 
     public void writeString8(String str) {
         byte[] bytes = str.getBytes(XServer.LATIN1_CHARSET);
         int length = -str.length() & 3;
-        ensureSpaceIsAvailable(bytes.length + length);
-        buffer.put(bytes);
+        write(bytes);
         if (length > 0) writePad(length);
     }
 
@@ -64,70 +57,116 @@ public class XOutputStream {
     }
 
     public void write(byte[] data, int offset, int length) {
-        ensureSpaceIsAvailable(length);
-        buffer.put(data, offset, length);
+        for (int i = offset; i < length; i++) writeByte(nativePtr, data[i]);
+    }
+
+    public void writeShortAt(int position, short value) {
+        final byte[] data = {
+            (byte)(value & 0xff),
+            (byte)((value >> 8) & 0xff)
+        };
+        writeAt(nativePtr, position, data);
+    }
+
+    public void writeIntAt(int position, int value) {
+        final byte[] data = {
+            (byte)(value & 0xff),
+            (byte)((value >>> 8) & 0xff),
+            (byte)((value >>> 16) & 0xff),
+            (byte)((value >>> 24) & 0xff)
+        };
+        writeAt(nativePtr, position, data);
+    }
+
+    public void writeAt(int position, byte[] data) {
+        writeAt(nativePtr, position, data);
     }
 
     public void write(ByteBuffer data) {
-        ensureSpaceIsAvailable(data.remaining());
-        buffer.put(data);
+        if (data.isDirect()) {
+            writeByteBuffer(nativePtr, data, data.position(), data.remaining());
+        }
+        else {
+            for (int i = data.position(), length = data.remaining(); i < length; i++) {
+                writeByte(nativePtr, data.get(i));
+            }
+        }
     }
 
     public void writePad(int length) {
-        write(ZERO, 0, length);
+        writePad(nativePtr, length);
     }
 
-    private void flush() throws IOException {
-        if (buffer.position() != 0) {
-            buffer.flip();
-
-            if (ancillaryFd != -1) {
-                clientSocket.sendAncillaryMsg(buffer, ancillaryFd);
-                ancillaryFd = -1;
-            }
-            else clientSocket.write(buffer);
-
-            buffer.clear();
-        }
+    public void writeFP3232(double value) {
+        double integral = Math.floor(value);
+        long frac = (long)((value - integral) * (1L<<32));
+        writeInt((int)integral);
+        writeInt((int)frac);
     }
 
     public XStreamLock lock() {
-        return new OutputStreamLock();
+        lock.lock();
+        return this;
     }
-
-    private void ensureSpaceIsAvailable(int length) {
-        int position = buffer.position();
-        if ((buffer.capacity() - position) >= length) return;
-        ByteBuffer newBuffer = ByteBuffer.allocateDirect(buffer.capacity() + length).order(buffer.order());
-        buffer.rewind();
-        newBuffer.put(buffer).position(position);
-        buffer = newBuffer;
-    }
-
-    private class OutputStreamLock implements XStreamLock {
-        public OutputStreamLock() {
-            lock.lock();
-        }
-
-        @Override
-        public void close() throws IOException {
-            try {
-                flush();
-            }
-            finally {
-                lock.unlock();
-            }
-        }
-    }
-
+    
     public void writeSuccessReply(int sequenceNumber, int replyLength) throws IOException {
         try (XStreamLock lock = lock()) {
-            writeByte((byte) 1);       // Response Code for Success
-            writeByte((byte) 0);       // Unused
-            writeShort((short) sequenceNumber);  // Sequence number
-            writeInt(replyLength);     // Reply length in 4-byte units
-            writePad(24);              // Unused padding
+            writeByte((byte) 1);
+            writeByte((byte) 0);     
+            writeShort((short) sequenceNumber);
+            writeInt(replyLength);
+            writePad(24);
+         }
+    }
+
+    public void destroy() {
+        destroy(nativePtr);
+    }
+
+    @Override
+    public void close() throws IOException {
+        try {
+            if (!sendData(nativePtr)) throw new IOException("Failed to send data.");
+        }
+        finally {
+            lock.unlock();
         }
     }
 
+    public int length() {
+        return length(nativePtr);
+    }
+
+    private native long nativeAllocate(int fd, int initialCapacity);
+
+    @CriticalNative
+    private static native void setAncillaryFd(long nativePtr, int ancillaryFd);
+
+    @CriticalNative
+    private static native void writeByte(long nativePtr, byte value);
+
+    @CriticalNative
+    private static native void writeShort(long nativePtr, short value);
+
+    @CriticalNative
+    private static native void writeInt(long nativePtr, int value);
+
+    @CriticalNative
+    private static native void writeLong(long nativePtr, long value);
+
+    @CriticalNative
+    private static native void writePad(long nativePtr, int length);
+
+    private static native void writeAt(long nativePtr, int position, byte[] data);
+
+    private static native void writeByteBuffer(long nativePtr, ByteBuffer data, int offset, int length);
+
+    @CriticalNative
+    private static native boolean sendData(long nativePtr);
+
+    @CriticalNative
+    private static native void destroy(long nativePtr);
+
+    @CriticalNative
+    private static native int length(long nativePtr);
 }

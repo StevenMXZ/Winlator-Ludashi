@@ -110,17 +110,19 @@ public class ShortcutSettingsDialog extends ContentDialog {
         loadScreenSizeSpinner(getContentView(), shortcut.getExtra("screenSize", shortcut.container.getScreenSize()), isDarkMode);
 
         final Spinner sDisplayDriver = findViewById(R.id.SDisplayDriver);
-        String currentDisplayDriver = shortcut.getExtra("displayDriver", Container.DEFAULT_DISPLAY_DRIVER);
+        String currentDisplayDriver = shortcut.getExtra("displayDriver", shortcut.container.getDisplayDriver());
         AppUtils.setSpinnerSelectionFromIdentifier(sDisplayDriver, currentDisplayDriver);
         
         final View vDisplayDriverConfig = findViewById(R.id.BTDisplayDriverConfig);
         if (StringUtils.parseIdentifier(currentDisplayDriver).equals("displayx")) {
             vDisplayDriverConfig.setVisibility(View.VISIBLE);
             vDisplayDriverConfig.setOnClickListener((v) -> (new DisplayXConfigDialog(vDisplayDriverConfig)).show());
-            vDisplayDriverConfig.setTag(shortcut.getExtra("displayxConfig", DisplayXConfigDialog.DEFAULT_CONFIG));
+            vDisplayDriverConfig.setTag(shortcut.getExtra("displayxConfig", shortcut.container.getDisplayXConfig()));
         }
         else {
-            vDisplayDriverConfig.setVisibility(View.GONE);
+            vDisplayDriverConfig.setVisibility(View.VISIBLE);
+            vDisplayDriverConfig.setOnClickListener((v) -> (new EGLConfigDialog(vDisplayDriverConfig)).show());
+            vDisplayDriverConfig.setTag(shortcut.getExtra("eglConfig", shortcut.container.getEGLConfig()));
         }
         
         sDisplayDriver.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -134,7 +136,9 @@ public class ShortcutSettingsDialog extends ContentDialog {
                     vDisplayDriverConfig.setTag(shortcut.getExtra("displayxConfig", DisplayXConfigDialog.DEFAULT_CONFIG));
                 }
                 else {
-                    vDisplayDriverConfig.setVisibility(View.GONE);
+                    vDisplayDriverConfig.setVisibility(View.VISIBLE);
+                    vDisplayDriverConfig.setOnClickListener((v) -> (new EGLConfigDialog(vDisplayDriverConfig)).show());
+                    vDisplayDriverConfig.setTag(shortcut.getExtra("eglConfig", EGLConfigDialog.DEFAULT_CONFIG));
                 }
             }
 
@@ -166,6 +170,24 @@ public class ShortcutSettingsDialog extends ContentDialog {
 
         final Spinner sAudioDriver = findViewById(R.id.SAudioDriver);
         AppUtils.setSpinnerSelectionFromIdentifier(sAudioDriver, shortcut.getExtra("audioDriver", shortcut.container.getAudioDriver()));
+        
+        final View vAudioConfigDialog = findViewById(R.id.BTAudioDriverConfig);
+        vAudioConfigDialog.setOnClickListener((v) -> (new AudioConfigDialog(vAudioConfigDialog, shortcut.getExtra("audioDriver", shortcut.container.getAudioDriver()))).show());
+        vAudioConfigDialog.setTag(shortcut.getExtra("audioConfig", shortcut.container.getAudioConfig()));
+        
+        sAudioDriver.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem().toString());
+                vAudioConfigDialog.setOnClickListener((v) -> (new AudioConfigDialog(vAudioConfigDialog, audioDriver)).show());
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+
+            
         final Spinner sEmulator = findViewById(R.id.SEmulator);
         AppUtils.setSpinnerSelectionFromIdentifier(sEmulator, shortcut.getExtra("emulator", shortcut.container.getEmulator()));
         final Spinner sEmulator64 = findViewById(R.id.SEmulator64);
@@ -372,93 +394,93 @@ public class ShortcutSettingsDialog extends ContentDialog {
             String name = etName.getText().toString().trim();
             boolean nameChanged = !shortcut.name.equals(name) && !name.isEmpty();
 
-            // First, handle renaming if the name has changed
+            String graphicsDriver = StringUtils.parseIdentifier(sGraphicsDriver.getSelectedItem());
+            String displayDriver = StringUtils.parseIdentifier(sDisplayDriver.getSelectedItem());
+            String graphicsDriverConfig = vGraphicsDriverConfig.getTag().toString();
+            String dxwrapper = StringUtils.parseIdentifier(sDXWrapper.getSelectedItem());
+            String dxwrapperConfig = vDXWrapperConfig.getTag().toString();
+            String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem());
+            String audioConfig = vAudioConfigDialog.getTag().toString();
+            String emulator = StringUtils.parseIdentifier(sEmulator.getSelectedItem());
+            String lc_all = etLC_ALL.getText().toString();
+            String midiSoundFont = sMIDISoundFont.getSelectedItemPosition() == 0 ? "" : sMIDISoundFont.getSelectedItem().toString();
+            String screenSize = containerDetailFragment.getScreenSize(getContentView());
+
+            int finalInputType = 0;
+            finalInputType |= cbEnableXInput.isChecked() ? WinHandler.FLAG_INPUT_TYPE_XINPUT : 0;
+            finalInputType |= cbEnableDInput.isChecked() ? WinHandler.FLAG_INPUT_TYPE_DINPUT : 0;
+            finalInputType |= SDInputType.getSelectedItemPosition() == 0 ?  WinHandler.FLAG_DINPUT_MAPPER_STANDARD : WinHandler.FLAG_DINPUT_MAPPER_XINPUT;
+
+
+            shortcut.putExtra("inputType", String.valueOf(finalInputType));
+
+            boolean disabledXInput = cbDisabledXInput.isChecked();
+            shortcut.putExtra("disableXinput", disabledXInput ? "1" : null);
+
+            boolean touchscreenMode = cbSimTouchScreen.isChecked();
+            shortcut.putExtra("simTouchScreen", touchscreenMode ? "1" : "0");
+
+            String execArgs = etExecArgs.getText().toString();
+            shortcut.putExtra("execArgs", !execArgs.isEmpty() ? execArgs : null);
+            shortcut.putExtra("screenSize", screenSize);
+            shortcut.putExtra("displayDriver", displayDriver);
+            if (displayDriver.equals("displayx"))
+                shortcut.putExtra("displayxConfig", vDisplayDriverConfig.getTag().toString());
+            else
+                shortcut.putExtra("eglConfig", vDisplayDriverConfig.getTag().toString());
+
+            shortcut.putExtra("graphicsDriver", graphicsDriver);
+            shortcut.putExtra("graphicsDriverConfig", graphicsDriverConfig);
+            shortcut.putExtra("dxwrapper", dxwrapper);
+            shortcut.putExtra("dxwrapperConfig", dxwrapperConfig);
+            
+            shortcut.putExtra("audioDriver", audioDriver);
+            shortcut.putExtra("audioConfig", audioConfig);
+            
+            shortcut.putExtra("emulator", emulator);
+            shortcut.putExtra("midiSoundFont", midiSoundFont);
+            shortcut.putExtra("lc_all", lc_all);
+
+            shortcut.putExtra("fullscreenStretched", cbFullscreenStretched.isChecked() ? "1" : null);
+
+            String wincomponents = containerDetailFragment.getWinComponents(getContentView());
+            shortcut.putExtra("wincomponents", wincomponents);
+
+            String envVars = envVarsView.getEnvVars();
+            shortcut.putExtra("envVars", !envVars.isEmpty() ? envVars : null);
+
+            String fexcoreVersion = sFEXCoreVersion.getSelectedItem().toString();
+            shortcut.putExtra("fexcoreVersion", fexcoreVersion);
+
+            String fexcorePreset = FEXCorePresetManager.getSpinnerSelectedId(sFEXCorePreset);
+            shortcut.putExtra("fexcorePreset", fexcorePreset);
+
+            String box64Preset = Box64PresetManager.getSpinnerSelectedId(sBox64Preset);
+            shortcut.putExtra("box64Preset", box64Preset);
+
+            byte startupSelection = (byte)sStartupSelection.getSelectedItemPosition();
+            shortcut.putExtra("startupSelection", String.valueOf(startupSelection));
+
+            String sharpeningEffect = sSharpnessEffect.getSelectedItem().toString();
+            String sharpeningLevel = String.valueOf(sbSharpnessLevel.getProgress());
+            String sharpeningDenoise = String.valueOf(sbSharpnessDenoise.getProgress());
+            shortcut.putExtra("sharpnessEffect", sharpeningEffect);
+            shortcut.putExtra("sharpnessLevel", sharpeningLevel);
+            shortcut.putExtra("sharpnessDenoise", sharpeningDenoise);
+
+            ArrayList<ControlsProfile> profiles = inputControlsManager.getProfiles(true);
+            int controlsProfile = sControlsProfile.getSelectedItemPosition() > 0 ? profiles.get(sControlsProfile.getSelectedItemPosition() - 1).id : 0;
+            shortcut.putExtra("controlsProfile", controlsProfile > 0 ? String.valueOf(controlsProfile) : null);
+
+            String cpuList = cpuListView.getCheckedCPUListAsString();
+            shortcut.putExtra("cpuList", cpuList);
+
+            // Save all changes to the shortcut
+            shortcut.saveData();
+
+            // Last, handle renaming if the name has changed
             if (nameChanged) {
                 renameShortcut(name);
-            }
-
-
-            // Determine if renaming is needed
-            boolean renamingSuccess = !nameChanged || new File(shortcut.file.getParent(), name + ".desktop").exists();
-
-            if (renamingSuccess) {
-                String graphicsDriver = StringUtils.parseIdentifier(sGraphicsDriver.getSelectedItem());
-                String displayDriver = StringUtils.parseIdentifier(sDisplayDriver.getSelectedItem());
-                String graphicsDriverConfig = vGraphicsDriverConfig.getTag().toString();
-                String dxwrapper = StringUtils.parseIdentifier(sDXWrapper.getSelectedItem());
-                String dxwrapperConfig = vDXWrapperConfig.getTag().toString();
-                String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem());
-                String emulator = StringUtils.parseIdentifier(sEmulator.getSelectedItem());
-                String lc_all = etLC_ALL.getText().toString();
-                String midiSoundFont = sMIDISoundFont.getSelectedItemPosition() == 0 ? "" : sMIDISoundFont.getSelectedItem().toString();
-                String screenSize = containerDetailFragment.getScreenSize(getContentView());
-
-                int finalInputType = 0;
-                finalInputType |= cbEnableXInput.isChecked() ? WinHandler.FLAG_INPUT_TYPE_XINPUT : 0;
-                finalInputType |= cbEnableDInput.isChecked() ? WinHandler.FLAG_INPUT_TYPE_DINPUT : 0;
-                finalInputType |= SDInputType.getSelectedItemPosition() == 0 ?  WinHandler.FLAG_DINPUT_MAPPER_STANDARD : WinHandler.FLAG_DINPUT_MAPPER_XINPUT;
-
-
-                shortcut.putExtra("inputType", String.valueOf(finalInputType));
-
-                boolean disabledXInput = cbDisabledXInput.isChecked();
-                shortcut.putExtra("disableXinput", disabledXInput ? "1" : null);
-
-                boolean touchscreenMode = cbSimTouchScreen.isChecked();
-                shortcut.putExtra("simTouchScreen", touchscreenMode ? "1" : "0");
-
-                String execArgs = etExecArgs.getText().toString();
-                shortcut.putExtra("execArgs", !execArgs.isEmpty() ? execArgs : null);
-                shortcut.putExtra("screenSize", screenSize);
-                shortcut.putExtra("displayDriver", displayDriver);
-                if (displayDriver.equals("displayx"))
-                    shortcut.putExtra("displayxConfig", vDisplayDriverConfig.getTag().toString());
-                    
-                shortcut.putExtra("graphicsDriver", graphicsDriver);
-                shortcut.putExtra("graphicsDriverConfig", graphicsDriverConfig);
-                shortcut.putExtra("dxwrapper", dxwrapper);
-                shortcut.putExtra("dxwrapperConfig", dxwrapperConfig);
-                shortcut.putExtra("audioDriver", audioDriver);
-                shortcut.putExtra("emulator", emulator);
-                shortcut.putExtra("midiSoundFont", midiSoundFont);
-                shortcut.putExtra("lc_all", lc_all);
-
-                shortcut.putExtra("fullscreenStretched", cbFullscreenStretched.isChecked() ? "1" : null);
-
-                String wincomponents = containerDetailFragment.getWinComponents(getContentView());
-                shortcut.putExtra("wincomponents", wincomponents);
-
-                String envVars = envVarsView.getEnvVars();
-                shortcut.putExtra("envVars", !envVars.isEmpty() ? envVars : null);
-
-                String fexcoreVersion = sFEXCoreVersion.getSelectedItem().toString();
-                shortcut.putExtra("fexcoreVersion", fexcoreVersion);
-
-                String fexcorePreset = FEXCorePresetManager.getSpinnerSelectedId(sFEXCorePreset);
-                shortcut.putExtra("fexcorePreset", fexcorePreset);
-
-                String box64Preset = Box64PresetManager.getSpinnerSelectedId(sBox64Preset);
-                shortcut.putExtra("box64Preset", box64Preset);
-
-                byte startupSelection = (byte)sStartupSelection.getSelectedItemPosition();
-                shortcut.putExtra("startupSelection", String.valueOf(startupSelection));
-
-                String sharpeningEffect = sSharpnessEffect.getSelectedItem().toString();
-                String sharpeningLevel = String.valueOf(sbSharpnessLevel.getProgress());
-                String sharpeningDenoise = String.valueOf(sbSharpnessDenoise.getProgress());
-                shortcut.putExtra("sharpnessEffect", sharpeningEffect);
-                shortcut.putExtra("sharpnessLevel", sharpeningLevel);
-                shortcut.putExtra("sharpnessDenoise", sharpeningDenoise);
-
-                ArrayList<ControlsProfile> profiles = inputControlsManager.getProfiles(true);
-                int controlsProfile = sControlsProfile.getSelectedItemPosition() > 0 ? profiles.get(sControlsProfile.getSelectedItemPosition() - 1).id : 0;
-                shortcut.putExtra("controlsProfile", controlsProfile > 0 ? String.valueOf(controlsProfile) : null);
-
-                String cpuList = cpuListView.getCheckedCPUListAsString();
-                shortcut.putExtra("cpuList", cpuList);
-
-                // Save all changes to the shortcut
-                shortcut.saveData();
             }
         });
     }
@@ -483,6 +505,9 @@ public class ShortcutSettingsDialog extends ContentDialog {
     private boolean isFieldSetLabel(String text) {
         return text.equalsIgnoreCase("DirectX") ||
                 text.equalsIgnoreCase("General") ||
+                text.equalsIgnoreCase("Codecs") ||
+                text.equalsIgnoreCase("vkBasalt") ||
+                text.equalsIgnoreCase("Builtin Decoder") ||
                 text.equalsIgnoreCase("Box64") ||
                 text.equalsIgnoreCase("Input Controls") ||
                 text.equalsIgnoreCase("Game Controller") ||
@@ -545,6 +570,7 @@ public class ShortcutSettingsDialog extends ContentDialog {
         Spinner sFEXCoreVersion = view.findViewById(R.id.SFEXCoreVersion);
         Spinner sFEXCorePreset = view.findViewById(R.id.SFEXCorePreset);
         Spinner sStartupSelection = findViewById(R.id.SStartupSelection);
+        Spinner sBuiltinDecoder = findViewById(R.id.SBuiltinDecoder);
         
 
         // Set dark or light mode background for spinners
@@ -561,6 +587,7 @@ public class ShortcutSettingsDialog extends ContentDialog {
         sFEXCorePreset.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
         sFEXCoreVersion.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
         sStartupSelection.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
+        sBuiltinDecoder.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
 
 //        EditText etLC_ALL = view.findViewById(R.id.ETlcall);
         EditText etExecArgs = view.findViewById(R.id.ETExecArgs);

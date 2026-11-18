@@ -11,12 +11,19 @@ struct Cursor {
     int hotspotX;
     int hotspotY;
     bool visible;
-    jobject cursorObj;
 };
 
 struct Pointer {
     int posX;
     int posY;
+};
+
+struct CursorLock {
+    std::mutex mutex;
+   
+   std::unique_lock<std::mutex> lock() {
+       return std::unique_lock<std::mutex>(mutex);
+   }
 };
 
 class CursorManager {
@@ -27,6 +34,7 @@ class CursorManager {
     public: 
         Pointer pointer{0, 0};
         ASurfaceControl *control;
+        CursorLock cursorLock;
         
         void setRootCursor(std::unique_ptr<struct Cursor> cursor);
         Cursor *getRootCursor();

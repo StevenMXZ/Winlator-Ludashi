@@ -1,9 +1,18 @@
 package com.winlator.cmod;
 
+import android.Manifest;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.provider.Settings;
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
+import androidx.preference.PreferenceManager;
 import static com.winlator.cmod.core.AppUtils.showToast;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -59,12 +68,14 @@ public class ContainersFragment extends Fragment {
     private TextView emptyTextView;
     private ContainerManager manager;
     private PreloaderDialog preloaderDialog;
+    private SharedPreferences sharedPreferences;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setHasOptionsMenu(true);
         preloaderDialog = new PreloaderDialog(getActivity());
+        sharedPreferences = PreferenceManager.getDefaultSharedPreferences(getContext());
     }
 
     @Override
@@ -104,18 +115,81 @@ public class ContainersFragment extends Fragment {
             icon.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);
         }
     }
+    
+    private void requestNotificationPermission() {
+        String[] permissions = new String[]{ Manifest.permission.POST_NOTIFICATIONS };
+        
+        new AlertDialog.Builder(getContext())
+            .setTitle("Notification Permission")
+            .setMessage("Certain devices like Oppo and Oneplus require a special notification to keep Winlator alive when in the background. Press OK to grant POST_NOTIFICATIONS permission.")
+            .setPositiveButton("Okay", (dialog, which) -> {
+                AppUtils.createNotificationChannel(getContext(), MainActivity.NOTIFICATION_CHANNEL_ID, "Winlator", "Winlator Notification Permission test", NotificationManager.IMPORTANCE_LOW);
+                sharedPreferences.edit().putBoolean("dont_ask_post_notification_permission", true).apply();
+            })
+            .setNegativeButton("Cancel", null)
+            .setNeutralButton("Don't Ask Again", (dialog, which) -> {
+                sharedPreferences.edit().putBoolean("dont_ask_post_notification_permission", true).apply();
+            })
+            .show();
+    }
+    
+    private void requestStoragePermission() {
+        new AlertDialog.Builder(getContext())
+            .setTitle("Storage Permission")
+            .setMessage("For Winlator to work, the WRITE_EXTERNAL_STORAGE and READ_EXTERNAL_STORAGE permissions are required. Press OK to grant these permissions, failing to do so will make Winlator unable to create containers")
+            .setPositiveButton("Okay", (dialog, which) -> {
+                String[] permissions = new String[]{ Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE };
+                requestPermissions(permissions, MainActivity.PERMISSION_WRITE_EXTERNAL_STORAGE_REQUEST_CODE);
+                sharedPreferences.edit().putBoolean("dont_ask_storage_permissions", true).apply();
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+    
+    private void showAllFilesAccessDialog() {
+        new AlertDialog.Builder(getContext())
+            .setTitle("All Files Access Required")
+            .setMessage("On Android 11 and newer, for Winlator to work the ACCESS_ALL_FILES permission is required. Press Okay to grant All Files Access in your Android Settings, failing to do so will make Winlator unable to create containers")
+            .setPositiveButton("Okay", (dialog, which) -> {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                intent.setData(Uri.parse("package:" + getActivity().getPackageName()));
+                startActivity(intent);
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+    
+    private void launchContainerDetailFragment() {
+        FragmentManager fragmentManager = getParentFragmentManager();
+        fragmentManager.beginTransaction()
+            .setCustomAnimations(R.anim.slide_in_up, R.anim.slide_out_down, R.anim.slide_in_down, R.anim.slide_out_up)
+            .addToBackStack(null)
+            .replace(R.id.FLFragmentContainer, new ContainerDetailFragment())
+            .commit();
+    }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem menuItem) {
         switch (menuItem.getItemId()) {
             case R.id.containers_menu_add:
                 if (!ImageFs.find(getContext()).isValid()) return false;
-                FragmentManager fragmentManager = getParentFragmentManager();
-                fragmentManager.beginTransaction()
-                        .setCustomAnimations(R.anim.slide_in_up, R.anim.slide_out_down, R.anim.slide_in_down, R.anim.slide_out_up)
-                        .addToBackStack(null)
-                        .replace(R.id.FLFragmentContainer, new ContainerDetailFragment())
-                        .commit();
+                
+                if (Build.VERSION.SDK_INT < 30) {
+                    if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(getContext(), Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                       if (!sharedPreferences.getBoolean("dont_ask_storage_permissions", false)) requestStoragePermission();
+                    }
+                    else if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED && ContextCompat.checkSelfPermission(getContext(), Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+                        launchContainerDetailFragment();
+                    }
+                }
+                else {
+                    if (!Environment.isExternalStorageManager()) {
+                        showAllFilesAccessDialog();
+                    }
+                    else {
+                        launchContainerDetailFragment();
+                    }
+                }
                 return true;
 
             case R.id.action_big_picture_mode:
@@ -186,13 +260,18 @@ public class ContainersFragment extends Fragment {
         }
 
         private void runContainer(Container container) {
-            final Context context = getContext();
-            if (!XrActivity.isEnabled(getContext())) {
-                Intent intent = new Intent(context, XServerDisplayActivity.class);
-                intent.putExtra("container_id", container.id);
-                requireActivity().startActivity(intent);
-            } else {
-                XrActivity.openIntent(getActivity(), container.id, null);
+            if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && !sharedPreferences.getBoolean("dont_ask_post_notification_permission", false)) {
+                requestNotificationPermission();
+            }
+            else {     
+                final Context context = getContext();
+                if (!XrActivity.isEnabled(getContext())) {
+                    Intent intent = new Intent(context, XServerDisplayActivity.class);
+                    intent.putExtra("container_id", container.id);
+                    requireActivity().startActivity(intent);
+                } else {
+                    XrActivity.openIntent(getActivity(), container.id, null);
+                }
             }
         }
 

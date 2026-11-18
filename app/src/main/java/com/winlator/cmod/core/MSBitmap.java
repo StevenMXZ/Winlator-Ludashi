@@ -88,11 +88,10 @@ public abstract class MSBitmap {
         int[] pixels = new int[width * height];
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
 
-        int extraBytes = width % 4;
-        int imageSize = height * (3 * width + extraBytes);
+        int imageSize = 4 * height * width;
         int infoHeaderSize = 40;
         int dataOffset = 54;
-        int bitCount = 24;
+        int bitCount = 32;
         int planes = 1;
         int compression = 0;
         int hr = 0;
@@ -102,7 +101,7 @@ public abstract class MSBitmap {
         
         ByteBuffer buffer = ByteBuffer.allocate(dataOffset + imageSize).order(ByteOrder.LITTLE_ENDIAN);
 
-        buffer.putShort((short)0x4d42); // "BM"
+        buffer.putShort((short)0x4d42);
         buffer.putInt(dataOffset + imageSize);
         buffer.putInt(0);
         buffer.putInt(dataOffset);
@@ -119,19 +118,15 @@ public abstract class MSBitmap {
         buffer.putInt(colorsUsed);
         buffer.putInt(colorsImportant);
 
-        int rowBytes = 3 * width + extraBytes;
+        int rowBytes = 4 * width;
         for (int y = height - 1, i = 0, j; y >= 0; y--) {
             for (int x = 0; x < width; x++) {
-                j = dataOffset + y * rowBytes + x * 3;
+                j = dataOffset + y * rowBytes + x * 4;
                 int pixel = pixels[i++];
                 buffer.put(j+0, (byte)Color.blue(pixel));
                 buffer.put(j+1, (byte)Color.green(pixel));
                 buffer.put(j+2, (byte)Color.red(pixel));
-            }
-
-            if (extraBytes > 0) {
-                int fillOffset = dataOffset + y * rowBytes + width * 3;
-                for (j = fillOffset; j < fillOffset + extraBytes; j++) buffer.put(j, (byte)255);
+                buffer.put(j+3, (byte)255);
             }
         }
 

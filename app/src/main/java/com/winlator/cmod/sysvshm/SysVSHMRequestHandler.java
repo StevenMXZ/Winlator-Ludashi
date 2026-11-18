@@ -1,6 +1,6 @@
 package com.winlator.cmod.sysvshm;
 
-import com.winlator.cmod.xconnector.Client;
+import com.winlator.cmod.xconnector.ConnectedClient;
 import com.winlator.cmod.xconnector.RequestHandler;
 import com.winlator.cmod.xconnector.XInputStream;
 import com.winlator.cmod.xconnector.XOutputStream;
@@ -10,7 +10,7 @@ import java.io.IOException;
 
 public class SysVSHMRequestHandler implements RequestHandler {
     @Override
-    public boolean handleRequest(Client client) throws IOException {
+    public boolean handleRequest(ConnectedClient client) throws IOException {
         SysVSharedMemory sysVSharedMemory = (SysVSharedMemory)client.getTag();
         XInputStream inputStream = client.getInputStream();
         XOutputStream outputStream = client.getOutputStream();

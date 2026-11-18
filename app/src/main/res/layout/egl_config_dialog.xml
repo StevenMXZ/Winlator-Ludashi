@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+	xmlns:android="http://schemas.android.com/apk/res/android"
+	android:layout_width="wrap_content"
+	android:layout_height="wrap_content">
+
+	<LinearLayout
+		android:layout_width="300dp"
+		android:layout_height="wrap_content"
+		android:orientation="vertical">
+
+		<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="Surface Format"
+			android:textAppearance="?android:attr/textAppearanceMedium"
+			android:paddingBottom="8dp" />
+
+		<Spinner
+			style="@style/ComboBox"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:entries="@array/surface_format_entries"
+			android:id="@+id/SSurfaceFormat"
+			android:spinnerMode="dialog" />
+
+        <TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="Texture Filter"
+			android:textAppearance="?android:attr/textAppearanceMedium"
+			android:paddingBottom="8dp" />
+
+		<Spinner
+			style="@style/ComboBox"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:entries="@array/texture_filter_entries"
+			android:id="@+id/STextureFilter"
+			android:spinnerMode="dialog" />
+	</LinearLayout>
+
+</ScrollView>

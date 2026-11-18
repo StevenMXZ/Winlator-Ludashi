@@ -108,7 +108,7 @@ public class PresentExtension implements Extension, XResourceManager.OnResourceL
             outputStream.writeShort(client.getSequenceNumber());
             outputStream.writeInt(0);
             outputStream.writeInt(1);
-            outputStream.writeInt(0);
+            outputStream.writeInt(2);
             outputStream.writePad(16);
         }
     }
@@ -132,7 +132,7 @@ public class PresentExtension implements Extension, XResourceManager.OnResourceL
 
         long ust = System.nanoTime() / 1000;
         long msc = ust / FAKE_INTERVAL;
-
+        
         pixmap.drawable.updateDirect();
         sendIdleNotify(window, pixmap, serial, idleFence);
         sendCompleteNotify(window, serial, Kind.PIXMAP, Mode.COPY, ust, msc);

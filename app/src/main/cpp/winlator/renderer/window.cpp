@@ -2,7 +2,6 @@
 
 void WindowManager::changeZOrder(int stackMode, Window *window, Window *sibling) {
     auto parent = window->parent;
-    
     if (!parent)
         return;
         
@@ -14,18 +13,34 @@ void WindowManager::changeZOrder(int stackMode, Window *window, Window *sibling)
         if (it != parent->children.end()) {
             if (stackMode == 1) {
                 parent->children.insert(it + 1, window);
+                window->z_order = sibling->z_order + 1;
             }
             else {
                 parent->children.insert(it, window);
+                window->z_order = sibling->z_order - 1;
             }
             return;
         }
     }
     
-    if (stackMode == 1)
+    if (stackMode == 1) {
         parent->children.push_back(window);
-    else
+        int max = 0;
+        for (auto& child : window->parent->children) {
+            if (child->z_order > max)
+                max = child->z_order;
+        }
+        window->z_order = max + 1;
+    }    
+    else {
         parent->children.insert(parent->children.begin(), window);
+        int min = 0;
+        for (auto& child : window->parent->children) {
+            if (child->z_order < min)
+                min = child->z_order;
+        }
+        window->z_order = min - 1;
+    }    
 }
 
 void WindowManager::addWindow(int id, std::unique_ptr<struct Window> window) {
@@ -35,28 +50,27 @@ void WindowManager::addWindow(int id, std::unique_ptr<struct Window> window) {
 
 Window* WindowManager::getWindow(int id) {
     auto lock = windowLock.lock();
+    
     auto it = windows.find(id);
-    if (it == windows.end()) return nullptr;
+    if (it == windows.end())
+        return nullptr;
     
     return it->second.get();
 }
 
 void WindowManager::deleteWindow(Window *window) {
-    for (auto& child : window->children)
-        child->parent = nullptr;
+    for (auto childCopy = window->children; auto& child : childCopy)
+        deleteWindow(child);
         
     auto parent = window->parent;
     
     if (parent) {
         parent->children.erase(std::remove(parent->children.begin(), 
             parent->children.end(), window), parent->children.end());
+            
+        if (window->isSurface() && parent->surface == window)
+            parent->surface = nullptr;
     }
-    
-    window->parent = nullptr;
-    window->currentDirectContent = nullptr;
-    window->children.clear();
-    window->directContents.clear();
-    window->drawable = nullptr;
     
     {
         auto lock = windowLock.lock();

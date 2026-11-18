@@ -1,6 +1,8 @@
 package com.winlator.cmod.core;
 
 import android.app.Activity;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -347,6 +349,16 @@ public abstract class AppUtils {
                 callback.run();
             }
         }, delay);
+    }
+    
+    public static void createNotificationChannel(Context context, String id, String name, String description, int importance) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O)
+            return;
+        
+        NotificationChannel channel = new NotificationChannel(id, name, importance);
+        channel.setDescription(description);
+        NotificationManager notificationManager = context.getSystemService(NotificationManager.class);
+        notificationManager.createNotificationChannel(channel);
     }
 
 }

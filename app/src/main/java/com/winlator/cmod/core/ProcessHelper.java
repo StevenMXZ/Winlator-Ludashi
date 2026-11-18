@@ -49,6 +49,12 @@ public abstract class ProcessHelper {
             terminateProcess(Integer.parseInt(process));
         }
     }
+    
+    public static void killAllWineProcesses() {
+        for (String process : listRunningWineProcesses()) {
+            killProcess(Integer.parseInt(process));
+        }
+    }
 
     public static void pauseAllWineProcesses() {
         for (String process : listRunningWineProcesses()) {
@@ -264,7 +270,7 @@ public abstract class ProcessHelper {
         List<String> filterList = Arrays.asList(filters);
         allPids = proc.list(new FilenameFilter(){
             public boolean accept(File proc, String filename){
-                return new File(proc, filename).isDirectory() && filename.matches("[0-9]+");
+                return new File(proc, filename).isDirectory() && Character.isDigit(filename.charAt(0));
             }
         });
 
@@ -276,11 +282,29 @@ public abstract class ProcessHelper {
                 data = br.readLine();
             }
             catch (IOException e) {}
+            if (data == null) data = "";
+            String cmdline = readCmdline(proc, allPids[index]);
+            String haystack = data + " " + cmdline;
             for (String filter : filterList) {
-                if (data.contains(filter))
+                if (haystack.contains(filter)) {
                     filteredPids.add(allPids[index]);
+                    break;  // add each pid at most once (avoids the double-add when it matches both filters)
+                }
             }
         }
         return filteredPids;
+    }
+
+    private static String readCmdline(File proc, String pid) {
+        try (FileInputStream fr = new FileInputStream(proc + "/" + pid + "/cmdline")) {
+            byte[] buf = new byte[512];
+            int n = fr.read(buf);
+            if (n <= 0) return "";
+            StringBuilder sb = new StringBuilder(n);
+            for (int i = 0; i < n; i++) sb.append(buf[i] == 0 ? ' ' : (char) buf[i]);
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 }

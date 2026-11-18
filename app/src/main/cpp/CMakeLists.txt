@@ -5,7 +5,6 @@ project(Winlator)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -Wno-unused-function -Wimplicit-function-declaration")
 
 add_subdirectory(OpenXR-SDK)
-add_subdirectory(patchelf)
 add_subdirectory(adrenotools)
 
 # Add Winlator shared library
@@ -20,7 +19,9 @@ add_library(winlator SHARED
         winlator/gpu_image.c
         winlator/sysvshared_memory.c
         winlator/xconnector_epoll.c
-        winlator/alsa_client.c
+        winlator/xinput_stream.c
+        winlator/xoutput_stream.c
+        winlator/arrays.c
         winlator/vulkan.c
         winlator/renderer/egl.cpp
         winlator/renderer/renderer_jni.cpp
@@ -30,9 +31,11 @@ add_library(winlator SHARED
         winlator/renderer/xform.cpp
         winlator/renderer/view_transformation.cpp
         winlator/renderer/displayx.cpp
+        winlator/renderer/effectcomposer/effect_composer.cpp
 )
 
 target_compile_options(winlator PRIVATE -Wall -Wextra)
+target_include_directories(winlator PRIVATE winlator/renderer winlator/renderer/effectcomposer winlator/include)
 
 target_link_libraries(winlator
         log
@@ -44,4 +47,5 @@ target_link_libraries(winlator
         GLESv2
         GLESv3
         adrenotools
+        vulkan
 )

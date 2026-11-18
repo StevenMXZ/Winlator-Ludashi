@@ -13,6 +13,7 @@ import com.winlator.cmod.xserver.events.Event;
 import com.winlator.cmod.xserver.events.Expose;
 import com.winlator.cmod.xserver.events.MapNotify;
 import com.winlator.cmod.xserver.events.MapRequest;
+import com.winlator.cmod.xserver.events.ReparentNotify;
 import com.winlator.cmod.xserver.events.ResizeRequest;
 import com.winlator.cmod.xserver.events.UnmapNotify;
 
@@ -49,7 +50,7 @@ public class WindowManager extends XResourceManager {
 
         default void onModifyWindowProperty(Window window, Property property) {}
         
-        default void onReparentWindow(Window window, Window newParent) {}
+        default void onReparentWindow(Window window, Window newParent, short x, short y) {}
     }
 
     public WindowManager(ScreenInfo screenInfo, DrawableManager drawableManager) {
@@ -200,8 +201,10 @@ public class WindowManager extends XResourceManager {
 
         if (resized && window.isInputOutput()) {
             Drawable oldContent = window.getContent();
+            boolean wasOffscreen = oldContent.isOffscreen();
             drawableManager.removeDrawable(oldContent.id);
             Drawable newContent = drawableManager.createDrawable(oldContent.id, width, height, oldContent.visual);
+            if (wasOffscreen) newContent.setOffscreen(wasOffscreen);
             newContent.setOnDrawListener(() -> triggerOnUpdateWindowContent(window));
             window.setContent(newContent);
         }
@@ -282,11 +285,18 @@ public class WindowManager extends XResourceManager {
         else parent.sendEvent(Event.SUBSTRUCTURE_REDIRECT, new ConfigureRequest(parent, window, window.previousSibling(), x, y, width, height, borderWidth, stackMode, valueMask));
     }
 
-    public void reparentWindow(Window window, Window newParent) {
+    public void reparentWindow(Window window, Window newParent, short x, short y) {
         Window oldParent = window.getParent();
         if (oldParent != null) oldParent.removeChild(window);
         newParent.addChild(window);
-        triggerOnReparentWindow(window, newParent);
+        window.setX(x);
+        window.setY(y);
+       
+        window.sendEvent(Event.STRUCTURE_NOTIFY, new ReparentNotify(window, window, newParent, x, y));
+        if (oldParent != null) oldParent.sendEvent(Event.SUBSTRUCTURE_NOTIFY, new ReparentNotify(oldParent, window, newParent, x, y));
+        newParent.sendEvent(Event.SUBSTRUCTURE_NOTIFY, new ReparentNotify(newParent, window, newParent, x, y));
+        
+        triggerOnReparentWindow(window, newParent, x, y);
     }
 
     public Window findPointWindow(short rootX, short rootY) {
@@ -367,9 +377,9 @@ public class WindowManager extends XResourceManager {
         }
     }
 
-    public void triggerOnReparentWindow(Window window, Window newParent) {
+    public void triggerOnReparentWindow(Window window, Window newParent, short x, short y) {
         for (int i = onWindowModificationListeners.size()-1; i >= 0; i--) {
-            onWindowModificationListeners.get(i).onReparentWindow(window, newParent);
+            onWindowModificationListeners.get(i).onReparentWindow(window, newParent, x, y);
         }
     }
 }

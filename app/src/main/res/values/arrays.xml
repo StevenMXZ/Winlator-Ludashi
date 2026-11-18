@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string-array name="audio_api_entries">
+        <item>AAudio</item>
+        <item>OpenSLES</item>
+    </string-array>    
+    <string-array name="builtin_decoder_entries">
+        <item>FFMpeg</item>
+    </string-array>    
     <string-array name="screen_size_entries">
         <item>Custom</item>
         <item>640x360 (16:9)</item>
@@ -22,6 +29,14 @@
         <item>EGL</item>
         <item>DisplayX</item>
     </string-array>
+    <string-array name="surface_format_entries">
+        <item>rgba8</item>
+        <item>bgra8</item>
+    </string-array>    
+    <string-array name="texture_filter_entries">
+        <item>nearest</item>
+        <item>linear</item>
+    </string-array>    
     <string-array name="graphics_driver_entries">
         <item>Wrapper</item>
     </string-array>
@@ -78,6 +93,19 @@
         <item>immediate</item>
         <item>relaxed</item>
     </string-array>
+    <string-array name="displayx_backend_entries">
+        <item>X11</item>
+        <item>DisplayX</item>
+    </string-array>    
+    <string-array name="displayx_dynamic_range">
+        <item>SDR</item>
+        <item>HDR</item>
+    </string-array>    
+    <string-array name="displayx_present_mode_entries">
+        <item>auto</item>
+        <item>mailbox</item>
+        <item>fifo</item>
+    </string-array>
     <string-array name="resource_type_entries">
         <item>auto</item>
         <item>dmabuf</item>
@@ -132,7 +160,7 @@
         <item>Native (Windows)</item>
     </string-array>
     <string-array name="box64_version_entries">
-        <item>0.3.7</item>
+        <item>0.4.5</item>
     </string-array>
     <string-array name="wowbox64_version_entries">
         <item>0.3.7</item>

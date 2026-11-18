@@ -51,6 +51,7 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     private String[] bindingPaths;
     private EnvVars envVars;
     private WineInfo wineInfo;
+    private KeyValueSet displayConfig = null;
     private String box64Preset = Box64Preset.COMPATIBILITY;
     private String fexcorePreset = FEXCorePreset.INTERMEDIATE;
     private Callback<Integer> terminationCallback;
@@ -65,6 +66,10 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     }
     public WineInfo getWineInfo() {
         return this.wineInfo;
+    }
+    
+    public void setDisplayConfig(KeyValueSet displayConfig) {
+        this.displayConfig = displayConfig;
     }
 
     public Container getContainer() { return this.container; }
@@ -289,7 +294,7 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         envVars.put("DISPLAY", ":0");
         envVars.put("WINE_DISABLE_FULLSCREEN_HACK", "1");
         envVars.put("GST_PLUGIN_FEATURE_RANK", "ximagesink:3000");
-        envVars.put("ALSA_CONFIG_PATH", rootDir.getPath() + "/usr/share/alsa/alsa.conf" + ":" + rootDir.getPath() + "/usr/etc/alsa/conf.d/android_aserver.conf");
+        envVars.put("ALSA_CONFIG_PATH", rootDir.getPath() + "/usr/share/alsa/alsa.conf" + ":" + rootDir.getPath() + "/usr/etc/alsa/conf.d/android_alsa.conf");
         envVars.put("ALSA_PLUGIN_DIR", rootDir.getPath() + "/usr/lib/alsa-lib");
         envVars.put("OPENSSL_CONF", rootDir.getPath() + "/usr/etc/tls/openssl.cnf");
         envVars.put("SSL_CERT_FILE", rootDir.getPath() + "/usr/etc/tls/cert.pem");
@@ -337,26 +342,33 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             this.envVars.remove("MANGOHUD_CONFIG");
         }
         
-        if (shortcut != null) {
-            String displayDriver = shortcut.getExtra("displayDriver", Container.DEFAULT_DISPLAY_DRIVER);
-            String displayxConfigString = shortcut.getExtra("displayxConfig", DisplayXConfigDialog.DEFAULT_CONFIG);
-            KeyValueSet displayxConfig = DisplayXConfigDialog.parseConfig(displayxConfigString);
-            if (displayDriver.toLowerCase().contains("displayx")) {
-                boolean isTrueDisplayX = displayxConfig.get("trueDisplayX").equals("1") ? true : false;
-                boolean isPerfMode = displayxConfig.get("performanceMode").equals("1") ? true : false;
-                if (isTrueDisplayX) {
-                    if (this.envVars.has("VK_INSTANCE_LAYERS")) {
-                        this.envVars.remove("VK_INSTANCE_LAYERS");
-                    }
-                    envVars.put("VK_INSTANCE_LAYERS", "VK_LAYER_DISPLAYX_display_x");
+        String displayDriver = (shortcut != null) ? shortcut.getExtra("displayDriver", container.getDisplayDriver()) : container.getDisplayDriver();
+        if (displayDriver.toLowerCase().equals("displayx")) {
+            boolean isTrueDisplayX = displayConfig.get("backend").equals("displayx") ? true : false;
+            if (isTrueDisplayX) {
+                if (this.envVars.has("VK_INSTANCE_LAYERS")) {
+                    this.envVars.remove("VK_INSTANCE_LAYERS");
                 }
-                if (isPerfMode) {
-                    XServerDisplayActivity activity = (XServerDisplayActivity)environment.getContext();
-                    activity.getXServerView().nativeSetPerformanceMode(isPerfMode);
-                }
+                envVars.put("VK_INSTANCE_LAYERS", "VK_LAYER_DISPLAYX_display_x");
+                
+                boolean isHDR = displayConfig.get("dynamicRange").equals("hdr") ? true : false;
+                if (isHDR)
+                    envVars.put("DXVK_HDR", "1");
             }
-            
+        }   
+         
+        String surfaceFormat = displayConfig.get("surfaceFormat");
+        if (surfaceFormat.equals("rgba8")) {
+            envVars.put("WRAPPER_SURFACE_FORMAT", "rgba8");
+            envVars.put("DISPLAYX_SURFACE_FORMAT", "rgba8");
         }
+        else {
+            envVars.put("WRAPPER_SURFACE_FORMAT", "bgra8");
+            envVars.put("DISPLAYX_SURFACE_FORMAT", "bgra8");
+        }
+        
+        String presentMode = displayConfig.get("presentMode");
+        envVars.put("DISPLAYX_PRESENT_MODE", presentMode);
         
         // Merge any additional environment variables from external sources
         if (this.envVars != null) {

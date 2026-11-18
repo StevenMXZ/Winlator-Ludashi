@@ -25,7 +25,7 @@ import java.util.Arrays;
 public class ControlElement {
     public static final float STICK_DEAD_ZONE = 0.15f;
     public static final float DPAD_DEAD_ZONE = 0.3f;
-    public static final float STICK_SENSITIVITY = 3.0f;
+    public static final float STICK_SENSITIVITY = 2.0f;
     public static final float STICK_CROSS_ZONE = 0.3f;
     public static final float TRACKPAD_MIN_SPEED = 0.8f;
     public static final float TRACKPAD_MAX_SPEED = 20.0f;
@@ -605,8 +605,10 @@ public class ControlElement {
             if (type == Type.BUTTON) {
                 if (isKeepButtonPressedAfterMinTime()) touchTime = System.currentTimeMillis();
                 if (!toggleSwitch || !selected) {
-                    inputControlsView.handleInputEvent(getBindingAt(0), true);
-                    inputControlsView.handleInputEvent(getBindingAt(1), true);
+                    Binding primaryBinding = getBindingAt(0);
+                    Binding secondaryBinding = getBindingAt(1);
+                    if (primaryBinding != Binding.NONE) inputControlsView.handleInputEvent(primaryBinding, true);
+                    if (secondaryBinding != Binding.NONE) inputControlsView.handleInputEvent(secondaryBinding, true);
                 }
                 return true;
             }
@@ -645,11 +647,11 @@ public class ControlElement {
                 float offsetX = localX - radius;
                 float offsetY = localY - radius;
 
-                float distance = Mathf.lengthSq(radius - localX, radius - localY);
-                if (distance > radius * radius) {
-                    float angle = (float)Math.atan2(offsetY, offsetX);
-                    offsetX = (float)(Math.cos(angle) * radius);
-                    offsetY = (float)(Math.sin(angle) * radius);
+                float distanceSquared = offsetX * offsetX + offsetY * offsetY;
+                if (distanceSquared > radius * radius) {
+                    float clampScale = radius / (float)Math.sqrt(distanceSquared);
+                    offsetX *= clampScale;
+                    offsetY *= clampScale;
                 }
 
                 deltaX = Mathf.clamp(offsetX / radius, -1, 1);
@@ -658,28 +660,51 @@ public class ControlElement {
 
             if (type == Type.STICK) {
                 if (currentPosition == null) currentPosition = new PointF();
-                currentPosition.x = boundingBox.left + deltaX * radius + radius;
-                currentPosition.y = boundingBox.top + deltaY * radius + radius;
+                float visualX = boundingBox.left + deltaX * radius + radius;
+                float visualY = boundingBox.top + deltaY * radius + radius;
+                boolean redraw = Math.abs(currentPosition.x - visualX) >= 0.5f ||
+                                 Math.abs(currentPosition.y - visualY) >= 0.5f;
+                if (redraw) currentPosition.set(visualX, visualY);
                 float adjDeltaX = (Math.abs(deltaX) < Math.abs(deltaY) * STICK_CROSS_ZONE) ? 0 : deltaX;
                 float adjDeltaY = (Math.abs(deltaY) < Math.abs(deltaX) * STICK_CROSS_ZONE) ? 0 : deltaY;
-                final boolean[] states = {adjDeltaY <= -STICK_DEAD_ZONE, adjDeltaX >= STICK_DEAD_ZONE, adjDeltaY >= STICK_DEAD_ZONE, adjDeltaX <= -STICK_DEAD_ZONE};
 
-                for (byte i = 0; i < 4; i++) {
-                    float value = i == 1 || i == 3 ? deltaX : deltaY;
-                    Binding binding = getBindingAt(i);
-                    if (binding.isGamepad()) {
-                        value = Mathf.clamp(Math.max(0, Math.abs(value) - 0.01f) * Mathf.sign(value) * STICK_SENSITIVITY, -1, 1);
-                        inputControlsView.handleInputEvent(binding, true, value);
-                        this.states[i] = true;
+                Binding firstBinding = getBindingAt(0);
+                if (firstBinding.isGamepad()) {
+                    float magnitude = (float)Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                    float finalX = 0;
+                    float finalY = 0;
+
+                    if (magnitude > STICK_DEAD_ZONE) {
+                        float normalizedX = deltaX / magnitude;
+                        float normalizedY = deltaY / magnitude;
+                        float scaledMagnitude = Math.max(0, magnitude - 0.01f) * STICK_SENSITIVITY;
+                        scaledMagnitude = Math.min(scaledMagnitude, 1.0f);
+                        finalX = normalizedX * scaledMagnitude;
+                        finalY = normalizedY * scaledMagnitude;
                     }
-                    else {
-                        boolean state = binding.isMouseMove() ? (states[i] || states[(i+2)%4]) : states[i];
-                        inputControlsView.handleInputEvent(binding, state, value);
+
+                    inputControlsView.handleStickInput(firstBinding, finalX, finalY);
+                    for (byte i = 0; i < 4; i++) this.states[i] = true;
+                }
+                else {
+                    final boolean up = adjDeltaY <= -STICK_DEAD_ZONE;
+                    final boolean right = adjDeltaX >= STICK_DEAD_ZONE;
+                    final boolean down = adjDeltaY >= STICK_DEAD_ZONE;
+                    final boolean left = adjDeltaX <= -STICK_DEAD_ZONE;
+                    for (byte i = 0; i < 4; i++) {
+                        float value = i == 1 || i == 3 ? adjDeltaX : adjDeltaY;
+                        Binding binding = getBindingAt(i);
+                        boolean direction = i == 0 ? up : i == 1 ? right : i == 2 ? down : left;
+                        boolean opposite = i == 0 ? down : i == 1 ? left : i == 2 ? up : right;
+                        boolean state = binding.isMouseMove() ? (direction || opposite) : direction;
+                        if (binding.isMouseMove() || this.states[i] != state) {
+                            inputControlsView.handleInputEvent(binding, state, value);
+                        }
                         this.states[i] = state;
                     }
                 }
 
-                inputControlsView.invalidate();
+                if (redraw) inputControlsView.invalidate();
             }
             else if (type == Type.TRACKPAD) {
                 final boolean[] states = {deltaY <= -TRACKPAD_MIN_SPEED, deltaX >= TRACKPAD_MIN_SPEED, deltaY >= TRACKPAD_MIN_SPEED, deltaX <= -TRACKPAD_MIN_SPEED};
@@ -747,15 +772,19 @@ public class ControlElement {
                 if (isKeepButtonPressedAfterMinTime() && touchTime != null) {
                     selected = (System.currentTimeMillis() - (long)touchTime) > BUTTON_MIN_TIME_TO_KEEP_PRESSED;
                     if (!selected) {
-                        inputControlsView.handleInputEvent(getBindingAt(0), false);
-                        inputControlsView.handleInputEvent(getBindingAt(1), false);
+                        Binding primaryBinding = getBindingAt(0);
+                        Binding secondaryBinding = getBindingAt(1);
+                        if (primaryBinding != Binding.NONE) inputControlsView.handleInputEvent(primaryBinding, false);
+                        if (secondaryBinding != Binding.NONE) inputControlsView.handleInputEvent(secondaryBinding, false);
                     }
                     touchTime = null;
                     inputControlsView.invalidate();
                 }
                 else if (!toggleSwitch || selected) {
-                    inputControlsView.handleInputEvent(getBindingAt(0), false);
-                    inputControlsView.handleInputEvent(getBindingAt(1), false);
+                    Binding primaryBinding = getBindingAt(0);
+                    Binding secondaryBinding = getBindingAt(1);
+                    if (primaryBinding != Binding.NONE) inputControlsView.handleInputEvent(primaryBinding, false);
+                    if (secondaryBinding != Binding.NONE) inputControlsView.handleInputEvent(secondaryBinding, false);
                 }
 
                 if (toggleSwitch) {
@@ -764,9 +793,15 @@ public class ControlElement {
                 }
             }
             else if (type == Type.RANGE_BUTTON || type == Type.D_PAD || type == Type.STICK || type == Type.TRACKPAD) {
-                for (byte i = 0; i < states.length; i++) {
-                    if (states[i]) inputControlsView.handleInputEvent(getBindingAt(i), false);
-                    states[i] = false;
+                if (type == Type.STICK && getBindingAt(0).isGamepad()) {
+                    inputControlsView.handleStickInput(getBindingAt(0), 0f, 0f);
+                    for (byte i = 0; i < states.length; i++) states[i] = false;
+                }
+                else {
+                    for (byte i = 0; i < states.length; i++) {
+                        if (states[i]) inputControlsView.handleInputEvent(getBindingAt(i), false);
+                        states[i] = false;
+                    }
                 }
 
                 if (type == Type.RANGE_BUTTON) {

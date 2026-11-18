@@ -33,7 +33,7 @@ public class SysVSharedMemoryComponent extends EnvironmentComponent {
     @Override
     public void stop() {
         if (connector != null) {
-            connector.stop();
+            connector.destroy();
             connector = null;
         }
 

@@ -86,7 +86,7 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
             outputStream.writeShort(client.getSequenceNumber());
             outputStream.writeInt(0);
             outputStream.writeInt(1);
-            outputStream.writeInt(0);
+            outputStream.writeInt(2);
             outputStream.writePad(16);
         }
     }
@@ -162,8 +162,7 @@ public class DRI3Extension implements Extension, XResourceManager.OnResourceLife
     private void pixmapFromHardwareBuffer(XClient client, int pixmapId, short width, short height, byte depth, int fd, Window window) throws IOException, XRequestError {
         try {
             GPUImage gpuImage = new GPUImage(fd);
-            Drawable drawable = client.xServer.drawableManager.createDrawable(pixmapId, width, height, depth);
-            drawable.setGPUImage(gpuImage);
+            Drawable drawable = client.xServer.drawableManager.createDrawable(pixmapId, width, height, depth, gpuImage);
             drawable.setOnDrawListener(() -> client.xServer.windowManager.triggerOnUpdateWindowContentDirect(window, drawable));
             client.xServer.getXServerView().nativeAddDirectContent(window.id, drawable);
             Pixmap pixmap = client.xServer.pixmapManager.createPixmap(drawable);

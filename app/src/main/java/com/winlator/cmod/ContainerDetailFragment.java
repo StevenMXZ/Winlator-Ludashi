@@ -38,8 +38,11 @@ import com.winlator.cmod.box64.Box64PresetManager;
 import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.contentdialog.AddEnvVarDialog;
+import com.winlator.cmod.contentdialog.AudioConfigDialog;
 import com.winlator.cmod.contentdialog.ContentDialog;
 import com.winlator.cmod.contentdialog.DXVKConfigDialog;
+import com.winlator.cmod.contentdialog.DisplayXConfigDialog;
+import com.winlator.cmod.contentdialog.EGLConfigDialog;
 import com.winlator.cmod.contentdialog.GraphicsDriverConfigDialog;
 import com.winlator.cmod.contentdialog.ShortcutSettingsDialog;
 import com.winlator.cmod.contentdialog.WineD3DConfigDialog;
@@ -144,14 +147,15 @@ public class ContainerDetailFragment extends Fragment {
 
 
     private void applyDynamicStyles(View view, boolean isDarkMode) {
-
-
         // Update Spinners
         Spinner sScreenSize = view.findViewById(R.id.SScreenSize);
         sScreenSize.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
 
         Spinner sWineVersion = view.findViewById(R.id.SWineVersion);
         sWineVersion.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
+        
+        Spinner sDisplayDriver = view.findViewById(R.id.SDisplayDriver);
+        sDisplayDriver.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
 
         Spinner sGraphicsDriver = view.findViewById(R.id.SGraphicsDriver);
         sGraphicsDriver.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark : R.drawable.content_dialog_background);
@@ -258,6 +262,9 @@ public class ContainerDetailFragment extends Fragment {
 
         TextView generalLabel = view.findViewById(R.id.TVGeneral);
         applyFieldSetLabelStyle(generalLabel, isDarkMode);  // Apply the dark or light mode styles
+        
+        TextView codecsLabel = view.findViewById(R.id.TVCodecs);
+        applyFieldSetLabelStyle(codecsLabel, isDarkMode); 
 
         // Advanced Tab TextViews
         TextView box64Label = view.findViewById(R.id.TVBox64);
@@ -322,6 +329,45 @@ public class ContainerDetailFragment extends Fragment {
         loadWineVersionSpinner(view, sWineVersion, sBox64Version);
 
         loadScreenSizeSpinner(view, isEditMode() ? container.getScreenSize() : Container.DEFAULT_SCREEN_SIZE);
+        
+        final Spinner sDisplayDriver = view.findViewById(R.id.SDisplayDriver);
+        String displayDriver = isEditMode() ? container.getDisplayDriver() : Container.DEFAULT_DISPLAY_DRIVER;
+        AppUtils.setSpinnerSelectionFromIdentifier(sDisplayDriver, displayDriver);
+        
+        final View vDisplayDriverConfig = view.findViewById(R.id.BTDisplayDriverConfig);
+        if (displayDriver.toLowerCase().equals("displayx")) {
+            vDisplayDriverConfig.setVisibility(View.VISIBLE);
+            vDisplayDriverConfig.setOnClickListener((v) -> (new DisplayXConfigDialog(vDisplayDriverConfig)).show());
+            vDisplayDriverConfig.setTag(isEditMode() ? container.getDisplayXConfig() : DisplayXConfigDialog.DEFAULT_CONFIG);
+        }
+        else {
+            vDisplayDriverConfig.setVisibility(View.VISIBLE);
+            vDisplayDriverConfig.setOnClickListener((v) -> (new EGLConfigDialog(vDisplayDriverConfig)).show());
+            vDisplayDriverConfig.setTag(isEditMode() ? container.getEGLConfig() : EGLConfigDialog.DEFAULT_CONFIG);
+        }
+        
+         
+        sDisplayDriver.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String selectedItem = parent.getItemAtPosition(position).toString();
+                String identifier = StringUtils.parseIdentifier(selectedItem);
+                if (identifier.equals("displayx")) {
+                    vDisplayDriverConfig.setVisibility(View.VISIBLE);
+                    vDisplayDriverConfig.setOnClickListener((v) -> (new DisplayXConfigDialog(vDisplayDriverConfig)).show());
+                    vDisplayDriverConfig.setTag(isEditMode() ? container.getDisplayXConfig() : DisplayXConfigDialog.DEFAULT_CONFIG);
+                }
+                else {
+                    vDisplayDriverConfig.setVisibility(View.VISIBLE);
+                    vDisplayDriverConfig.setOnClickListener((v) -> (new EGLConfigDialog(vDisplayDriverConfig)).show());
+                    vDisplayDriverConfig.setTag(isEditMode() ? container.getEGLConfig() : EGLConfigDialog.DEFAULT_CONFIG);
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
 
         final Spinner sGraphicsDriver = view.findViewById(R.id.SGraphicsDriver);
         
@@ -341,6 +387,22 @@ public class ContainerDetailFragment extends Fragment {
 
         Spinner sAudioDriver = view.findViewById(R.id.SAudioDriver);
         AppUtils.setSpinnerSelectionFromIdentifier(sAudioDriver, isEditMode() ? container.getAudioDriver() : Container.DEFAULT_AUDIO_DRIVER);
+        
+        final View vAudioConfigDialog = view.findViewById(R.id.BTAudioDriverConfig);
+        vAudioConfigDialog.setOnClickListener((v) -> (new AudioConfigDialog(vAudioConfigDialog, isEditMode() ? container.getAudioDriver() : Container.DEFAULT_AUDIO_DRIVER)).show());
+        vAudioConfigDialog.setTag(isEditMode() ? container.getAudioConfig() : AudioConfigDialog.DEFAULT_CONFIG);
+        
+        sAudioDriver.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem().toString());
+                vAudioConfigDialog.setOnClickListener((v) -> (new AudioConfigDialog(vAudioConfigDialog, audioDriver)).show());
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
 
         Spinner sEmulator = view.findViewById(R.id.SEmulator);
         AppUtils.setSpinnerSelectionFromIdentifier(sEmulator, isEditMode() ? container.getEmulator() : Container.DEFAULT_EMULATOR);
@@ -468,6 +530,8 @@ public class ContainerDetailFragment extends Fragment {
                 String name = etName.getText().toString();
                 String screenSize = getScreenSize(view);
                 String envVars = envVarsView.getEnvVars();
+                String dispDriver = StringUtils.parseIdentifier(sDisplayDriver.getSelectedItem());
+                String displayConfig = vDisplayDriverConfig.getTag().toString();
                 String graphicsDriver = StringUtils.parseIdentifier(sGraphicsDriver.getSelectedItem());
                 String graphicsDriverConfig = vGraphicsDriverConfig.getTag().toString();
                 HashMap<String, String> config = GraphicsDriverConfigDialog.parseGraphicsDriverConfig(graphicsDriverConfig);
@@ -478,6 +542,7 @@ public class ContainerDetailFragment extends Fragment {
                 String dxwrapper = StringUtils.parseIdentifier(sDXWrapper.getSelectedItem());
                 String dxwrapperConfig = vDXWrapperConfig.getTag().toString();
                 String audioDriver = StringUtils.parseIdentifier(sAudioDriver.getSelectedItem());
+                String audioConfig = vAudioConfigDialog.getTag().toString();
                 String emulator = StringUtils.parseIdentifier(sEmulator.getSelectedItem());
                 String wincomponents = getWinComponents(view);
                 String drives = getDrives(view);
@@ -527,11 +592,19 @@ public class ContainerDetailFragment extends Fragment {
                     container.setEnvVars(envVars);
                     container.setCPUList(cpuList);
                     container.setCPUListWoW64(cpuListWoW64);
+                    
+                    container.setDisplayDriver(dispDriver);
+                    if (dispDriver.equals("displayx")) 
+                        container.setDisplayXConfig(displayConfig);
+                    else
+                        container.setEGLConfig(displayConfig);
+                                 
                     container.setGraphicsDriver(graphicsDriver);
                     container.setGraphicsDriverConfig(graphicsDriverConfig);
                     container.setDXWrapper(dxwrapper);
                     container.setDXWrapperConfig(dxwrapperConfig);
                     container.setAudioDriver(audioDriver);
+                    container.setAudioConfig(audioConfig);
                     container.setEmulator(emulator);
                     container.setWinComponents(wincomponents);
                     container.setDrives(drives);
@@ -559,11 +632,19 @@ public class ContainerDetailFragment extends Fragment {
                     data.put("envVars", envVars);
                     data.put("cpuList", cpuList);
                     data.put("cpuListWoW64", cpuListWoW64);
+                    
+                    data.put("displayDriver", dispDriver);
+                    if (dispDriver.equals("displayx")) 
+                        data.put("displayxConfig", displayConfig);
+                    else
+                        data.put("eglConfig", displayConfig);
+                        
                     data.put("graphicsDriver", graphicsDriver);
                     data.put("graphicsDriverConfig", graphicsDriverConfig);
                     data.put("dxwrapper", dxwrapper);
                     data.put("dxwrapperConfig", dxwrapperConfig);
                     data.put("audioDriver", audioDriver);
+                    data.put("audioConfig", audioConfig);
                     data.put("emulator", emulator);
                     data.put("wincomponents", wincomponents);
                     data.put("drives", drives);
@@ -799,14 +880,31 @@ public class ContainerDetailFragment extends Fragment {
 
     public static String getWinComponents(View view) {
         ViewGroup parent = view.findViewById(R.id.LLTabWinComponents);
-        ArrayList<View> views = new ArrayList<>();
-        AppUtils.findViewsWithClass(parent, Spinner.class, views);
-        String[] wincomponents = new String[views.size()];
-
-        for (int i = 0; i < views.size(); i++) {
-            Spinner spinner = (Spinner)views.get(i);
-            wincomponents[i] = spinner.getTag()+"="+spinner.getSelectedItemPosition();
+        ViewGroup directxSectionView = parent.findViewById(R.id.LLWinComponentsDirectX);
+        ViewGroup generalSectionView = parent.findViewById(R.id.LLWinComponentsGeneral);
+        ArrayList<String> wincomponents = new ArrayList<>();
+        
+        for (int i = 0; i < directxSectionView.getChildCount(); i++) {
+            ViewGroup layout = (ViewGroup)directxSectionView.getChildAt(i);
+            Spinner spinner = (Spinner)layout.getChildAt(1);
+            String item = spinner.getTag() + "=" + spinner.getSelectedItemPosition();
+            wincomponents.add(item);
         }
+        
+        for (int i = 0; i < generalSectionView.getChildCount(); i++) {
+            ViewGroup layout = (ViewGroup)generalSectionView.getChildAt(i);
+            Spinner spinner = (Spinner)layout.getChildAt(1);
+            String item = spinner.getTag() + "=" + spinner.getSelectedItemPosition();
+            wincomponents.add(item);
+        }
+        
+        Spinner sBuiltinDecoder = parent.findViewById(R.id.SBuiltinDecoder);
+        String builtinDecoder = StringUtils.parseIdentifier(sBuiltinDecoder.getSelectedItem().toString());
+        wincomponents.add("builtinDecoder=" + builtinDecoder);
+        
+        CheckBox cbSoftwareDecoding = parent.findViewById(R.id.CBSoftwareDecoding);
+        wincomponents.add("softwareDecoding=" + (cbSoftwareDecoding.isChecked() ? "1" : "0"));
+
         return String.join(",", wincomponents);
     }
 
@@ -816,8 +914,18 @@ public class ContainerDetailFragment extends Fragment {
         ViewGroup tabView = view.findViewById(R.id.LLTabWinComponents);
         ViewGroup directxSectionView = tabView.findViewById(R.id.LLWinComponentsDirectX);
         ViewGroup generalSectionView = tabView.findViewById(R.id.LLWinComponentsGeneral);
+        
+        KeyValueSet wincomponentsSet = new KeyValueSet(wincomponents);
+         
+        Spinner sBuiltinDecoder = tabView.findViewById(R.id.SBuiltinDecoder);
+        sBuiltinDecoder.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark: R.drawable.content_dialog_background);
+        AppUtils.setSpinnerSelectionFromIdentifier(sBuiltinDecoder, wincomponentsSet.get("builtinDecoder"));
+        
+        CheckBox cbSoftwareDecoding = tabView.findViewById(R.id.CBSoftwareDecoding);
+        cbSoftwareDecoding.setChecked(wincomponentsSet.get("softwareDecoding").equals("1") ? true : false);
 
-        for (String[] wincomponent : new KeyValueSet(wincomponents)) {
+        for (String[] wincomponent : wincomponentsSet) {
+            if (wincomponent[0].contains("builtinDecoder") || wincomponent[0].contains("softwareDecoding")) continue;
             ViewGroup parent = wincomponent[0].startsWith("direct") ? directxSectionView : generalSectionView;
             View itemView = inflater.inflate(R.layout.wincomponent_list_item, parent, false);
             ((TextView)itemView.findViewById(R.id.TextView)).setText(StringUtils.getString(context, wincomponent[0]));
@@ -839,8 +947,18 @@ public class ContainerDetailFragment extends Fragment {
         ViewGroup tabView = view.findViewById(R.id.LLTabWinComponents);
         ViewGroup directxSectionView = tabView.findViewById(R.id.LLWinComponentsDirectX);
         ViewGroup generalSectionView = tabView.findViewById(R.id.LLWinComponentsGeneral);
+        
+        KeyValueSet wincomponentsSet = new KeyValueSet(wincomponents);
+         
+        Spinner sBuiltinDecoder = tabView.findViewById(R.id.SBuiltinDecoder);
+        sBuiltinDecoder.setPopupBackgroundResource(isDarkMode ? R.drawable.content_dialog_background_dark: R.drawable.content_dialog_background);
+        AppUtils.setSpinnerSelectionFromIdentifier(sBuiltinDecoder, wincomponentsSet.get("builtinDecoder"));
+        
+        CheckBox cbSoftwareDecoding = tabView.findViewById(R.id.CBSoftwareDecoding);
+        cbSoftwareDecoding.setChecked(wincomponentsSet.get("softwareDecoding").equals("1") ? true : false);
 
-        for (String[] wincomponent : new KeyValueSet(wincomponents)) {
+        for (String[] wincomponent : wincomponentsSet) {
+            if (wincomponent[0].contains("builtinDecoder") || wincomponent[0].contains("softwareDecoding")) continue;
             ViewGroup parent = wincomponent[0].startsWith("direct") ? directxSectionView : generalSectionView;
             View itemView = inflater.inflate(R.layout.wincomponent_list_item, parent, false);
             ((TextView) itemView.findViewById(R.id.TextView)).setText(StringUtils.getString(context, wincomponent[0]));

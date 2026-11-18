@@ -98,6 +98,7 @@ public class Keyboard {
 
         int action = event.getAction();
         int keyCode = event.getKeyCode();
+        if (keyCode < 0 || keyCode >= keycodeMap.length) return false; // Ignore unmapped key codes
 
         // Patches: Crash on Asus Rog Phone 9 Pro with Game Genie active (This line should be deleted after the merge)
         if (keyCode < 0 || keyCode >= keycodeMap.length) {

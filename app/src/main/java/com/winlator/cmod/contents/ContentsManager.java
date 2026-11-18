@@ -32,7 +32,7 @@ public class ContentsManager {
             "${syswow64}/d3d12core.dll", "${syswow64}/d3d12.dll"};
     public static final String[] BOX64_TRUST_FILES = {"${bindir}/box64"};
     public static final String[] WOWBOX64_TRUST_FILES = {"${system32}/wowbox64.dll"};
-    public static final String[] FEXCORE_TRUST_FILES = {"${system32}/libwow64fex.dll", "${system32}/libarm64ecfex.dll"};
+    public static final String[] FEXCORE_TRUST_FILES = {"${system32}/libwow64fex.dll", "${system32}/libarm64ecfex.dll", "${libdir}/wine/aarch64-unix/libwow64fex.so", "${libdir}/wine/aarch64-unix/libarm64ecfex.so"};
     private Map<String, String> dirTemplateMap;
     private Map<ContentProfile.ContentType, List<String>> trustedFilesMap;
 

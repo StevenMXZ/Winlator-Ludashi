@@ -238,13 +238,13 @@ public class TouchpadView extends View {
 
     private void handleStylusLeftClick(MotionEvent event) {
         float[] transformedPoint = XForm.transformPoint(xform, event.getX(), event.getY());
-        xServer.injectPointerMove((int) transformedPoint[0], (int) transformedPoint[1]);
+        xServer.injectPointerWarp((int) transformedPoint[0], (int) transformedPoint[1]);
         xServer.injectPointerButtonPress(Pointer.Button.BUTTON_LEFT);
     }
 
     private void handleStylusRightClick(MotionEvent event) {
         float[] transformedPoint = XForm.transformPoint(xform, event.getX(), event.getY());
-        xServer.injectPointerMove((int) transformedPoint[0], (int) transformedPoint[1]);
+        xServer.injectPointerWarp((int) transformedPoint[0], (int) transformedPoint[1]);
         xServer.injectPointerButtonPress(Pointer.Button.BUTTON_RIGHT);
     }
 
@@ -277,7 +277,7 @@ public class TouchpadView extends View {
                 if (simTouchScreen) {
                     final Runnable clickDelay = () -> {
                         if (continueClick) {
-                            xServer.injectPointerMove(lastTouchedPosX, lastTouchedPosY);
+                            xServer.injectPointerWarp(lastTouchedPosX, lastTouchedPosY);
                             xServer.injectPointerButtonPress(Pointer.Button.BUTTON_LEFT);
                         }
                     };
@@ -386,7 +386,7 @@ public class TouchpadView extends View {
         if (xServer.isRelativeMouseMovement())
             xServer.getWinHandler().mouseEvent(MouseEventFlags.MOVE, (int)transformedPoint[0], (int)transformedPoint[1], 0);
         else
-            xServer.injectPointerMove((int) transformedPoint[0], (int) transformedPoint[1]);
+            xServer.injectPointerWarp((int) transformedPoint[0], (int) transformedPoint[1]); // new touch is a jump, not raw motion
 
         // Handle long press for right click (or use a dedicated method to detect long press)
         if (event.getPointerCount() == 1) {

@@ -2,116 +2,75 @@ package com.winlator.cmod.xconnector;
 
 import com.winlator.cmod.xserver.XServer;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
+
+import dalvik.annotation.optimization.CriticalNative;
 
 public class XInputStream {
-    private ByteBuffer activeBuffer;
-    private ByteBuffer buffer;
-    public final ClientSocket clientSocket;
+    private final long nativePtr;
 
-    public XInputStream(int initialCapacity) {
-        this(null, initialCapacity);
+    static {
+        System.loadLibrary("winlator");
     }
 
-    public XInputStream(ClientSocket clientSocket, int initialCapacity) {
-        this.clientSocket = clientSocket;
-        this.buffer = ByteBuffer.allocateDirect(initialCapacity);
+    public XInputStream(int clientFd, int initialCapacity) {
+        nativePtr = nativeAllocate(clientFd, initialCapacity);
     }
 
-    public int readMoreData(boolean canReceiveAncillaryMessages) throws IOException {
-        if (activeBuffer != null) {
-            if (!activeBuffer.hasRemaining()) {
-                buffer.clear();
-            }
-            else if (activeBuffer.position() > 0) {
-                int newLimit = buffer.position();
-                buffer.position(activeBuffer.position()).limit(newLimit);
-                buffer.compact();
-            }
-            activeBuffer = null;
-        }
-
-        growInputBufferIfNecessary();
-        int bytesRead = canReceiveAncillaryMessages ? clientSocket.recvAncillaryMsg(buffer) : clientSocket.read(buffer);
-
-        if (bytesRead > 0) {
-            int position = buffer.position();
-            buffer.flip();
-            activeBuffer = buffer.slice().order(buffer.order());
-            buffer.limit(buffer.capacity()).position(position);
-        }
-        return bytesRead;
+    public int readMoreData(boolean canReceiveAncillaryMessages) {
+        return readMoreData(nativePtr, canReceiveAncillaryMessages);
     }
 
     public int getAncillaryFd() {
-        return clientSocket.getAncillaryFd();
-    }
-
-    private void growInputBufferIfNecessary() {
-        if (buffer.position() == buffer.capacity()) {
-            ByteBuffer newBuffer = ByteBuffer.allocateDirect(buffer.capacity() * 2).order(buffer.order());
-            buffer.rewind();
-            newBuffer.put(buffer);
-            buffer = newBuffer;
-        }
-    }
-
-    public void setByteOrder(ByteOrder byteOrder) {
-        buffer.order(byteOrder);
-        if (activeBuffer != null) activeBuffer.order(byteOrder);
+        return getAncillaryFd(nativePtr);
     }
 
     public int getActivePosition() {
-        return activeBuffer.position();
+        return getActivePosition(nativePtr);
     }
 
     public void setActivePosition(int activePosition) {
-        activeBuffer.position(activePosition);
+        setActivePosition(nativePtr, activePosition);
     }
 
     public int available() {
-        return activeBuffer.remaining();
+        return available(nativePtr);
     }
 
     public byte readByte() {
-        return activeBuffer.get();
+        return readByte(nativePtr);
     }
 
     public int readUnsignedByte() {
-        return Byte.toUnsignedInt(activeBuffer.get());
+        return Byte.toUnsignedInt(readByte(nativePtr));
     }
 
     public short readShort() {
-        return activeBuffer.getShort();
+        return readShort(nativePtr);
     }
 
     public int readUnsignedShort() {
-        return Short.toUnsignedInt(activeBuffer.getShort());
+        return Short.toUnsignedInt(readShort(nativePtr));
     }
 
     public int readInt() {
-        return activeBuffer.getInt();
+        return readInt(nativePtr);
     }
 
     public long readUnsignedInt() {
-        return Integer.toUnsignedLong(activeBuffer.getInt());
+        return Integer.toUnsignedLong(readInt(nativePtr));
     }
 
     public long readLong() {
-        return activeBuffer.getLong();
+        return readLong(nativePtr);
     }
 
     public void read(byte[] result) {
-        activeBuffer.get(result);
+        for (int i = 0; i < result.length; i++) result[i] = readByte();
     }
 
     public ByteBuffer readByteBuffer(int length) {
-        ByteBuffer newBuffer = activeBuffer.slice().order(activeBuffer.order());
-        newBuffer.limit(length);
-        activeBuffer.position(activeBuffer.position() + length);
-        return newBuffer;
+        return readByteBuffer(nativePtr, length);
     }
 
     public String readString8(int length) {
@@ -123,6 +82,47 @@ public class XInputStream {
     }
 
     public void skip(int length) {
-        activeBuffer.position(activeBuffer.position() + length);
+        skip(nativePtr, length);
     }
+
+    public void destroy() {
+        destroy(nativePtr);
+    }
+
+    private native long nativeAllocate(int fd, int initialCapacity);
+
+    @CriticalNative
+    private static native byte readByte(long nativePtr);
+
+    @CriticalNative
+    private static native short readShort(long nativePtr);
+
+    @CriticalNative
+    private static native int readInt(long nativePtr);
+
+    @CriticalNative
+    private static native long readLong(long nativePtr);
+
+    private static native ByteBuffer readByteBuffer(long nativePtr, int length);
+
+    @CriticalNative
+    private static native void skip(long nativePtr, int length);
+
+    @CriticalNative
+    private static native int available(long nativePtr);
+
+    @CriticalNative
+    private static native int readMoreData(long nativePtr, boolean canReceiveAncillaryMessages);
+
+    @CriticalNative
+    private static native int getActivePosition(long nativePtr);
+
+    @CriticalNative
+    private static native void setActivePosition(long nativePtr, int activePosition);
+
+    @CriticalNative
+    private static native int getAncillaryFd(long nativePtr);
+
+    @CriticalNative
+    private static native void destroy(long nativePtr);
 }

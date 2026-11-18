@@ -226,11 +226,25 @@
             android:layout_height="wrap_content"
             android:text="@string/audio_driver" />
 
-        <Spinner
-            style="@style/ComboBox"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:id="@+id/SAudioDriver"
-            android:entries="@array/audio_driver_entries" />
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <Spinner
+                style="@style/ComboBox"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:id="@+id/SAudioDriver"
+                android:entries="@array/audio_driver_entries" />
+                
+            <ImageButton
+                style="@style/ListMenuButton"
+                android:id="@+id/BTAudioDriverConfig"
+                android:src="@drawable/icon_settings"
+                android:visibility="visible" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -352,6 +366,44 @@
                     style="@style/FieldSetLabel"
                     android:background="#ffffff"
                     android:text="@string/general" />
+            </FrameLayout>
+            
+           <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp">
+
+                <LinearLayout
+                    style="@style/FieldSet"
+                    android:orientation="vertical"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <TextView
+                        style="@style/FieldSetLabel"
+                        android:background="#ffffff"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/builtin_decoder" />
+
+                    <Spinner
+                        android:id="@+id/SBuiltinDecoder"
+                        style="@style/ComboBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:entries="@array/builtin_decoder_entries" />
+
+                    <CheckBox
+                        android:id="@+id/CBSoftwareDecoding"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/software_decoding" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/TVCodecs"
+                    style="@style/FieldSetLabel"
+                    android:text="@string/codecs" />
             </FrameLayout>
         </LinearLayout>
 

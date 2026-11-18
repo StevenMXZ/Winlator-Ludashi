@@ -1,16 +1,19 @@
 #include "cursor.hpp"
 
 void CursorManager::addCursor(int id, std::unique_ptr<struct Cursor> cursor) {
+    auto lock = cursorLock.lock();
     this->cursors[id] = std::move(cursor);
 }
 
 void CursorManager::removeCursor(JNIEnv *env, Cursor *cursor) {
-    env->DeleteGlobalRef(cursor->cursorObj);
-    env->DeleteGlobalRef(cursor->image->drawableObj);
-    this->cursors.erase(cursor->id);
+    {
+        auto lock = cursorLock.lock();
+        this->cursors.erase(cursor->id);
+    }
 }
 
 Cursor* CursorManager::getCursor(int id) {
+    auto lock = cursorLock.lock();
     return this->cursors[id].get();
 }
 

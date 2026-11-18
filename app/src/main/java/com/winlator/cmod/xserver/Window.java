@@ -35,6 +35,7 @@ public class Window extends XResource {
     private final ArrayList<Window> children = new ArrayList<>();
     private final List<Window> immutableChildren = Collections.unmodifiableList(children);
     private final ArrayList<EventListener> eventListeners = new ArrayList<>();
+    private boolean compositeRedirected = false;
 
     public Window(int id, Drawable content, int x, int y, int width, int height, XClient originClient) {
         super(id);
@@ -100,6 +101,14 @@ public class Window extends XResource {
 
     public void setParent(Window parent) {
         this.parent = parent;
+    }
+    
+    public void setCompositeRedirected(boolean isCompositeRedirected) {
+        this.compositeRedirected = isCompositeRedirected;
+    }
+    
+    public boolean isCompositeRedirected() {
+        return this.compositeRedirected;
     }
 
     public Property getProperty(int id) {

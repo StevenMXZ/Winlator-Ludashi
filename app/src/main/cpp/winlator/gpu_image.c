@@ -13,18 +13,16 @@
 #include <unistd.h>
 #include <string.h>
 
-#define LOG_TAG "System.out"
+#define LOG_TAG "GPUImage"
 #define printf(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
-#define HAL_PIXEL_FORMAT_BGRA_8888 5
 
-// Function to create a hardware buffer
-AHardwareBuffer* createHardwareBuffer(int width, int height) {
+AHardwareBuffer* createHardwareBuffer(int width, int height, int format) {
     AHardwareBuffer_Desc buffDesc = {};
     buffDesc.width = width;
     buffDesc.height = height;
     buffDesc.layers = 1;
-    buffDesc.usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE | AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN;
-    buffDesc.format = HAL_PIXEL_FORMAT_BGRA_8888;
+    buffDesc.usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE | AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN | AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN;
+    buffDesc.format = format;
 
     AHardwareBuffer *hardwareBuffer = NULL;
     if (AHardwareBuffer_allocate(&buffDesc, &hardwareBuffer) != 0) {
@@ -35,28 +33,45 @@ AHardwareBuffer* createHardwareBuffer(int width, int height) {
     return hardwareBuffer;
 }
 
-// JNI method to create a hardware buffer
 JNIEXPORT jlong JNICALL
-Java_com_winlator_cmod_renderer_GPUImage_createHardwareBuffer(JNIEnv *env, jclass obj, jshort width, jshort height) {
-    AHardwareBuffer *buffer = createHardwareBuffer(width, height);
+Java_com_winlator_cmod_renderer_GPUImage_createHardwareBuffer(JNIEnv *env, jclass obj, jshort width, jshort height, jint format) {
+    AHardwareBuffer *buffer = createHardwareBuffer(width, height, format);
     if (!buffer) {
         printf("Failed to create hardware buffer\n");
         return 0;
     }
+    
+    AHardwareBuffer_Desc buffDesc;
+    AHardwareBuffer_describe(buffer, &buffDesc);
+
+    jclass cls = (*env)->GetObjectClass(env, obj);
+    if (cls == NULL) {
+        printf("Failed to get Java class reference\n");
+        AHardwareBuffer_unlock(buffer, NULL);
+        return 0;
+    }
+
+    jmethodID setStride = (*env)->GetMethodID(env, cls, "setStride", "(S)V");
+    if (setStride == NULL) {
+        printf("Failed to get setStride method ID\n");
+        AHardwareBuffer_unlock(buffer, NULL);
+        return 0;
+    }
+    (*env)->CallVoidMethod(env, obj, setStride, (jshort)buffDesc.stride);
+    
+    jfieldID formatID = (*env)->GetFieldID(env, cls, "format", "I");
+    (*env)->SetIntField(env, obj, formatID, buffDesc.format);
+    
     return (jlong)buffer;
 }
 
-// JNI method to destroy a hardware buffer
 JNIEXPORT void JNICALL
 Java_com_winlator_cmod_renderer_GPUImage_destroyHardwareBuffer(JNIEnv *env, jclass obj, jlong hardwareBufferPtr) {
     AHardwareBuffer* hardwareBuffer = (AHardwareBuffer*)hardwareBufferPtr;
-    if (hardwareBuffer) {
-        AHardwareBuffer_unlock(hardwareBuffer, NULL);
+    if (hardwareBuffer)
         AHardwareBuffer_release(hardwareBuffer);
-    }
 }
 
-// JNI method to lock a hardware buffer
 JNIEXPORT jobject JNICALL
 Java_com_winlator_cmod_renderer_GPUImage_lockHardwareBuffer(JNIEnv *env, jclass obj, jlong hardwareBufferPtr) {
     AHardwareBuffer* hardwareBuffer = (AHardwareBuffer*)hardwareBufferPtr;
@@ -70,24 +85,9 @@ Java_com_winlator_cmod_renderer_GPUImage_lockHardwareBuffer(JNIEnv *env, jclass 
         printf("Failed to lock AHardwareBuffer\n");
         return NULL;
     }
-
+    
     AHardwareBuffer_Desc buffDesc;
     AHardwareBuffer_describe(hardwareBuffer, &buffDesc);
-
-    jclass cls = (*env)->GetObjectClass(env, obj);
-    if (cls == NULL) {
-        printf("Failed to get Java class reference\n");
-        AHardwareBuffer_unlock(hardwareBuffer, NULL);
-        return NULL;
-    }
-
-    jmethodID setStride = (*env)->GetMethodID(env, cls, "setStride", "(S)V");
-    if (setStride == NULL) {
-        printf("Failed to get setStride method ID\n");
-        AHardwareBuffer_unlock(hardwareBuffer, NULL);
-        return NULL;
-    }
-    (*env)->CallVoidMethod(env, obj, setStride, (jshort)buffDesc.stride);
 
     jlong size = buffDesc.stride * buffDesc.height * 4;
     jobject buffer = (*env)->NewDirectByteBuffer(env, virtualAddr, size);
@@ -97,6 +97,13 @@ Java_com_winlator_cmod_renderer_GPUImage_lockHardwareBuffer(JNIEnv *env, jclass 
     }
 
     return buffer;
+}
+
+JNIEXPORT jobject JNICALL
+Java_com_winlator_cmod_renderer_GPUImage_unlockHardwareBuffer(JNIEnv *env, jclass obj, jlong hardwareBufferPtr) {
+    AHardwareBuffer* hardwareBuffer = (AHardwareBuffer*)hardwareBufferPtr;
+    if (hardwareBuffer)
+        AHardwareBuffer_unlock(hardwareBuffer, NULL);
 }
 
 JNIEXPORT jlong JNICALL

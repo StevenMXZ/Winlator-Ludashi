@@ -1,7 +1,11 @@
 package com.winlator.cmod.xconnector;
 
 public interface ConnectionHandler {
-    void handleConnectionShutdown(Client client);
+    default ConnectedClient newConnectedClient(long clientPtr, int fd) {
+        return new ConnectedClient(clientPtr, fd);
+    }
 
-    void handleNewConnection(Client client);
+    void handleConnectionShutdown(ConnectedClient client);
+
+    void handleNewConnection(ConnectedClient client);
 }

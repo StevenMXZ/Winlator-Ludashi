@@ -6,8 +6,16 @@
 #include <android/log.h>
 #include <android/surface_control.h>
 
-#define LOG_TAG "EGLRenderer"
-#define printf(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#define EGL_EGLEXT_PROTOTYPES
+#define GL_GLEXT_PROTOTYPES
+
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
 
 #define HAL_PIXEL_FORMAT_BGRA_8888 5
 
@@ -25,6 +33,7 @@ class JNIXServer {
         jobject xserverDisplayActivity;
         std::string displayDriver;
         float refreshRate;
+        bool isShowFPS;
         
         JNIXServer() {}
         
@@ -71,20 +80,22 @@ class JNICache {
         jmethodID windowAttributesIsEnabled;
         
         jclass drawableClass;
+        jmethodID drawableGetGPUImage;
         jfieldID drawableID;
-        jfieldID drawableAHB;
-        jfieldID drawableStride;
         jfieldID drawableWidth;
         jfieldID drawableHeight;
-        jfieldID drawableFormat;
         
         jclass gpuImageClass;
         jmethodID gpuImageGetStride;
-        jfieldID gpuImageHardwareBufferPtr;
+        jmethodID gpuImageGetAHB;
         jfieldID gpuImageFormat;
         
         jclass xserverDisplayActivityClass;
         jmethodID updateFrameRating;
+        jmethodID isShowFPS;
+        jfieldID performanceMode;
+        jfieldID presentRR;
+        jfieldID textureFilter;
         
         JNICache() {}
         
@@ -137,9 +148,7 @@ class JNICache {
             LOAD_FIELD_ID(drawableID, env, drawableClass, "id", "I");
             LOAD_FIELD_ID(drawableWidth, env, drawableClass, "width", "S");
             LOAD_FIELD_ID(drawableHeight, env, drawableClass, "height", "S");
-            LOAD_FIELD_ID(drawableAHB, env, drawableClass, "backingAHB", "J");
-            LOAD_FIELD_ID(drawableStride, env, drawableClass, "stride", "S");
-            LOAD_FIELD_ID(drawableFormat, env, drawableClass, "format", "I");
+            LOAD_METHOD_ID(drawableGetGPUImage, env, drawableClass, "getGPUImage", "()Lcom/winlator/cmod/renderer/GPUImage;");
             
             LOAD_METHOD_ID(cursorIsVisible, env, cursorClass, "isVisible", "()Z");
             LOAD_FIELD_ID(cursorID, env, cursorClass, "id", "I");
@@ -148,11 +157,15 @@ class JNICache {
             LOAD_FIELD_ID(cursorImage, env, cursorClass, "cursorImage", "Lcom/winlator/cmod/xserver/Drawable;");
             
             LOAD_METHOD_ID(gpuImageGetStride, env, gpuImageClass, "getStride", "()S");
-            LOAD_FIELD_ID(gpuImageHardwareBufferPtr, env, gpuImageClass, "hardwareBufferPtr", "J");
+            LOAD_METHOD_ID(gpuImageGetAHB, env, gpuImageClass, "getAHB", "()J");
             LOAD_FIELD_ID(gpuImageFormat, env, gpuImageClass, "format", "I");
             
-            LOAD_METHOD_ID(updateFrameRating, env, xserverDisplayActivityClass, "updateFrameRating", "(Lcom/winlator/cmod/xserver/Window;)V");
+            LOAD_METHOD_ID(updateFrameRating, env, xserverDisplayActivityClass, "updateFrameRating", "(I)V");
+            LOAD_METHOD_ID(isShowFPS, env, xserverDisplayActivityClass, "isShowFPS", "()Z");
             LOAD_METHOD_ID(getRefreshRate, env, xserverDisplayActivityClass, "getRefreshRate", "()F");
+            LOAD_FIELD_ID(performanceMode, env, xserverDisplayActivityClass, "performanceMode", "Z");
+            LOAD_FIELD_ID(presentRR, env, xserverDisplayActivityClass, "presentRR", "Z");
+            LOAD_FIELD_ID(textureFilter, env, xserverDisplayActivityClass, "textureFilter", "I");
             
             this->xserverClass = (jclass)env->NewGlobalRef(xServerClass);
             this->windowClass = (jclass)env->NewGlobalRef(windowClass);

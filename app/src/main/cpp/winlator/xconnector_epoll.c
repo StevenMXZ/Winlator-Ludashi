@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <jni.h>
 #include <sys/epoll.h>
 #include <sys/poll.h>
@@ -10,193 +11,92 @@
 #include <malloc.h>
 #include <jni.h>
 #include <android/log.h>
+#include <pthread.h>
 
-#define printf(...) __android_log_print(ANDROID_LOG_DEBUG, "System.out", __VA_ARGS__);
+#include "jni_utils.h"
+#include "winlator.h"
+
 #define MAX_EVENTS 10
-#define MAX_FDS 32
 
-struct epoll_event events[MAX_EVENTS];
+typedef struct JMethods {
+    JavaVM* jvm;
+    JNIEnv* env;
+    jobject obj;
+    jmethodID handleConnectionShutdown;
+    jmethodID handleNewConnection;
+    jmethodID handleExistingConnection;
+    jmethodID killAllConnections;
+} JMethods;
 
-JNIEXPORT jint JNICALL
-Java_com_winlator_cmod_xconnector_XConnectorEpoll_createAFUnixSocket(JNIEnv *env, jobject obj,
-                                                                jstring path) {
+typedef struct XConnectorEpoll {
+    pthread_t epollThread;
+    bool running;
+    int epollFd;
+    int serverFd;
+    int shutdownFd;
+    bool multithreadedClients;
+    JMethods jmethods;
+} XConnectorEpoll;
+
+typedef struct ConnectedClient {
+    pthread_t pollThread;
+    int fd;
+    int shutdownFd;
+    bool running;
+    void* tag;
+    JMethods jmethods;
+} ConnectedClient;
+
+static int createServerSocket(const char* sockPath) {
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) return -1;
 
-    struct sockaddr_un serverAddr;
-    memset(&serverAddr, 0, sizeof(serverAddr));
+    struct sockaddr_un serverAddr = {0};
     serverAddr.sun_family = AF_LOCAL;
 
-    const char *pathPtr = (*env)->GetStringUTFChars(env, path, 0);
-
-    int addrLength = sizeof(sa_family_t) + strlen(pathPtr);
-    strncpy(serverAddr.sun_path, pathPtr, sizeof(serverAddr.sun_path) - 1);
-
-    (*env)->ReleaseStringUTFChars(env, path, pathPtr);
+    int addrLength = sizeof(sa_family_t) + strlen(sockPath);
+    strncpy(serverAddr.sun_path, sockPath, sizeof(serverAddr.sun_path) - 1);
 
     unlink(serverAddr.sun_path);
     if (bind(fd, (struct sockaddr*) &serverAddr, addrLength) < 0) goto error;
     if (listen(fd, MAX_EVENTS) < 0) goto error;
 
     return fd;
-    error:
-    close(fd);
+
+error:
+    CLOSEFD(fd);
     return -1;
 }
 
-JNIEXPORT jint JNICALL
-Java_com_winlator_cmod_xconnector_XConnectorEpoll_createEpollFd(JNIEnv *env, jobject obj) {
-    return epoll_create(MAX_EVENTS);
+static void loadJMethods(JMethods* jmethods) {
+    JNIEnv* env;
+    (*jmethods->jvm)->AttachCurrentThread(jmethods->jvm, &env, NULL);
+    jmethods->env = env;
+
+    jclass cls = (*env)->GetObjectClass(env, jmethods->obj);
+    jmethods->handleConnectionShutdown = (*env)->GetMethodID(env, cls, "handleConnectionShutdown", "(Ljava/lang/Object;)V");
+    jmethods->handleNewConnection = (*env)->GetMethodID(env, cls, "handleNewConnection", "(JI)Ljava/lang/Object;");
+    jmethods->handleExistingConnection = (*env)->GetMethodID(env, cls, "handleExistingConnection", "(Ljava/lang/Object;)V");
+    jmethods->killAllConnections = (*env)->GetMethodID(env, cls, "killAllConnections", "()V");
 }
 
-JNIEXPORT void JNICALL
-Java_com_winlator_cmod_xconnector_XConnectorEpoll_closeFd(JNIEnv *env, jobject obj, jint fd) {
-    close(fd);
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_winlator_cmod_xconnector_XConnectorEpoll_doEpollIndefinitely(JNIEnv *env, jobject obj,
-                                                                 jint epollFd, jint serverFd,
-                                                                 jboolean addClientToEpoll) {
-    jclass cls = (*env)->GetObjectClass(env, obj);
-    jmethodID handleNewConnection = (*env)->GetMethodID(env, cls, "handleNewConnection", "(I)V");
-    jmethodID handleExistingConnection = (*env)->GetMethodID(env, cls, "handleExistingConnection", "(I)V");
-
-    int numFds = epoll_wait(epollFd, events, MAX_EVENTS, -1);
-    for (int i = 0; i < numFds; i++) {
-        if (events[i].data.fd == serverFd) {
-            int clientFd = accept(serverFd, NULL, NULL);
-            if (clientFd >= 0) {
-                if (addClientToEpoll) {
-                    struct epoll_event event;
-                    event.data.fd = clientFd;
-                    event.events = EPOLLIN;
-
-                    if (epoll_ctl(epollFd, EPOLL_CTL_ADD, clientFd, &event) >= 0) {
-                        (*env)->CallVoidMethod(env, obj, handleNewConnection, clientFd);
-                    }
-                }
-                else (*env)->CallVoidMethod(env, obj, handleNewConnection, clientFd);
-            }
-        }
-        else if (events[i].events & EPOLLIN) {
-            (*env)->CallVoidMethod(env, obj, handleExistingConnection, events[i].data.fd);
-        }
+static bool addFdToEpoll(int epollFd, int fd, void* ptr) {
+    struct epoll_event event = {0};
+    if (ptr) {
+        event.data.ptr = ptr;
     }
-
-    return numFds >= 0;
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_winlator_cmod_xconnector_XConnectorEpoll_addFdToEpoll(JNIEnv *env, jobject obj,
-                                                          jint epollFd,
-                                                          jint fd) {
-    struct epoll_event event;
-    event.data.fd = fd;
+    else event.data.fd = fd;
     event.events = EPOLLIN;
-    if (epoll_ctl(epollFd, EPOLL_CTL_ADD, fd, &event) < 0) return JNI_FALSE;
-    return JNI_TRUE;
+    if (epoll_ctl(epollFd, EPOLL_CTL_ADD, fd, &event) < 0) return false;
+    return true;
 }
 
-JNIEXPORT void JNICALL
-Java_com_winlator_cmod_xconnector_XConnectorEpoll_removeFdFromEpoll(JNIEnv *env, jobject obj,
-                                                               jint epollFd, jint fd) {
+static void removeFdFromEpoll(int epollFd, int fd) {
     epoll_ctl(epollFd, EPOLL_CTL_DEL, fd, NULL);
 }
 
-JNIEXPORT jint JNICALL
-Java_com_winlator_cmod_xconnector_ClientSocket_read(JNIEnv *env, jobject obj, jint fd, jobject data,
-                                               jint offset, jint length) {
-    char *dataAddr = (*env)->GetDirectBufferAddress(env, data);
-    return read(fd, dataAddr + offset, length);
-}
-
-JNIEXPORT jint JNICALL
-Java_com_winlator_cmod_xconnector_ClientSocket_write(JNIEnv *env, jobject obj, jint fd, jobject data,
-                                                jint length) {
-    char *dataAddr = (*env)->GetDirectBufferAddress(env, data);
-    return write(fd, dataAddr, length);
-}
-
-JNIEXPORT jint JNICALL
-Java_com_winlator_cmod_xconnector_XConnectorEpoll_createEventFd(JNIEnv *env, jobject obj) {
-    return eventfd(0, EFD_NONBLOCK);
-}
-
-JNIEXPORT jint JNICALL
-Java_com_winlator_cmod_xconnector_ClientSocket_recvAncillaryMsg(JNIEnv *env, jobject obj, jint clientFd, jobject data,
-                                                           jint offset, jint length) {
-    char *dataAddr = (*env)->GetDirectBufferAddress(env, data);
-
-    struct iovec iovmsg = {.iov_base = dataAddr + offset, .iov_len = length};
-    struct {
-        struct cmsghdr align;
-        int fds[MAX_FDS];
-    } ctrlmsg;
-
-    struct msghdr msg = {
-        .msg_name = NULL,
-        .msg_namelen = 0,
-        .msg_iov = &iovmsg,
-        .msg_iovlen = 1,
-        .msg_control = &ctrlmsg,
-        .msg_controllen = sizeof(struct cmsghdr) + MAX_FDS * sizeof(int)
-    };
-
-    int size = recvmsg(clientFd, &msg, 0);
-
-    if (size >= 0) {
-        struct cmsghdr *cmsg;
-        for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
-            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
-                int numFds = (cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int);
-                if (numFds > 0) {
-                    jclass cls = (*env)->GetObjectClass(env, obj);
-                    jmethodID addAncillaryFd = (*env)->GetMethodID(env, cls, "addAncillaryFd", "(I)V");
-                    for (int i = 0; i < numFds; i++) {
-                        int ancillaryFd = ((int*)CMSG_DATA(cmsg))[i];
-                        (*env)->CallVoidMethod(env, obj, addAncillaryFd, ancillaryFd);
-                    }
-                }
-            }
-        }
-    }
-    return size;
-}
-
-JNIEXPORT jint JNICALL
-Java_com_winlator_cmod_xconnector_ClientSocket_sendAncillaryMsg(JNIEnv *env, jobject obj, jint clientFd,
-                                                           jobject data, jint length, jint ancillaryFd) {
-    char *dataAddr = (*env)->GetDirectBufferAddress(env, data);
-
-    struct iovec iovmsg = {.iov_base = dataAddr, .iov_len = length};
-    struct {
-        struct cmsghdr align;
-        int fds[1];
-    } ctrlmsg;
-
-    struct msghdr msg = {
-        .msg_name = NULL,
-        .msg_namelen = 0,
-        .msg_iov = &iovmsg,
-        .msg_iovlen = 1,
-        .msg_flags = 0,
-        .msg_control = &ctrlmsg,
-        .msg_controllen = sizeof(struct cmsghdr) + sizeof(int)
-    };
-
-    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
-    cmsg->cmsg_level = SOL_SOCKET;
-    cmsg->cmsg_type = SCM_RIGHTS;
-    cmsg->cmsg_len = msg.msg_controllen;
-    ((int*)CMSG_DATA(cmsg))[0] = ancillaryFd;
-
-    return sendmsg(clientFd, &msg, 0);
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_winlator_cmod_xconnector_XConnectorEpoll_waitForSocketRead(JNIEnv *env, jobject obj, jint clientFd, jint shutdownFd) {
-    struct pollfd pfds[2];
+static int waitForSocketRead(jint clientFd, jint shutdownFd) {
+    struct pollfd pfds[2] = {0};
     pfds[0].fd = clientFd;
     pfds[0].events = POLLIN;
 
@@ -204,33 +104,199 @@ Java_com_winlator_cmod_xconnector_XConnectorEpoll_waitForSocketRead(JNIEnv *env,
     pfds[1].events = POLLIN;
 
     int res = poll(pfds, 2, -1);
-    if (res < 0 || (pfds[1].revents & POLLIN)) return JNI_FALSE;
-
-    if (pfds[0].revents & POLLIN) {
-        jclass cls = (*env)->GetObjectClass(env, obj);
-        jmethodID handleExistingConnection = (*env)->GetMethodID(env, cls, "handleExistingConnection", "(I)V");
-        (*env)->CallVoidMethod(env, obj, handleExistingConnection, clientFd);
-    }
-    return JNI_TRUE;
+    if (res < 0 || (pfds[1].revents & POLLIN)) return -1;
+    return (pfds[0].revents & POLLIN) ? 1 : 0;
 }
 
-JNIEXPORT jintArray JNICALL
-Java_com_winlator_cmod_xconnector_XConnectorEpoll_pollEpollEvents(JNIEnv *env, jobject obj,
-                                                             jint epollFd, jint maxEvents) {
-    struct epoll_event events[maxEvents];
-    int numFds = epoll_wait(epollFd, events, maxEvents, -1); // Wait indefinitely
+static void requestShutdown(int fd) {
+    const uint64_t shutdownValue = 1;
+    write(fd, &shutdownValue, sizeof(uint64_t));
+}
 
-    if (numFds < 0) return NULL;
-
-    jintArray result = (*env)->NewIntArray(env, numFds);
-    if (result == NULL) return NULL;
-
-    jint *r = (*env)->GetIntArrayElements(env, result, 0);
-
-    for (int i = 0; i < numFds; i++) {
-        r[i] = events[i].data.fd; // Store file descriptor
+static void XConnectorEpoll_destroy(JNIEnv* env, XConnectorEpoll* connector) {
+    if (connector->serverFd > 0) {
+        removeFdFromEpoll(connector->epollFd, connector->serverFd);
+        CLOSEFD(connector->serverFd);
     }
 
-    (*env)->ReleaseIntArrayElements(env, result, r, 0);
-    return result;
+    if (connector->shutdownFd > 0) {
+        removeFdFromEpoll(connector->epollFd, connector->shutdownFd);
+        CLOSEFD(connector->shutdownFd);
+    }
+
+    if (connector->jmethods.obj) {
+        (*env)->DeleteGlobalRef(env, connector->jmethods.obj);
+        connector->jmethods.obj = NULL;
+    }
+
+    CLOSEFD(connector->epollFd);
+    free(connector);
+}
+
+static XConnectorEpoll* XConnectorEpoll_allocate(JNIEnv* env, jobject obj, const char* sockPath) {
+    XConnectorEpoll* connector = calloc(1, sizeof(XConnectorEpoll));
+
+    connector->epollFd = epoll_create(MAX_EVENTS);
+    if (connector->epollFd < 0) goto error;
+
+    connector->serverFd = createServerSocket(sockPath);
+    if (connector->serverFd < 0) goto error;
+
+    connector->shutdownFd = eventfd(0, EFD_NONBLOCK);
+    if (connector->shutdownFd < 0) goto error;
+
+    if (!addFdToEpoll(connector->epollFd, connector->serverFd, &connector->serverFd)) goto error;
+    if (!addFdToEpoll(connector->epollFd, connector->shutdownFd, &connector->shutdownFd)) goto error;
+
+    (*env)->GetJavaVM(env, &connector->jmethods.jvm);
+    connector->jmethods.obj = (*env)->NewGlobalRef(env, obj);
+    return connector;
+
+error:
+    XConnectorEpoll_destroy(env, connector);
+    return NULL;
+}
+
+static void XConnectorEpoll_killConnection(XConnectorEpoll* connector, ConnectedClient* client) {
+    JMethods* jmethods = &connector->jmethods;
+    client->running = false;
+
+    if (connector->multithreadedClients) {
+        if (pthread_self() != client->pollThread) {
+            requestShutdown(client->shutdownFd);
+            pthread_join(client->pollThread, NULL);
+            client->pollThread = 0;
+        }
+        else jmethods = &client->jmethods;
+
+        CLOSEFD(client->shutdownFd);
+    }
+    else removeFdFromEpoll(connector->epollFd, client->fd);
+
+    CLOSEFD(client->fd);
+
+    if (client->tag) {
+        (*jmethods->env)->CallVoidMethod(jmethods->env, jmethods->obj, jmethods->handleConnectionShutdown, client->tag);
+        client->tag = NULL;
+    }
+}
+
+static void* pollThread(void* param) {
+    ConnectedClient* client = param;
+    loadJMethods(&client->jmethods);
+    JMethods* jmethods = &client->jmethods;
+    client->tag = (*jmethods->env)->CallObjectMethod(jmethods->env, jmethods->obj, jmethods->handleNewConnection, (jlong)client, client->fd);
+
+    int res;
+    do {
+        res = waitForSocketRead(client->fd, client->shutdownFd);
+        if (res == 1) (*jmethods->env)->CallVoidMethod(jmethods->env, jmethods->obj, jmethods->handleExistingConnection, client->tag);
+    }
+    while (client->running && res >= 0);
+
+    if (client->tag) {
+        (*jmethods->env)->CallVoidMethod(jmethods->env, jmethods->obj, jmethods->handleConnectionShutdown, client->tag);
+        client->tag = NULL;
+    }
+    (*jmethods->jvm)->DetachCurrentThread(jmethods->jvm);
+    return NULL;
+}
+
+static void XConnectorEpoll_handleNewConnection(XConnectorEpoll* connector, int clientFd) {
+    JMethods* jmethods = &connector->jmethods;
+    ConnectedClient* client = calloc(1, sizeof(ConnectedClient));
+    client->fd = clientFd;
+    client->running = true;
+
+    if (connector->multithreadedClients) {
+        client->jmethods.jvm = connector->jmethods.jvm;
+        client->jmethods.obj = connector->jmethods.obj;
+        client->shutdownFd = eventfd(0, EFD_NONBLOCK);
+        pthread_create(&client->pollThread, NULL, pollThread, client);
+    }
+    else {
+        addFdToEpoll(connector->epollFd, clientFd, client);
+        client->tag = (*jmethods->env)->CallObjectMethod(jmethods->env, jmethods->obj, jmethods->handleNewConnection, (jlong)client, clientFd);
+    }
+}
+
+static void* epollThread(void* param) {
+    XConnectorEpoll* connector = param;
+    JMethods* jmethods = &connector->jmethods;
+    loadJMethods(jmethods);
+    struct epoll_event events[MAX_EVENTS] = {0};
+
+    while (connector->running) {
+        int numFds = epoll_wait(connector->epollFd, events, MAX_EVENTS, -1);
+        if (numFds < 0) break;
+        for (int i = 0; i < numFds; i++) {
+            if (events[i].data.ptr == &connector->serverFd) {
+                int clientFd = accept(connector->serverFd, NULL, NULL);
+                if (clientFd >= 0) XConnectorEpoll_handleNewConnection(connector, clientFd);
+            }
+            else if (events[i].data.ptr != &connector->shutdownFd &&
+                    (events[i].events & EPOLLIN)) {
+                ConnectedClient* client = events[i].data.ptr;
+                (*jmethods->env)->CallVoidMethod(jmethods->env, jmethods->obj, jmethods->handleExistingConnection, client->tag);
+            }
+        }
+    }
+
+    (*jmethods->env)->CallVoidMethod(jmethods->env, jmethods->obj, jmethods->killAllConnections);
+    (*jmethods->jvm)->DetachCurrentThread(jmethods->jvm);
+    return NULL;
+}
+
+static void XConnectorEpoll_startEpollThread(XConnectorEpoll* connector, bool multithreadedClients) {
+    if (connector->running) return;
+    connector->running = true;
+    connector->multithreadedClients = multithreadedClients;
+    pthread_create(&connector->epollThread, NULL, epollThread, connector);
+}
+
+static void XConnectorEpoll_stopEpollThread(XConnectorEpoll* connector) {
+    if (!connector->running) return;
+    connector->running = false;
+    requestShutdown(connector->shutdownFd);
+
+    pthread_join(connector->epollThread, NULL);
+    connector->epollThread = 0;
+}
+
+JNIEXPORT void JNICALL
+Java_com_winlator_cmod_xconnector_XConnectorEpoll_closeFd(jint fd) {
+    CLOSEFD(fd);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_winlator_cmod_xconnector_XConnectorEpoll_nativeAllocate(JNIEnv* env, jobject obj,
+                                                            jstring sockPath) {
+    const char* pathPtr = (*env)->GetStringUTFChars(env, sockPath, 0);
+    XConnectorEpoll* connector = XConnectorEpoll_allocate(env, obj, pathPtr);
+
+    (*env)->ReleaseStringUTFChars(env, sockPath, pathPtr);
+    return (jlong)connector;
+}
+
+JNIEXPORT void JNICALL
+Java_com_winlator_cmod_xconnector_XConnectorEpoll_destroy(JNIEnv *env, jobject obj, jlong nativePtr) {
+    XConnectorEpoll_destroy(env, (XConnectorEpoll*)nativePtr);
+}
+
+JNIEXPORT void JNICALL
+Java_com_winlator_cmod_xconnector_XConnectorEpoll_startEpollThread(JNIEnv *env, jobject obj,
+                                                              jlong nativePtr, jboolean multithreadedClients) {
+    XConnectorEpoll_startEpollThread((XConnectorEpoll*)nativePtr, multithreadedClients);
+}
+
+JNIEXPORT void JNICALL
+Java_com_winlator_cmod_xconnector_XConnectorEpoll_stopEpollThread(JNIEnv *env, jobject obj,
+                                                             jlong nativePtr) {
+    XConnectorEpoll_stopEpollThread((XConnectorEpoll*)nativePtr);
+}
+
+JNIEXPORT void JNICALL
+Java_com_winlator_cmod_xconnector_XConnectorEpoll_killConnection(JNIEnv *env, jclass obj,
+                                                            jlong connectorPtr, jlong clientPtr) {
+    XConnectorEpoll_killConnection((XConnectorEpoll*)connectorPtr, (ConnectedClient*)clientPtr);
 }

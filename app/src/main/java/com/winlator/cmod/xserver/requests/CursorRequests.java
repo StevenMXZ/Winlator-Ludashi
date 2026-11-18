@@ -7,6 +7,7 @@ import com.winlator.cmod.xconnector.XOutputStream;
 import com.winlator.cmod.xconnector.XStreamLock;
 import com.winlator.cmod.xserver.Cursor;
 import com.winlator.cmod.xserver.Pixmap;
+import com.winlator.cmod.xserver.Pointer;
 import com.winlator.cmod.xserver.XClient;
 import com.winlator.cmod.xserver.errors.BadIdChoice;
 import com.winlator.cmod.xserver.errors.BadMatch;
@@ -53,10 +54,11 @@ public abstract class CursorRequests {
         client.xServer.cursorManager.freeCursor(inputStream.readInt());
     }
 
+    // Identity map for every button (wheel included): Wine maps XI raw buttons through this table
+    // and reads past its end if it is shorter than the button number
     public static void getPointerMaping(XClient client, XInputStream inputStream, XOutputStream outputStream) throws IOException, XRequestError {
         try (XStreamLock lock = outputStream.lock()) {
-            byte[] buttonsMap = {1, 2, 3};
-            byte n = (byte) buttonsMap.length;
+            byte n = Pointer.MAX_BUTTONS;
             int padLen = -n & 3;
 
             outputStream.writeByte(RESPONSE_CODE_SUCCESS);
@@ -65,8 +67,7 @@ public abstract class CursorRequests {
             outputStream.writeInt((n + padLen) / 4);
             outputStream.writePad(24);
 
-            for (byte b: buttonsMap)
-                outputStream.writeByte(b);
+            for (int i = 1; i <= n; i++) outputStream.writeByte((byte)i);
             outputStream.writePad(padLen);
         }
     }
