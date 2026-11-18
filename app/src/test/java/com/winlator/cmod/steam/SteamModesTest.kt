@@ -110,10 +110,13 @@ class SteamModesTest {
         assertEquals("game", File(game, "game.exe").readText())
     }
 
-    @Test fun nativeDownloadSignatureIncludesSeparateDecompressionBudget() {
+    @Test fun nativeDownloadSignatureIncludesManifestSourcesAndSeparateDecompressionBudget() {
         val method = com.winlator.cmod.feature.stores.steam.ludashisteam.LudashiSteamSession::class.java.declaredMethods.single { it.name == "nativeDownloadApp" }
-        assertEquals(11, method.parameterTypes.size)
+        assertEquals(12, method.parameterTypes.size)
+        assertEquals(IntArray::class.java, method.parameterTypes[4])
+        assertEquals(Array<String>::class.java, method.parameterTypes[5])
         assertEquals(Int::class.javaPrimitiveType, method.parameterTypes[9])
+        assertEquals(Int::class.javaPrimitiveType, method.parameterTypes[10])
     }
     @Test fun preparingRenamedSteamShortcutRetainsItsSettingsAndFilename() {
         val context = RuntimeEnvironment.getApplication()
