@@ -258,6 +258,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
 
     var controlsProfile by mutableStateOf(shortcut.getExtra("controlsProfile", "0"))
     var fullscreen by mutableStateOf(shortcut.getExtra("fullscreenStretched", "0") == "1")
+    var streamToTv by mutableStateOf(shortcut.getExtra("streamToTv", "0") == "1")
     private var inputType by mutableIntStateOf(shortcut.getExtra("inputType", container.getInputType().toString()).toIntOrNull() ?: container.getInputType())
     var exclusive by mutableStateOf(shortcut.getExtra("exclusiveXInput").let { if (it.isBlank()) container.isExclusiveXInput() else it == "1" })
     var forceSsbs by mutableStateOf(shortcut.getExtra("forceSsbs", ""))
@@ -1003,6 +1004,10 @@ private fun ShortcutCategoryV2(
                 SettingsDivider()
                 SettingToggle(uiStr(R.string.ui_fullscreen_stretched), s.fullscreen) {
                     s.fullscreen = it; s.extra("fullscreenStretched", if (it) "1" else null)
+                }
+                SettingsDivider()
+                SettingToggle(uiStr(R.string.ui_stream_to_tv), s.streamToTv) {
+                    s.streamToTv = it; s.extra("streamToTv", if (it) "1" else null)
                 }
             }
             SettingsCard {

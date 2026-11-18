@@ -42,6 +42,16 @@ This build mimics the package name of Genshin Impact. This is specifically desig
   - Try running the games using the shortcut on the Winlator home screen, there you can define individual settings for each game.
   - To speed up the installers, try changing the Box86/Box64 preset to Intermediate in Container Settings -\> Advanced Tab.
 
+# Stream to TV (Moonlight)
+
+Play on a TV or PC while the game runs on the phone. Ludashi acts as a Moonlight (GameStream) host: the game picture goes to the hardware video encoder, and the phone stays as a touch controller. No root needed.
+
+1.  Open a shortcut's settings and enable **Stream to TV (Moonlight)** (or add `LUDASHI_STREAM=1` to the container's environment variables).
+2.  Launch the game. A status strip at the top of the phone shows the address and the connection state.
+3.  Open [Moonlight](https://moonlight-stream.org) on the TV/PC (same Wi-Fi network). The phone appears automatically; pair once with the PIN shown by Moonlight, then select **Ludashi**.
+
+Video is H.264/HEVC at the resolution, FPS and bitrate chosen in Moonlight, with FEC for Wi-Fi losses. Audio (Opus), keyboard, mouse, text input and up to 4 gamepads with rumble go both ways. Use 5 GHz Wi-Fi for the best latency.
+
 # Additional Components & Updates
 
 You can find updated components (known as `wcps`) to improve compatibility and performance, as well as new drivers, at the links below:

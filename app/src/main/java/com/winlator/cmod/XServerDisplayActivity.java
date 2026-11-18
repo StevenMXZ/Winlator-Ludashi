@@ -157,6 +157,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
     public static String NOTIFICATION_CHANNEL_ID = "Winlator";
     public static int NOTIFICATION_ID = -1;
     private XServerRendererView xServerView;
+    private com.winlator.cmod.stream.StreamSession streamSession;
+    private com.winlator.cmod.stream.moonlight.MoonlightHost moonlightHost;
     private InputControlsView inputControlsView;
     private TouchpadView touchpadView;
     private XEnvironment environment;
@@ -1025,8 +1027,166 @@ public class XServerDisplayActivity extends AppCompatActivity {
         });
     }
 
+    /** Stream-to-TV mode, enabled by LUDASHI_STREAM=1 in container or shortcut env vars. */
+    private com.winlator.cmod.stream.StreamSession startStreamIfEnabled() {
+        EnvVars vars = new EnvVars();
+        if (container != null) vars.putAll(container.getEnvVars());
+        if (shortcut != null) vars.putAll(shortcut.getExtra("envVars"));
+        String enabled = vars.get("LUDASHI_STREAM");
+        boolean shortcutToggle = shortcut != null && "1".equals(shortcut.getExtra("streamToTv", "0"));
+        if (!shortcutToggle && !"1".equals(enabled) && !"true".equalsIgnoreCase(enabled)) return null;
+        com.winlator.cmod.stream.StreamSession.Config cfg =
+                com.winlator.cmod.stream.StreamSession.Config.fromEnv(
+                        vars.get("LUDASHI_STREAM_RES"), vars.get("LUDASHI_STREAM_BITRATE"),
+                        vars.get("LUDASHI_STREAM_CODEC"));
+        com.winlator.cmod.stream.StreamSession session =
+                new com.winlator.cmod.stream.StreamSession(this, cfg);
+        try {
+            session.start();
+            startAudioTap(session);
+            startMoonlightHost();
+            return session;
+        } catch (Exception e) {
+            Log.e("LudashiStream", "stream start failed, falling back to phone screen", e);
+            session.stop();
+            return null;
+        }
+    }
+
+    /** Copies game sound for the stream: forces the ALSA driver and adds a tee-to-FIFO config. */
+    private void startAudioTap(com.winlator.cmod.stream.StreamSession session) {
+        if (imageFs == null) return;
+        try {
+            com.winlator.cmod.stream.AudioTap tap = new com.winlator.cmod.stream.AudioTap(imageFs.getRootDir());
+            String extraConf = tap.start();
+            String root = imageFs.getRootDir().getPath();
+            envVars.put("ALSA_CONFIG_PATH", root + "/usr/share/alsa/alsa.conf:"
+                    + root + "/usr/etc/alsa/conf.d/android_alsa.conf:" + extraConf);
+            audioDriver = "alsa-oboe";
+            session.setAudioTap(tap);
+            audioTap = tap;
+        } catch (Exception e) {
+            Log.w("LudashiStream", "audio tap unavailable, streaming without sound", e);
+        }
+    }
+
+    private com.winlator.cmod.stream.AudioTap audioTap;
+    private volatile com.winlator.cmod.stream.moonlight.MoonlightSession activeMoonlight;
+    private android.widget.TextView streamStatusView;
+
+    /** Thin status strip on the phone while streaming: address, client, FPS, bitrate. */
+    private void addStreamStatusBar(FrameLayout rootView) {
+        streamStatusView = new android.widget.TextView(this);
+        streamStatusView.setTextColor(0xFFFFFFFF);
+        streamStatusView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        streamStatusView.setBackgroundColor(0x99000000);
+        int pad = (int) (6 * getResources().getDisplayMetrics().density);
+        streamStatusView.setPadding(pad * 2, pad, pad * 2, pad);
+        streamStatusView.setSingleLine(true);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL);
+        rootView.addView(streamStatusView, lp);
+        streamStatusView.post(streamStatusUpdater);
+    }
+
+    private final Runnable streamStatusUpdater = new Runnable() {
+        @Override public void run() {
+            com.winlator.cmod.stream.StreamSession s = streamSession;
+            if (s == null || streamStatusView == null) return;
+            String host = android.os.Build.MODEL;
+            com.winlator.cmod.stream.moonlight.MoonlightSession m = activeMoonlight;
+            String text;
+            if (m != null && m.isPlaying()) {
+                text = getString(R.string.stream_status_playing, host, m.clientAddress(),
+                        s.getFps(), s.getMbps(), s.getWidth(), s.getHeight());
+            } else {
+                text = getString(R.string.stream_status_waiting, host, s.getLocalIp());
+            }
+            streamStatusView.setText(text);
+            streamStatusView.postDelayed(this, 1000);
+        }
+    };
+
+    private void startMoonlightHost() {
+        moonlightHost = new com.winlator.cmod.stream.moonlight.MoonlightHost(this);
+        try {
+            moonlightHost.start(new com.winlator.cmod.stream.moonlight.NvHttpServer.LaunchHandler() {
+                private com.winlator.cmod.stream.moonlight.MoonlightSession session;
+
+                @Override
+                public synchronized String onLaunch(java.util.Map<String, String> args, java.net.InetAddress local, boolean resume) {
+                    if (streamSession == null || local == null) return null;
+                    if (session != null) session.stop();
+                    if (args.get("rikey") == null || args.get("rikeyid") == null) return null;
+                    final com.winlator.cmod.stream.moonlight.MoonlightInput input =
+                            new com.winlator.cmod.stream.moonlight.MoonlightInput(xServer, winHandler);
+                    session = new com.winlator.cmod.stream.moonlight.MoonlightSession(streamSession,
+                            new com.winlator.cmod.stream.moonlight.MoonlightSession.Listener() {
+                                @Override public void onInput(byte[] data, int off, int len) {
+                                    input.handle(data, off, len);
+                                }
+                                @Override public void onSessionEnded() {
+                                    input.release();
+                                    Log.i("LudashiMoonlight", "Moonlight session ended");
+                                }
+                            }, args, null);
+                    try {
+                        session.start();
+                    } catch (Exception e) {
+                        Log.e("LudashiMoonlight", "cannot start Moonlight session", e);
+                        session.stop();
+                        session = null;
+                        return null;
+                    }
+                    activeMoonlight = session;
+                    if (winHandler != null) {
+                        final com.winlator.cmod.stream.moonlight.MoonlightSession rumbleTarget = session;
+                        final android.os.Handler rumbleStop = new android.os.Handler(android.os.Looper.getMainLooper());
+                        winHandler.setRemoteRumbleListener((index, strong, weak, durationMs) -> {
+                            Object token = Integer.valueOf(index);
+                            rumbleStop.removeCallbacksAndMessages(token);
+                            rumbleTarget.sendRumble(index, strong, weak);
+                            if (durationMs > 0 && (strong > 0 || weak > 0)) {
+                                rumbleStop.postAtTime(() -> rumbleTarget.sendRumble(index, 0, 0), token,
+                                        android.os.SystemClock.uptimeMillis() + durationMs);
+                            }
+                        });
+                    }
+                    String host = local.getHostAddress();
+                    if (host.startsWith("::ffff:")) host = host.substring(7);
+                    return "rtsp://" + host + ":" + com.winlator.cmod.stream.moonlight.MoonlightSession.PORT_RTSP;
+                }
+
+                @Override public synchronized void onCancel() {
+                    if (session != null) { session.stop(); session = null; }
+                }
+
+                @Override public synchronized boolean isStreaming() {
+                    return session != null && session.isActive();
+                }
+            });
+        } catch (Exception e) {
+            Log.e("LudashiMoonlight", "Moonlight host failed to start", e);
+            moonlightHost.stop();
+            moonlightHost = null;
+        }
+    }
+
     @Override
     protected void onDestroy() {
+        if (moonlightHost != null) {
+            moonlightHost.stop();
+            moonlightHost = null;
+        }
+        if (streamSession != null) {
+            streamSession.stop();
+            streamSession = null;
+        }
+        if (audioTap != null) {
+            audioTap.stop();
+            audioTap = null;
+        }
         NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID);
         runtimeStatusProbeStopped = true;
         if (runtimeStatusProbeThread != null) runtimeStatusProbeThread.interrupt();
@@ -1488,7 +1648,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
             renderer.setUnviewableWMClasses("explorer.exe");
         }
 
-        rootView.addView(xServerView);
+        streamSession = startStreamIfEnabled();
+        if (streamSession != null) {
+            // Game picture goes to the stream; the phone keeps touch controls.
+            streamSession.attachRendererView(xServerView);
+        } else {
+            rootView.addView(xServerView);
+        }
 
         globalCursorSpeed = preferences.getFloat("cursor_speed", 1.0f);
         touchpadView = new TouchpadView(this, xServer, timeoutHandler, hideControlsRunnable);
@@ -1518,6 +1684,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         inputControlsView.setXServer(xServer);
         inputControlsView.setVisibility(View.GONE);
         rootView.addView(inputControlsView);
+        if (streamSession != null) addStreamStatusBar(rootView);
 
         boolean isTimeoutEnabled = preferences.getBoolean("touchscreen_timeout_enabled", false);
         if (isTimeoutEnabled) {

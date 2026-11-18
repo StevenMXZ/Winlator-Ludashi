@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_stream_to_tv">Stream to TV (Moonlight)</string>
+    <string name="stream_status_waiting">Moonlight: %1$s · %2$s · waiting for a client</string>
+    <string name="stream_status_pairing">Moonlight: %1$s · enter the PIN shown by Moonlight</string>
+    <string name="stream_status_playing">Moonlight: %1$s · %2$s · %3$d FPS · %4$.1f Mbit/s · %5$dx%6$d</string>
+    <string name="stream_pin_title">Moonlight: %1$s</string>
+    <string name="stream_pin_message">Enter the PIN shown by Moonlight</string>
+    <string name="stream_pin_cancel">Cancel</string>
+</resources>
