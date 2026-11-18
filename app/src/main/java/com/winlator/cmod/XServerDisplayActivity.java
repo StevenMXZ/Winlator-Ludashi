@@ -1096,8 +1096,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
 
-        if (hasFocus && cursorLock)
+        if (hasFocus && cursorLock) {
             touchpadView.requestPointerCapture();
+            touchpadView.requestFocus();
+        }
         else if (!hasFocus)
             touchpadView.releasePointerCapture();
     }
@@ -1496,17 +1498,18 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (!drawerLayout.isDrawerOpen(GravityCompat.START))
                 drawerLayout.openDrawer(GravityCompat.START);
         });
-        View.OnCapturedPointerListener capturedPointerListener = new View.OnCapturedPointerListener() {
+
+        touchpadView.setOnCapturedPointerListener(cursorLock ? new View.OnCapturedPointerListener() {
             @Override
             public boolean onCapturedPointer(View view, MotionEvent event) {
                 handleCapturedPointer(event);
                 return true;
             }
-        };
-        touchpadView.setOnCapturedPointerListener(cursorLock ? capturedPointerListener : null);
+        } : null);
         touchpadView.setFocusable(true);
         touchpadView.setFocusableInTouchMode(true);
         rootView.addView(touchpadView);
+        touchpadView.requestFocus();
 
         inputControlsView = new InputControlsView(this, timeoutHandler, hideControlsRunnable);
         inputControlsView

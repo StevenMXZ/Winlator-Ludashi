@@ -169,7 +169,7 @@ public class TouchpadView extends View {
     public boolean onTouchEvent(MotionEvent event) {
         // If mouse is disabled, ignore all input
         if (!mouseEnabled) return true;
-        
+        requestFocus();
         boolean isTouchscreenMode = preferences.getBoolean("touchscreen_toggle", false);
 
         // Reset the timeout timer to keep controls visible
