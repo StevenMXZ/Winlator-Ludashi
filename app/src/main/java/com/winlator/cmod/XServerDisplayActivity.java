@@ -16,6 +16,7 @@ import android.util.Rational;
 import android.util.TypedValue;
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
@@ -1021,8 +1022,25 @@ public class XServerDisplayActivity extends AppCompatActivity {
             }
 
             preloaderDialog.closeOnUiThread();
-            runOnUiThread(() -> AppUtils.restartApplication(getApplicationContext()));
+            runOnUiThread(this::finishGameActivity);
         });
+    }
+
+    private void finishGameActivity() {
+        Uri referrer = getReferrer();
+        boolean externalLaunch = referrer != null
+                && "android-app".equals(referrer.getScheme())
+                && referrer.getHost() != null
+                && !getPackageName().equals(referrer.getHost());
+        if (isTaskRoot()) {
+            finishAndRemoveTask();
+        } else if (externalLaunch) {
+            // A singleTask launch can reuse a Ludashi task with MainActivity below it.
+            moveTaskToBack(true);
+            finish();
+        } else {
+            AppUtils.restartApplication(getApplicationContext());
+        }
     }
 
     @Override

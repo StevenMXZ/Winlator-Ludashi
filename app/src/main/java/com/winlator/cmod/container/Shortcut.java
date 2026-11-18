@@ -201,28 +201,36 @@ public class Shortcut {
     }
 
     public void saveData() {
-        String content = "[Desktop Entry]\n";
+        if (!file.getName().endsWith(".desktop")) return;
+
+        StringBuilder content = new StringBuilder("[Desktop Entry]\n");
+        String containerIdLine = null;
+        boolean extraSection = false;
         for (String line : FileUtils.readLines(file)) {
-            if (line.contains("[Extra Data]")) break;
-            if (!line.contains("[Desktop Entry]") && !line.isEmpty()) content += line + "\n";
+            if (line.startsWith("container_id:")) {
+                if (containerIdLine == null) containerIdLine = line;
+            } else if (line.contains("[Extra Data]")) {
+                extraSection = true;
+            } else if (!extraSection && !line.contains("[Desktop Entry]") && !line.isEmpty()) {
+                content.append(line).append('\n');
+            }
         }
 
         if (extraData.length() > 0) {
-            content += "\n[Extra Data]\n";
+            content.append("\n[Extra Data]\n");
             Iterator<String> keys = extraData.keys();
             while (keys.hasNext()) {
                 String key = keys.next();
                 try {
-                    content += key + "=" + extraData.getString(key) + "\n";
-                } catch (JSONException e) {}
+                    String value = extraData.getString(key);
+                    content.append(key).append('=').append(value).append('\n');
+                } catch (JSONException ignored) {}
             }
         }
 
-        if (!file.getName().endsWith(".desktop")) {
-            return;
-        }
-
-        FileUtils.writeString(file, content);
+        // Exported shortcuts launched by a frontend can rely on this instead of an Intent extra.
+        if (containerIdLine != null) content.append(containerIdLine).append('\n');
+        FileUtils.writeString(file, content.toString());
     }
 
     public void genUUID() {
