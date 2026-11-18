@@ -89,7 +89,7 @@ public class ExternalController {
         if (this.deviceId == -1) {
             for (int deviceId : InputDevice.getDeviceIds()) {
                 InputDevice device = InputDevice.getDevice(deviceId);
-                if (device != null && device.getDescriptor().equals(id)) {
+                if (isGameController(device) && device.getDescriptor().equals(id)) {
                     this.deviceId = deviceId;
                     break;
                 }
@@ -101,7 +101,7 @@ public class ExternalController {
     public boolean isConnected() {
         for (int deviceId : InputDevice.getDeviceIds()) {
             InputDevice device = InputDevice.getDevice(deviceId);
-            if (device != null && device.getDescriptor().equals(id)) return true;
+            if (isGameController(device) && device.getDescriptor().equals(id)) return true;
         }
         return false;
     }
@@ -457,25 +457,22 @@ public class ExternalController {
     }
 
     public static ExternalController getController(int deviceId) {
-        int[] deviceIds = InputDevice.getDeviceIds();
-        for (int i = deviceIds.length-1; i >= 0; i--) {
-            if (deviceIds[i] == deviceId || deviceId == 0) {
-                InputDevice device = InputDevice.getDevice(deviceIds[i]);
-                if (isGameController(device)) {
-                    ExternalController controller = new ExternalController();
-                    controller.setId(device.getDescriptor());
-                    controller.setName(device.getName());
-                    controller.deviceId = deviceIds[i];
-                    return controller;
-                }
-            }
-        }
-        return null;
+        InputDevice device = InputDevice.getDevice(deviceId);
+        if (!isGameController(device)) return null;
+
+        ExternalController controller = new ExternalController();
+        controller.setId(device.getDescriptor());
+        controller.setName(device.getName());
+        controller.deviceId = deviceId;
+        return controller;
     }
 
     public static boolean isGameController(InputDevice device) {
         if (device == null) return false;
-        if (device.getName() != null && device.getName().toLowerCase().contains("uinput-fpc")) return false;
+        String name = device.getName();
+        // Xiaomi's uinput device can advertise gamepad sources even when Android reports it as non-virtual.
+        if ("uinput-xiaomi".equalsIgnoreCase(name) || "ui-input-xiaomi".equalsIgnoreCase(name)) return false;
+        if (name != null && name.toLowerCase().contains("uinput-fpc")) return false;
         int sources = device.getSources();
         // Exclude devices with SOURCE_MOUSE from being considered controllers
         return !device.isVirtual() && ((sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
