@@ -4,11 +4,17 @@ import org.json.JSONObject
 import android.content.Context
 import java.io.File
 
-/** Selection for the initial port: public branch, Windows, English, base game. */
+/** Windows base-game depot selection and Steam install metadata. */
 object SteamCatalog {
     fun desktopExecPath(path: String): String = path.replace("\\", "\\\\\\\\")
 
-    data class Depot(val id: Int, val manifest: Long, val size: Long = 0)
+    data class Depot(
+        val id: Int,
+        val manifest: Long,
+        val size: Long = 0,
+        val manifestAppId: Int = 0,
+        val manifestBranch: String = "public",
+    )
 
     fun branches(info: JSONObject): List<String> {
         val depots = info.optJSONObject("depots") ?: return listOf("public")
@@ -20,7 +26,8 @@ object SteamCatalog {
         }.filter { name ->
             name == "public" || depots.keys().asSequence().any { key ->
                 val depot = depots.optJSONObject(key) ?: return@any false
-                key.toIntOrNull() != null && depot.optJSONObject("manifests")?.has(name) == true
+                key.toIntOrNull() != null && (depot.optJSONObject("manifests")?.has(name) == true ||
+                    (depot.optInt("depotfromapp") > 0 && depot.optInt("sharedinstall") != 1))
             }
         }.toList()
         return (listOf("public") + available.filter { it != "public" }.sorted()).distinct()
@@ -38,26 +45,76 @@ object SteamCatalog {
         return (listOf("english") + names.filter { it != "english" }.sorted()).distinct()
     }
 
-    fun depots(info: JSONObject, branch: String = "public", language: String = "english"): List<Depot> {
+    fun depots(
+        info: JSONObject,
+        branch: String = "public",
+        language: String = "english",
+        sourceInfo: ((Int) -> JSONObject)? = null,
+    ): List<Depot> {
         val all = info.optJSONObject("depots") ?: error("No depot metadata")
         require(branch in branches(info)) { "Selected Steam version is unavailable" }
         require(language in languages(info)) { "Selected Steam language is unavailable" }
-        return all.keys().asSequence().mapNotNull { key ->
-            val id = key.toIntOrNull() ?: return@mapNotNull null
-            val depot = all.optJSONObject(key) ?: return@mapNotNull null
-            val config = depot.optJSONObject("config") ?: JSONObject()
-            val os = config.optString("oslist")
-            val depotLanguage = config.optString("language").lowercase()
-            if (os.isNotBlank() && os.split(',').none { it.trim().equals("windows", true) }) return@mapNotNull null
-            if (depotLanguage.isNotBlank() && depotLanguage != language) return@mapNotNull null
-            if (depot.optInt("dlcappid") != 0) return@mapNotNull null
-            val manifests = depot.optJSONObject("manifests") ?: return@mapNotNull null
-            val raw = manifests.opt(branch) ?: manifests.opt("public") ?: return@mapNotNull null
-            val gid = if (raw is JSONObject) raw.optString("gid") else raw.toString()
-            val manifest = gid.toULongOrNull()?.toLong() ?: return@mapNotNull null
-            Depot(id, manifest, if (raw is JSONObject) raw.optLong("size").coerceAtLeast(0) else 0)
-        }.toList().also { require(it.isNotEmpty()) { "No Windows depots for the selected version and language" } }
+        val sources = mutableMapOf<Int, JSONObject>()
+        val lookup = sourceInfo?.let { fetch -> { appId: Int -> sources.getOrPut(appId) { fetch(appId) } } }
+        val shared = mutableListOf<Depot>()
+        val local = mutableListOf<Depot>()
+        for (key in all.keys()) {
+            val id = key.toIntOrNull() ?: continue
+            val depot = all.optJSONObject(key) ?: continue
+            // Mode 1 is a separate shared installation, such as Steamworks Common Redistributables.
+            val resolved = resolveDepot(id, depot, branch, language,
+                lookup.takeUnless { depot.optInt("sharedinstall") == 1 }) ?: continue
+            if (resolved.manifestAppId == 0) local.add(resolved) else shared.add(resolved)
+        }
+        // Base files must be in place before the game's own depots are applied.
+        return (shared + local).also { require(it.isNotEmpty()) { "No Windows depots for the selected version and language" } }
     }
+
+    private fun matchesInstall(depot: JSONObject, language: String): Boolean {
+        val config = depot.optJSONObject("config")
+        val os = config?.optString("oslist").orEmpty()
+        val depotLanguage = config?.optString("language").orEmpty()
+        return (os.isBlank() || os.split(',').any { it.trim().equals("windows", true) }) &&
+            (depotLanguage.isBlank() || depotLanguage.equals(language, true)) &&
+            (config?.optString("lowviolence") !in listOf("1", "true")) &&
+            depot.optInt("dlcappid") == 0
+    }
+
+    private fun resolveDepot(
+        id: Int,
+        entry: JSONObject,
+        branch: String,
+        language: String,
+        sourceInfo: ((Int) -> JSONObject)?,
+    ): Depot? {
+        var depot = entry
+        var appId = 0
+        val visited = mutableSetOf<Int>()
+        while (matchesInstall(depot, language)) {
+            val manifests = depot.optJSONObject("manifests")
+            val manifestBranch = if (manifests?.has(branch) == true) branch else "public"
+            val raw = manifests?.opt(manifestBranch)
+            if (raw != null) {
+                val gid = if (raw is JSONObject) raw.optString("gid") else raw.toString()
+                val manifest = gid.toULongOrNull()?.toLong() ?: return null
+                return Depot(id, manifest, if (raw is JSONObject) raw.optLong("size").coerceAtLeast(0) else 0,
+                    appId, manifestBranch)
+            }
+            appId = depot.optInt("depotfromapp")
+            if (appId <= 0 || sourceInfo == null) {
+                check(visited.isEmpty()) { "Steam manifest missing for shared depot $id" }
+                return null
+            }
+            check(visited.add(appId)) { "Circular Steam metadata for shared depot $id" }
+            depot = sourceInfo(appId).optJSONObject("depots")?.optJSONObject(id.toString())
+                ?: error("Steam app $appId has no metadata for shared depot $id")
+        }
+        return null
+    }
+
+    fun manifestList(depots: List<Depot>): String =
+        depots.joinToString(",") { "${it.id}:${it.manifest.toULong()}:0" }
+
     fun installName(info: JSONObject): String {
         val name = info.getJSONObject("config").getString("installdir")
         require(name.isNotBlank() && name != "." && name != ".." && name.none { it in "/\\\r\n\"" }) { "Invalid install directory" }

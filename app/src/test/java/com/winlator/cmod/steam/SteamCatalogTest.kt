@@ -25,6 +25,45 @@ class SteamCatalogTest {
         assertEquals(listOf(1, 2), selected.map { it.id })
         assertEquals(listOf(-1L, 42L), selected.map { it.manifest })
     }
+    @Test fun resolvesSharedDepotsGenericallyBeforeGameFiles() {
+        val info = JSONObject("""{"depots":{
+          "91":{"manifests":{"beta":{"gid":"91"}}},
+          "92":{"depotfromapp":"800","sharedinstall":"2"},
+          "93":{"depotfromapp":"800","config":{"language":"french"}},
+          "94":{"depotfromapp":"800","config":{"oslist":"linux"}},
+          "95":{"depotfromapp":"900","sharedinstall":"1"},
+          "96":{"depotfromapp":"800","config":{"lowviolence":"1"}},
+          "branches":{"beta":{}}
+        }}""")
+        val source = JSONObject("""{"depots":{
+          "92":{"manifests":{"public":{"gid":"18446744073709551615","size":"42"}}},
+          "93":{"depotfromapp":"801"}
+        }}""")
+        val secondSource = JSONObject("""{"depots":{"93":{"manifests":{"beta":"93"}}}}""")
+        val requested = mutableListOf<Int>()
+
+        val depots = SteamCatalog.depots(info, "beta", "french") { appId ->
+            requested.add(appId)
+            when (appId) {
+                800 -> source
+                801 -> secondSource
+                else -> error("Unexpected lookup for app $appId")
+            }
+        }
+
+        assertEquals(listOf(800, 801), requested)
+        assertEquals(listOf(
+            SteamCatalog.Depot(92, -1, 42, 800, "public"),
+            SteamCatalog.Depot(93, 93, 0, 801, "beta"),
+            SteamCatalog.Depot(91, 91, 0, 0, "beta"),
+        ), depots)
+    }
+
+    @Test fun rejectsCircularSharedDepotReferences() {
+        val info = JSONObject("""{"depots":{"92":{"depotfromapp":"800","sharedinstall":"2"}}}""")
+        assertThrows(IllegalStateException::class.java) { SteamCatalog.depots(info) { info } }
+    }
+
     @Test fun rejectsEmptySelection() {
         assertThrows(IllegalArgumentException::class.java) { SteamCatalog.depots(JSONObject("""{"depots":{}}""")) }
     }

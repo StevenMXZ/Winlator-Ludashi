@@ -179,10 +179,15 @@ object SteamLaunch {
         val cloudEnabled = SteamCloud.supportsCloud(info) != false
         SteamCloud.begin(context, shortcut, cloudEnabled)
         env.put("LUDASHI_STEAM_AGENT_CLOUD", if (cloudEnabled) "1" else "0")
-        env.put("LUDASHI_STEAM_LANGUAGE", "english")
+        val branch = info.optString("ludashiInstallBranch", "public")
+        val language = info.optString("ludashiInstallLanguage", "english")
+        env.put("LUDASHI_STEAM_LANGUAGE", language)
         env.put("LUDASHI_STEAM_APP_NAME", info.optJSONObject("common")?.optString("name").orEmpty())
-        env.put("LUDASHI_STEAM_BUILD_ID", info.optJSONObject("depots")?.optJSONObject("branches")?.optJSONObject("public")?.optString("buildid", "0") ?: "0")
-        env.put("LUDASHI_STEAM_DEPOTS", SteamCatalog.depots(info).joinToString(",") { "${it.id}:${it.manifest.toULong()}:0" })
+        env.put("LUDASHI_STEAM_BUILD_ID", info.optJSONObject("depots")?.optJSONObject("branches")?.optJSONObject(branch)?.optString("buildid", "0") ?: "0")
+        val manifests = info.optString("ludashiInstalledDepots").ifEmpty {
+            SteamCatalog.manifestList(SteamCatalog.depots(info, branch, language))
+        }
+        env.put("LUDASHI_STEAM_DEPOTS", manifests)
         env.put("SteamAppId", id)
         env.put("SteamGameId", id)
         env.put("PROTON_DISABLE_LSTEAMCLIENT", "1")

@@ -477,7 +477,10 @@ object SteamSession {
         val name = SteamCatalog.installName(info)
         val branch = SteamInstallOptions.branch(context, id)
         val language = SteamInstallOptions.language(context, id)
-        val depots = SteamCatalog.depots(info, branch, language)
+        val depots = SteamCatalog.depots(info, branch, language, ::info)
+        val freeToDownload = info.optJSONObject("common")?.let {
+            it.optString("freetodownload", it.optString("FreeToDownload")) in listOf("1", "true")
+        } == true
         SteamInstallRecord.directory(context.filesDir)
         val dir = SteamStorage.download(context, id, name)
         SteamGoldberg.restore(dir)
@@ -489,7 +492,8 @@ object SteamSession {
         com.winlator.cmod.stores.DownloadNotifications.update(context, SteamService.NOTIFICATION_ID, "steam", "Steam", name, 0, 0, com.winlator.cmod.ui.uiStr(R.string.gog_downloading), true)
         try {
             s.downloadApp(id, depots.map { it.id }.toIntArray(), depots.map { it.manifest }.toLongArray(),
-                branch, dir.absolutePath, false, ca, SteamDownloadSettings.network(SteamDownloadSettings.tier(context)), object : LudashiDownloadListener {
+                depots.map { if (freeToDownload || it.manifestAppId == 0) id else it.manifestAppId }.toIntArray(),
+                depots.map { it.manifestBranch }.toTypedArray(), dir.absolutePath, false, ca, SteamDownloadSettings.network(SteamDownloadSettings.tier(context)), object : LudashiDownloadListener {
                     override fun onProgress(depotId: Int, depotDone: Long, depotTotal: Long, depotsDone: Int, depotsTotal: Int, verifying: Boolean) {
                         if (session !== s || !signedIn) return
                         downloadMeter?.update(depotId, depotDone, depotTotal, depotsDone, verifying, SystemClock.elapsedRealtime())
@@ -505,7 +509,13 @@ object SteamSession {
                             var finalized = false
                             try {
                                 if (success) {
-                                    SteamInstallRecord.write(context.filesDir, id, SteamStorage.record(info, dir, branch, language))
+                                    val record = SteamStorage.record(info, dir, branch, language)
+                                    val denied = runCatching {
+                                        File(dir, ".ludashi_depot/denied.depots").takeIf { it.isFile }
+                                            ?.useLines { lines -> lines.mapNotNull { it.toIntOrNull() }.toSet() }
+                                    }.getOrNull().orEmpty()
+                                    record.put("ludashiInstalledDepots", SteamCatalog.manifestList(depots.filterNot { it.id in denied }))
+                                    SteamInstallRecord.write(context.filesDir, id, record)
                                     finalized = true
                                     SteamGoldberg.invalidate(dir)
                                     main.post { SteamGames.changed() }

@@ -107,7 +107,8 @@ class LudashiSteamSession : AutoCloseable {
         appId: Int,
         depotIds: IntArray,
         manifestIds: LongArray,
-        branch: String,
+        manifestAppIds: IntArray,
+        manifestBranches: Array<String>,
         installDir: String,
         fresh: Boolean,
         caBundlePath: String,
@@ -115,15 +116,16 @@ class LudashiSteamSession : AutoCloseable {
         listener: LudashiDownloadListener,
         decompressWorkers: Int = 2,
     ) {
-        require(depotIds.size == manifestIds.size) {
-            "ludashisteam: depotIds/manifestIds size mismatch"
+        require(depotIds.size == manifestIds.size && depotIds.size == manifestAppIds.size &&
+            depotIds.size == manifestBranches.size) {
+            "ludashisteam: mismatched depot metadata arrays"
         }
         val h = nativeHandle.get()
         if (h == 0L) {
             listener.onComplete(false, "session closed", 0L, 0, 0)
             return
         }
-        nativeDownloadApp(h, appId, depotIds, manifestIds, branch, installDir,
+        nativeDownloadApp(h, appId, depotIds, manifestIds, manifestAppIds, manifestBranches, installDir,
                           fresh, caBundlePath, maxWorkers, decompressWorkers, listener)
     }
 
@@ -733,7 +735,8 @@ class LudashiSteamSession : AutoCloseable {
             appId: Int,
             depotIds: IntArray,
             manifestIds: LongArray,
-            branch: String,
+            manifestAppIds: IntArray,
+            manifestBranches: Array<String>,
             installDir: String,
             fresh: Boolean,
             caBundlePath: String,

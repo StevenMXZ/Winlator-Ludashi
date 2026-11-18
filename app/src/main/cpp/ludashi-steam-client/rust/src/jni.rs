@@ -14,7 +14,7 @@ use crate::version;
 use crate::wine_bridge::{WineBridge, WineBridgeConfig};
 use crate::ws_connection::WsConnection;
 use jni::objects::{
-    GlobalRef, JByteArray, JClass, JIntArray, JLongArray, JObject, JString, JValue,
+    GlobalRef, JByteArray, JClass, JIntArray, JLongArray, JObject, JObjectArray, JString, JValue,
 };
 use jni::sys::{
     jboolean, jbyteArray, jint, jlong, jlongArray, jstring, JNI_FALSE, JNI_TRUE, JNI_VERSION_1_6,
@@ -3626,7 +3626,8 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
     app_id: jint,
     depot_ids: JIntArray,
     manifest_ids: JLongArray,
-    branch: JString,
+    manifest_app_ids: JIntArray,
+    manifest_branches: JObjectArray,
     install_dir: JString,
     fresh: jboolean,
     ca_bundle_path: JString,
@@ -3647,9 +3648,30 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
     };
     let depot_ids = int_array_to_u32_vec(&env, &depot_ids);
     let manifest_ids = long_array_to_u64_vec(&env, &manifest_ids);
-    if depot_ids.len() != manifest_ids.len() {
-        call_download_complete(&mut env, &listener, "depot/manifest array length mismatch");
+    let manifest_app_ids = int_array_to_u32_vec(&env, &manifest_app_ids);
+    if depot_ids.len() != manifest_ids.len()
+        || depot_ids.len() != manifest_app_ids.len()
+        || env.get_array_length(&manifest_branches).ok() != Some(depot_ids.len() as jint)
+    {
+        call_download_complete(&mut env, &listener, "mismatched depot metadata arrays");
         return;
+    }
+    let mut manifest_sources = std::collections::HashMap::with_capacity(depot_ids.len());
+    for (index, (&depot_id, manifest_app_id)) in depot_ids.iter().zip(manifest_app_ids).enumerate() {
+        let branch = env
+            .get_object_array_element(&manifest_branches, index as jint)
+            .ok()
+            .and_then(|branch| jstring_to_string(&mut env, &JString::from(branch)));
+        let Some(branch) = branch.filter(|branch| !branch.is_empty()) else {
+            call_download_complete(&mut env, &listener, "invalid manifest branch");
+            return;
+        };
+        if manifest_app_id == 0
+            || manifest_sources.insert(depot_id, (manifest_app_id, branch)).is_some()
+        {
+            call_download_complete(&mut env, &listener, "invalid manifest source");
+            return;
+        }
     }
     let specs = depot_ids
         .into_iter()
@@ -3666,7 +3688,6 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
         call_download_complete(&mut env, &listener, "invalid download request");
         return;
     }
-    let branch = jstring_to_string(&mut env, &branch).unwrap_or_else(|| "public".to_string());
     let ca_bundle_path = jstring_to_string(&mut env, &ca_bundle_path).unwrap_or_default();
     let Ok(listener) = env.new_global_ref(&listener) else {
         call_download_complete(&mut env, &listener, "listener ref failed");
@@ -3721,6 +3742,8 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
                 });
                 continue;
             }
+            let (manifest_app_id, manifest_branch) = &manifest_sources[&spec.depot_id];
+            // Keep the installing app for depot keys and the source app for manifest codes.
             let depot_key = match resolve_depot_key_with_retry(
                 &runtime,
                 app_id,
@@ -3754,10 +3777,10 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
             };
             let manifest_request_code = match resolve_manifest_code_with_retry(
                 &runtime,
-                app_id,
+                *manifest_app_id,
                 spec.depot_id,
                 spec.manifest_id,
-                &branch,
+                manifest_branch,
                 timeout,
                 download_cancel.as_ref(),
             ) {
@@ -3810,12 +3833,13 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
         let progress_cb: crate::depot_downloader::DepotProgressCallback = &progress;
         // Re-resolve manifest request codes right before each depot's manifest fetch.
         let code_refresher = |depot_id: u32, manifest_id: u64| -> Option<u64> {
+            let (manifest_app_id, manifest_branch) = manifest_sources.get(&depot_id)?;
             match resolve_manifest_code_with_retry(
                 &runtime,
-                app_id,
+                *manifest_app_id,
                 depot_id,
                 manifest_id,
-                &branch,
+                manifest_branch,
                 timeout,
                 download_cancel.as_ref(),
             ) {
