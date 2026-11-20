@@ -34,6 +34,21 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     private String frameGenEngine = "lsfg";
     private int frameGenMultiplier = 2, frameGenTargetRate = -1, frameGenFlowScale = 70;
     private float frameGenRefresh = 60f;
+    // Tuning is a separate engine from LSFG/WFG. X++ reaches it through the
+    // same Vulkan context, after the swapchain exists. See FrameGen.h.
+    private boolean tuningFrameGen = false;
+    private int tuningFrameGenMode = 0;
+    private int tuningFrameGenQuality = 1;
+    private int tuningFrameGenMultiplier = 2;
+    private volatile int frameGenSourceCap = 0;
+    private boolean vsyncTracking = false;
+    private final android.view.Choreographer.FrameCallback vsyncCallback = new android.view.Choreographer.FrameCallback() {
+        @Override public void doFrame(long frameTimeNanos) {
+            if (!vsyncTracking) return;
+            nativeNoteTuningVsync(frameTimeNanos);
+            android.view.Choreographer.getInstance().postFrameCallback(this);
+        }
+    };
     private long visualRevision, generatedFrames;
     private Runnable frameGenListener;
     private final Runnable frameGenCheck = new Runnable() {
@@ -289,6 +304,9 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         if (frameGenRefresh != refresh) {
             frameGenRefresh = refresh;
             if (frameGenRequested) applyVisualOptions();
+            // Power saver caps at refresh / multiplier. The cap has to follow
+            // the panel, or the generated frames never land on vsync.
+            if (tuningFrameGen) applyTuningFrameGen();
         }
     }
     @Override public synchronized void surfaceCreated(SurfaceHolder holder) { updateOptions(); startDisplayTimeline(); }
@@ -308,6 +326,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         stopDisplayListener();
         removeCallbacks(hudCheck);
         removeCallbacks(frameGenCheck);
+        setVsyncTracking(false);
         if (handle != 0) nativeHudEnabled(handle, false);
     }
     @Override public synchronized void onResume() {
@@ -315,6 +334,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         startDisplayTimeline();
         startDisplayListener(); updateOptions(); setHudMode(hudMode);
         if (frameGenRequested || frameGenEnabled) { removeCallbacks(frameGenCheck); post(frameGenCheck); }
+        if (tuningFrameGen && tuningFrameGenMode == 1) setVsyncTracking(true);
     }
     @Override public void onDestroy() { close(); }
     public synchronized void close() {
@@ -325,6 +345,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         removeCallbacks(startupCheck);
         removeCallbacks(hudCheck);
         removeCallbacks(frameGenCheck);
+        setVsyncTracking(false);
         frameGenListener = null;
         frameGenEnabled = false;
         xServer.pointer.removeOnPointerMotionListener(this);
@@ -355,7 +376,13 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     @Override public boolean isFullscreen() { return fullscreen; }
     @Override public void setCursorVisible(boolean value) { cursorVisible = value; updateOptions(); }
     @Override public void setFpsLimit(int value) { fpsLimit = Math.max(0, value); updateOptions(); }
-    @Override public int getFpsLimit() { return fpsLimit; }
+    @Override public int getFpsLimit() {
+        // PresentExtension paces the game from this. LSFG and WFG must not
+        // change it. Tuning's power-saver mode caps the source at refresh / multiplier.
+        int cap = frameGenSourceCap;
+        if (cap <= 0 || nativeTuningFrameGenSourceUncapped()) return fpsLimit;
+        return fpsLimit > 0 ? Math.min(fpsLimit, cap) : cap;
+    }
     @Override public synchronized void setMagnifierZoom(float value) {
         zoom = Float.isFinite(value) ? Math.max(1f, Math.min(3f, value)) : 1f;
         if (handle != 0) nativeMagnifierZoom(handle, zoom);
@@ -385,6 +412,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         } else if (rating instanceof WinlatorHUD) {
             modernHud = (WinlatorHUD) rating;
             modernHud.setFrameGenerationSource(this);
+            bindTuningHud();
             setHudMode(2);
         }
     }
@@ -423,17 +451,75 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
         if (!frameGenRequested && !frameGenEnabled)
             frameGenEngine = "wfg".equals(engine) ? "wfg" : "lsfg";
     }
+    @Override public synchronized void setFrameGen(boolean enabled, int mode, int quality, int multiplier) {
+        if (!isVulkanBackend()) {
+            tuningFrameGen = false;
+            updateFrameGenSourceCap();
+            bindTuningHud();
+            return;
+        }
+        tuningFrameGen = enabled;
+        tuningFrameGenMode = mode;
+        tuningFrameGenQuality = quality;
+        tuningFrameGenMultiplier = Math.max(2, Math.min(3, multiplier));
+        // One engine owns the swapchain. Drop a pending LSFG/WFG enable.
+        if (enabled && frameGenRequested) {
+            frameGenRequested = false;
+            applyVisualOptions();
+        }
+        applyTuningFrameGen();
+    }
+    @Override public synchronized float[] getFrameGenStats() {
+        if (handle == 0 || destroyed) return new float[7];
+        float[] stats = nativeGetTuningFrameGenStats(handle);
+        return stats != null ? stats : new float[7];
+    }
+    private void applyTuningFrameGen() {
+        updateFrameGenSourceCap();
+        setVsyncTracking(tuningFrameGen && tuningFrameGenMode == 1);
+        bindTuningHud();
+        if (handle != 0 && !destroyed)
+            nativeSetTuningFrameGen(handle, tuningFrameGen, tuningFrameGenMode,
+                    tuningFrameGenQuality, tuningFrameGenMultiplier, displayRefreshRate());
+    }
+    private void updateFrameGenSourceCap() {
+        frameGenSourceCap = tuningFrameGen && tuningFrameGenMode == 0
+                ? Math.round(displayRefreshRate() / tuningFrameGenMultiplier) : 0;
+    }
+    private float displayRefreshRate() {
+        android.view.Display display = getDisplay();
+        float hz = display != null ? display.getRefreshRate() : 0f;
+        return hz > 1f ? hz : 60f;
+    }
+    private void setVsyncTracking(boolean on) {
+        if (vsyncTracking == on) return;
+        vsyncTracking = on;
+        post(() -> {
+            android.view.Choreographer ch = android.view.Choreographer.getInstance();
+            ch.removeFrameCallback(vsyncCallback);
+            if (vsyncTracking) ch.postFrameCallback(vsyncCallback);
+        });
+    }
+    private void bindTuningHud() {
+        if (modernHud != null)
+            modernHud.setFrameGenSource(() -> tuningFrameGen ? getFrameGenStats() : null);
+    }
     @Override public synchronized String getFrameGenerationEngine() { return frameGenEngine; }
     @Override public synchronized void setFrameGenerationConfig(boolean enabled, String cachePath,
             int multiplier, int targetRate, int flowScalePercent, float refreshRate) {
         frameGenCache = cachePath;
-        frameGenRequested = isVulkanBackend() && enabled && ("wfg".equals(frameGenEngine) ||
+        // Tuning already owns the swapchain. Keep LSFG/WFG configured but off.
+        frameGenRequested = !tuningFrameGen && isVulkanBackend() && enabled && ("wfg".equals(frameGenEngine) ||
             (cachePath != null && !cachePath.isEmpty()));
         frameGenRefresh = refreshRate >= 1f ? refreshRate : 60f;
         setFrameGenerationSettings(multiplier, targetRate, flowScalePercent);
     }
     @Override public synchronized boolean setFrameGenerationEnabled(boolean enabled) {
         if (destroyed || handle == 0 || enabled && !isVulkanBackend()) return false;
+        if (enabled && tuningFrameGen) {
+            tuningFrameGen = false;
+            applyTuningFrameGen();
+        }
         if (enabled && !"wfg".equals(frameGenEngine) && (frameGenCache == null || !new File(frameGenCache).isFile())) {
             File cache = LosslessScaling.resolveCacheFile(getContext(), true);
             if (cache == null) return false;
@@ -485,4 +571,9 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     private static native boolean nativeHasContent(long handle);
     private static native long nativeFocusHandle(long handle);
     private static native boolean nativeHasWindow(long handle, long hwnd);
+    private static native void nativeSetTuningFrameGen(long handle, boolean enabled, int mode,
+            int quality, int multiplier, float hz);
+    private static native float[] nativeGetTuningFrameGenStats(long handle);
+    private static native void nativeNoteTuningVsync(long frameTimeNs);
+    private static native boolean nativeTuningFrameGenSourceUncapped();
 }

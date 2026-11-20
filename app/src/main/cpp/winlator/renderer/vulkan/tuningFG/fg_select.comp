@@ -1,0 +1,119 @@
+#version 450
+// Per-pixel vector selection at the finest pyramid level. Each pixel tests the
+// smoothly interpolated block vector, the four surrounding block vectors and
+// zero, and keeps the one that matches best. Motion edges then follow image
+// edges instead of the 8x8 block grid, and static overlays (HUD, text) keep
+// a zero vector over a moving background.
+// mode 0 skips that search and only upsamples the block vector. Alpha is 0
+// when this pixel is a static overlay on coherent motion, so interpolation
+// can hold it without searching the full-resolution neighborhood.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D prevTex;
+layout(binding = 1) uniform sampler2D curTex;
+layout(binding = 2) uniform sampler2D field;
+layout(binding = 3, rgba16f) uniform writeonly image2D outImg;
+
+layout(push_constant) uniform PC {
+    ivec2 lvlSize;    // active luma rectangle
+    float lambda;     // cost per pixel of deviation from the smooth vector
+    float zeroBias;   // extra cost for the zero vector
+    float coherentTh; // block vectors closer than this skip the full search; 0 disables
+    float phase;      // same anchor as the block field; 0.5 = middle
+    int   mode;       // 0 upsample only, 1 candidate search
+    float pad;
+    vec2  allocSize;  // allocated luma image
+    ivec2 blockSize;  // active block field
+} pc;
+
+const float kBlock = 8.0;
+const float kOverlay = 3.0 / 255.0;
+
+vec2 toUv(vec2 pixel) {
+    vec2 rect = vec2(pc.lvlSize);
+    vec2 p = clamp(pixel, vec2(0.0), rect);
+    vec2 uv = p / pc.allocSize;
+    vec2 limit = rect / pc.allocSize;
+    vec2 guard = vec2(pc.allocSize.x > rect.x ? 0.51 : 0.0,
+                      pc.allocSize.y > rect.y ? 0.51 : 0.0) / pc.allocSize;
+    return min(uv, limit - guard);
+}
+
+float pixelCost(vec2 pos, vec2 v) {
+    vec2 a = pos - pc.phase * v;
+    vec2 b = pos + (1.0 - pc.phase) * v;
+    float s = 0.0;
+    for (int j = -1; j <= 1; ++j) {
+        for (int i = -1; i <= 1; ++i) {
+            vec2 o = vec2(float(i), float(j));
+            s += abs(textureLod(prevTex, toUv(a + o), 0.0).r -
+                     textureLod(curTex,  toUv(b + o), 0.0).r);
+        }
+    }
+    return s * (1.0 / 9.0);
+}
+
+// Still luma on a patch that moves as one block is an overlay. A moving
+// object changes the luma, so it keeps a real vector.
+float overlayAlpha(vec2 pos, vec2 v, float spread) {
+    if (dot(v, v) <= 0.25 * 0.25 || spread >= 0.75) return 1.0;
+    vec2 o[5] = vec2[](vec2(0.0), vec2(1.0, 0.0), vec2(-1.0, 0.0), vec2(0.0, 1.0), vec2(0.0, -1.0));
+    for (int i = 0; i < 5; ++i) {
+        vec2 q = pos + o[i];
+        float d = abs(textureLod(prevTex, toUv(q), 0.0).r - textureLod(curTex, toUv(q), 0.0).r);
+        if (d > kOverlay) return 1.0;
+    }
+    return 0.0;
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(gid, pc.lvlSize))) return;
+    vec2 pos = vec2(gid) + 0.5;
+
+    ivec2 fs = pc.blockSize;
+    vec2 bp = pos / kBlock - 0.5;
+    ivec2 i0 = ivec2(floor(bp));
+    vec2 fr = bp - vec2(i0);
+    vec4 t00 = texelFetch(field, clamp(i0,               ivec2(0), fs - 1), 0);
+    vec4 t10 = texelFetch(field, clamp(i0 + ivec2(1, 0), ivec2(0), fs - 1), 0);
+    vec4 t01 = texelFetch(field, clamp(i0 + ivec2(0, 1), ivec2(0), fs - 1), 0);
+    vec4 t11 = texelFetch(field, clamp(i0 + ivec2(1, 1), ivec2(0), fs - 1), 0);
+    vec2 v00 = t00.rg, v10 = t10.rg, v01 = t01.rg, v11 = t11.rg;
+    vec2 smoothV = mix(mix(v00, v10, fr.x), mix(v01, v11, fr.x), fr.y);
+    float smoothCost = mix(mix(t00.b, t10.b, fr.x), mix(t01.b, t11.b, fr.x), fr.y);
+    float spreadLen = max(max(length(v00 - v11), length(v10 - v01)),
+                          max(length(v00 - v10), length(v00 - v01)));
+
+    if (pc.mode == 0) {
+        imageStore(outImg, gid, vec4(smoothV, smoothCost, overlayAlpha(pos, smoothV, spreadLen)));
+        return;
+    }
+
+    vec2 spread = max(max(v00, v10), max(v01, v11)) - min(min(v00, v10), min(v01, v11));
+    vec2 bestV = smoothV;
+    float bestCost = 0.0;
+    if (pc.coherentTh > 0.0 && all(lessThan(spread, vec2(pc.coherentTh)))) {
+        bestV = smoothV;
+        bestCost = pixelCost(pos, bestV);
+        if (dot(bestV, bestV) > pc.coherentTh * pc.coherentTh) {
+            float cz = pixelCost(pos, vec2(0.0));
+            if (cz + pc.lambda * length(bestV) + pc.zeroBias < bestCost) {
+                bestV = vec2(0.0);
+                bestCost = cz;
+            }
+        }
+    } else {
+        bestCost = pixelCost(pos, smoothV);
+        float bestScore = bestCost;
+        vec2 cands[5] = vec2[5](v00, v10, v01, v11, vec2(0.0));
+        for (int i = 0; i < 5; ++i) {
+            vec2 v = cands[i];
+            float c = pixelCost(pos, v);
+            float s = c + pc.lambda * length(v - smoothV) + (i == 4 ? pc.zeroBias : 0.0);
+            if (s < bestScore) { bestScore = s; bestCost = c; bestV = v; }
+        }
+    }
+
+    imageStore(outImg, gid, vec4(bestV, bestCost, overlayAlpha(pos, bestV, spreadLen)));
+}

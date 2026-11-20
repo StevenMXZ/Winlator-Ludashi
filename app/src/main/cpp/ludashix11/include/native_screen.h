@@ -128,6 +128,15 @@ public:
     virtual void Options(bool fullscreen, bool cursor, int fps, float refresh, float zoom) = 0;
     virtual void VisualOptions(const NativeVisualOptions&) {}
     virtual NativeVisualState VisualState() const { return {}; }
+    // Tuning frame generation. The request is saved until the Vulkan context
+    // exists. LSFG/WFG stay on their own visual-options path.
+    virtual void SetTuningFrameGen(bool enabled, int mode, int quality, int multiplier, float hz) {
+        (void)enabled; (void)mode; (void)quality; (void)multiplier; (void)hz;
+    }
+    virtual bool TuningFrameGenStats(float out[7]) { (void)out; return false; }
+    // A game frame was presented. Runs on the X11 thread while Draw may be
+    // asleep in the frame-gen pacer; that sleep only wakes on this note.
+    virtual void NoteTuningContent(int width, int height) { (void)width; (void)height; }
 };
 std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 width, u16 height, bool validation = false, const NativeRendererConfig& config = {});
 
@@ -168,6 +177,10 @@ public:
     void SetOptions(bool fullscreen, bool cursor, int fps, float refresh);
     void SetMagnifierZoom(float zoom);
     u64 SetVisualOptions(NativeVisualOptions options);
+    // Kept until the present thread has a renderer, then applied there.
+    // The Java UI calls this before the surface (and the Vulkan context) exist.
+    void SetTuningFrameGen(bool enabled, int mode, int quality, int multiplier, float hz);
+    bool TuningFrameGenStats(float out[7]);
     std::array<u64, 3> VisualState();
     u64 MSC() const;
     float RefreshRate() const { return refresh; }
@@ -243,6 +256,8 @@ private:
     bool IsWindowFiltered(Window*) const;
     void Worker();
     bool PrepareIdle(const sp<PresentTicket>&);
+    // User FPS limit, tightened by Tuning's power-saver cap while that mode is on.
+    int PacingLimit() const;
     void Idle(const sp<PresentTicket>&);
     void FlushDeferredIdles();
     void Complete(const sp<PresentTicket>&, bool idleFirst = false);
@@ -254,6 +269,15 @@ private:
     NativeVisualState visualState;
     u64 visualRevision{}, appliedVisualRevision{};
     std::atomic<bool> frameGenRequested{false};
+    struct TuningFrameGenConfig {
+        bool valid = false;
+        bool enabled = false;
+        int mode = 0, quality = 1, multiplier = 2;
+        float hz = 60.f;
+    };
+    TuningFrameGenConfig tuningFrameGen;
+    std::mutex tuningFrameGenMutex;
+    std::atomic<NativeRenderer*> liveRenderer{nullptr};
     std::atomic<u64> frameGenSources{0};
     size_t gpuPending{};
     bool fullscreen{}, cursorVisible{true};

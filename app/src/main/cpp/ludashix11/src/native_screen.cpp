@@ -9,6 +9,10 @@
 #include "core/atom.h"
 #include <string_view>
 #include <X11/extensions/presentproto.h>
+#ifdef LUDASHI_NATIVE_X11
+// Same .so as FrameGen. The host test does not link it.
+extern int VulkanRendererFrameGenSourceCap();
+#endif
 
 namespace xorg {
 std::unique_ptr<XScreen> XScreen::Create(XServer& s) { return std::make_unique<NativeScreen>(s); }
@@ -36,6 +40,18 @@ void NativeScreen::SetFrameTimeline(int64_t id) {
     std::lock_guard lock(state);
     displayXFrameTimeline.store(id, std::memory_order_relaxed);
     if (dirty) cv.notify_one();
+}
+int NativeScreen::PacingLimit() const {
+    int limit = producerLimit.load(std::memory_order_relaxed);
+#ifdef LUDASHI_NATIVE_X11
+    // Java Present reads getFpsLimit() on every pixmap, so power saver caps
+    // the game at refresh/multiplier and the generated frames fill the rest
+    // up to vsync. X++ only stored the user's limit; without this the game
+    // stays uncapped and there is no gap to generate into.
+    const int cap = VulkanRendererFrameGenSourceCap();
+    if (cap > 0) limit = limit > 0 ? std::min(limit, cap) : cap;
+#endif
+    return limit;
 }
 void NativeScreen::SetOptions(bool fs, bool visible, int limit, float rate) {
     const int bounded = std::clamp(limit, 0, 1000);
@@ -89,6 +105,21 @@ void NativeScreen::UpdateCursor(Drawable* d, s16 x, s16 y) {
         }
     }
     PostInvalidate();
+}
+void NativeScreen::SetTuningFrameGen(bool enabled, int mode, int quality, int multiplier, float hz) {
+    NativeRenderer* renderer = nullptr;
+    {
+        std::lock_guard lock(tuningFrameGenMutex);
+        tuningFrameGen = {true, enabled, mode, quality, multiplier, hz};
+        renderer = liveRenderer.load(std::memory_order_acquire);
+    }
+    // The present thread may not be up yet. Worker applies the saved config
+    // when it publishes the renderer; a later call hits the live one.
+    if (renderer) renderer->SetTuningFrameGen(enabled, mode, quality, multiplier, hz);
+}
+bool NativeScreen::TuningFrameGenStats(float out[7]) {
+    NativeRenderer* renderer = liveRenderer.load(std::memory_order_acquire);
+    return renderer && renderer->TuningFrameGenStats(out);
 }
 u64 NativeScreen::SetVisualOptions(NativeVisualOptions options) {
     options.filter = std::clamp(options.filter, 0, 5);
@@ -459,7 +490,7 @@ void NativeScreen::Present(sp<PresentTicket> ticket) {
     HudFrame(ticket->window);
     // Limit producer buffer reuse, not the Vulkan compositor. A compositor-only
     // sleep made the game report unbounded FPS while rendering fewer frames.
-    const int limit = producerLimit.load(std::memory_order_relaxed);
+    const int limit = PacingLimit();
     if (limit != lastProducerLimit) {
         limiterDeadlines.clear();
         lastProducerLimit = limit;
@@ -476,6 +507,16 @@ void NativeScreen::Present(sp<PresentTicket> ticket) {
         requests.push_back(ticket);
         PostInvalidate();
     }
+#ifdef LUDASHI_NATIVE_X11
+    // After direct holds the new buffer. Dynamic mode sleeps inside Draw until
+    // the next vsync and only wakes when a frame is noted. The note has to be
+    // raised here: noting it on the draw thread leaves interpolation running
+    // on a pair the game has already replaced, and the lower image swims.
+    if (ticket->drawable) {
+        if (auto* renderer = liveRenderer.load(std::memory_order_acquire))
+            renderer->NoteTuningContent(ticket->drawable->GetWidth(), ticket->drawable->GetHeight());
+    }
+#endif
     // Match Java PresentExtension: acknowledge the scene update without waiting
     // for Draw, Vulkan submission, presentation, or GPU completion. Only an
     // explicitly configured producer limiter may defer IDLE.
@@ -551,7 +592,7 @@ u64 NativeScreen::MSC() const {
 }
 bool NativeScreen::PrepareIdle(const sp<PresentTicket>& t) {
     if (!t || t->idle) return false;
-    if (producerLimit.load(std::memory_order_relaxed) > 0 &&
+    if (PacingLimit() > 0 &&
         std::chrono::steady_clock::now() < t->releaseAfter) {
         if (!t->idleDeferred) {
             t->idleDeferred = true;
@@ -599,7 +640,7 @@ void NativeScreen::FlushDeferredIdles() {
 }
 int NativeScreen::IdleTimeoutMs() const {
     if (deferredIdles.empty()) return -1;
-    if (producerLimit.load(std::memory_order_relaxed) == 0) return 0;
+    if (PacingLimit() == 0) return 0;
     const auto now = std::chrono::steady_clock::now();
     int timeout = 2147483647;
     for (const auto& ticket : deferredIdles) {
@@ -675,6 +716,20 @@ void NativeScreen::ProtocolError(int client, u8 opcode, u8 minor, u8 code, u32 r
 void NativeScreen::Worker() {
     const auto info = server.GetScreenInfo();
     auto renderer = CreateNativeRenderer(info.width, info.height, server.ValidationEnabled(), server.RendererConfig());
+    // Cleared before renderer is destroyed: this guard is declared after it.
+    struct PublishRenderer {
+        std::atomic<NativeRenderer*>* slot;
+        PublishRenderer(std::atomic<NativeRenderer*>* slot, NativeRenderer* renderer) : slot(slot) {
+            slot->store(renderer, std::memory_order_release);
+        }
+        ~PublishRenderer() { slot->store(nullptr, std::memory_order_release); }
+    } publishRenderer{&liveRenderer, renderer.get()};
+    {
+        std::lock_guard lock(tuningFrameGenMutex);
+        if (tuningFrameGen.valid)
+            renderer->SetTuningFrameGen(tuningFrameGen.enabled, tuningFrameGen.mode, tuningFrameGen.quality,
+                                        tuningFrameGen.multiplier, tuningFrameGen.hz);
+    }
     // Frames retain the AHBs until the corresponding GPU sampling fences signal.
     // Draw owns context changes. A separate worker retires previously published
     // submissions while Draw may be blocked in acquire/present for another slot.
@@ -981,6 +1036,9 @@ void NativeScreen::Worker() {
         try { renderer->PrepareSurfaceChange(); retire(renderer->Drain()); }
         catch (const std::exception& e) { LOGE("Native GPU shutdown drain failed: {}", e.what()); }
     }
+    // Stats and configure run on the UI thread. Drop the pointer before the
+    // renderer object goes away; the guard clears it again on scope exit.
+    liveRenderer.store(nullptr, std::memory_order_release);
     renderer.reset();
     {
         std::lock_guard lock(state);

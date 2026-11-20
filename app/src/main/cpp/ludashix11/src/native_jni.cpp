@@ -7,6 +7,7 @@
 #include "core/window_manager.h"
 #include "core/atom.h"
 #include "native_screen.h"
+#include "tuningFG/FrameGen.h"
 #include <map>
 
 namespace {
@@ -151,6 +152,33 @@ extern "C" JNIEXPORT jstring JNICALL JNI_NAME(nativeError)(JNIEnv* env, jclass, 
     auto server = session(handle); if (!server) return env->NewStringUTF("");
     auto message = static_cast<xorg::NativeScreen&>(server->GetScreen()).LastError();
     return env->NewStringUTF(message.c_str());
+}
+extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeSetTuningFrameGen)(JNIEnv*, jclass, jlong handle,
+        jboolean enabled, jint mode, jint quality, jint multiplier, jfloat hz) {
+    auto server = session(handle); if (!server) return;
+    static_cast<xorg::NativeScreen&>(server->GetScreen()).SetTuningFrameGen(
+        enabled == JNI_TRUE, mode, quality, multiplier, hz);
+}
+extern "C" JNIEXPORT jfloatArray JNICALL JNI_NAME(nativeGetTuningFrameGenStats)(JNIEnv* env, jclass, jlong handle) {
+    auto result = env->NewFloatArray(7);
+    if (!result) return nullptr;
+    jfloat values[7] = {};
+    auto server = session(handle);
+    if (server) {
+        float stats[7] = {};
+        if (static_cast<xorg::NativeScreen&>(server->GetScreen()).TuningFrameGenStats(stats)) {
+            for (int i = 0; i < 7; ++i) values[i] = stats[i];
+        }
+    }
+    env->SetFloatArrayRegion(result, 0, 7, values);
+    return result;
+}
+extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeNoteTuningVsync)(JNIEnv*, jclass, jlong frameTimeNs) {
+    // Same .so as the X++ renderer. The Java server's note lands in the other copy.
+    VulkanRendererFrameGenNoteVsync(static_cast<int64_t>(frameTimeNs));
+}
+extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(nativeTuningFrameGenSourceUncapped)(JNIEnv*, jclass) {
+    return VulkanRendererFrameGenSourceUncapped() ? JNI_TRUE : JNI_FALSE;
 }
 extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeVisualOptions)(JNIEnv* env, jclass, jlong handle,
         jint filter, jint postFX, jint stretch, jfloat sharpness, jboolean frameGen,

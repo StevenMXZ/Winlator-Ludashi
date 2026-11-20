@@ -1,0 +1,49 @@
+#version 450
+// Box-filtered downsample to luma for the motion-estimation pyramid.
+// The destination image is allocated for the highest quality; this dispatch
+// fills only the active top-left rectangle (activeDst).
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D srcTex;
+#ifdef FG_LUMA_R8
+layout(binding = 3, r8) uniform writeonly image2D dstImg;
+#else
+layout(binding = 3, rgba8) uniform writeonly image2D dstImg;
+#endif
+
+layout(push_constant) uniform PC {
+    float ratio;       // active source pixels per active destination pixel
+    int   fromColor;   // 1: source is the RGB scene, 0: source is already luma
+    ivec2 activeDst;
+    vec2  srcActive;   // valid source rectangle
+    vec2  srcAlloc;    // allocated source image
+} pc;
+
+// Pixel position inside the active source, as a UV into the allocation.
+// When the allocation is larger, bilinear stays on the last written texel.
+vec2 toUv(vec2 pixel) {
+    vec2 p = clamp(pixel, vec2(0.0), pc.srcActive);
+    vec2 uv = p / pc.srcAlloc;
+    vec2 limit = pc.srcActive / pc.srcAlloc;
+    vec2 guard = vec2(pc.srcAlloc.x > pc.srcActive.x ? 0.51 : 0.0,
+                      pc.srcAlloc.y > pc.srcActive.y ? 0.51 : 0.0) / pc.srcAlloc;
+    return min(uv, limit - guard);
+}
+
+void main() {
+    ivec2 gid = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(gid, pc.activeDst))) return;
+
+    // Per axis, so a rounding difference between width and height still covers
+    // the whole source. The footprint stays square, in source pixels.
+    vec2 srcPx = (vec2(gid) + 0.5) * pc.srcActive / vec2(pc.activeDst);
+    vec2 o = vec2(pc.ratio * 0.25);
+    vec3 c = textureLod(srcTex, toUv(srcPx + vec2(-o.x, -o.y)), 0.0).rgb
+           + textureLod(srcTex, toUv(srcPx + vec2( o.x, -o.y)), 0.0).rgb
+           + textureLod(srcTex, toUv(srcPx + vec2(-o.x,  o.y)), 0.0).rgb
+           + textureLod(srcTex, toUv(srcPx + vec2( o.x,  o.y)), 0.0).rgb;
+    c *= 0.25;
+
+    float y = pc.fromColor != 0 ? dot(c, vec3(0.299, 0.587, 0.114)) : c.r;
+    imageStore(dstImg, gid, vec4(y, y, y, 1.0));
+}

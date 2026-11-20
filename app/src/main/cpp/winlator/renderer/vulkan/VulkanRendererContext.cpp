@@ -62,6 +62,7 @@ VulkanRendererContext::VulkanRendererContext(ANativeWindow* win, int cW, int cH,
 VulkanRendererContext::~VulkanRendererContext() {
     isRunning = false; dirtyCV.notify_all();
     if (renderThread.joinable()) renderThread.join();
+    VulkanRendererFrameGenDestroy(this);
     std::lock_guard<std::mutex> lk(renderMutex);
     vk_.DeviceWaitIdle(device);
     for (auto& [id, wt] : texMap) destroyWinTex(wt);
@@ -386,11 +387,16 @@ void VulkanRendererContext::createLogicalDevice() {
         throw std::runtime_error("reading Vulkan device extensions");
 
     bool hasForeignQueue = false;
+    const char* priorityExt = nullptr;
     for (const auto& ext : availableExts) {
         RLOG("Available Vulkan device extension: %s (specVersion=%u)",
              ext.extensionName, ext.specVersion);
         if (strcmp(ext.extensionName, VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME) == 0)
             hasForeignQueue = true;
+        if (strcmp(ext.extensionName, VK_KHR_GLOBAL_PRIORITY_EXTENSION_NAME) == 0)
+            priorityExt = VK_KHR_GLOBAL_PRIORITY_EXTENSION_NAME;
+        else if (!priorityExt && strcmp(ext.extensionName, VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME) == 0)
+            priorityExt = VK_EXT_GLOBAL_PRIORITY_EXTENSION_NAME;
     }
     if (!hasForeignQueue) {
         RLOG_E("AHB requires VK_EXT_queue_family_foreign, but the selected Vulkan device does not advertise it");
@@ -479,10 +485,33 @@ void VulkanRendererContext::createLogicalDevice() {
 
     VkDeviceCreateInfo ci{}; ci.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     ci.pQueueCreateInfos=&qi; ci.queueCreateInfoCount=1;
-    ci.enabledExtensionCount=(uint32_t)extList.size(); ci.ppEnabledExtensionNames=extList.data();
     ci.pEnabledFeatures = &enabledFeatures;
     ci.pNext = featureChain;
-    if (vk_.CreateDevice(physicalDevice,&ci,nullptr,&device)!=VK_SUCCESS) throw std::runtime_error("device");
+
+    // A heavy game keeps the GPU busy for a whole frame, and at normal
+    // priority every present of ours, generated or not, waits for that frame
+    // to finish. High priority lets the kernel preempt it, as it does for the
+    // system compositor.
+    VkDeviceQueueGlobalPriorityCreateInfoKHR prio{};
+    prio.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR;
+    prio.globalPriority = VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR;
+    VkResult created = VK_ERROR_INITIALIZATION_FAILED;
+    if (priorityExt) {
+        std::vector<const char*> prioExts = extList;
+        prioExts.push_back(priorityExt);
+        qi.pNext = &prio;
+        ci.enabledExtensionCount = (uint32_t)prioExts.size();
+        ci.ppEnabledExtensionNames = prioExts.data();
+        created = vk_.CreateDevice(physicalDevice, &ci, nullptr, &device);
+        qi.pNext = nullptr;
+        highPriorityQueue = created == VK_SUCCESS;
+    }
+    if (created != VK_SUCCESS) {
+        ci.enabledExtensionCount = (uint32_t)extList.size();
+        ci.ppEnabledExtensionNames = extList.data();
+        created = vk_.CreateDevice(physicalDevice, &ci, nullptr, &device);
+    }
+    if (created!=VK_SUCCESS) throw std::runtime_error("device");
     vk_.GetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)gipa(instance, "vkGetDeviceProcAddr");
     loadDeviceDispatch();
     vk_.GetDeviceQueue(device,graphicsQueueFamilyIndex,0,&graphicsQueue);
@@ -552,8 +581,12 @@ void VulkanRendererContext::createSwapchain() {
                                frameGenCompositeFormatSupported;
     const bool wantsFrameGen = frameGenRequested && frameGenerationDeviceSupported() && frameGenSurfaceSupported;
 
-    uint32_t imgCount=caps.minImageCount+1;
-    if (caps.maxImageCount>0&&imgCount>caps.maxImageCount) imgCount=caps.maxImageCount;
+    // min+1 is the image the next frame acquires. Dynamic also queues the
+    // refresh the game missed; that present needs an image that is free now.
+    // Without it the acquire waits for the next refresh and the game slows.
+    uint32_t imgCount = caps.minImageCount + 2;
+    if (caps.maxImageCount > 0 && imgCount > caps.maxImageCount) imgCount = caps.maxImageCount;
+    if (imgCount < caps.minImageCount) imgCount = caps.minImageCount;
 
     uint32_t pmCount=0;
     vk_.GetPhysicalDeviceSurfacePresentModesKHR(physicalDevice,surface,&pmCount,nullptr);
@@ -1882,6 +1915,7 @@ void VulkanRendererContext::renderFrame() {
         swapchainRetryPending.store(true);
         return;
     }
+    if (VulkanRendererFrameGenRender(this)) return;
     bool currentFenceWaited = false;
 #ifdef LUDASHI_NATIVE_X11
     const auto nativeSlotStart = nativeTrace ? NativeClock::now() : NativeClock::time_point{};
@@ -2431,6 +2465,7 @@ void VulkanRendererContext::updateWindowContent(int64_t id, void* px, short w, s
                                        std::memory_order_relaxed);
 #endif
     }
+    VulkanRendererFrameGenNoteContent(this, w, h);
     needsRender.store(true); dirtyCV.notify_one();
 }
 
@@ -2462,6 +2497,7 @@ void VulkanRendererContext::updateWindowContentAHB(int64_t id, AHardwareBuffer* 
             frameGenSourceFrames.store(wfgPendingSourceFrames.load(std::memory_order_relaxed),
                                        std::memory_order_relaxed);
 #endif
+    VulkanRendererFrameGenNoteContent(this, wt.w, wt.h);
     needsRender.store(true); dirtyCV.notify_one();
 }
 

@@ -100,7 +100,8 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
     float ox, float oy, float sx, float sy, float cw, float ch,
     short ptrX, short ptrY, short curHotX, short curHotY,
     short curW, short curH, bool curVis,
-    VkRect2D scissorRect, uint32_t generatedCount, bool useFrameGeneration)
+    VkRect2D scissorRect, uint32_t generatedCount, bool useFrameGeneration,
+    const FrameGenPass* fgPass)
 {
     VkCommandBufferBeginInfo bi{};
     bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -204,12 +205,14 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
             (uint32_t)postUpload.size(), postUpload.data());
     }
 
-    const bool useSgsr = filterMode == 2 && sgsrPipeline != VK_NULL_HANDLE;
-    const bool useFsr = filterMode == 3 && fsr1Pipeline != VK_NULL_HANDLE;
-    const bool useLanczos = filterMode == 4 && lanczosPipeline != VK_NULL_HANDLE;
-    const bool useColorBoost = filterMode == 5 && postfxPipeline != VK_NULL_HANDLE;
-    const bool usePostFX = postFXMode > 0 && postfxPipeline != VK_NULL_HANDLE;
-    const bool useStretch = stretchMode == 1 && stretchPipeline != VK_NULL_HANDLE;
+    // Frame generation re-presents an already filtered image, so no filter may run again.
+    const bool fgCompose = fgPass && fgPass->compose;
+    const bool useSgsr = !fgCompose && filterMode == 2 && sgsrPipeline != VK_NULL_HANDLE;
+    const bool useFsr = !fgCompose && filterMode == 3 && fsr1Pipeline != VK_NULL_HANDLE;
+    const bool useLanczos = !fgCompose && filterMode == 4 && lanczosPipeline != VK_NULL_HANDLE;
+    const bool useColorBoost = !fgCompose && filterMode == 5 && postfxPipeline != VK_NULL_HANDLE;
+    const bool usePostFX = !fgCompose && postFXMode > 0 && postfxPipeline != VK_NULL_HANDLE;
+    const bool useStretch = !fgCompose && stretchMode == 1 && stretchPipeline != VK_NULL_HANDLE;
 
     VkPipeline activePipeline = useSgsr ? sgsrPipeline
                               : useFsr ? fsr1Pipeline
@@ -220,10 +223,11 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
                               : VulkanRendererGetOpaquePipeline(this);
     VkRenderPassBeginInfo rpi{};
     rpi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    rpi.renderPass = useFrameGeneration ? frameGenRenderPass : renderPass;
+    rpi.renderPass = useFrameGeneration ? frameGenRenderPass
+                   : fgPass && fgPass->renderPass ? fgPass->renderPass : renderPass;
     rpi.framebuffer = useFrameGeneration
         ? frameGenTargets[currentFrame].framebuffer
-        : swapchainFBs[imgIdx];
+        : fgPass && fgPass->framebuffer ? fgPass->framebuffer : swapchainFBs[imgIdx];
     rpi.renderArea = {{0, 0}, swapchainExt};
     VkClearValue clear = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
     rpi.clearValueCount = 1;
@@ -233,7 +237,7 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
     // is disabled in the generated translation unit, for both Java and native.
     const bool useOpaque = !useSgsr && !useFsr && !useLanczos && !useColorBoost &&
         !usePostFX && !useStretch && opaquePipeline != VK_NULL_HANDLE && activePipeline == opaquePipeline;
-    if (!useFrameGeneration && useOpaque && nativeNoClearPass != VK_NULL_HANDLE && draws.size() == 1 &&
+    if (!useFrameGeneration && !fgPass && useOpaque && nativeNoClearPass != VK_NULL_HANDLE && draws.size() == 1 &&
         draws[0].img != VK_NULL_HANDLE && draws[0].ds != VK_NULL_HANDLE &&
         cw > 0.f && ch > 0.f && sx > 0.f && sy > 0.f &&
         scissorRect.offset.x == 0 && scissorRect.offset.y == 0 &&
@@ -252,7 +256,8 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
 #endif
 #ifdef LUDASHI_NATIVE_X11
     const VkCommandBuffer primary = cb;
-    const bool splitCursor = nativeSceneCommand != VK_NULL_HANDLE;
+    // A cached scene was recorded for the swapchain pass; the Tuning frame gen pass may not be compatible.
+    const bool splitCursor = !fgPass && nativeSceneCommand != VK_NULL_HANDLE;
     auto beginSecondary = [&](VkCommandBuffer secondary) {
         vk_.ResetCommandBuffer(secondary, 0);
         VkCommandBufferInheritanceInfo inheritance{};
@@ -296,7 +301,17 @@ void VulkanRendererContext::recordCmdBuf(VkCommandBuffer cb, uint32_t imgIdx,
         vk_.CmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeLayout,
                                   0, 1, &d.ds, 0, nullptr);
 
-        if (useSgsr) {
+        if (fgCompose) {
+            WindowPushConstants pc{};
+            pc.ndcX0 = -1.0f;
+            pc.ndcY0 = -1.0f;
+            pc.ndcX1 = 1.0f;
+            pc.ndcY1 = 1.0f;
+            pc.useTexAlpha = 0;
+            vk_.CmdPushConstants(cb, pipeLayout,
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                0, sizeof(pc), &pc);
+        } else if (useSgsr) {
             WindowPushConstantsSGSR pc{};
             if (useStretch) { pc.ndcX0 = -1.0f; pc.ndcX1 = 1.0f; }
             else {
