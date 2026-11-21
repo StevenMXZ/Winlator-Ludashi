@@ -11,6 +11,7 @@ import org.robolectric.RobolectricTestRunner;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -27,7 +28,8 @@ public class GameSaveManagerTest {
         File source = new File(drive, "ProgramData/Game/Saves");
         assertTrue(source.mkdirs());
         File save = new File(source, "slot1.sav");
-        Files.writeString(save.toPath(), "test save");
+        byte[] contents = "test save".getBytes(StandardCharsets.UTF_8);
+        Files.write(save.toPath(), contents);
         File destination = temporary.newFolder();
         GameSaveManager.setLocations(shortcut, "c:\\programdata\\game\\Saves", destination.getPath());
 
@@ -39,7 +41,7 @@ public class GameSaveManagerTest {
         assertEquals(1, backup.fileCount);
         assertTrue(save.delete());
         assertTrue(GameSaveManager.restoreLatest(reloaded).ok);
-        assertEquals("test save", Files.readString(save.toPath()));
+        assertArrayEquals(contents, Files.readAllBytes(save.toPath()));
     }
 
     @Test public void legacyProfileArchiveStillRestoresWithCustomFolderConfigured() throws Exception {
@@ -67,7 +69,7 @@ public class GameSaveManagerTest {
         Container container = new Container(1);
         container.setRootDir(temporary.newFolder());
         File file = new File(container.getRootDir(), "Game.desktop");
-        Files.writeString(file.toPath(), "[Desktop Entry]\nName=Game\nExec=wine Game.exe\n");
+        Files.write(file.toPath(), "[Desktop Entry]\nName=Game\nExec=wine Game.exe\n".getBytes(StandardCharsets.UTF_8));
         return new Shortcut(container, file);
     }
 }
