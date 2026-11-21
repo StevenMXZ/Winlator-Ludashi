@@ -2,6 +2,7 @@ package com.winlator.cmod;
 
 import android.view.InputDevice;
 import android.view.KeyEvent;
+import com.winlator.cmod.inputcontrols.ExternalController;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -34,6 +35,15 @@ public class SidebarControllerKeyTest {
         assertFalse(sidebar(KeyEvent.KEYCODE_BACK, KeyEvent.FLAG_FALLBACK, InputDevice.SOURCE_GAMEPAD));
         assertTrue(sidebar(KeyEvent.KEYCODE_BUTTON_MODE, 0, InputDevice.SOURCE_GAMEPAD));
         assertTrue(sidebar(KeyEvent.KEYCODE_HOME, 0, InputDevice.SOURCE_GAMEPAD));
+    }
+
+    @Test public void keyboardEventsFromMixedSourcesAreNotRoutedToGamepad() {
+        int source = InputDevice.SOURCE_KEYBOARD | InputDevice.SOURCE_GAMEPAD;
+        assertFalse(ExternalController.isControllerKeyEvent(key(KeyEvent.KEYCODE_A, KeyEvent.ACTION_DOWN, 0, 0, source)));
+        assertFalse(sidebar(KeyEvent.KEYCODE_BACK, 0, source));
+        assertTrue(ExternalController.isControllerKeyEvent(key(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.ACTION_DOWN, 0, 0, source)));
+        assertTrue(ExternalController.isControllerKeyEvent(key(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.ACTION_DOWN, 0, 0,
+                InputDevice.SOURCE_GAMEPAD)));
     }
 
     private static boolean sidebar(int code, int flags, int source) {

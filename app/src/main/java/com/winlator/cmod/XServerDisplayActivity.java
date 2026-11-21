@@ -3195,11 +3195,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
     static boolean isSidebarKey(KeyEvent event) {
         int code = event.getKeyCode();
-        if (code == KeyEvent.KEYCODE_BUTTON_MODE || code == KeyEvent.KEYCODE_HOME) return true;
+        if (code == KeyEvent.KEYCODE_BUTTON_MODE) return true;
+        if (code == KeyEvent.KEYCODE_HOME) return ExternalController.isControllerKeyEvent(event);
         return code == KeyEvent.KEYCODE_BACK && (event.getFlags() & KeyEvent.FLAG_FALLBACK) == 0
-                && (event.isFromSource(InputDevice.SOURCE_GAMEPAD)
-                        || event.isFromSource(InputDevice.SOURCE_JOYSTICK)
-                        || ExternalController.isGameController(event.getDevice()));
+                && ExternalController.isControllerKeyEvent(event);
     }
 
     @Override
@@ -3213,7 +3212,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (inputControlsView != null && inputControlsView.onKeyEvent(event)) return true;
         if (winHandler != null && winHandler.onKeyEvent(event)) return true;
         if (xServer != null && xServer.keyboard.onKeyEvent(event)) return true;
-        return !ExternalController.isGameController(event.getDevice()) && super.dispatchKeyEvent(event);
+        return !ExternalController.isControllerKeyEvent(event) && super.dispatchKeyEvent(event);
     }
 
     public InputControlsView getInputControlsView() {

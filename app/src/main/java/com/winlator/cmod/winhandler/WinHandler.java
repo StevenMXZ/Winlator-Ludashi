@@ -714,6 +714,7 @@ public void setVibrationEnabledForSlot(int slot, boolean enabled) {
     }
 
     public boolean onKeyEvent(KeyEvent event) {
+        if (!ExternalController.isControllerKeyEvent(event)) return false;
         boolean handled = false;
         ExternalController controller = getController(event.getDeviceId());
 

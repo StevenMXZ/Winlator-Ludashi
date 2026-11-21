@@ -475,8 +475,38 @@ public class ExternalController {
         if (name != null && name.toLowerCase().contains("uinput-fpc")) return false;
         int sources = device.getSources();
         // Exclude devices with SOURCE_MOUSE from being considered controllers
-        return !device.isVirtual() && ((sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
-                ((sources & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && (sources & InputDevice.SOURCE_MOUSE) == 0));
+        boolean gamepad = (sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD;
+        boolean joystick = (sources & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+                && (sources & InputDevice.SOURCE_MOUSE) == 0;
+        if (device.isVirtual() || (!gamepad && !joystick)) return false;
+        if (device.getKeyboardType() != InputDevice.KEYBOARD_TYPE_ALPHABETIC) return true;
+
+        // Some keyboards advertise a gamepad source without any controller controls.
+        if (joystick && device.getMotionRange(MotionEvent.AXIS_X, InputDevice.SOURCE_JOYSTICK) != null
+                && device.getMotionRange(MotionEvent.AXIS_Y, InputDevice.SOURCE_JOYSTICK) != null) return true;
+        for (boolean present : device.hasKeys(KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
+                KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_Y,
+                KeyEvent.KEYCODE_BUTTON_1, KeyEvent.KEYCODE_BUTTON_2)) {
+            if (present) return true;
+        }
+        return false;
+    }
+
+    public static boolean isControllerKeyEvent(KeyEvent event) {
+        int key = event.getKeyCode();
+        if (KeyEvent.isGamepadButton(key)) return true;
+        if (event.isFromSource(InputDevice.SOURCE_GAMEPAD)
+                || event.isFromSource(InputDevice.SOURCE_JOYSTICK)) {
+            return !event.isFromSource(InputDevice.SOURCE_KEYBOARD);
+        }
+
+        // Controller D-pads and special keys can be reported as keyboard events.
+        // Preserve the same keys from physical keyboards, including hybrid devices.
+        if (key != KeyEvent.KEYCODE_BACK && key != KeyEvent.KEYCODE_HOME
+                && (key < KeyEvent.KEYCODE_DPAD_UP || key > KeyEvent.KEYCODE_DPAD_CENTER)) return false;
+        InputDevice device = event.getDevice();
+        return device != null && device.getKeyboardType() != InputDevice.KEYBOARD_TYPE_ALPHABETIC
+                && isGameController(device);
     }
 
 

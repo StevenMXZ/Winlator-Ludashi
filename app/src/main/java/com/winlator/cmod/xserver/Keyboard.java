@@ -94,7 +94,7 @@ public class Keyboard {
     }
 
     public boolean onKeyEvent(KeyEvent event) {
-        if (ExternalController.isGameController(event.getDevice())) return false;
+        if (ExternalController.isControllerKeyEvent(event)) return false;
 
         int action = event.getAction();
         int keyCode = event.getKeyCode();
