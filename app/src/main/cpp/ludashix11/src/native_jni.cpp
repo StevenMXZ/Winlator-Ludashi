@@ -1,19 +1,19 @@
 #include <jni.h>
 #include <android/native_window_jni.h>
-#include "core/xserver.h"
-#include "core/keyboard.h"
-#include "core/mouse.h"
-#include "core/window.h"
-#include "core/window_manager.h"
-#include "core/atom.h"
+#include "core/display_runtime.h"
+#include "core/key_state.h"
+#include "core/pointer_input.h"
+#include "core/window_node.h"
+#include "core/window_tree.h"
+#include "core/atom_catalog.h"
 #include "native_screen.h"
 #include <map>
 
 namespace {
 std::mutex sessions_mutex;
-std::map<jlong, sp<xorg::XServer>> sessions;
+std::map<jlong, std::shared_ptr<ludashi::x11::DisplayRuntime>> sessions;
 jlong next_session = 1;
-sp<xorg::XServer> session(jlong handle) {
+std::shared_ptr<ludashi::x11::DisplayRuntime> session(jlong handle) {
     std::lock_guard lock(sessions_mutex);
     auto i = sessions.find(handle); return i == sessions.end() ? nullptr : i->second;
 }
@@ -43,19 +43,19 @@ struct WindowListener {
         env->DeleteGlobalRef(view);
         if (attached) vm->DetachCurrentThread();
     }
-    void notify(xorg::Window* window) {
+    void notify(ludashi::x11::WindowNode* window, const ludashi::x11::AtomCatalog& atoms) {
         auto property = [&](const char* name) {
-            auto atom = xorg::Atom::GetID(name);
+            auto atom = atoms.Find(name);
             return atom >= 0 ? window->GetProperty(atom) : nullptr;
         };
-        u32 pid{};
+        std::uint32_t pid{};
         if (auto* p = property("_NET_WM_PID"); p && p->GetData().size() >= sizeof(pid))
             memcpy(&pid, p->GetData().data(), sizeof(pid));
         auto* wow = property("_NET_WM_WOW64");
         bool isWow = wow && !wow->GetData().empty() && wow->GetData()[0] == 1;
         std::vector<jchar> name;
         if (auto* p = property("WM_CLASS"))
-            for (u8 c : p->GetData()) { if (!c) break; name.push_back(c); }
+            for (std::uint8_t c : p->GetData()) { if (!c) break; name.push_back(c); }
         if (!pid && name.empty()) return;
         JNIEnv* env{};
         bool attached = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK;
@@ -81,7 +81,7 @@ extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeWindowListener)(JNIEnv* env, jc
     env->DeleteLocalRef(cls);
     if (!listener->view || !listener->mapped) return;
     auto lock = server->Lock();
-    server->GetWindowManager().onWindowMapped = [listener](xorg::Window* window) { listener->notify(window); };
+    server->Windows().onWindowMapped = [listener, &atoms = server->Atoms()](ludashi::x11::WindowNode* window) { listener->notify(window, atoms); };
 }
 extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeCreate)(JNIEnv* env, jclass, jint width, jint height, jboolean validation,
         jstring driverPath, jstring libraryName, jstring nativeLibDir, jint presentMode, jboolean swapRB, jint backend, jint flags) {
@@ -90,14 +90,14 @@ extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeCreate)(JNIEnv* env, jclass, j
             throw std::runtime_error("Invalid native X11 resolution");
         JavaString path(env, driverPath), library(env, libraryName), nativeLib(env, nativeLibDir);
         if (!path.text || !library.text || !nativeLib.text) return 0;
-        xorg::NativeRendererConfig config;
+        ludashi::x11::NativeRendererConfig config;
         config.driverPath = path.text; config.libraryName = library.text; config.nativeLibDir = nativeLib.text;
         config.swapRB = swapRB == JNI_TRUE; config.presentMode = presentMode == 1 ? 1 : 2;
-        config.backend = backend == 2 ? xorg::NativeRendererConfig::Backend::DisplayX
-                : backend == 1 ? xorg::NativeRendererConfig::Backend::EGL : xorg::NativeRendererConfig::Backend::Vulkan;
+        config.backend = backend == 2 ? ludashi::x11::NativeRendererConfig::Backend::DisplayX
+                : backend == 1 ? ludashi::x11::NativeRendererConfig::Backend::EGL : ludashi::x11::NativeRendererConfig::Backend::Vulkan;
         config.trueDisplayX = flags & 1; config.performanceMode = flags & 2;
         config.presentAtRefreshRate = flags & 4; config.precisePresentation = flags & 8;
-        auto server = std::make_shared<xorg::XServer>(nullptr, xorg::ScreenInfo(width, height, 4),
+        auto server = std::make_shared<ludashi::x11::DisplayRuntime>(ludashi::x11::DisplayDimensions(width, height),
                 validation == JNI_TRUE, std::move(config));
         std::lock_guard lock(sessions_mutex); jlong handle = next_session++;
         sessions.emplace(handle, std::move(server)); return handle;
@@ -111,7 +111,7 @@ extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeStart)(JNIEnv* env, jclass, jlo
     catch (const std::exception& e) { fail(env, e.what()); }
 }
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeDestroy)(JNIEnv*, jclass, jlong handle) {
-    sp<xorg::XServer> server;
+    std::shared_ptr<ludashi::x11::DisplayRuntime> server;
     { std::lock_guard lock(sessions_mutex); auto i = sessions.find(handle);
       if (i != sessions.end()) { server = std::move(i->second); sessions.erase(i); } }
     // Release outside registry lock: shutdown joins native worker threads.
@@ -124,39 +124,39 @@ extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeSurface)(JNIEnv* env, jclass, j
 }
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeFrameTimeline)(JNIEnv*, jclass, jlong handle, jlong id) {
     auto server = session(handle);
-    if (server) static_cast<xorg::NativeScreen&>(server->GetScreen()).SetFrameTimeline(id);
+    if (server) server->GetScreen().SetFrameTimeline(id);
 }
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeInput)(JNIEnv* env, jclass, jlong handle, jint kind, jint a, jint b) {
     auto server = session(handle); if (!server) return;
     try {
         auto lock = server->Lock();
-        if (kind == 0) server->GetMouse().MoveTo(a, b);
-        else if (kind == 3) server->GetMouse().MoveBy(a, b);
-        else if (kind == 4) server->GetMouse().AnchorTo(a, b);
-        else if (kind == 5) server->GetMouse().SetRawInputEnabled(a != 0);
-        else if (kind == 1) server->GetMouse().SetButton(a, b != 0);
-        else if (kind == 2) server->GetKeyboard().SetKeyState(static_cast<xorg::XKeycode>(a), b != 0);
+        if (kind == 0) server->PointerDevice().MoveTo(a, b);
+        else if (kind == 3) server->PointerDevice().MoveBy(a, b);
+        else if (kind == 4) server->PointerDevice().AnchorTo(a, b);
+        else if (kind == 5) server->PointerDevice().SetRawInputEnabled(a != 0);
+        else if (kind == 1) server->PointerDevice().SetButton(a, b != 0);
+        else if (kind == 2) server->Keys().SetKeyState(static_cast<uint32_t>(a), b != 0);
     } catch (const std::exception& e) { fail(env, e.what()); }
 }
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeOptions)(JNIEnv*, jclass, jlong handle, jboolean fullscreen,
                                                           jboolean cursor, jint fps, jfloat refresh) {
     auto server = session(handle); if (!server) return;
-    static_cast<xorg::NativeScreen&>(server->GetScreen()).SetOptions(fullscreen, cursor, fps, refresh);
+    server->GetScreen().SetOptions(fullscreen, cursor, fps, refresh);
 }
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeMagnifierZoom)(JNIEnv*, jclass, jlong handle, jfloat zoom) {
     auto server = session(handle); if (!server) return;
-    static_cast<xorg::NativeScreen&>(server->GetScreen()).SetMagnifierZoom(zoom);
+    server->GetScreen().SetMagnifierZoom(zoom);
 }
 extern "C" JNIEXPORT jstring JNICALL JNI_NAME(nativeError)(JNIEnv* env, jclass, jlong handle) {
     auto server = session(handle); if (!server) return env->NewStringUTF("");
-    auto message = static_cast<xorg::NativeScreen&>(server->GetScreen()).LastError();
+    auto message = server->GetScreen().LastError();
     return env->NewStringUTF(message.c_str());
 }
 extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeVisualOptions)(JNIEnv* env, jclass, jlong handle,
         jint filter, jint postFX, jint stretch, jfloat sharpness, jboolean frameGen,
         jstring cache, jint multiplier, jint targetRate, jint flowScale, jfloat refresh, jint engine) {
     auto server = session(handle); if (!server) return 0;
-    xorg::NativeVisualOptions options;
+    ludashi::x11::NativeVisualOptions options;
     options.filter = filter; options.postFX = postFX; options.stretch = stretch; options.sharpness = sharpness;
     options.frameGen = frameGen; options.multiplier = multiplier; options.targetRate = targetRate;
     options.flowScale = flowScale; options.refresh = refresh;
@@ -166,11 +166,11 @@ extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeVisualOptions)(JNIEnv* env, jc
         if (!path.text) return 0;
         options.frameGenCache = path.text;
     }
-    return static_cast<xorg::NativeScreen&>(server->GetScreen()).SetVisualOptions(std::move(options));
+    return server->GetScreen().SetVisualOptions(std::move(options));
 }
 extern "C" JNIEXPORT jlongArray JNICALL JNI_NAME(nativeVisualState)(JNIEnv* env, jclass, jlong handle) {
     auto server = session(handle); if (!server) return nullptr;
-    const auto state = static_cast<xorg::NativeScreen&>(server->GetScreen()).VisualState();
+    const auto state = server->GetScreen().VisualState();
     const jlong values[] = {jlong(state[0]), jlong(state[1]), jlong(state[2])};
     auto result = env->NewLongArray(3);
     if (result) env->SetLongArrayRegion(result, 0, 3, values);
@@ -178,7 +178,7 @@ extern "C" JNIEXPORT jlongArray JNICALL JNI_NAME(nativeVisualState)(JNIEnv* env,
 }
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeDiagnostics)(JNIEnv*, jclass, jlong handle, jboolean enabled, jboolean commandCacheEnabled) {
     auto server = session(handle); if (!server) return;
-    auto& screen = static_cast<xorg::NativeScreen&>(server->GetScreen());
+    auto& screen = server->GetScreen();
     screen.SetCommandCacheEnabled(commandCacheEnabled);
     screen.SetDiagnostics(enabled);
 }
@@ -198,7 +198,7 @@ extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeUnviewableWMClasses)(JNIEnv* en
         if (env->ExceptionCheck()) return;
     }
     auto lock = server->Lock();
-    static_cast<xorg::NativeScreen&>(server->GetScreen()).SetUnviewableWMClasses(std::move(classes));
+    server->GetScreen().SetUnviewableWMClasses(std::move(classes));
 }
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeRefreshRates)(JNIEnv* env, jclass, jlong handle, jintArray values) {
     auto server = session(handle); if (!server || !values) return;
@@ -207,22 +207,21 @@ extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeRefreshRates)(JNIEnv* env, jcla
     std::vector<jint> input(count);
     env->GetIntArrayRegion(values, 0, count, input.data());
     if (env->ExceptionCheck()) return;
-    std::vector<u16> rates;
+    std::vector<std::uint16_t> rates;
     for (jint hz : input) if (hz > 0 && hz <= 1000) rates.push_back(hz);
     auto lock = server->Lock();
-    static_cast<xorg::NativeScreen&>(server->GetScreen()).SetRandrRates(std::move(rates));
+    server->GetScreen().SetRandrRates(std::move(rates));
 }
 
 extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(nativeHasContent)(JNIEnv*, jclass, jlong handle) {
     auto server = session(handle); if (!server) return false;
-    return static_cast<xorg::NativeScreen&>(server->GetScreen()).presentedCount.load() != 0;
+    return server->GetScreen().presentedCount.load() != 0;
 }
 
 namespace {
-uint64_t windowHandle(xorg::Window* w) {
+uint64_t windowHandle(ludashi::x11::WindowNode* w, std::uint32_t atom) {
     for (; w; w = w->GetParent()) {
-        auto atom = xorg::Atom::GetID("_NET_WM_HWND");
-        auto* property = atom >= 0 ? w->GetProperty(atom) : nullptr;
+        auto* property = w->GetProperty(atom);
         if (!property) continue;
         auto data = property->GetData(); uint64_t handle{};
         if (data.size() >= 4) memcpy(&handle, data.data(), std::min(data.size(), sizeof(handle)));
@@ -230,47 +229,51 @@ uint64_t windowHandle(xorg::Window* w) {
     }
     return 0;
 }
-bool findHandle(xorg::Window* w, uint64_t handle) {
-    if (w->IsMapped() && windowHandle(w) == handle) return true;
-    for (auto* child : w->GetChildren()) if (findHandle(child, handle)) return true;
+bool findHandle(ludashi::x11::WindowNode* w, std::uint32_t atom, uint64_t handle) {
+    if (w->IsMapped() && windowHandle(w, atom) == handle) return true;
+    for (auto* child : w->GetChildren()) if (findHandle(child, atom, handle)) return true;
     return false;
 }
 }
 extern "C" JNIEXPORT jlong JNICALL JNI_NAME(nativeFocusHandle)(JNIEnv*, jclass, jlong handle) {
     auto server = session(handle); if (!server) return 0;
-    auto lock = server->Lock(); return windowHandle(server->GetWindowManager().GetFocuseWindow());
+    auto lock = server->Lock();
+    const auto atom = server->Atoms().Find("_NET_WM_HWND");
+    return atom >= 0 ? windowHandle(server->Windows().FocusedWindow(), atom) : 0;
 }
 extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(nativeHasWindow)(JNIEnv*, jclass, jlong sessionHandle, jlong hwnd) {
     auto server = session(sessionHandle); if (!server || !hwnd) return false;
-    auto lock = server->Lock(); return findHandle(server->GetWindowManager().GetRootWindow(), hwnd);
+    auto lock = server->Lock();
+    const auto atom = server->Atoms().Find("_NET_WM_HWND");
+    return atom >= 0 && findHandle(server->Windows().GetRootWindow(), atom, hwnd);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(nativeStartupContent)(JNIEnv*, jclass, jlong handle) {
     auto server = session(handle); if (!server) return JNI_FALSE;
-    return static_cast<xorg::NativeScreen&>(server->GetScreen()).HasStartupContent() ? JNI_TRUE : JNI_FALSE;
+    return server->GetScreen().HasStartupContent() ? JNI_TRUE : JNI_FALSE;
 }
 extern "C" JNIEXPORT void JNICALL JNI_NAME(nativeHudEnabled)(JNIEnv*, jclass, jlong handle, jboolean enabled) {
     auto server = session(handle); if (!server) return;
     auto lock = server->Lock();
-    static_cast<xorg::NativeScreen&>(server->GetScreen()).SetHudEnabled(enabled);
+    server->GetScreen().SetHudEnabled(enabled);
 }
 extern "C" JNIEXPORT jobjectArray JNICALL JNI_NAME(nativeHudSnapshot)(JNIEnv* env, jclass, jlong handle) {
     auto server = session(handle); if (!server) return nullptr;
     std::string values[4];
     {
         auto lock = server->Lock();
-        auto& screen = static_cast<xorg::NativeScreen&>(server->GetScreen());
+        auto& screen = server->GetScreen();
         auto* r = server->GetResource(screen.HudWindow());
-        auto* window = r && r->GetType() == xorg::XResourceType::Window ? r->As<xorg::Window>() : nullptr;
+        auto* window = r && r->GetType() == ludashi::x11::ObjectKind::WindowNode ? r->As<ludashi::x11::WindowNode>() : nullptr;
         for (auto* w = window; w; w = w->GetParent()) if (!w->IsMapped()) { window = nullptr; break; }
         values[0] = std::to_string(window ? window->id : 0);
         values[1] = std::to_string(screen.HudFrames());
         const char* names[] = {"_MESA_DRV_ENGINE_NAME", "_MESA_DRV_GPU_NAME"};
         for (int i = 0; window && i < 2; ++i) {
-            auto atom = xorg::Atom::GetID(names[i]);
+            auto atom = server->Atoms().Find(names[i]);
             auto* property = atom >= 0 ? window->GetProperty(atom) : nullptr;
             if (!property) continue;
-            for (u8 c : property->GetData()) {
+            for (std::uint8_t c : property->GetData()) {
                 if (!c || values[i+2].size() == 256) break;
                 values[i+2] += c >= 32 && c < 127 ? char(c) : '?';
             }

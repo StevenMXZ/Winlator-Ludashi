@@ -14,10 +14,10 @@ def run(binary):
     with tempfile.TemporaryDirectory(prefix="ludashix11-limit-") as directory:
         channel, child = socket.socketpair()
         log = open(pathlib.Path(directory) / "server.log", "w+")
-        env = dict(os.environ, LUDASHI_HOST_FPS_LIMIT="30")
+        env = dict(os.environ, LUDASHI_HOST_FPS_LIMIT="30", LUDASHI_HOST_INPUT="1")
         process = subprocess.Popen([binary, str(child.fileno())],
                                    pass_fds=[child.fileno()],
-                                   stdout=subprocess.PIPE, stderr=log, text=True, env=env)
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, text=True, env=env)
         child.close()
         try:
             assert process.stdout.readline().strip() == "ready"
@@ -50,8 +50,34 @@ def run(binary):
             elapsed = idle_at - start
             assert elapsed >= 0.020, f"Producer IDLE was not paced: {elapsed:.4f}s"
             assert elapsed < 1.5, f"Producer IDLE stalled: {elapsed:.4f}s"
+            # Queue more than a second of producer delay. Draining on a live
+            # limiter change must wake the server and release every buffer.
+            serials = list(range(100, 140))
+            for serial in serials:
+                submit(p0 if serial % 2 == 0 else p1, serial)
+            marker = c.send(43)
+            released = []
+            def record_idle(packet):
+                if packet[0] == 35 and struct.unpack_from("<H", packet, 8)[0] == 2:
+                    serial = struct.unpack_from("<I", packet, 20)[0]
+                    if serial in serials:
+                        released.append(serial)
+            while True:
+                packet = c.packet()
+                if packet[0] == 1 and struct.unpack_from("<H", packet, 2)[0] == marker:
+                    break
+                record_idle(packet)
+            assert len(released) < len(serials)
+            stop_limit = time.monotonic()
+            process.stdin.write("cursor 1\n")
+            process.stdin.flush()
+            assert process.stdout.readline().strip() == "input"
+            while len(released) < len(serials):
+                record_idle(c.packet())
+            assert released == serials, released
+            assert time.monotonic() - stop_limit < 0.9
             c.close()
-            print(f"PASS: 30 FPS limits producer buffer reuse; first IDLE at {elapsed:.3f}s")
+            print(f"PASS: 30 FPS paces IDLE ({elapsed:.3f}s) and disabling drains pending releases in order")
         finally:
             process.terminate()
             try:

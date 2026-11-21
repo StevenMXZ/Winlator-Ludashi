@@ -1,10 +1,10 @@
 #include "native_drawable.h"
-#include "core/exceptions.h"
+#include "core/request_error.h"
 
-namespace xorg {
+namespace ludashi::x11 {
 static std::atomic<u64> next_drawable{1};
 NativeDrawable::NativeDrawable(u16 w, u16 h, u8 d, AHardwareBuffer* ahb)
-    : Drawable(w, h, d, nullptr), stride(u32(w) * 4), id(next_drawable.fetch_add(1)) {
+    : width(w), height(h), depth(d), stride(u32(w) * 4), id(next_drawable.fetch_add(1, std::memory_order_relaxed)) {
     if (!w || !h || w > 16384 || h > 16384 || u64(w) * h > 64 * 1024 * 1024)
         throw BadAllocError();
     if (ahb) {
@@ -20,8 +20,9 @@ NativeDrawable::NativeDrawable(u16 w, u16 h, u8 d, AHardwareBuffer* ahb)
     } else pixels = std::make_shared<std::vector<u8>>(size_t(stride) * h);
 }
 NativeDrawable::~NativeDrawable() {
-    // The Drawable base class owns and releases the acquired AHardwareBuffer.
-    if (buffer && locked) AHardwareBuffer_unlock(buffer, nullptr);
+    if (!buffer) return;
+    if (locked) AHardwareBuffer_unlock(buffer, nullptr);
+    AHardwareBuffer_release(buffer);
 }
 void NativeDrawable::Writable() {
     if (buffer) { Map(); ++revision; return; }
@@ -36,11 +37,6 @@ void* NativeDrawable::Map() {
         locked = true;
     }
     return buffer ? mapped : pixels->data();
-}
-sp<Drawable> NativeDrawable::Clone() {
-    auto result = std::make_shared<NativeDrawable>(width, height, depth);
-    ReadPixels(static_cast<u8*>(result->Map()), 0, 0, width, height, width);
-    return result;
 }
 void NativeDrawable::ReadPixels(u8* dst, s16 x, s16 y, u16 w, u16 h, u16 dst_stride) {
     if (x < 0 || y < 0 || u32(x) + w > width || u32(y) + h > height || dst_stride < w)
@@ -92,14 +88,24 @@ void NativeDrawable::CopyAreaFrom(NativeDrawable& source, s16 sx, s16 sy, s16 dx
                      source.pixels->data() + size_t(sourceY + row) * source.stride + size_t(sourceX) * 4, bytes);
     }
 }
-void NativeDrawable::FillRect(s16 x, s16 y, u16 w, u16 h, u32 color) {
-    // Reject empty/clipped requests before COW, mapping or revision changes.
-    if (!w || !h || int(x) >= width || int(y) >= height || int(x) + w <= 0 || int(y) + h <= 0) return;
-    Writable(); auto* dst = static_cast<u8*>(Map());
-    for (int row = std::max(0, int(y)); row < std::min(int(height), int(y) + h); ++row) {
-        auto* line = reinterpret_cast<u32*>(dst + size_t(row) * stride);
-        std::fill(line + std::clamp(int(x), 0, int(width)),
-                  line + std::clamp(int(x) + w, 0, int(width)), color);
+void NativeDrawable::FillRect(s32 x, s32 y, u32 w, u32 h, u32 color) {
+    const auto left = std::max(0, x), top = std::max(0, y);
+    const auto right = std::min<int64_t>(width, int64_t{x} + w);
+    const auto bottom = std::min<int64_t>(height, int64_t{y} + h);
+    // Clip wide intermediate coordinates before COW, mapping or revision changes.
+    if (left >= right || top >= bottom) return;
+    u8* destination = nullptr;
+    FillClipped(left, top, right, bottom, color, destination);
+}
+
+void NativeDrawable::FillClipped(s32 left, s32 top, s32 right, s32 bottom, u32 color, u8*& destination) {
+    if (!destination) {
+        Writable();
+        destination = static_cast<u8*>(Map());
+    }
+    for (auto row = top; row < bottom; ++row) {
+        auto* line = reinterpret_cast<u32*>(destination + size_t(row) * stride);
+        std::fill(line + left, line + right, color);
     }
 }
 void NativeDrawable::WriteBinaryPixels(const u8* src, u16 w, u16 h, u32 fg, u32 bg) {
@@ -111,23 +117,38 @@ void NativeDrawable::WriteBinaryPixels(const u8* src, u16 w, u16 h, u32 fg, u32 
             reinterpret_cast<u32*>(dst + size_t(y) * stride)[x] =
                 (src[y * row_bytes + x / 8] & (1u << (x % 8))) ? fg : bg;
 }
-void NativeDrawable::Line(Point a, Point b, u32 color, u32 line_width) {
+void NativeDrawable::Line(xPoint a, xPoint b, u32 color, u32 line_width, u8*& destination) {
+    const int radius = std::clamp<int>(line_width, 1, 64) / 2;
+    const int left = std::max(0, std::min(a.x, b.x) - radius);
+    const int top = std::max(0, std::min(a.y, b.y) - radius);
+    const int right = std::min(int(width), std::max(a.x, b.x) + radius + 1);
+    const int bottom = std::min(int(height), std::max(a.y, b.y) + radius + 1);
+    if (left >= right || top >= bottom) return;
+    if (a.x == b.x || a.y == b.y) {
+        FillClipped(left, top, right, bottom, color, destination);
+        return;
+    }
+
     int x = a.x, y = a.y, dx = std::abs(int(b.x) - x), sx = x < b.x ? 1 : -1;
     int dy = -std::abs(int(b.y) - y), sy = y < b.y ? 1 : -1, error = dx + dy;
-    int radius = std::clamp<int>(line_width, 1, 64) / 2;
     for (;;) {
-        FillRect(x - radius, y - radius, std::max(1, radius * 2 + 1), std::max(1, radius * 2 + 1), color);
+        const int stampLeft = std::max(left, x - radius), stampTop = std::max(top, y - radius);
+        const int stampRight = std::min(right, x + radius + 1), stampBottom = std::min(bottom, y + radius + 1);
+        if (stampLeft < stampRight && stampTop < stampBottom)
+            FillClipped(stampLeft, stampTop, stampRight, stampBottom, color, destination);
         if (x == b.x && y == b.y) break;
         int twice = 2 * error;
         if (twice >= dy) { error += dy; x += sx; }
         if (twice <= dx) { error += dx; y += sy; }
     }
 }
-void NativeDrawable::DrawLines(const Point* p, u32 n, u32 color, u32 width) {
-    for (u32 i = 1; i < n; ++i) Line(p[i - 1], p[i], color, width);
+void NativeDrawable::DrawLines(const xPoint* p, u32 n, u32 color, u32 width) {
+    u8* destination = nullptr;
+    for (u32 i = 1; i < n; ++i) Line(p[i - 1], p[i], color, width, destination);
 }
-void NativeDrawable::DrawPolySegments(const PolySegment* p, u32 n, u32 color, u32 width) {
-    for (u32 i = 0; i < n; ++i) Line(p[i].p1, p[i].p2, color, width);
+void NativeDrawable::DrawPolySegments(const xSegment* p, u32 n, u32 color, u32 width) {
+    u8* destination = nullptr;
+    for (u32 i = 0; i < n; ++i) Line({p[i].x1, p[i].y1}, {p[i].x2, p[i].y2}, color, width, destination);
 }
 }
 

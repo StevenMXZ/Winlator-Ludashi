@@ -10,15 +10,15 @@ int main() {
     // Sanitizer runners may deschedule a newly launched thread for >100 ms.
     constexpr auto schedulingTimeout = 2s;
     {
-        auto defaults = xorg::CreateNativeRenderer(1280, 720);
+        auto defaults = ludashi::x11::CreateNativeRenderer(1280, 720);
         defaults->Surface(new ANativeWindow);
         if (VulkanRendererContext::instance->validationRequested) return 13;
         if (VulkanRendererContext::instance->presentMode != 2) return 14;
     }
     {
-        auto wfgRenderer = xorg::CreateNativeRenderer(1280, 720);
+        auto wfgRenderer = ludashi::x11::CreateNativeRenderer(1280, 720);
         wfgRenderer->Surface(new ANativeWindow);
-        xorg::NativeVisualOptions wfgOptions;
+        ludashi::x11::NativeVisualOptions wfgOptions;
         wfgOptions.frameGenEngine = 1; wfgOptions.frameGen = true;
         wfgRenderer->VisualOptions(wfgOptions);
         if (!wfgRenderer->VisualState().enabled || VulkanRendererContext::instance->frameGenEngine != 1 ||
@@ -27,15 +27,15 @@ int main() {
         wfgRenderer->VisualOptions(wfgOptions);
         if (wfgRenderer->VisualState().enabled) return 32;
     }
-    xorg::NativeRendererConfig config;
+    ludashi::x11::NativeRendererConfig config;
     config.presentMode = 1;
     config.swapRB = true;
-    auto renderer = xorg::CreateNativeRenderer(1280, 720, true, config);
+    auto renderer = ludashi::x11::CreateNativeRenderer(1280, 720, true, config);
     renderer->Surface(new ANativeWindow);
     auto* context = VulkanRendererContext::instance;
     if (!context->validationRequested) return 12;
     if (context->presentMode != 1 || !context->swapRB) return 15;
-    xorg::NativeVisualOptions options;
+    ludashi::x11::NativeVisualOptions options;
     renderer->VisualOptions(options);
     if (renderer->VisualState().enabled || context->filter || context->postFX || context->stretch) return 21;
     options.filter = 4; options.postFX = 2; options.stretch = 1; options.sharpness = .75f;
@@ -49,7 +49,7 @@ int main() {
     if (renderer->VisualState().enabled || renderer->VisualState().supported || context->frameGenRequested) return 24;
     context->frameGenSupported = true;
     renderer->VisualOptions(options);
-    xorg::NativeFrame frame;
+    ludashi::x11::NativeFrame frame;
     frame.frameGenSourceFrames = 41;
     if (!renderer->Draw(frame)) return 1;
     if (context->sourceFrames != 41) return 25;
@@ -103,7 +103,7 @@ int main() {
     auto imported = [] {
         auto* buffer = new AHardwareBuffer;
         buffer->desc = {16,16,1,5,0,16}; buffer->pixels.resize(16*16*4);
-        auto image = std::make_shared<xorg::NativeDrawable>(16,16,32,buffer);
+        auto image = std::make_shared<ludashi::x11::NativeDrawable>(16,16,32,buffer);
         AHardwareBuffer_release(buffer); return image;
     };
     options.frameGenEngine = 1; options.frameGen = true; options.frameGenCache.clear();
@@ -116,7 +116,7 @@ int main() {
     context->acquireEntered = false; context->acquireBlocked = true;
     const auto callsBefore = context->boundImages;
     std::atomic<unsigned> latches{};
-    const xorg::NativeFrameLatch latch = [&](xorg::NativeFrame& selected) {
+    const ludashi::x11::NativeFrameLatch latch = [&](ludashi::x11::NativeFrame& selected) {
         ++latches;
         selected.frameGenSourceFrames = 101;
         selected.entries[0] = {newestImage, nullptr, newestImage->Pixels(), newestImage->Revision(), 0,0,true};
@@ -144,7 +144,7 @@ int main() {
     context->acquireFails = false;
     bool failed = false;
     try {
-        renderer->Draw(frame, [](xorg::NativeFrame&) { throw std::runtime_error("mock latch failure"); });
+        renderer->Draw(frame, [](ludashi::x11::NativeFrame&) { throw std::runtime_error("mock latch failure"); });
     } catch (const std::runtime_error&) { failed = true; }
     if (!failed || context->nativeFrameReady || context->nativeFrameReadyData) return 18;
     std::cout << "PASS: failed acquire does not latch; failed preparation cannot leave a dangling callback\n";

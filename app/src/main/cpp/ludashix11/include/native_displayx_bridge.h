@@ -1,14 +1,14 @@
 #pragma once
 #include <memory>
-namespace xorg {
-class XServer;
+namespace ludashi::x11 {
+class DisplayRuntime;
 class NativeDisplayXBridge {
     struct Impl;
     std::unique_ptr<Impl> impl;
 
   public:
-    explicit NativeDisplayXBridge(XServer &);
+    explicit NativeDisplayXBridge(DisplayRuntime &);
     ~NativeDisplayXBridge();
     void ResetState();
 };
-} // namespace xorg
+} // namespace ludashi::x11

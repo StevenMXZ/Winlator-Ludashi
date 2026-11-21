@@ -9,6 +9,6 @@ with tempfile.TemporaryDirectory(prefix='ludashi-drawable-') as directory:
     subprocess.run([os.environ.get('CXX','g++'),'-std=c++20','-O1','-g','-fsanitize=address,undefined',
         '-fno-omit-frame-pointer','-DFMT_HEADER_ONLY=1','-include',str(root/'include/common.h'),
         *['-I'+str(root/p) for p in ['.','include','third_party','tests/stubs']],
-        str(root/'tests/test_drawable.cpp'),str(root/'src/native_drawable.cpp'),str(root/'core/drawable.cpp'),
+        str(root/'tests/test_drawable.cpp'),str(root/'src/native_drawable.cpp'),
         '-o',str(binary)],check=True)
     subprocess.run([str(binary)],check=True)

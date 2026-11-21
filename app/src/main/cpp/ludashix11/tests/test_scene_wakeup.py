@@ -26,6 +26,13 @@ def run(binary):
                 assert process.stdout.readline().strip() == "ready"
                 c = Client(channel)
                 win, pixmap = c.base | 1, c.base | 2
+                # Test scene retirement with an explicit zero-hotspot image.
+                source, cursor = c.base | 4, c.base | 5
+                c.send(53, 1, struct.pack("<IIHH", source, c.root, 1, 1))
+                c.send(93, payload=struct.pack("<III8H", cursor, source, 0,
+                    0, 0, 0, 65535, 65535, 65535, 0, 0))
+                c.send(2, payload=struct.pack("<III", c.root, 1 << 14, cursor))
+                c.barrier()
                 c.send(1, payload=struct.pack("<IIhhHHHHII", win, c.root, 0, 0, 64, 64, 0, 1, 0, 0))
                 c.send(8, payload=struct.pack("<I", win))
                 c.send(53, 24, struct.pack("<IIHH", pixmap, win, 64, 64))
@@ -59,7 +66,7 @@ def run(binary):
                 c.barrier()
                 # No more producer input: GPU retirement alone must wake Draw.
                 sampled(130)
-                assert re.search(r"HostScene serial=130 .*cursor_x=708 cursor_y=396", path.read_text()), path.read_text()
+                assert re.search(r"HostScene serial=130 .*cursor_x=723 cursor_y=411", path.read_text()), path.read_text()
                 c.close()
                 print("PASS: latest Present and cursor progress after GPU-slot saturation without further input")
             finally:

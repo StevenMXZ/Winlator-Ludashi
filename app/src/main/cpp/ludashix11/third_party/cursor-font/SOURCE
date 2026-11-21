@@ -1,0 +1,6 @@
+X.Org font-cursor-misc 1.0.4
+https://www.x.org/releases/individual/font/font-cursor-misc-1.0.4.tar.xz
+Archive SHA-256 25d9c9595013cb8ca08420509993a6434c917e53ca1fec3f63acd45a19d4f982
+
+cursor.bdf and COPYING are copied verbatim from the upstream archive.
+Regenerate core/cursor/font_data.inc using core/cursor/generate_font.py.

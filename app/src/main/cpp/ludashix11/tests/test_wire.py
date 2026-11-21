@@ -11,7 +11,7 @@ def exact(s, n):
     return data
 
 class Client:
-    def __init__(self, path, fragmented=False):
+    def __init__(self, path, fragmented=False, opening=b""):
         self.sock, peer = socket.socketpair()
         self.sock.settimeout(3)
         path.sendmsg([b'c'], [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array('i', [peer.fileno()]))])
@@ -19,9 +19,9 @@ class Client:
         auth = b'fake' + b'1234'
         prefix = struct.pack('<BBHHHHH', 108, 0, 11, 0, 4, 4, 0)
         if fragmented:
-            for part in [prefix[:3], prefix[3:9], prefix[9:]+auth[:2], auth[2:]]:
+            for part in [prefix[:3], prefix[3:9], prefix[9:]+auth[:2], auth[2:]+opening]:
                 self.sock.sendall(part); time.sleep(.002)
-        else: self.sock.sendall(struct.pack('<BBHHHHH',108,0,11,0,0,0,0))
+        else: self.sock.sendall(struct.pack('<BBHHHHH',108,0,11,0,0,0,0) + opening)
         p=exact(self.sock,8); assert p[0]==1,p
         setup=exact(self.sock,struct.unpack_from('<H',p,6)[0]*4)
         self.base,self.mask=struct.unpack_from('<II',setup,4)
@@ -59,6 +59,19 @@ def run(binary):
         channel.close()
         try:
             assert process.stdout.readline().strip()=='ready'
+            # Put the last setup fragment and more than a full command budget
+            # in one write. Errors and trailing replies must drain without
+            # waiting for any subsequent client socket activity.
+            invalid_window = 0x1fffffff
+            initial = struct.pack('<BBHI', 15, 77, 2, invalid_window)
+            initial += struct.pack('<BBH', 127, 0, 1) * 65
+            initial += struct.pack('<BBH', 43, 0, 1)
+            with Client(path, fragmented=True, opening=initial).sock as startup_socket:
+                failure = exact(startup_socket, 32)
+                assert failure == struct.pack('<BBHIHB21x', 0, 3, 1, invalid_window, 0, 15), failure.hex()
+                reply = exact(startup_socket, 32)
+                assert reply[0] == 1 and struct.unpack_from('<H', reply, 2)[0] == 67, reply.hex()
+
             c=Client(path,True)
             extensions={name:c.extension(name) for name in ['BIG-REQUESTS','DRI3','Present','SYNC','RANDR','MIT-SHM']}
             for name,opcode in extensions.items():
@@ -77,6 +90,9 @@ def run(binary):
             c.send(1,payload=struct.pack('<IIhhHHHHII',win,c.root,0,0,64,64,0,1,0,0),fragment=True)
             c.send(8,payload=struct.pack('<I',win));c.barrier()
             p=c.reply(c.send(14,payload=struct.pack('<I',win)));assert struct.unpack_from('<HH',p,16)==(64,64)
+            keymap_event = bytes((0x80 | 11, *range(1, 32)))
+            c.send(25, payload=struct.pack('<II', win, 0) + keymap_event)
+            assert c.packet() == keymap_event
             c.send(53,24,struct.pack('<IIHH',pix,win,64,64))
             c.send(55,payload=struct.pack('<III',gc,pix,4)+struct.pack('<I',0x123456))
             c.send(70,payload=struct.pack('<IIhhHH',pix,gc,0,0,64,64))
@@ -94,6 +110,79 @@ def run(binary):
             assert struct.unpack_from('<I',p,32)[0]&0xffffff==0xabcdef
             # Keyboard map checks every range; ASAN detects the upstream index bug.
             p=c.reply(c.send(101,payload=struct.pack('<BBH',8,248,0)));assert len(p)==32+248*8
+            # Atom IDs are shared across clients of the same display.
+            def intern(client, name, existing=False):
+                payload = struct.pack('<HH', len(name), 0) + name + b'\0' * (-len(name) % 4)
+                return struct.unpack_from('<I', client.reply(client.send(16, existing, payload)), 8)[0]
+            assert intern(c, b'WM_CLASS', True) == 67
+            test_atom = b'_LUDASHI_WIRE_TEST'
+            atom = intern(c, test_atom)
+            assert atom > 68 and intern(c, test_atom) == atom
+            p = c.reply(c.send(17, payload=struct.pack('<I', atom)))
+            assert p[32:32 + len(test_atom)] == test_atom
+            assert intern(c, b'_LUDASHI_ABSENT_ATOM', True) == 0
+
+            # An oversized reply must discard its staged header before the
+            # X error. The following variable-length reply stays well formed.
+            for mode in (0, 2):
+                body = struct.pack('<IIIB3xI', c.root, atom, 31, 8, 8 * 1024 * 1024)
+                body += b'x' * (8 * 1024 * 1024)
+                c.seq += 1
+                c.sock.sendall(struct.pack('<BBHI', 18, mode, 0, (len(body) + 8) // 4) + body)
+                c.barrier()
+            c.send(20, payload=struct.pack('<IIIII', c.root, atom, 31, 0, 4 * 1024 * 1024))
+            error = c.packet()
+            assert error[0] == 0 and error[1] == 11, error.hex()
+            p = c.reply(c.send(17, payload=struct.pack('<I', atom)))
+            assert p[32:32 + len(test_atom)] == test_atom
+            c.send(19, payload=struct.pack('<II', c.root, atom))
+            c.barrier()
+
+            # Releasing a selection twice sends one clear event. The following
+            # reply must arrive without a second clear event.
+            c.send(22, payload=struct.pack('<III', win, atom, 0))
+            selection = struct.pack('<I', atom)
+            p = c.reply(c.send(23, payload=selection))
+            assert struct.unpack_from('<I', p, 8)[0] == win
+            for _ in range(2):
+                c.send(22, payload=struct.pack('<III', 0, atom, 0))
+            clear = c.packet()
+            assert clear[0] == 29 and struct.unpack_from('<II', clear, 8) == (win, atom)
+            seq = c.send(23, payload=selection)
+            p = c.packet()
+            assert p[0] == 1 and struct.unpack_from('<H', p, 2)[0] == seq
+            assert struct.unpack_from('<I', p, 8)[0] == 0
+
+            # Dropping an owner window must clear all of its selections while
+            # leaving other claims reachable after the active list compacts.
+            temporary = Client(path)
+            other_win = temporary.base | 1
+            temporary.send(1, payload=struct.pack('<IIhhHHHHII', other_win, c.root, 0, 0, 8, 8, 0, 1, 0, 0))
+            temporary.send(22, payload=struct.pack('<III', other_win, 1, 0))
+            temporary.barrier()
+            c.send(22, payload=struct.pack('<III', win, atom, 0))
+            c.barrier()
+            temporary.send(22, payload=struct.pack('<III', other_win, 2, 0))
+            temporary.send(4, payload=struct.pack('<I', other_win))
+            temporary.barrier()
+            for selected, expected in ((1, 0), (2, 0), (atom, win)):
+                reply = c.reply(c.send(23, payload=struct.pack('<I', selected)))
+                assert struct.unpack_from('<I', reply, 8)[0] == expected, reply.hex()
+            temporary.close()
+
+            # A burst of replies larger than the socket buffer must preserve
+            # sequence order and leave another client's requests runnable.
+            slow = Client(path)
+            assert intern(slow, test_atom, True) == atom
+            keymap = struct.pack('<BBHBBH', 101, 0, 2, 8, 248, 0)
+            slow.sock.sendall(keymap * 256)
+            c.barrier()
+            for sequence in range(2, 258):
+                p = slow.packet()
+                assert p[0] == 1 and struct.unpack_from('<H', p, 2)[0] == sequence
+                assert len(p) == 32 + 248 * 8
+            slow.close()
+
             # RandR exposes a connected fixed-resolution output and a mode.
             p=c.reply(c.send(extensions['RANDR'],8,struct.pack('<I',c.root)))
             assert struct.unpack_from('<HHH',p,16)==(1,1,1)
@@ -176,6 +265,30 @@ def run(binary):
                 peer=Client(path);peer.barrier();peer.close()
             # Unknown opcodes are X errors and do not crash the entire Android process.
             peer=Client(path);peer.send(126);assert peer.packet()[0]==0;peer.barrier();peer.close()
+            # Framing checks apply to each request span, including when the
+            # next request is already buffered immediately after it.
+            peer = Client(path)
+            malformed = [
+                (16, 0, struct.pack('<HH', 500, 0), 16),
+                (14, 0, b'', 16),
+                (55, 0, struct.pack('<III', peer.base | 1, peer.root, 4), 16),
+                (2, 0, struct.pack('<II', peer.root, 2), 16),
+                (98, 0, struct.pack('<HH', 400, 0), 16),
+            ]
+            for opcode, data, payload, error in malformed:
+                seq = peer.send(opcode, data, payload)
+                packet = peer.packet()
+                assert packet[0] == 0 and packet[1] == error, packet.hex()
+                assert struct.unpack_from('<H', packet, 2)[0] == seq
+                peer.barrier()
+            gc = peer.base | 2
+            peer.send(55, payload=struct.pack('<III', gc, peer.root, 0))
+            peer.barrier()
+            peer.send(55, payload=struct.pack('<III', gc, peer.root, 0))
+            packet = peer.packet()
+            assert packet[0] == 0 and packet[1] == 14, packet.hex()
+            peer.barrier()
+            peer.close()
             # Deliberately incomplete requests must not monopolize epoll.
             peer=Client(path);peer.sock.sendall(b'\x01\x00');peer.close()
             peer=Client(path);peer.barrier();peer.close()

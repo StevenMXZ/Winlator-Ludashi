@@ -7,7 +7,7 @@
 #include <sys/syscall.h>
 #include <dlfcn.h>
 
-namespace xorg {
+namespace ludashi::x11 {
 namespace {
 struct SurfaceAPI {
     struct Library {
@@ -523,4 +523,4 @@ std::unique_ptr<NativeRenderer> CreateNativeDisplayXRenderer(u16 w, u16 h,
                                                              const NativeRendererConfig &config) {
     return std::make_unique<DisplayXNativeRenderer>(w, h, config);
 }
-} // namespace xorg
+} // namespace ludashi::x11

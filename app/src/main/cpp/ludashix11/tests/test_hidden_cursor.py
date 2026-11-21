@@ -24,6 +24,14 @@ def run(binary):
                 assert process.stdout.readline().strip() == 'ready'
                 c = Client(channel)
                 win, pixmap = c.base | 1, c.base | 2
+                # An explicit zero-hotspot cursor keeps this visibility test
+                # independent of the built-in font's cropped canvas.
+                source, cursor = c.base | 3, c.base | 4
+                c.send(53, 1, struct.pack('<IIHH', source, c.root, 1, 1))
+                c.send(93, payload=struct.pack('<III8H', cursor, source, 0,
+                    0, 0, 0, 65535, 65535, 65535, 0, 0))
+                c.send(2, payload=struct.pack('<III', c.root, 1 << 14, cursor))
+                c.barrier()
                 c.send(1, payload=struct.pack('<IIhhHHHHII', win, c.root, 0, 0, 64, 64, 0, 1, 0, 0))
                 c.send(8, payload=struct.pack('<I', win))
                 c.send(53, 24, struct.pack('<IIHH', pixmap, win, 64, 64))
@@ -47,7 +55,7 @@ def run(binary):
                 process.stdin.write('cursor 1\n'); process.stdin.flush()
                 assert process.stdout.readline().strip() == 'input'
                 deadline = time.monotonic() + 3
-                while 'cursor_x=416 cursor_y=216' not in path.read_text():
+                while 'cursor_x=431 cursor_y=231' not in path.read_text():
                     assert time.monotonic() < deadline, path.read_text()
                     time.sleep(.005)
                 c.close()

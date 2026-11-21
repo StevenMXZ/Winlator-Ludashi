@@ -32,7 +32,7 @@ target_link_options(xpp_backend_test PRIVATE -Wl,--no-undefined)
 ''')
     (folder / 'factory.cpp').write_text('''
 #include "native_screen.h"
-namespace xorg {
+namespace ludashi::x11 {
 std::unique_ptr<NativeRenderer> CreateNativeEGLRenderer(u16, u16, const NativeRendererConfig&);
 std::unique_ptr<NativeRenderer> CreateNativeDisplayXRenderer(u16, u16, const NativeRendererConfig&);
 std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 w, u16 h, bool, const NativeRendererConfig& c) {

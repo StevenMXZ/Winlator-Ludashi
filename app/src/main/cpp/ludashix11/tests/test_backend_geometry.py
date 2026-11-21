@@ -10,7 +10,7 @@ source = r'''
 #include <cassert>
 #include <cmath>
 int main() {
-    xorg::NativeBackendGeometry g; NativeMagnifierPan pan;
+    ludashi::x11::NativeBackendGeometry g; NativeMagnifierPan pan;
     g.Update(1920, 1080, 1280, 1024, false, 1, 0, 0, pan);
     assert(g.sx == g.sy && g.left == 285 && g.top == 0);
     assert(std::abs(g.ox - 285) < .01 && g.right == 1635);

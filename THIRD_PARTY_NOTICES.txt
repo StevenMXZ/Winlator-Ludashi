@@ -4,6 +4,12 @@ This file preserves the complete text of the original third-party notice and lic
 The project is licensed under GPL-3.0; see LICENSE.
 Third-party components retain their respective licenses.
 
+The native X11 protocol headers in app/src/main/cpp/ludashix11/third_party/X11
+come from the X.Org xorgproto 2025.1 release. Each header preserves its upstream
+copyright and license text.
+Source archive https://www.x.org/releases/individual/proto/xorgproto-2025.1.tar.xz
+SHA-256 56898c716c0578df8a2d828c9c3e5c528277705c0484381a81960fe1a67668e8
+
 ============================================================================
 ORIGINAL FILE: NOTICE_7ZIP.txt
 ============================================================================

@@ -53,17 +53,17 @@ extern "C" EGLBoolean eglDestroySyncKHR(EGLDisplay d, EGLSyncKHR s) {
     return eglDestroySync(d, s);
 }
 
-namespace xorg {
+namespace ludashi::x11 {
 std::unique_ptr<NativeRenderer> CreateNativeEGLRenderer(u16, u16, const NativeRendererConfig &);
 }
-static std::array<u8, 4> Pixel(int x, int y) {
-    std::array<u8, 4> result{};
+static std::array<std::uint8_t, 4> Pixel(int x, int y) {
+    std::array<std::uint8_t, 4> result{};
     glReadPixels(x, 719 - y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, result.data());
     assert(glGetError() == GL_NO_ERROR);
     return result;
 }
 int main() {
-    using namespace xorg;
+    using namespace ludashi::x11;
     NativeRendererConfig config;
     config.backend = NativeRendererConfig::Backend::EGL;
     {

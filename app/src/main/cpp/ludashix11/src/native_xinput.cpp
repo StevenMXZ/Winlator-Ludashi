@@ -1,13 +1,13 @@
-#include "core/xclient.h"
-#include "core/xclient_dispatch.h"
-#include "core/xserver.h"
-#include "core/window.h"
-#include "core/window_manager.h"
-#include "core/extension.h"
+#include "core/client_session.h"
+#include "core/display_runtime.h"
+#include "core/pointer_input.h"
+#include "core/window_node.h"
+#include "core/window_tree.h"
+#include "core/wire_extensions.h"
 #include <array>
 #include <cstring>
 
-namespace xorg {
+namespace ludashi::x11 {
 namespace {
 constexpr u32 rawEvents = (1u << 15) | (1u << 16) | (1u << 17);
 
@@ -32,22 +32,22 @@ struct Wire {
 };
 }
 
-void XServer::SelectRawInput(XClient* client, bool enabled) {
+void DisplayRuntime::SelectRawInput(ClientSession* client, bool enabled) {
     if (enabled) rawInputClients.insert(client);
     else rawInputClients.erase(client);
 }
 
-void XServer::SendRawMotion(s32 dx, s32 dy) {
+void DisplayRuntime::SendRawMotion(s32 dx, s32 dy) {
     if (!dx && !dy) return;
     // No allocations or client-table scan when XI2 has no subscribers.
     for (auto* client : rawInputClients) client->SendXIRawEvent(17, 0, dx, dy);
 }
 
-void XServer::SendRawButton(u16 button, bool down) {
+void DisplayRuntime::SendRawButton(u16 button, bool down) {
     for (auto* client : rawInputClients) client->SendXIRawEvent(down ? 15 : 16, button);
 }
 
-void XClient::SendXIRawEvent(u16 type, u32 detail, s32 dx, s32 dy) {
+void ClientSession::SendXIRawEvent(u16 type, u32 detail, s32 dx, s32 dy) {
     if (is_dead || !(xiRawMask & (1u << type))) return;
     std::array<u8, 68> packet{};
     packet[0] = GenericEvent; packet[1] = xiOpcode;
@@ -65,10 +65,10 @@ void XClient::SendXIRawEvent(u16 type, u32 detail, s32 dx, s32 dy) {
     WriteImmediately(packet.data(), type == 17 ? packet.size() : 32);
 }
 
-void XClient::ProcXInput() {
+void ClientSession::ProcXInput() {
     const auto* request = GetRequestData<xReq>();
     const u8 minor = request->data;
-    const auto* extension = server.GetExtensionManager().FindExtension("XInputExtension");
+    const auto* extension = &WireExtensions::At(ExtensionOpcode::XInput);
     xiOpcode = extension->base;
     auto word = [&](size_t offset) {
         if (offset + 2 > request_size) throw BadLengthError();
@@ -119,28 +119,29 @@ void XClient::ProcXInput() {
         const u32 sourceId = dword(4), destinationId = dword(8);
         const u16 device = word(32);
         if (device != 2 && device != 4) badDevice(device);
-        auto* source = sourceId ? GetResourceAs<Window>(sourceId) : nullptr;
-        auto* destination = destinationId ? GetResourceAs<Window>(destinationId) : nullptr;
+        auto* source = sourceId ? GetResourceAs<WindowNode>(sourceId) : nullptr;
+        auto* destination = destinationId ? GetResourceAs<WindowNode>(destinationId) : nullptr;
         if (sourceId && !source) throw BadWindowError(sourceId);
         if (destinationId && !destination) throw BadWindowError(destinationId);
-        auto& mouse = server.GetMouse();
+        auto& mouse = server.PointerDevice();
+        const auto [pointerX, pointerY] = server.Windows().GetPointerPosition();
         if (source) {
-            const double left = source->GetInRect().left + s32(dword(12)) / 65536.0;
-            const double top = source->GetInRect().top + s32(dword(16)) / 65536.0;
-            const double right = word(20) ? left + word(20) : source->GetInRect().right;
-            const double bottom = word(22) ? top + word(22) : source->GetInRect().bottom;
-            if (mouse.GetX() < left || mouse.GetX() >= right || mouse.GetY() < top || mouse.GetY() >= bottom) return;
+            const double left = source->ContentBounds().left + s32(dword(12)) / 65536.0;
+            const double top = source->ContentBounds().top + s32(dword(16)) / 65536.0;
+            const double right = word(20) ? left + word(20) : source->ContentBounds().right;
+            const double bottom = word(22) ? top + word(22) : source->ContentBounds().bottom;
+            if (pointerX < left || pointerX >= right || pointerY < top || pointerY >= bottom) return;
         }
         const s32 x = s32(std::floor(s32(dword(24)) / 65536.0));
         const s32 y = s32(std::floor(s32(dword(28)) / 65536.0));
-        mouse.WarpTo(x + (destination ? destination->GetInRect().left : mouse.GetX()),
-                     y + (destination ? destination->GetInRect().top : mouse.GetY()));
+        mouse.WarpTo(x + (destination ? destination->ContentBounds().left : pointerX),
+                     y + (destination ? destination->ContentBounds().top : pointerY));
         return;
     }
     case 46: {
         const u32 window = dword(4); const u16 count = word(8);
         if (request_size < 12) throw BadLengthError();
-        if (!GetResourceAs<Window>(window)) throw BadWindowError(window);
+        if (!GetResourceAs<WindowNode>(window)) throw BadWindowError(window);
         std::unordered_map<u16, u32> changes;
         size_t offset = 12;
         for (u16 i = 0; i < count; ++i) {
@@ -153,7 +154,7 @@ void XClient::ProcXInput() {
         }
         if (offset != request_size) throw BadLengthError();
         // This subset delivers raw events only on the immortal root window.
-        if (window != server.GetWindowManager().GetRootWindow()->id) return;
+        if (window != server.Windows().GetRootWindow()->id) return;
         auto& masks = xiSelections[window];
         for (const auto& [device, mask] : changes) {
             if (mask) masks[device] = mask;
@@ -161,7 +162,7 @@ void XClient::ProcXInput() {
         }
         if (masks.empty()) xiSelections.erase(window);
         xiRawMask = 0;
-        const auto root = xiSelections.find(server.GetWindowManager().GetRootWindow()->id);
+        const auto root = xiSelections.find(server.Windows().GetRootWindow()->id);
         if (root != xiSelections.end()) for (u16 device : {0, 1, 2}) {
             const auto mask = root->second.find(device);
             if (mask != root->second.end()) xiRawMask |= mask->second & rawEvents;
@@ -184,7 +185,7 @@ void XClient::ProcXInput() {
             packet.byte(1); packet.byte(0); packet.name(name);
             if (!device.pointer) continue;
             packet.word(1); packet.word(10); packet.word(4); packet.word(7);
-            packet.dword((server.GetMouse().GetButtons() >> 7) & 0xfe);
+            packet.dword((server.Windows().GetButtonMasks() >> 7) & 0xfe);
             packet.zeros(7 * 4);
             for (u16 axis : {0, 1}) {
                 packet.word(2); packet.word(11); packet.word(4); packet.word(axis);

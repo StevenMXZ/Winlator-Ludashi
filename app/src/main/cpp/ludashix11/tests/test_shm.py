@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from test_wire import Client, exact
 
 
@@ -22,7 +23,10 @@ def run(binary):
         fd = os.memfd_create('winlator-shm-test', os.MFD_CLOEXEC)
         os.ftruncate(fd, len(pixels))
         os.write(fd, pixels)
-        commands, failures = [], []
+        replacement = os.memfd_create('winlator-shm-replacement-test', os.MFD_CLOEXEC)
+        os.write(replacement, struct.pack('<I', 0xabcdef) * 64 * 64)
+        empty = os.memfd_create('winlator-shm-empty-test', os.MFD_CLOEXEC)
+        commands, requested_ids, failures = [], [], []
 
         def service():
             try:
@@ -30,11 +34,13 @@ def run(binary):
                     request = exact(shm, 5)
                     command, shmid = struct.unpack('<BI', request)
                     commands.append(command)
+                    requested_ids.append(shmid)
                     # Like SysVSHMRequestHandler: no GET_SIZE command or response.
                     if command == 1:
-                        if shmid == 1:
+                        descriptor = {1: fd, 2: replacement, 3: empty}.get(shmid)
+                        if descriptor is not None:
                             shm.sendmsg([b'\0'], [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
-                                                  array.array('i', [fd]))])
+                                                  array.array('i', [descriptor]))])
                         else:
                             shm.sendall(b'\0')  # Unknown segment: no descriptor.
             except AssertionError:
@@ -73,15 +79,77 @@ def run(binary):
                 client.send(opcode, 1, struct.pack('<IIB3x', segment, 1, 0))
                 client.barrier()
                 assert commands == [1, 1], commands
-                # Missing descriptors yield BadAccess, preserving the X11 client.
-                client.send(opcode, 1, struct.pack('<IIB3x', client.base | 4, 99, 0))
-                error = client.packet()
-                assert error[0] == 0 and error[1] == 10, error.hex()
+                def mappings():
+                    return sum('memfd:winlator-shm-' in line
+                               for line in pathlib.Path(f'/proc/{process.pid}/maps').read_text().splitlines())
+
+                def pixel(segment_id, expected):
+                    client.send(opcode, 3, struct.pack('<IIHHHHHHhhBBBBII',
+                        win, gc, 64, 64, 0, 0, 64, 64, 0, 0, 24, 2, 0, 0, segment_id, 0))
+                    image = client.reply(client.send(73, 2,
+                        struct.pack('<IhhHHI', win, 0, 0, 1, 1, 0xffffffff)))
+                    assert struct.unpack_from('<I', image, 32)[0] & 0xffffff == expected
+
+                alias = client.base | 4
+                client.send(opcode, 1, struct.pack('<IIB3x', alias, 1, 0))
                 client.barrier()
+                assert requested_ids == [1, 1] and mappings() == 1, requested_ids
+
+                # SHM and ordinary resources share the client's XID namespace.
+                client.send(53, 24, struct.pack('<IIHH', alias, win, 64, 64))
+                error = client.packet()
+                assert error[0] == 0 and error[1] == 14, error.hex()
+                client.send(opcode, 1, struct.pack('<IIB3x', win, 1, 0))
+                error = client.packet()
+                assert error[0] == 0 and error[1] == 14, error.hex()
+                client.barrier()
+                pixel(alias, 0x123456)
+                # A rejected window ID must leave both tree and listeners intact.
+                client.send(1, payload=struct.pack('<IIhhHHHHIII',
+                    alias, client.root, 0, 0, 64, 64, 0, 1, 0, 1 << 11, 3))
+                error = client.packet()
+                assert error[0] == 0 and error[1] == 14, error.hex()
+                tree = client.reply(client.send(15, payload=struct.pack('<I', client.root)))
+                assert struct.unpack_from('<H', tree, 16)[0] == 1
+                assert struct.unpack_from('<I', tree, 32)[0] == win
+                pixel(alias, 0x123456)
+
+                # Replacing one alias retains the other alias's original mapping.
+                client.send(opcode, 1, struct.pack('<IIB3x', segment, 2, 0))
+                client.barrier()
+                assert requested_ids == [1, 1, 2] and mappings() == 2, requested_ids
+                pixel(segment, 0xabcdef)
+                pixel(alias, 0x123456)
                 client.send(opcode, 2, struct.pack('<I', segment))
                 client.barrier()
+                assert mappings() == 1
+
+                # Failed replacement preserves the old attachment. Empty
+                # regions and absent descriptors both yield BadAccess.
+                for system_id in (99, 3):
+                    client.send(opcode, 1, struct.pack('<IIB3x', alias, system_id, 0))
+                    error = client.packet()
+                    assert error[0] == 0 and error[1] == 10, error.hex()
+                    pixel(alias, 0x123456)
+
+                # Invalid segment errors preserve the connection.
+                client.send(opcode, 2, struct.pack('<I', segment))
+                error = client.packet()
+                assert error[0] == 0 and error[1] == 128, error.hex()
+                client.barrier()
+
+                # The descriptor can close once mmap succeeds.
+                links = []
+                for entry in pathlib.Path(f'/proc/{process.pid}/fd').iterdir():
+                    try: links.append(os.readlink(entry))
+                    except FileNotFoundError: pass
+                assert not any('memfd:winlator-shm-' in target for target in links), links
                 client.close()
-                print('PASS: disconnected output, Winlator GET_FD-only MIT-SHM attach, pixels, reattach and invalid descriptor')
+                deadline = time.monotonic() + 2
+                while mappings() and time.monotonic() < deadline:
+                    time.sleep(.005)
+                assert mappings() == 0, 'disconnect retained an SHM mapping'
+                print('PASS: GET_FD transport, alias reuse, atomic replacement/failure, pixels, invalid segments, FD release and disconnect cleanup')
             finally:
                 process.terminate()
                 try:
@@ -93,6 +161,8 @@ def run(binary):
                 thread.join(2)
                 shm.close()
                 os.close(fd)
+                os.close(replacement)
+                os.close(empty)
                 log.seek(0)
                 output = log.read()
                 assert process.returncode == 0, output

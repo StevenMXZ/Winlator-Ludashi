@@ -19,11 +19,11 @@ extern "C" void TestReset();
 extern "C" int TestHintCreated();
 extern "C" int TestHintClosed();
 extern "C" int TestHintReports();
-namespace xorg {
+namespace ludashi::x11 {
 std::unique_ptr<NativeRenderer> CreateNativeDisplayXRenderer(u16, u16, const NativeRendererConfig &);
 }
 int main() {
-    using namespace xorg;
+    using namespace ludashi::x11;
     NativeRendererConfig config;
     config.backend = NativeRendererConfig::Backend::DisplayX;
     config.presentMode = 2;
@@ -38,7 +38,7 @@ int main() {
         std::vector<NativeEntry> entries{lower, upper};
         CullCoveredDisplayXLayers(entries);
         assert(entries.size() == 1 && entries[0].window == 2);
-        // Window destination dimensions, not the 32x32 backing image, define coverage.
+        // WindowNode destination dimensions, not the 32x32 backing image, define coverage.
         upper.windowWidth = upper.windowHeight = 32;
         entries = {lower, upper}; CullCoveredDisplayXLayers(entries);
         assert(entries.size() == 2);

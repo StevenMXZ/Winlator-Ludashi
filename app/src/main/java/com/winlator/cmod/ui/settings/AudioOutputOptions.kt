@@ -1,105 +1,131 @@
 package com.winlator.cmod.ui.settings
 
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.dp
 import com.winlator.cmod.R
 import com.winlator.cmod.core.AudioOutputSettings
+import com.winlator.cmod.core.StringUtils
 import com.winlator.cmod.ui.uiStr
+import kotlin.math.roundToInt
 
 internal val audioOutputKeys = listOf(AudioOutputSettings.API, AudioOutputSettings.BUFFER, AudioOutputSettings.LATENCY)
 
 @Composable
-internal fun AudioOutputOptions(
+internal fun AudioDriverOptions(
     driver: String,
+    driverEntries: List<String>,
     value: (String) -> String,
     inherited: ((String) -> String)? = null,
-    onChanged: (String, String?) -> Unit
+    onDriverChanged: (String) -> Unit,
+    onOptionsConfirmed: (Map<String, String>) -> Unit
 ) {
-    if (driver == "alsa-oboe") {
-        val apiLabels = linkedMapOf(AudioOutputSettings.AUTO to uiStr(R.string.ui_default),
-            "aaudio" to "AAudio", "opensles" to "OpenSL ES")
-        AudioOutputChoice(uiStr(R.string.audio_output_api), AudioOutputSettings.API, apiLabels, value, inherited, onChanged)
-        AudioNumberChoice(R.string.audio_buffer_size, R.string.audio_buffer_bytes, R.string.audio_buffer_range,
-            AudioOutputSettings.BUFFER, listOf(512, 1024, 2048, 4096, 8192, 16384, 32768, 65536),
-            AudioOutputSettings::bufferSize, value, inherited, onChanged)
-    } else if (driver == "pulse-audio-gn") {
-        AudioNumberChoice(R.string.audio_pulse_latency, R.string.audio_latency_ms, R.string.audio_latency_range,
-            AudioOutputSettings.LATENCY, listOf(10, 20, 30, 50, 80, 120),
-            AudioOutputSettings::latencyMs, value, inherited, onChanged)
+    val alsa = driver == "alsa-oboe"
+    val hasConfiguration = alsa || driver == "pulse-audio-gn"
+    val configurationLabel = uiStr(R.string.audio_configuration)
+    var configuring by remember(driver) { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) {
+            val selected = driverEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(driver, true) } ?: driver
+            SettingChoice(uiStr(R.string.audio_driver), selected, driverEntries) {
+                onDriverChanged(StringUtils.parseIdentifier(it))
+            }
+        }
+        if (hasConfiguration) {
+            IconButton(onClick = { configuring = true }, modifier = Modifier.padding(end = 6.dp)) {
+                Icon(Icons.Outlined.Settings, contentDescription = configurationLabel)
+            }
+        }
     }
-}
-
-@Composable
-private fun AudioNumberChoice(
-    title: Int,
-    unit: Int,
-    range: Int,
-    key: String,
-    presets: List<Int>,
-    validate: (String) -> Int,
-    value: (String) -> String,
-    inherited: ((String) -> String)?,
-    onChanged: (String, String?) -> Unit
-) {
-    var custom by remember(key) { mutableStateOf<String?>(null) }
-    val current = validate(value(key))
-    val parent = validate(inherited?.invoke(key).orEmpty())
-    val labels = linkedMapOf(AudioOutputSettings.AUTO to uiStr(R.string.ui_default))
-    (presets + current + parent).filter { it > 0 }.distinct().sorted().forEach {
-        labels[it.toString()] = uiStr(unit, it)
-    }
-    labels["custom"] = uiStr(R.string.profile_custom)
-    AudioOutputChoice(uiStr(title), key, labels, value, inherited) { _, chosen ->
-        if (chosen == "custom") custom = (current.takeIf { it > 0 } ?: parent.takeIf { it > 0 })?.toString().orEmpty()
-        else onChanged(key, chosen)
-    }
-    custom?.let { input ->
-        val number = validate(input)
-        AlertDialog(
-            onDismissRequest = { custom = null },
-            title = { Text(uiStr(title)) },
-            text = {
-                OutlinedTextField(input, { if (it.length <= 5 && it.all { character -> character in '0'..'9' }) custom = it },
-                    singleLine = true, label = { Text(uiStr(range)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            },
-            confirmButton = {
-                TextButton(enabled = number > 0, onClick = {
-                    onChanged(key, number.toString())
-                    custom = null
-                }) { Text(uiStr(R.string.ok)) }
-            },
-            dismissButton = { TextButton(onClick = { custom = null }) { Text(uiStr(R.string.cancel)) } }
+    if (configuring && hasConfiguration) {
+        AudioOutputDialog(
+            configurationLabel,
+            alsa,
+            value = { key -> value(key).ifEmpty { inherited?.invoke(key).orEmpty() } },
+            onDismiss = { configuring = false },
+            onConfirm = onOptionsConfirmed
         )
     }
 }
 
 @Composable
-private fun AudioOutputChoice(
-    label: String,
-    key: String,
-    labels: Map<String, String>,
+private fun AudioOutputDialog(
+    title: String,
+    alsa: Boolean,
     value: (String) -> String,
-    inherited: ((String) -> String)?,
-    onChanged: (String, String?) -> Unit
+    onDismiss: () -> Unit,
+    onConfirm: (Map<String, String>) -> Unit
 ) {
-    val default = labels.getValue(AudioOutputSettings.AUTO)
-    val entries = linkedMapOf<String, String>()
-    if (inherited != null) entries[""] = uiStr(R.string.ui_container_default_1_s, labels[inherited(key)] ?: default)
-    entries.putAll(labels)
-    SettingsDivider()
-    val selected = value(key).takeIf(entries::containsKey)
-        ?: if (inherited != null) "" else AudioOutputSettings.AUTO
-    SettingMappedChoice(label, selected, entries) { choice ->
-        onChanged(key, choice.ifEmpty { null })
+    val apiLabels = mapOf(AudioOutputSettings.AAUDIO to "AAudio", AudioOutputSettings.OPENSL_ES to "OpenSL ES")
+    var api by remember {
+        mutableStateOf(value(AudioOutputSettings.API).takeIf(apiLabels::containsKey) ?: AudioOutputSettings.AAUDIO)
     }
+    val amountKey = if (alsa) AudioOutputSettings.BUFFER else AudioOutputSettings.LATENCY
+    val increment = if (alsa) AudioOutputSettings.BUFFER_STEP_BYTES else 1
+    val maximum = if (alsa) AudioOutputSettings.MAX_BUFFER_BYTES else AudioOutputSettings.MAX_LATENCY_MS
+    var amount by remember {
+        mutableIntStateOf(
+            if (alsa) AudioOutputSettings.bufferSize(value(amountKey))
+            else AudioOutputSettings.latencyMs(value(amountKey))
+        )
+    }
+    val amountLabel = uiStr(if (alsa) R.string.audio_buffer_size else R.string.audio_pulse_latency)
+    val amountText = uiStr(if (alsa) R.string.audio_buffer_bytes else R.string.audio_latency_ms, amount)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                if (alsa) {
+                    SettingMappedChoice(uiStr(R.string.audio_output_api), api, apiLabels) { api = it }
+                    SettingsDivider()
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                    Text(amountLabel, modifier = Modifier.weight(1f))
+                    Text(amountText)
+                }
+                Slider(
+                    value = amount.toFloat(),
+                    onValueChange = { amount = (it / increment).roundToInt() * increment },
+                    valueRange = 0f..maximum.toFloat(),
+                    modifier = Modifier.semantics {
+                        contentDescription = amountLabel
+                        stateDescription = amountText
+                    }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onConfirm(buildMap {
+                    if (alsa) put(AudioOutputSettings.API, api)
+                    put(amountKey, amount.toString())
+                })
+                onDismiss()
+            }) { Text(uiStr(R.string.ok)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(uiStr(R.string.cancel)) } }
+    )
 }

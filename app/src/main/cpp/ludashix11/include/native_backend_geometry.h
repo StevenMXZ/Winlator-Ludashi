@@ -1,7 +1,7 @@
 #pragma once
 #include "native_magnifier.h"
 
-namespace xorg {
+namespace ludashi::x11 {
 struct NativeBackendGeometry {
     float sx{}, sy{}, ox{}, oy{};
     int left{}, top{}, right{}, bottom{};
@@ -21,4 +21,4 @@ struct NativeBackendGeometry {
         oy = top - pan.y * baseY;
     }
 };
-} // namespace xorg
+} // namespace ludashi::x11

@@ -8,7 +8,7 @@
 #include <GLES2/gl2ext.h>
 #include <unordered_set>
 
-namespace xorg {
+namespace ludashi::x11 {
 namespace {
 void Require(bool value, const char *message) {
     if (!value)
@@ -401,4 +401,4 @@ class EGLNativeRenderer final : public NativeRenderer {
 std::unique_ptr<NativeRenderer> CreateNativeEGLRenderer(u16 w, u16 h, const NativeRendererConfig &config) {
     return std::make_unique<EGLNativeRenderer>(w, h, config);
 }
-} // namespace xorg
+} // namespace ludashi::x11

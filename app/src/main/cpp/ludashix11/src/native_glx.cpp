@@ -1,15 +1,13 @@
 // Direct-rendering GLX metadata, matching the Java GLXExtension contract.
 // GL contexts and commands execute in the client's Mesa driver; buffers reach
 // NativeScreen through DRI3/AHB + Present, without server-side GL or readback.
-#include "core/xclient.h"
-#include "core/xclient_dispatch.h"
-#include "core/xserver.h"
-#include "core/extension.h"
-#include "core/window.h"
-#include "core/pixmap.h"
-#include "core/drawable.h"
-#include "core/visual.h"
-#include "core/xscreen.h"
+#include "base/diagnostics.h"
+#include "core/client_session.h"
+#include "core/display_runtime.h"
+#include "core/wire_extensions.h"
+#include "core/window_node.h"
+#include "core/offscreen_image.h"
+#include "native_drawable.h"
 #include "native_screen.h"
 #include <algorithm>
 #include <atomic>
@@ -19,22 +17,22 @@
 #include <string>
 #include <vector>
 
-namespace xorg {
+namespace ludashi::x11 {
 namespace {
-struct Context final : XResource {
+struct Context final : ProtocolObject {
     Context(u32 id, u32 visual, u32 config, bool direct, u32 major = 1, u32 minor = 0,
             u32 flags = 0, u32 profile = 1)
-        : XResource(XResourceType::GLXContext, id), visual(visual), config(config),
+        : ProtocolObject(ObjectKind::GLXContext, id), visual(visual), config(config),
           major(major), minor(minor), flags(flags), profile(profile), direct(direct) {}
     u32 visual, config, major, minor, flags, profile;
     bool direct;
 };
-struct GLDrawable final : XResource {
-    GLDrawable(u32 id, u32 config, u32 target, bool pixmap, sp<Drawable> image)
-        : XResource(XResourceType::GLXDrawable, id), config(config), target(target), pixmap(pixmap), image(std::move(image)) {}
+struct GLDrawable final : ProtocolObject {
+    GLDrawable(u32 id, u32 config, u32 target, bool pixmap, sp<NativeDrawable> image)
+        : ProtocolObject(ObjectKind::GLXDrawable, id), config(config), target(target), pixmap(pixmap), image(std::move(image)) {}
     u32 config, target;
     bool pixmap;
-    sp<Drawable> image;
+    sp<NativeDrawable> image;
 };
 struct Reply {
     u8 type{X_Reply}, pad{};
@@ -48,25 +46,25 @@ constexpr Config configs[] = {{0,0,1}, {0,0,0}, {24,0,0}, {24,8,0}, {24,0,1}, {2
 }
 // DRI3 PixmapFromBuffer can name the GLX window XID rather than the
 // underlying X11 window. Keep the wrapper alive and validate its target.
-Drawable* XClient::ResolveGLXDrawable(u32 id) const {
+NativeDrawable* ClientSession::ResolveGLXDrawable(u32 id) const {
     auto* resource = GetResource(id);
-    if (!resource || resource->GetType() != XResourceType::GLXDrawable)
+    if (!resource || resource->GetType() != ObjectKind::GLXDrawable)
         return nullptr;
     const auto* gl = resource->As<GLDrawable>();
     // GLXWindow objects follow the live X11 drawable across window resizes.
     // GLXPixmap objects retain the original pixmap until explicitly destroyed.
     return gl->pixmap ? gl->image.get() : GetDrawable(gl->target);
 }
-void XClient::ProcGLX() {
+void ClientSession::ProcGLX() {
     const auto minor = GetRequestData<xReq>()->data;
-    if (static_cast<NativeScreen&>(server.GetScreen()).DiagnosticsEnabled()) {
+    if (server.GetScreen().DiagnosticsEnabled()) {
         // Mesa/Wine GLX initialization happens once; keep these logs out of
         // the normal, latency-sensitive Present path and bound noisy clients.
         static std::atomic<unsigned> traced{0};
         if (traced.fetch_add(1, std::memory_order_relaxed) < 48)
-            LOGI("Native GLX request opcode={} bytes={}", static_cast<unsigned>(minor), request_size);
+            diagnostics::Write(diagnostics::Severity::Info, "Native GLX request opcode={} bytes={}", static_cast<unsigned>(minor), request_size);
     }
-    auto* extension = server.GetExtensionManager().FindExtension("GLX");
+    auto* extension = &WireExtensions::At(ExtensionOpcode::Glx);
     auto error = [&](u8 offset, u32 id) { return XRequestError(extension->error_base + offset, id); };
     auto minimum = [&](size_t size) { if (request_size < size) throw BadLengthError(); };
     auto word = [&](size_t offset) {
@@ -80,7 +78,7 @@ void XClient::ProcGLX() {
     };
     auto context = [&](u32 id) {
         auto* r = GetResource(id);
-        if (!r || r->GetType() != XResourceType::GLXContext) throw error(0, id);
+        if (!r || r->GetType() != ObjectKind::GLXContext) throw error(0, id);
         return r->As<Context>();
     };
     auto shared = [&](u32 id) { if (id) (void)context(id); };
@@ -110,7 +108,7 @@ void XClient::ProcGLX() {
         screen(word(4)); std::vector<u32> values;
         values.reserve(std::size(configs) * 18);
         for (const auto& c : configs) {
-            const u32 visual[] = {server.GetRootVisual()->id, 4, 1, 8,8,8,8, 0,0,0,0,
+            const u32 visual[] = {ServerID::RootVisual, 4, 1, 8,8,8,8, 0,0,0,0,
                                   c.doubleBuffer, 0, 32, c.depth, c.stencil, 0,0};
             values.insert(values.end(), std::begin(visual), std::end(visual));
         }
@@ -125,7 +123,7 @@ void XClient::ProcGLX() {
         for (u32 i = 0; i < std::size(configs); ++i) {
             const auto& c = configs[i];
             const u32 pairs[] = {
-                0x800b,server.GetRootVisual()->id, 0x8013,i+1, 0x8012,1, 4,1, 0x8011,1,
+                0x800b,ServerID::RootVisual, 0x8013,i+1, 0x8012,1, 4,1, 0x8011,1,
                 5,c.doubleBuffer, 6,0, 2,32, 3,0, 7,0, 8,8, 9,8, 10,8, 11,8,
                 14,0, 15,0, 16,0, 17,0, 12,c.depth, 13,c.stencil,
                 0x22,0x8002, 0x23,0x8000, 0x24,0, 0x25,0, 0x26,0, 0x27,0, 0x28,0,
@@ -147,7 +145,7 @@ void XClient::ProcGLX() {
     case 3: case 24: case 34: { // CreateContext / CreateNewContext / CreateContextAttribsARB
         minimum(minor == 3 ? 24 : 28);
         const auto id = word(4); newID(id);
-        u32 visual = server.GetRootVisual()->id, cfg = 1, share{};
+        u32 visual = ServerID::RootVisual, cfg = 1, share{};
         u32 major = 1, minorVersion = 0, flags = 0, profile = 1;
         bool direct{};
         if (minor == 3) {
@@ -226,23 +224,23 @@ void XClient::ProcGLX() {
         if (request_size != 20) throw BadLengthError();
         screen(word(4));
         const u32 visual = word(8), target = word(12), id = word(16);
-        if (visual != server.GetRootVisual()->id) throw BadValueError(visual);
+        if (visual != ServerID::RootVisual) throw BadValueError(visual);
         newID(id);
-        auto* pixmap = GetResourceAs<Pixmap>(target);
+        auto* pixmap = GetResourceAs<OffscreenImage>(target);
         if (!pixmap) throw BadPixmapError(target);
         AddResource(std::make_shared<GLDrawable>(id, 1, target, true,
-                                                  pixmap->SharedDrawable()));
+                                                  pixmap->Image()));
         return;
     }
     case 22: case 31: { // CreatePixmap / CreateWindow
         minimum(24); screen(word(4)); u32 cfg = word(8); (void)config(cfg);
         const u32 target = word(12), id = word(16), count = word(20); newID(id);
         if (24 + u64(count) * 8 != request_size) throw BadLengthError();
-        sp<Drawable> image;
+        sp<NativeDrawable> image;
         if (minor == 22) {
-            auto* p = GetResourceAs<Pixmap>(target); if (!p) throw BadPixmapError(target); image = p->SharedDrawable();
+            auto* p = GetResourceAs<OffscreenImage>(target); if (!p) throw BadPixmapError(target); image = p->Image();
         } else {
-            auto* w = GetResourceAs<Window>(target); if (!w || w->IsInputOnly()) throw BadWindowError(target); image = w->SharedDrawable();
+            auto* w = GetResourceAs<WindowNode>(target); if (!w || w->IsInputOnly()) throw BadWindowError(target); image = w->SharedDrawable();
         }
         AddResource(std::make_shared<GLDrawable>(id, cfg, target, minor == 22, std::move(image))); return;
     }
@@ -251,14 +249,14 @@ void XClient::ProcGLX() {
         const u32 id = word(4);
         auto* r = GetResource(id);
         const bool isPixmap = minor == 15 || minor == 23;
-        if (!r || r->GetType() != XResourceType::GLXDrawable || r->As<GLDrawable>()->pixmap != isPixmap)
+        if (!r || r->GetType() != ObjectKind::GLXDrawable || r->As<GLDrawable>()->pixmap != isPixmap)
             throw error(isPixmap ? 3 : 12, id);
         RemoveResource(id); return;
     }
     case 29: case 30: { // Get/ChangeDrawableAttributes
-        u32 id = word(4), cfg = 1, kind = 1; Drawable* d{};
+        u32 id = word(4), cfg = 1, kind = 1; NativeDrawable* d{};
         auto* r = GetResource(id);
-        if (r && r->GetType() == XResourceType::GLXDrawable) {
+        if (r && r->GetType() == ObjectKind::GLXDrawable) {
             auto* gl = r->As<GLDrawable>(); cfg = gl->config; kind = gl->pixmap ? 2 : 1;
             d = gl->pixmap ? gl->image.get() : GetDrawable(gl->target);
         } else d = GetDrawable(id);
@@ -267,8 +265,8 @@ void XClient::ProcGLX() {
         reply({0x8013,cfg, 0x8010,kind, 0x8011,1, 0x801d,d->GetWidth(), 0x801e,d->GetHeight()}, 5); return;
     }
     default:
-        if (static_cast<NativeScreen&>(server.GetScreen()).DiagnosticsEnabled())
-            LOGE("Native GLX unsupported request opcode={}", static_cast<unsigned>(minor));
+        if (server.GetScreen().DiagnosticsEnabled())
+            diagnostics::Write(diagnostics::Severity::Error, "Native GLX unsupported request opcode={}", static_cast<unsigned>(minor));
         throw BadRequestError();
     }
 }

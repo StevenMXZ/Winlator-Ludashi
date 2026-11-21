@@ -11,6 +11,6 @@ with tempfile.TemporaryDirectory(prefix='ludashi-displayx-renderer-') as directo
         *['-I' + str(root / p) for p in ['tests/displayx_stubs', 'tests/stubs', '.', 'include', 'third_party']]]
     subprocess.run(args + ['-fPIC', '-shared', str(root / 'tests/test_surface_control_mock.cpp'), '-o', str(folder / 'libandroid.so')], check=True)
     subprocess.run(args + [str(root / 'tests/test_displayx_renderer.cpp'), str(root / 'src/native_displayx_renderer.cpp'),
-        str(root / 'src/native_drawable.cpp'), str(root / 'core/drawable.cpp'),
+        str(root / 'src/native_drawable.cpp'),
         '-L' + str(folder), '-landroid', '-ldl', '-pthread', '-o', str(folder / 'test')], check=True)
     subprocess.run([str(folder / 'test')], env={**os.environ, 'LD_LIBRARY_PATH': str(folder)}, check=True)

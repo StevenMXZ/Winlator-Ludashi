@@ -1,21 +1,31 @@
 #pragma once
-#include "core/drawable.h"
+#include <android/hardware_buffer.h>
+#include <memory>
+#include <vector>
+#include <X11/Xmd.h>
+#include <X11/Xprotostr.h>
+#include "base/native_types.h"
 
-namespace xorg {
-class NativeDrawable final : public Drawable {
+namespace ludashi::x11 {
+class NativeDrawable final {
 public:
     NativeDrawable(u16 w, u16 h, u8 depth, AHardwareBuffer* buffer = nullptr);
-    ~NativeDrawable() override;
-    sp<Drawable> Clone() override;
-    void ReadPixels(u8*, s16, s16, u16, u16, u16) override;
-    void WritePixels(const u8*, s16, s16, s16, s16, u16, u16, u16) override;
-    void WriteBinaryPixels(const u8*, u16, u16, u32, u32) override;
+    ~NativeDrawable();
+    NativeDrawable(const NativeDrawable&) = delete;
+    NativeDrawable& operator=(const NativeDrawable&) = delete;
+
+    u16 GetWidth() const { return width; }
+    u16 GetHeight() const { return height; }
+    u8 GetDepth() const { return depth; }
+    void ReadPixels(u8*, s16, s16, u16, u16, u16);
+    void WritePixels(const u8*, s16, s16, s16, s16, u16, u16, u16);
+    void WriteBinaryPixels(const u8*, u16, u16, u32, u32);
     void CopyAreaFrom(NativeDrawable& source, s16 sx, s16 sy, s16 dx, s16 dy, u16 w, u16 h);
-    void FillRect(s16, s16, u16, u16, u32) override;
-    void DrawLines(const Point*, u32, u32, u32) override;
-    void DrawPolySegments(const PolySegment*, u32, u32, u32) override;
-    void* Map() override;
-    u32 GetStride() override { return stride; }
+    void FillRect(s32, s32, u32, u32, u32);
+    void DrawLines(const xPoint*, u32, u32, u32);
+    void DrawPolySegments(const xSegment*, u32, u32, u32);
+    void* Map();
+    u32 GetStride() const { return stride; }
     AHardwareBuffer* HardwareBuffer() const { return buffer; }
     sp<const std::vector<u8>> Pixels() const { return pixels; }
     bool HasContent() const { return contentReady || buffer != nullptr; }
@@ -29,7 +39,11 @@ public:
     u64 ID() const { return id; }
 private:
     void Writable();
-    void Line(Point a, Point b, u32 color, u32 width);
+    void FillClipped(s32 left, s32 top, s32 right, s32 bottom, u32 color, u8*& destination);
+    void Line(xPoint a, xPoint b, u32 color, u32 width, u8*& destination);
+    const u16 width, height;
+    const u8 depth;
+    AHardwareBuffer* buffer{};
     sp<std::vector<u8>> pixels;
     u32 stride{};
     u64 revision{1}, id{};

@@ -1,29 +1,28 @@
+#include "base/diagnostics.h"
 #include "native_screen.h"
 #include "native_displayx_visibility.h"
-#include "base/log.h"
-#include "core/window.h"
-#include "core/window_manager.h"
-#include "core/xclient.h"
-#include "core/xserver.h"
-#include "core/extension.h"
-#include "core/atom.h"
+#include "core/window_node.h"
+#include "core/window_tree.h"
+#include "core/client_session.h"
+#include "core/display_runtime.h"
+#include "core/wire_extensions.h"
+#include "core/atom_catalog.h"
 #include <string_view>
 #include <X11/extensions/presentproto.h>
 
-namespace xorg {
-std::unique_ptr<XScreen> XScreen::Create(XServer& s) { return std::make_unique<NativeScreen>(s); }
-XScreen::XScreen(XServer& s) : server(s) {}
-XScreen::~XScreen() = default;
-NativeScreen::NativeScreen(XServer& s) : XScreen(s), worker([this] { Worker(); }) {}
+namespace ludashi::x11 {
+NativeScreen::NativeScreen(DisplayRuntime& display) : server(display) {
+    worker = std::thread([this] { Worker(); });
+}
 NativeScreen::~NativeScreen() {
     { std::lock_guard lock(state); stop = true; cv.notify_all(); }
     if (worker.joinable()) worker.join();
     if (surface) ANativeWindow_release(surface);
 }
-sp<Drawable> NativeScreen::CreateDrawable(u16 w, u16 h, u8 d) {
+sp<NativeDrawable> NativeScreen::CreateDrawable(u16 w, u16 h, u8 d) {
     return std::make_shared<NativeDrawable>(w, h, d);
 }
-sp<Drawable> NativeScreen::CreateDrawable(u16 w, u16 h, AHardwareBuffer* b) {
+sp<NativeDrawable> NativeScreen::CreateDrawable(u16 w, u16 h, AHardwareBuffer* b) {
     return std::make_shared<NativeDrawable>(w, h, 32, b);
 }
 void NativeScreen::UpdateSurface(ANativeWindow* window) {
@@ -59,18 +58,11 @@ void NativeScreen::SetMagnifierZoom(float value) {
     dirty = true;
     cv.notify_one();
 }
-void NativeScreen::UpdateCursor(Drawable* d, s16 x, s16 y) {
-    // Core calls under the server lock. Snapshot the CPU cursor, never borrow it.
-    auto* image = static_cast<NativeDrawable*>(d);
-    const bool changed = image ? !cursor || cursorSource != image->ID() ||
-        cursorRevision != image->Revision() : bool(cursor);
-    if (!changed && cursorX == x && cursorY == y) return;
-    if (!image) {
-        cursor.reset(); cursorSource = 0; cursorRevision = 0;
-    } else if (changed) {
-        cursor = std::static_pointer_cast<NativeDrawable>(image->Clone());
-        cursorSource = image->ID(); cursorRevision = image->Revision();
-    }
+void NativeScreen::UpdateCursor(const sp<NativeDrawable>& image, s16 x, s16 y) {
+    // PointerSprite publishes a new image when recolored. A scene or GPU
+    // frame can retain the previous raster without cloning its pixels.
+    if (cursor == image && cursorX == x && cursorY == y) return;
+    cursor = image;
     cursorX = x; cursorY = y;
     {
         std::lock_guard lock(state);
@@ -133,20 +125,20 @@ void NativeScreen::SetUnviewableWMClasses(std::vector<std::string> classes) {
     unviewableWMClasses = std::move(classes);
     PostInvalidate();
 }
-void NativeScreen::WindowPropertyChanged(Window* window, u32 atom) {
-    if (!unviewableWMClasses.empty() && atom == u32(Atom::GetID("WM_CLASS"))) PostInvalidate();
+void NativeScreen::WindowPropertyChanged(WindowNode* window, u32 atom) {
+    if (!unviewableWMClasses.empty() && atom == u32(server.Atoms().Find("WM_CLASS"))) PostInvalidate();
     if (!hudEnabled || !window) return;
     // Java's HUD binds its FPS source as soon as Wine/Mesa publishes a
     // _MESA_DRV property, not when the compositor happens to draw a frame.
-    const std::string name = Atom::GetName(atom);
+    const auto name = server.Atoms().Name(atom);
     if (name != "_MESA_DRV_ENGINE_NAME" && name != "_MESA_DRV_GPU_NAME") return;
     if (!window->GetProperty(atom)) return;
     auto* previous = server.GetResource(hudWindow);
-    auto* selected = previous && previous->GetType() == XResourceType::Window
-            ? previous->As<Window>() : nullptr;
+    auto* selected = previous && previous->GetType() == ObjectKind::WindowNode
+            ? previous->As<WindowNode>() : nullptr;
     if (selected && selected->IsAllAncestorsMapped() && selected != window) {
-        const auto engine = Atom::GetID("_MESA_DRV_ENGINE_NAME");
-        const auto gpu = Atom::GetID("_MESA_DRV_GPU_NAME");
+        const auto engine = server.Atoms().Find("_MESA_DRV_ENGINE_NAME");
+        const auto gpu = server.Atoms().Find("_MESA_DRV_GPU_NAME");
         if ((engine >= 0 && selected->GetProperty(engine)) ||
             (gpu >= 0 && selected->GetProperty(gpu))) return;
     }
@@ -155,9 +147,9 @@ void NativeScreen::WindowPropertyChanged(Window* window, u32 atom) {
         hudFrames = 0;
     }
 }
-bool NativeScreen::IsWindowFiltered(Window* w) const {
+bool NativeScreen::IsWindowFiltered(WindowNode* w) const {
     if (unviewableWMClasses.empty()) return false;
-    auto* property = w->GetProperty(u32(Atom::GetID("WM_CLASS")));
+    auto* property = w->GetProperty(u32(server.Atoms().Find("WM_CLASS")));
     if (!property || property->format != 8) return false;
     const auto bytes = property->GetData();
     if (bytes.empty()) return false;
@@ -167,20 +159,20 @@ bool NativeScreen::IsWindowFiltered(Window* w) const {
     });
 }
 void NativeScreen::UpdateExternal(u32 id, u64 generation, sp<NativeExternalFrame> frame) {
-    // Called under XServer::Lock, just like PresentPixmap.
+    // Called under DisplayRuntime::Lock, just like PresentPixmap.
     auto* resource = server.GetResource(id);
-    if (!resource || resource->GetType() != XResourceType::Window ||
-            resource->As<Window>()->generation != generation) return;
+    if (!resource || resource->GetType() != ObjectKind::WindowNode ||
+            resource->As<WindowNode>()->generation != generation) return;
     externalFrames.insert_or_assign(id, External{generation, frame});
     HudFrame(id);
     {
         std::lock_guard lock(state);
         if (sceneCurrent) {
-            auto entry = std::ranges::find_if(latest.entries, [&](const auto& value) { return value.window == id; });
-            if (entry != latest.entries.end() && entry->drawable->GetWidth() == frame->drawable->GetWidth() &&
+            auto* entry = latest.FindEntry(id);
+            if (entry && entry->drawable->GetWidth() == frame->drawable->GetWidth() &&
                     entry->drawable->GetHeight() == frame->drawable->GetHeight()) {
                 entry->drawable = frame->drawable; entry->pixels.reset(); entry->revision = frame->drawable->Revision();
-                entry->ticket.reset(); entry->external = frame; latest.tickets.erase(id);
+                entry->ticket.reset(); entry->external = frame;
                 if (!std::exchange(dirty, true)) cv.notify_one();
                 return;
             }
@@ -196,20 +188,20 @@ void NativeScreen::RemoveExternal(u32 id, u64 generation, const sp<NativeExterna
         externalFrames.erase(found); PostInvalidate();
     }
 }
-void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
+void NativeScreen::Collect(WindowNode* w, Scene& frame, bool ancestorsMapped) {
     bool viewable = ancestorsMapped && w->IsMapped();
     if (!viewable) return;
     if (!w->IsRoot() && !w->IsInputOnly() && w->GetDrawable() &&
         w->GetWidth() > 1 && w->GetHeight() > 1 && !IsWindowFiltered(w)) {
         auto i = direct.find(w->id);
-        auto d = i == direct.end() ? std::static_pointer_cast<NativeDrawable>(w->SharedDrawable()) : i->second->drawable;
+        auto d = i == direct.end() ? w->SharedDrawable() : i->second->drawable;
         auto external = externalFrames.find(w->id);
         if (external != externalFrames.end() && external->second.generation != w->generation) {
             externalFrames.erase(external); external = externalFrames.end();
         }
         if (external != externalFrames.end()) d = external->second.frame->drawable;
         if (i != direct.end() || external != externalFrames.end() || d->HasContent()) {
-            const auto& rect = w->GetInRect();
+            const auto& rect = w->ContentBounds();
             // Vulkan window quads force useTexAlpha=0, including depth-32 images.
             // Match that opacity when discarding fully covered layers.
             frame.entries.push_back({d, i == direct.end() ? nullptr : i->second, d->Pixels(), d->Revision(),
@@ -221,7 +213,6 @@ void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
             if (i != direct.end() && external == externalFrames.end()) {
                 frame.entries.back().x += i->second->x;
                 frame.entries.back().y += i->second->y;
-                frame.tickets[w->id] = i->second;
             }
         } else d->AwaitContent();
     }
@@ -229,8 +220,8 @@ void NativeScreen::Collect(Window* w, Scene& frame, bool ancestorsMapped) {
     // game windows can be parented beneath the filtered Explorer desktop.
     for (auto* child : w->GetChildren()) Collect(child, frame, viewable);
 }
-void NativeScreen::MutateDrawable(Drawable* drawable, const void* callback, void (*write)(const void*)) {
-    auto* image = static_cast<NativeDrawable*>(drawable);
+void NativeScreen::MutateDrawable(NativeDrawable* drawable, const void* callback, void (*write)(const void*)) {
+    auto* image = drawable;
     const u64 before = image->Revision();
     {
         std::unique_lock lock(state);
@@ -254,9 +245,9 @@ void NativeScreen::MutateDrawable(Drawable* drawable, const void* callback, void
         else DrawableChanged(drawable);
     }
 }
-void NativeScreen::DrawableChanged(Drawable* drawable) {
-    // Called under XServer::Lock: pixels changed, but geometry/visibility did not.
-    auto* image = static_cast<NativeDrawable*>(drawable);
+void NativeScreen::DrawableChanged(NativeDrawable* drawable) {
+    // Called under DisplayRuntime::Lock: pixels changed, but geometry/visibility did not.
+    auto* image = drawable;
     {
         std::lock_guard lock(state);
         if (sceneCurrent) {
@@ -276,20 +267,34 @@ void NativeScreen::DrawableChanged(Drawable* drawable) {
     }
     PostInvalidate();
 }
-void NativeScreen::PostInvalidate() {
+void NativeScreen::Scene::Reindex() {
+    if (entries.size() < 2) return;
+    entriesByWindow.reserve(entries.size());
+    for (size_t index = 0; index < entries.size(); ++index)
+        entriesByWindow.emplace_back(entries[index].window, index);
+    std::ranges::sort(entriesByWindow);
+}
+NativeEntry* NativeScreen::Scene::FindEntry(u32 window) {
+    if (entries.empty()) return nullptr;
+    if (entries.size() == 1) return entries.front().window == window ? &entries.front() : nullptr;
+    const auto position = std::ranges::lower_bound(entriesByWindow, window, {}, &std::pair<u32, size_t>::first);
+    if (position == entriesByWindow.end() || position->first != window) return nullptr;
+    return &entries[position->second];
+}
+void NativeScreen::PostInvalidate(sp<PresentTicket> present) {
     for (auto it = externalFrames.begin(); it != externalFrames.end();) {
         auto* resource = server.GetResource(it->first);
-        if (!resource || resource->GetType() != XResourceType::Window ||
-                resource->As<Window>()->generation != it->second.generation) {
+        if (!resource || resource->GetType() != ObjectKind::WindowNode ||
+                resource->As<WindowNode>()->generation != it->second.generation) {
             it->second.frame->Discard(); it = externalFrames.erase(it);
         }
         else ++it;
     }
     if (DiagnosticsEnabled()) metricSceneBuilds.fetch_add(1, std::memory_order_relaxed);
     Scene frame;
-    Collect(server.GetWindowManager().GetRootWindow(), frame, true);
+    Collect(server.Windows().GetRootWindow(), frame, true);
     // An opaque fullscreen game makes desktop/background draws unnecessary.
-    const auto& info = server.GetScreenInfo();
+    const auto& info = server.Dimensions();
     const bool displayX = server.RendererConfig().backend == NativeRendererConfig::Backend::DisplayX;
     if (displayX) CullCoveredDisplayXLayers(frame.entries);
     for (size_t i = frame.entries.size(); i > 0; --i) {
@@ -302,10 +307,7 @@ void NativeScreen::PostInvalidate() {
             break;
         }
     }
-    for (auto i = frame.tickets.begin(); i != frame.tickets.end();) {
-        bool visible = std::ranges::any_of(frame.entries, [&](auto& e) { return e.ticket == i->second; });
-        if (!visible) i = frame.tickets.erase(i); else ++i;
-    }
+    frame.Reindex();
     frame.cursor = cursor;
     frame.cursorPixels = cursor ? cursor->Pixels() : nullptr;
     frame.cursorX = cursorX; frame.cursorY = cursorY;
@@ -313,15 +315,14 @@ void NativeScreen::PostInvalidate() {
     // Preserve pending requests still selected in the new snapshot. Protocol
     // acknowledgements have already been sent, just as in Java X11.
     for (const auto& old : latest.requests) {
-        const auto next = frame.tickets.find(old->window);
-        if (next != frame.tickets.end() && next->second == old)
+        const auto* next = frame.FindEntry(old->window);
+        if (next && next->ticket == old)
             frame.requests.push_back(old);
         else {
             if (DiagnosticsEnabled()) metricCoalesced.fetch_add(1, std::memory_order_relaxed);
         }
     }
-    frame.requests.insert(frame.requests.end(), requests.begin(), requests.end());
-    requests.clear();
+    if (present) frame.requests.push_back(std::move(present));
     if (frameGenRequested.load(std::memory_order_relaxed) && visualOptions.frameGenEngine == 1)
         frame.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
     latest = std::move(frame);
@@ -332,8 +333,8 @@ void NativeScreen::PostInvalidate() {
 bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket, const sp<PresentTicket>& previousDirect) {
     std::lock_guard lock(state);
     if (!sceneCurrent) return false;
-    auto previous = latest.tickets.find(ticket->window);
-    if (previous == latest.tickets.end()) {
+    auto* entry = latest.FindEntry(ticket->window);
+    if (!entry || !entry->ticket) {
         // A hidden/filtered/occluded window has no selected entry. Content-only
         // Presents cannot change visibility when extent and offsets are stable.
         // Retain its newest buffer in direct, acknowledge normally, and avoid a
@@ -344,27 +345,21 @@ bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket, const sp<Presen
         if (DiagnosticsEnabled()) metricOffscreenPresents.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
-    const auto old = previous->second;
+    const auto& old = entry->ticket;
     // Size/offset changes can alter fullscreen culling. Rebuild in those cases,
     // and when the window is absent/occluded in the current scene snapshot.
     if (old->x != ticket->x || old->y != ticket->y ||
         old->drawable->GetWidth() != ticket->drawable->GetWidth() ||
         old->drawable->GetHeight() != ticket->drawable->GetHeight()) return false;
-    auto entry = std::ranges::find_if(latest.entries, [&](const auto& item) { return item.ticket == old; });
-    if (entry == latest.entries.end()) return false;
     entry->drawable = ticket->drawable;
     entry->ticket = ticket;
     entry->pixels = ticket->drawable->Pixels();
     entry->revision = ticket->drawable->Revision();
-    previous->second = ticket;
     // A frame already claimed by Draw owns its separate request list. Updating
     // this pending snapshot never drops the resource references of that frame.
-    for (auto i = latest.requests.begin(); i != latest.requests.end();) {
-        if ((*i)->window == ticket->window) {
-            if (DiagnosticsEnabled()) metricCoalesced.fetch_add(1, std::memory_order_relaxed);
-            i = latest.requests.erase(i);
-        } else ++i;
-    }
+    const auto superseded = std::erase_if(latest.requests,
+        [&](const auto& pending) { return pending->window == ticket->window; });
+    if (superseded && DiagnosticsEnabled()) metricCoalesced.fetch_add(superseded, std::memory_order_relaxed);
     latest.requests.push_back(ticket);
     if (frameGenRequested.load(std::memory_order_relaxed) && visualOptions.frameGenEngine == 1)
         latest.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
@@ -379,57 +374,57 @@ bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket, const sp<Presen
 void NativeScreen::StartupWindowUpdated(u32 id) {
     if (startupContent.load(std::memory_order_relaxed)) return;
     auto* resource = server.GetResource(id);
-    if (!resource || resource->GetType() != XResourceType::Window) return;
-    auto* window = resource->As<Window>();
+    if (!resource || resource->GetType() != ObjectKind::WindowNode) return;
+    auto* window = resource->As<WindowNode>();
     if (!window->IsMapped() || window->GetWidth() <= 1 || window->GetHeight() <= 1) return;
-    const auto atom = Atom::GetID("WM_HINTS");
+    const auto atom = server.Atoms().Find("WM_HINTS");
     const auto* hints = atom >= 0 ? window->GetProperty(atom) : nullptr;
     u32 group{};
     if (hints && hints->format == 32 && hints->GetData().size() >= 9 * sizeof(u32))
         memcpy(&group, hints->GetData().data() + 8 * sizeof(u32), sizeof(group));
     if (group == id) startupContent.store(true, std::memory_order_relaxed);
 }
-void NativeScreen::StartupDrawableUpdated(Drawable* drawable) {
+void NativeScreen::StartupDrawableUpdated(NativeDrawable* drawable) {
     if (startupContent.load(std::memory_order_relaxed)) return;
     // A drawable has its own internal ID; it is not the X11 window resource ID.
     // Match its owner, just as Java installs a per-window OnDrawListener.
-    const auto visit = [&](const auto& self, Window* window) -> void {
+    const auto visit = [&](const auto& self, WindowNode* window) -> void {
         if (startupContent.load(std::memory_order_relaxed)) return;
         if (window->GetDrawable() == drawable) StartupWindowUpdated(window->id);
         for (auto* child : window->GetChildren()) self(self, child);
     };
-    visit(visit, server.GetWindowManager().GetRootWindow());
+    visit(visit, server.Windows().GetRootWindow());
 }
 void NativeScreen::HudFrame(u32 id) {
     StartupWindowUpdated(id);
     if (!hudEnabled) return;
     auto* resource = server.GetResource(id);
-    if (!resource || resource->GetType() != XResourceType::Window) return;
-    auto* window = resource->As<Window>();
+    if (!resource || resource->GetType() != ObjectKind::WindowNode) return;
+    auto* window = resource->As<WindowNode>();
     if (window->IsRoot() || window->IsInputOnly() || window->GetWidth() <= 1 ||
         window->GetHeight() <= 1 || IsWindowFiltered(window)) return;
     // A filtered Wine/Explorer desktop may contain the actual game window.
     // Like Collect(), reject only the filtered drawable itself, never a mapped
     // child merely because one of its ancestors has a filtered WM_CLASS.
-    const u32 atomCount = Atom::Count();
+    const u32 atomCount = server.Atoms().Count();
     if (atomCount != hudAtomCount) {
-        hudEngineAtom = Atom::GetID("_MESA_DRV_ENGINE_NAME");
-        hudGpuAtom = Atom::GetID("_MESA_DRV_GPU_NAME");
+        hudEngineAtom = server.Atoms().Find("_MESA_DRV_ENGINE_NAME");
+        hudGpuAtom = server.Atoms().Find("_MESA_DRV_GPU_NAME");
         hudAtomCount = atomCount;
     }
-    const auto tagged = [&](Window* w) {
+    const auto tagged = [&](WindowNode* w) {
         return (hudEngineAtom >= 0 && w->GetProperty(hudEngineAtom)) ||
                (hudGpuAtom >= 0 && w->GetProperty(hudGpuAtom));
     };
-    Window* anchor = window;
+    WindowNode* anchor = window;
     bool candidateTagged = false;
     for (auto* w = window; w; w = w->GetParent()) {
         if (!w->IsMapped()) return;
         if (!candidateTagged && tagged(w)) { anchor = w; candidateTagged = true; }
     }
     auto* previous = server.GetResource(hudWindow);
-    auto* active = previous && previous->GetType() == XResourceType::Window
-            ? previous->As<Window>() : nullptr;
+    auto* active = previous && previous->GetType() == ObjectKind::WindowNode
+            ? previous->As<WindowNode>() : nullptr;
     if (active && (!active->IsAllAncestorsMapped() || IsWindowFiltered(active)))
         active = nullptr;
     if (active && active != anchor) {
@@ -472,10 +467,7 @@ void NativeScreen::Present(sp<PresentTicket> ticket) {
     }
     auto& selected = direct[ticket->window];
     auto previousDirect = std::exchange(selected, ticket);
-    if (!PatchPresent(ticket, previousDirect)) {
-        requests.push_back(ticket);
-        PostInvalidate();
-    }
+    if (!PatchPresent(ticket, previousDirect)) PostInvalidate(ticket);
     // Match Java PresentExtension: acknowledge the scene update without waiting
     // for Draw, Vulkan submission, presentation, or GPU completion. Only an
     // explicitly configured producer limiter may defer IDLE.
@@ -494,7 +486,7 @@ void NativeScreen::Subscribe(sp<Subscription> sub) {
     }
     if (sub->mask) subscriptions[sub->window].push_back(std::move(sub));
 }
-void NativeScreen::RemoveClient(XClient* client) {
+void NativeScreen::RemoveClient(ClientSession* client) {
     { std::lock_guard lock(state); sceneCurrent = false; }
     for (auto i = subscriptions.begin(); i != subscriptions.end();) {
         std::erase_if(i->second, [client](const auto& s) { return s->client == client; });
@@ -502,18 +494,18 @@ void NativeScreen::RemoveClient(XClient* client) {
     }
     for (auto i = direct.begin(); i != direct.end();) {
         auto* w = server.GetResource(i->first);
-        if (!w || (w->GetType() == XResourceType::Window && w->As<Window>()->GetClient() == client))
+        if (!w || (w->GetType() == ObjectKind::WindowNode && w->As<WindowNode>()->GetClient() == client))
             i = direct.erase(i);
         else ++i;
     }
 }
-void NativeScreen::WindowGeometryChanged(Window* window, u32 pixmapFlags) {
+void NativeScreen::WindowGeometryChanged(WindowNode* window, u32 pixmapFlags) {
     // Match Java 40cfb9c8: Mesa DRI3/Freedreno listens to Present's GenericEvent,
     // independently of core StructureNotifyMask/ConfigureNotify subscriptions.
     auto selected = subscriptions.find(window->id);
     if (selected == subscriptions.end()) return;
-    const auto* extension = server.GetExtensionManager().FindExtension("Present");
-    const auto& rect = window->GetOutRect();
+    const auto* extension = &WireExtensions::At(ExtensionOpcode::Present);
+    const auto& rect = window->FrameBounds();
     const auto* parent = window->GetParent();
     for (const auto& sub : selected->second) if (sub->mask & PresentConfigureNotifyMask) {
         xPresentConfigureNotify event{};
@@ -522,17 +514,17 @@ void NativeScreen::WindowGeometryChanged(Window* window, u32 pixmapFlags) {
         event.sequenceNumber = sub->client->Sequence();
         event.length = (sizeof(event) - 32) / 4; event.evtype = PresentConfigureNotify;
         event.eid = sub->id; event.window = window->id;
-        event.x = rect.left - (parent ? parent->GetInRect().left : 0);
-        event.y = rect.top - (parent ? parent->GetInRect().top : 0);
+        event.x = rect.left - (parent ? parent->ContentBounds().left : 0);
+        event.y = rect.top - (parent ? parent->ContentBounds().top : 0);
         event.width = event.pixmap_width = window->GetWidth();
         event.height = event.pixmap_height = window->GetHeight();
         event.pixmap_flags = pixmapFlags;
         sub->client->SendPacket(&event, sizeof(event));
     }
 }
-void NativeScreen::WindowDestroyed(u32 id) {
-    if (auto* resource = server.GetResource(id); resource && resource->GetType() == XResourceType::Window)
-        WindowGeometryChanged(resource->As<Window>(), 1); // Java PIXMAP_FLAG_WINDOW_DESTROYED.
+void NativeScreen::WindowDestroyed(WindowNode& window) {
+    const u32 id = window.id;
+    WindowGeometryChanged(&window, 1); // Java PIXMAP_FLAG_WINDOW_DESTROYED.
     if (hudWindow == id) { hudWindow = 0; hudFrames = 0; }
     { std::lock_guard lock(state); sceneCurrent = false; }
     direct.erase(id);
@@ -543,7 +535,7 @@ void NativeScreen::WindowDestroyed(u32 id) {
 bool NativeScreen::FenceTriggered(u32 id) const {
     if (!id) return true;
     auto* r = server.GetResource(id);
-    return r && r->GetType() == XResourceType::Fence && r->As<NativeFence>()->triggered;
+    return r && r->GetType() == ObjectKind::Fence && r->As<NativeFence>()->triggered;
 }
 u64 NativeScreen::MSC() const {
     auto now = std::chrono::steady_clock::now().time_since_epoch();
@@ -554,11 +546,16 @@ bool NativeScreen::PrepareIdle(const sp<PresentTicket>& t) {
     if (producerLimit.load(std::memory_order_relaxed) > 0 &&
         std::chrono::steady_clock::now() < t->releaseAfter) {
         if (!t->idleDeferred) {
-            t->idleDeferred = true;
             deferredIdles.push_back(t);
+            t->idleDeferred = true;
+            nextIdleDeadline = std::min(nextIdleDeadline, t->releaseAfter);
         }
         return false;
     }
+    FinishIdle(t);
+    return true;
+}
+void NativeScreen::FinishIdle(const sp<PresentTicket>& t) {
     t->idleDeferred = false;
     t->idle = true;
     if (DiagnosticsEnabled()) {
@@ -567,16 +564,18 @@ bool NativeScreen::PrepareIdle(const sp<PresentTicket>& t) {
         if (t->diagnosticQueued != decltype(now){})
             metricIdleDelay.Record(std::chrono::duration_cast<std::chrono::nanoseconds>(now - t->diagnosticQueued).count());
     }
-    if (auto* f = server.GetResource(t->idleFence); f && f->GetType() == XResourceType::Fence) {
+    if (auto* f = t->idleFence ? server.GetResource(t->idleFence) : nullptr;
+        f && f->GetType() == ObjectKind::Fence) {
         if (!std::exchange(f->As<NativeFence>()->triggered, true)) FenceSignaled();
     }
-    return true;
 }
 void NativeScreen::FenceSignaled() {
     if (server.HasSyncWaiters() || !waiting.empty()) server.NotifyScreen();
 }
 void NativeScreen::Idle(const sp<PresentTicket>& t) {
-    if (!PrepareIdle(t)) return;
+    if (PrepareIdle(t)) SendIdleEvent(t);
+}
+void NativeScreen::SendIdleEvent(const sp<PresentTicket>& t) {
     auto selected = subscriptions.find(t->window);
     if (selected == subscriptions.end()) return;
     for (auto& sub : selected->second) if (sub->mask & PresentIdleNotifyMask) {
@@ -590,24 +589,33 @@ void NativeScreen::Idle(const sp<PresentTicket>& t) {
 }
 void NativeScreen::FlushDeferredIdles() {
     if (deferredIdles.empty()) return;
-    auto pending = std::move(deferredIdles);
-    deferredIdles.clear();
-    for (auto& ticket : pending) {
-        ticket->idleDeferred = false;
-        Idle(ticket);
+    using Clock = std::chrono::steady_clock;
+    const auto due = producerLimit.load(std::memory_order_relaxed) > 0
+        ? Clock::now() : Clock::time_point::max();
+    if (due < nextIdleDeadline) return;
+
+    // Keep the queue intact during delivery, so a socket allocation failure
+    // leaves the remaining releases available for the next pass.
+    auto next = Clock::time_point::max();
+    for (const auto& ticket : deferredIdles) {
+        if (ticket->idle) continue;
+        if (ticket->releaseAfter > due) {
+            next = std::min(next, ticket->releaseAfter);
+            continue;
+        }
+        FinishIdle(ticket);
+        SendIdleEvent(ticket);
     }
+    std::erase_if(deferredIdles, [](const auto& ticket) { return ticket->idle.load(); });
+    nextIdleDeadline = next;
 }
 int NativeScreen::IdleTimeoutMs() const {
     if (deferredIdles.empty()) return -1;
     if (producerLimit.load(std::memory_order_relaxed) == 0) return 0;
-    const auto now = std::chrono::steady_clock::now();
-    int timeout = 2147483647;
-    for (const auto& ticket : deferredIdles) {
-        const auto delay = std::chrono::duration_cast<std::chrono::microseconds>(ticket->releaseAfter - now).count();
-        if (delay <= 0) return 0;
-        timeout = std::min(timeout, int(std::min<int64_t>((delay + 999) / 1000, 2147483647)));
-    }
-    return timeout;
+    const auto remaining = nextIdleDeadline - std::chrono::steady_clock::now();
+    if (remaining <= decltype(remaining)::zero()) return 0;
+    const auto ms = std::chrono::ceil<std::chrono::milliseconds>(remaining).count();
+    return static_cast<int>(std::min<int64_t>(ms, std::numeric_limits<int>::max()));
 }
 void NativeScreen::Complete(const sp<PresentTicket>& t, bool idleFirst) {
     if (t->complete) return;
@@ -663,17 +671,17 @@ void NativeScreen::WaitIdle() {
 std::string NativeScreen::LastError() { std::lock_guard lock(state); return error; }
 void NativeScreen::SetDiagnostics(bool enabled) {
     diagnostics.store(enabled, std::memory_order_relaxed);
-    if (enabled) LOGI("X11Metrics enabled by WINLATOR_X11=1");
+    if (enabled) diagnostics::Write(diagnostics::Severity::Info, "X11Metrics enabled by WINLATOR_X11=1");
 }
 void NativeScreen::ProtocolError(int client, u8 opcode, u8 minor, u8 code, u32 resource) {
     if (!DiagnosticsEnabled()) return;
     const u64 count = metricErrors.fetch_add(1, std::memory_order_relaxed);
     // Bound diagnostics if a client repeats an unsupported request every frame.
-    if (count < 8) LOGE("X11ProtocolError client={} opcode={} minor={} code={} resource={:#x}",
+    if (count < 8) diagnostics::Write(diagnostics::Severity::Error, "X11ProtocolError client={} opcode={} minor={} code={} resource={:#x}",
                         client, opcode, minor, code, resource);
 }
 void NativeScreen::Worker() {
-    const auto info = server.GetScreenInfo();
+    const auto info = server.Dimensions();
     auto renderer = CreateNativeRenderer(info.width, info.height, server.ValidationEnabled(), server.RendererConfig());
     // Frames retain the AHBs until the corresponding GPU sampling fences signal.
     // Draw owns context changes. A separate worker retires previously published
@@ -743,7 +751,7 @@ void NativeScreen::Worker() {
                     retire(ready);
                 } catch (const std::exception& e) {
                     std::unique_lock lock(state);
-                    if (error != e.what()) LOGE("Native GPU fence wait failed: {}", e.what());
+                    if (error != e.what()) diagnostics::Write(diagnostics::Severity::Error, "Native GPU fence wait failed: {}", e.what());
                     error = e.what();
                     // Avoid an error spin if the driver cannot wait for a fence.
                     retirementCv.wait_for(lock, std::chrono::milliseconds(10));
@@ -766,8 +774,8 @@ void NativeScreen::Worker() {
                 refreshed.entries = latest.entries;
                 refreshed.requests.swap(latest.requests);
                 for (const auto& request : frame.requests) {
-                    const bool selected = std::ranges::any_of(refreshed.entries,
-                        [&](const auto& entry) { return entry.ticket == request; });
+                    const auto* entry = latest.FindEntry(request->window);
+                    const bool selected = entry && entry->ticket == request;
                     if (selected) {
                         if (std::ranges::find(refreshed.requests, request) == refreshed.requests.end())
                             refreshed.requests.push_back(request);
@@ -802,21 +810,6 @@ void NativeScreen::Worker() {
     const NativeFrameLatch& drawLatch = server.RendererConfig().backend ==
             NativeRendererConfig::Backend::DisplayX ? noLatch : latch;
     for (;;) {
-        {
-            std::unique_lock lock(state);
-            cv.wait(lock, [&] {
-                if (stop || surfaceDirty) return true;
-                if (!dirty || (hasSurface && renderer && !renderer->ReadyToDraw())) return false;
-                const auto timeline = displayXFrameTimeline.load(std::memory_order_relaxed);
-                // FIFO delegates pacing to per-layer backpressure, as in Java.
-                const bool fifo = std::ranges::any_of(latest.entries, [](const auto& e) {
-                    return e.external && e.external->presentMode == 2;
-                });
-                return !hasSurface || !paceDisplayX || fifo || timeline < 0 || timeline != lastDisplayXTimeline;
-            });
-            if (stop) break;
-        }
-
         NativeFrame frame; ANativeWindow* nextSurface{};
         bool changeSurface{}, changeOptions{}, changeVisual{}, fs{}, visible{}, nextHasSurface{};
         NativeVisualOptions nextVisual;
@@ -824,13 +817,25 @@ void NativeScreen::Worker() {
         int limit{}, selectedFrameGenEngine{}; float rate{}, zoom{};
         {
             std::unique_lock lock(state);
+            cv.wait(lock, [&] {
+                if (stop || surfaceDirty) return true;
+                if (!dirty) return false;
+                if (hasSurface && renderer && !renderer->ReadyToDraw()) {
+                    if (DiagnosticsEnabled()) ++metricBusy;
+                    return false;
+                }
+                if (!hasSurface || !paceDisplayX) return true;
+                const auto timeline = displayXFrameTimeline.load(std::memory_order_relaxed);
+                if (timeline < 0 || timeline != lastDisplayXTimeline) return true;
+                // FIFO delegates pacing to per-layer backpressure, as in Java.
+                return std::ranges::any_of(latest.entries, [](const auto& e) {
+                    return e.external && e.external->presentMode == 2;
+                });
+            });
+            if (stop) break;
             if (!dirty) continue;
-            if (!surfaceDirty && hasSurface && renderer && !renderer->ReadyToDraw()) {
-                if (DiagnosticsEnabled()) ++metricBusy;
-                // Do not consume the newest X11 request while the next presentation
-                // slot is busy. A newer Present can replace it in the meantime.
-                continue;
-            }
+            // Select the scene under the lock returned by wait. No second slot
+            // check or mutex round trip is required before claiming the frame.
             if (!recycled.empty()) { frame = std::move(recycled.back()); recycled.pop_back(); }
             selectedFrameGenEngine = visualOptions.frameGenEngine;
             frame.frameGenSourceFrames = latest.frameGenSourceFrames;
@@ -887,7 +892,7 @@ void NativeScreen::Worker() {
         } catch (const std::exception& e) {
             std::lock_guard lock(state);
             error = e.what();
-            LOGE("Native presentation failed: {}", error);
+            diagnostics::Write(diagnostics::Severity::Error, "Native presentation failed: {}", error);
         }
         if (nextSurface) ANativeWindow_release(nextSurface);
         if (trace) {
@@ -934,7 +939,7 @@ void NativeScreen::Worker() {
                 const auto waitAvg = metricWait.TakeMicroseconds().first;
                 const auto [completeAvg, completeMax] = metricCompleteDelay.TakeMicroseconds();
                 const auto [idleAvg, idleMax] = metricIdleDelay.TakeMicroseconds();
-                LOGI("X11Metrics seconds={:.2f} present={} submit={} retired={} idle={} coalesced={} slot_busy={} "
+                diagnostics::Write(diagnostics::Severity::Info, "X11Metrics seconds={:.2f} present={} submit={} retired={} idle={} coalesced={} slot_busy={} "
                      "draw_us(avg/max)={:.1f}/{:.1f} fence_retire_us(avg/max)={:.1f}/{:.1f} fence_wait_us_avg={:.1f} "
                      "queue_us(avg/max)={:.1f}/{:.1f} "
                      "present_to_complete_us(avg/max)={:.1f}/{:.1f} present_to_idle_us(avg/max)={:.1f}/{:.1f} "
@@ -954,14 +959,14 @@ void NativeScreen::Worker() {
                 const auto [readAvg, readMax] = metricInputRead.TakeMicroseconds();
                 const auto [dispatchAvg, dispatchMax] = metricDispatch.TakeMicroseconds();
                 const auto [lockAvg, lockMax] = metricServerLock.TakeMicroseconds();
-                LOGI("X11RequestMetrics seconds={:.2f} requests={} bytes={} "
+                diagnostics::Write(diagnostics::Severity::Info, "X11RequestMetrics seconds={:.2f} requests={} bytes={} "
                      "input_read_us(avg/max)={:.1f}/{:.1f} dispatch_us(avg/max)={:.1f}/{:.1f} "
                      "event_lock_us(avg/max)={:.1f}/{:.1f} output_blocked={} output_peak_bytes={}",
                      seconds, metricRequests.exchange(0), metricRequestBytes.exchange(0),
                      readAvg, readMax, dispatchAvg, dispatchMax, lockAvg, lockMax,
                      metricOutputBlocked.exchange(0), metricOutputPeak.exchange(0));
                 const auto ahb = renderer->TakeAHBMetrics();
-                LOGI("X11AHBMetrics seconds={:.2f} dri3_received={} vk_import_new={} vk_cache_hit={} "
+                diagnostics::Write(diagnostics::Severity::Info, "X11AHBMetrics seconds={:.2f} dri3_received={} vk_import_new={} vk_cache_hit={} "
                      "scene_unchanged_ahb={} cache_entries={} vk_import_us(avg/max)={:.1f}/{:.1f}",
                      seconds, metricDri3Imports.exchange(0), ahb.vkImports, ahb.cacheHits,
                      ahb.unchangedDrawables, ahb.cacheEntries,
@@ -979,7 +984,7 @@ void NativeScreen::Worker() {
     // The in-flight frames own AHB references; drain the GPU before destruction.
     if (renderer) {
         try { renderer->PrepareSurfaceChange(); retire(renderer->Drain()); }
-        catch (const std::exception& e) { LOGE("Native GPU shutdown drain failed: {}", e.what()); }
+        catch (const std::exception& e) { diagnostics::Write(diagnostics::Severity::Error, "Native GPU shutdown drain failed: {}", e.what()); }
     }
     renderer.reset();
     {

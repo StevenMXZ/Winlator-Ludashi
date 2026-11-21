@@ -7,7 +7,7 @@
 
 
 
-namespace xorg {
+namespace ludashi::x11 {
 #ifdef __ANDROID__
 std::unique_ptr<NativeRenderer> CreateNativeEGLRenderer(u16, u16, const NativeRendererConfig&);
 std::unique_ptr<NativeRenderer> CreateNativeDisplayXRenderer(u16, u16, const NativeRendererConfig&);
@@ -245,7 +245,7 @@ private:
         context->setExternalRenderList(ids.data(), xs.data(), ys.data(), ids.size());
         if (frame.cursor && frame.cursorPixels && cursorID != frame.cursor->ID()) {
             const auto& d = *frame.cursor;
-            // Cursor pixels share the same BGRA byte order as desktop uploads.
+            // PointerSprite pixels share the same BGRA byte order as desktop uploads.
             context->updateCursorImage(const_cast<u8*>(frame.cursorPixels->data()),
                                        d.GetWidth(), d.GetHeight(), d.GetWidth(), 0, 0);
             cursorID = d.ID();

@@ -21,6 +21,13 @@ def run(binary):
             try:
                 assert process.stdout.readline().strip() == 'ready'
                 c, other = Client(channel), Client(channel)
+                # libXrender probes missing pixmap depths before querying RENDER.
+                # BadValue on a probe makes libXcursor fall back to a two-color cursor.
+                for depth in (4, 8, 32):
+                    probe = c.base | 40
+                    c.send(53, depth, struct.pack('<IIHH', probe, c.root, 1, 1))
+                    c.send(54, payload=struct.pack('<I', probe))
+                c.barrier()
                 composite, render = c.extension('Composite'), c.extension('RENDER')
                 name = b'RENDER'
                 p = c.reply(c.send(98, payload=struct.pack('<HH', len(name), 0) + name + bytes(2)))

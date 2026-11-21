@@ -33,7 +33,7 @@ else()
     target_link_libraries(ludashix11_host PRIVATE pthread)
     target_compile_definitions(ludashix11_host PRIVATE LUDASHI_HOST_TEST=1)
     add_executable(ludashix11_renderer_test tests/test_renderer.cpp src/native_renderer.cpp
-        src/native_drawable.cpp core/drawable.cpp)
+        src/native_drawable.cpp)
     target_include_directories(ludashix11_renderer_test PRIVATE tests/renderer_stubs tests/stubs . include third_party)
     target_compile_features(ludashix11_renderer_test PRIVATE cxx_std_20)
     target_compile_options(ludashix11_renderer_test PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/include/common.h)

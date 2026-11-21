@@ -1,14 +1,15 @@
 #include <cassert>
 #include "native_screen.h"
 #include "native_displayx_bridge.h"
-#include "core/xserver.h"
-#include "core/xclient.h"
-#include "core/cursor.h"
-#include "core/pixmap.h"
-#include "core/window.h"
-#include "core/window_manager.h"
-#include "core/atom.h"
-#include "core/mouse.h"
+#include "core/display_runtime.h"
+#include "core/client_session.h"
+#include "core/pointer_sprite.h"
+#include "core/request_error.h"
+#include "core/window_node.h"
+#include "core/window_tree.h"
+#include "core/atom_catalog.h"
+#include "core/pointer_input.h"
+#include "core/key_state.h"
 #include <sys/socket.h>
 #include <csignal>
 #include <cstdlib>
@@ -16,7 +17,7 @@
 #include <sstream>
 #include <poll.h>
 
-namespace xorg {
+namespace ludashi::x11 {
 class HostRenderer final : public NativeRenderer {
 public:
     HostRenderer() {
@@ -136,33 +137,40 @@ public:
 };
 std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16, u16, bool, const NativeRendererConfig&) { return std::make_unique<HostRenderer>(); }
 }
+using ludashi::x11::s16;
+using ludashi::x11::sp;
+using ludashi::x11::u8;
+using ludashi::x11::u16;
+using ludashi::x11::u32;
+using ludashi::x11::u64;
+
 static volatile sig_atomic_t quit;
 int main(int argc, char** argv) {
     if (argc != 2 && argc != 3) return 2;
     signal(SIGTERM, [](int) { quit = 1; }); signal(SIGINT, [](int) { quit = 1; });
-    xorg::NativeRendererConfig config;
-    if (std::getenv("LUDASHI_HOST_DISPLAYX") || std::string(argv[1]) == "--displayx-timeline") config.backend = xorg::NativeRendererConfig::Backend::DisplayX;
-    xorg::XServer server(nullptr, xorg::ScreenInfo(1280, 720, 4), false, config);
-    std::unique_ptr<xorg::NativeDisplayXBridge> displayX;
-    if (std::getenv("LUDASHI_HOST_DISPLAYX")) displayX = std::make_unique<xorg::NativeDisplayXBridge>(server);
+    ludashi::x11::NativeRendererConfig config;
+    if (std::getenv("LUDASHI_HOST_DISPLAYX") || std::string(argv[1]) == "--displayx-timeline") config.backend = ludashi::x11::NativeRendererConfig::Backend::DisplayX;
+    ludashi::x11::DisplayRuntime server(ludashi::x11::DisplayDimensions(1280, 720), false, config);
+    std::unique_ptr<ludashi::x11::NativeDisplayXBridge> displayX;
+    if (std::getenv("LUDASHI_HOST_DISPLAYX")) displayX = std::make_unique<ludashi::x11::NativeDisplayXBridge>(server);
     if (std::string(argv[1]) == "--startup-content") {
         int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
-        xorg::XClient client(server, sockets[0]);
+        ludashi::x11::ClientSession client(server, ludashi::x11::OwnedDescriptor(sockets[0]));
         auto lock = server.Lock();
-        auto& wm = server.GetWindowManager();
-        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
-        auto helper = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
+        auto& wm = server.Windows();
+        auto& screen = server.GetScreen();
+        auto helper = wm.CreateWindow(&client, 0x400001, wm.GetRootWindow(), 0, 0, 32, 32,
                                       0, InputOutput, 24, 0, nullptr);
         wm.MapWindow(&client, helper.get());
         screen.MutateDrawable(helper->GetDrawable(), [] {});
         screen.HudFrame(helper->id);
         assert(!screen.HasStartupContent()); // A painted helper has no self window_group.
-        auto window = wm.CreateWindow(&client, 0x200002, wm.GetRootWindow(), 0, 0, 32, 32,
+        auto window = wm.CreateWindow(&client, 0x400002, wm.GetRootWindow(), 0, 0, 32, 32,
                                       0, InputOutput, 24, 0, nullptr);
         screen.MutateDrawable(window->GetDrawable(), [] {});
         wm.MapWindow(&client, window.get());
         assert(!screen.HasStartupContent()); // Mapping does not deliver OnDrawListener.
-        const auto atom = xorg::Atom::Intern("WM_HINTS");
+        const auto atom = server.Atoms().Intern("WM_HINTS");
         std::vector<u8> hints(9 * sizeof(u32));
         u32 group = helper->id;
         memcpy(hints.data() + 8 * sizeof(u32), &group, sizeof(group));
@@ -193,12 +201,12 @@ int main(int argc, char** argv) {
     }
     if (std::string(argv[1]) == "--window-map-listener") {
         int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
-        xorg::XClient client(server, sockets[0]);
-        auto& wm = server.GetWindowManager();
-        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
+        ludashi::x11::ClientSession client(server, ludashi::x11::OwnedDescriptor(sockets[0]));
+        auto& wm = server.Windows();
+        auto window = wm.CreateWindow(&client, 0x400001, wm.GetRootWindow(), 0, 0, 32, 32,
                                       0, InputOutput, 24, 0, nullptr);
         int mapped = 0;
-        wm.onWindowMapped = [&](xorg::Window* value) { assert(value == window.get()); assert(value->IsMapped()); ++mapped; };
+        wm.onWindowMapped = [&](ludashi::x11::WindowNode* value) { assert(value == window.get()); assert(value->IsMapped()); ++mapped; };
         wm.MapWindow(&client, window.get());
         wm.MapWindow(&client, window.get());
         assert(mapped == 1);
@@ -212,12 +220,12 @@ int main(int argc, char** argv) {
     }
     if (std::string(argv[1]) == "--displayx-timeline") {
         int sockets[2]; assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
-        xorg::XClient client(server, sockets[0]);
-        auto& wm = server.GetWindowManager();
-        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
-        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 32, 32,
+        ludashi::x11::ClientSession client(server, ludashi::x11::OwnedDescriptor(sockets[0]));
+        auto& wm = server.Windows();
+        auto& screen = server.GetScreen();
+        auto window = wm.CreateWindow(&client, 0x400001, wm.GetRootWindow(), 0, 0, 32, 32,
                                       0, InputOutput, 24, 0, nullptr);
-        auto* initial = static_cast<xorg::NativeDrawable*>(window->GetDrawable());
+        auto* initial = window->GetDrawable();
         screen.MutateDrawable(initial, [&] { initial->FillRect(0, 0, 32, 32, 0xff000000); });
         screen.SetFrameTimeline(42);
         wm.MapWindow(&client, window.get());
@@ -230,13 +238,13 @@ int main(int argc, char** argv) {
             screen.WaitIdle();
         };
         await(1);
-        auto* image = static_cast<xorg::NativeDrawable*>(window->GetDrawable());
+        auto* image = window->GetDrawable();
         screen.MutateDrawable(image, [&] { image->FillRect(0, 0, 1, 1, 0xff123456); });
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         assert(screen.presentedCount == 1); // One submission per timeline for paced DRI3/mailbox.
         screen.SetFrameTimeline(43); await(2);
-        auto external = std::make_shared<xorg::NativeExternalFrame>();
-        external->drawable = std::make_shared<xorg::NativeDrawable>(32, 32, 32);
+        auto external = std::make_shared<ludashi::x11::NativeExternalFrame>();
+        external->drawable = std::make_shared<ludashi::x11::NativeDrawable>(32, 32, 32);
         external->presentMode = 2;
         screen.UpdateExternal(window->id, window->generation, external);
         await(3); // FIFO uses compositor backpressure instead of a second refresh gate.
@@ -250,8 +258,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (std::string(argv[1]) == "--framegen-options") {
-        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
-        xorg::NativeVisualOptions options;
+        auto& screen = server.GetScreen();
+        ludashi::x11::NativeVisualOptions options;
         options.frameGenEngine = 1;
         options.frameGen = true;
         auto enabled = screen.SetVisualOptions(options);
@@ -272,14 +280,14 @@ int main(int argc, char** argv) {
     }
     if (std::string(argv[1]) == "--pending-cow") {
         int sockets[2]; if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) return 2;
-        xorg::XClient client(server, sockets[0]);
-        auto& wm = server.GetWindowManager();
-        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
-        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 0, 0, 1280, 720,
+        ludashi::x11::ClientSession client(server, ludashi::x11::OwnedDescriptor(sockets[0]));
+        auto& wm = server.Windows();
+        auto& screen = server.GetScreen();
+        auto window = wm.CreateWindow(&client, 0x400001, wm.GetRootWindow(), 0, 0, 1280, 720,
                                       0, InputOutput, 24, 0, nullptr);
         wm.MapWindow(&client, window.get());
         screen.WaitIdle();
-        auto* image = static_cast<xorg::NativeDrawable*>(window->GetDrawable());
+        auto* image = window->GetDrawable();
         int exclusiveWrites = 0;
         for (int n = 0; n < 64; ++n) {
             screen.MutateDrawable(image, [&] {
@@ -311,37 +319,145 @@ int main(int argc, char** argv) {
         std::cout << "PASS: pending CPU snapshot avoids COW; retained frame remains immutable; failed write restores snapshot\n";
         return 0;
     }
-    if (std::string(argv[1]) == "--cursor-hud") {
-        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
-        xorg::Cursor arrow(screen, 105, u32(68), u32(69), 0x000000, 0xffffff);
-        if (arrow.GetHotspotX() != 15 || arrow.GetHotspotY() != 15) return 20;
-        u32 tip{};
-        arrow.GetDrawable()->ReadPixels(reinterpret_cast<u8*>(&tip), 15, 15, 1, 1, 1);
-        if ((tip >> 24) != 255) return 21;
-        xorg::Pixmap source(screen, 101, 3, 1, u8(1)), mask(screen, 102, 3, 1, u8(1));
-        const u8 src[] = {3,0,0,0}, msk[] = {5,0,0,0};
-        source.GetDrawable()->WriteBinaryPixels(src, 3, 1, 1, 0);
-        mask.GetDrawable()->WriteBinaryPixels(msk, 3, 1, 1, 0);
-        xorg::Cursor cursor(screen, 103, 1, 0, &source, &mask, 0x123456, 0xabcdef);
+    if (std::string(argv[1]) == "--cursor-state") {
+        auto& screen = server.GetScreen();
+        auto expect = [](bool condition) {
+            if (!condition) throw std::runtime_error("cursor state regression");
+        };
+        std::unique_ptr<ludashi::x11::PointerSprite> cursor;
+        {
+            auto source = screen.CreateDrawable(3, 1, u8(1));
+            auto mask = screen.CreateDrawable(3, 1, u8(1));
+            const u8 sourceBits[] = {3, 0, 0, 0}, maskBits[] = {5, 0, 0, 0};
+            source->WriteBinaryPixels(sourceBits, 3, 1, 1, 0);
+            mask->WriteBinaryPixels(maskBits, 3, 1, 1, 0);
+            cursor = std::make_unique<ludashi::x11::PointerSprite>(screen, 103, 1, 0, *source, mask.get(), 0x123456, 0xabcdef);
+        }
+        auto* initial = cursor->Image().get();
+        const auto retained = initial->Pixels();
+        cursor->Recolor(0xff123456, 0xffabcdef);
+        expect(cursor->Image().get() == initial);
+        cursor->Recolor(0x102030, 0x908070);
+        expect(cursor->Image().get() != initial);
+        u32 oldPixel{};
+        memcpy(&oldPixel, retained->data(), sizeof(oldPixel));
+        expect(oldPixel == 0xff123456);
         u32 pixels[3]{};
-        cursor.GetDrawable()->ReadPixels(reinterpret_cast<u8*>(pixels), 0, 0, 3, 1, 3);
+        cursor->Image()->ReadPixels(reinterpret_cast<u8*>(pixels), 0, 0, 3, 1, 3);
+        expect(pixels[0] == 0xff102030 && pixels[1] == 0 && pixels[2] == 0xff908070);
+
+        for (u32 code = 0; code < 154; ++code) {
+            ludashi::x11::PointerSprite mixed(screen, 104, code, 153 - code, 0, 0xffffff);
+            expect(mixed.GetHotspotX() >= 0 && mixed.GetHotspotY() >= 0);
+            expect(u32(mixed.GetHotspotX()) < mixed.Image()->GetWidth());
+            expect(u32(mixed.GetHotspotY()) < mixed.Image()->GetHeight());
+        }
+        ludashi::x11::PointerSprite noMask(screen, 105, u32(68), u32(65535), 0, 0xffffff, false);
+        expect(noMask.Image()->GetWidth() == 8 && noMask.Image()->GetHeight() == 14);
+        expect(noMask.GetHotspotX() == 0 && noMask.GetHotspotY() == 0);
+        for (u32 code : {154u, 65535u, UINT32_MAX}) {
+            bool rejected = false;
+            try {
+                ludashi::x11::PointerSprite invalid(screen, 106, code, 1, 0, 0xffffff);
+            } catch (const ludashi::x11::BadValueError&) {
+                rejected = true;
+            }
+            expect(rejected);
+        }
+
+        auto source = screen.CreateDrawable(256, 1, 32);
+        std::vector<u32> premultiplied(256);
+        for (u32 alpha = 0; alpha < 256; ++alpha) {
+            premultiplied[alpha] = (alpha << 24) | (std::min(70u, alpha) << 16) |
+                                   (std::min(100u, alpha) << 8) | std::min(200u, alpha);
+        }
+        premultiplied[0] = 0x00123456;
+        source->WritePixels(reinterpret_cast<const u8*>(premultiplied.data()), 0, 0, 0, 0, 256, 1, 256);
+        ludashi::x11::PointerSprite argb(screen, 107, u16(0), u16(0), *source);
+        std::vector<u32> converted(256);
+        argb.Image()->ReadPixels(reinterpret_cast<u8*>(converted.data()), 0, 0, 256, 1, 256);
+        expect(converted[0] == 0);
+        for (u32 alpha = 1; alpha < 256; ++alpha) {
+            u32 expected = alpha << 24;
+            for (u32 shift : {0u, 8u, 16u}) {
+                const u32 component = (premultiplied[alpha] >> shift) & 255;
+                expected |= std::min(255u, (component * 255 + alpha / 2) / alpha) << shift;
+            }
+            expect(converted[alpha] == expected);
+        }
+        auto* originalArgb = argb.Image().get();
+        argb.Recolor(0, 0xffffff);
+        expect(argb.Image().get() == originalArgb);
+        ludashi::x11::PointerSprite straight(screen, 108, u16(0), u16(0), *source, false);
+        straight.Image()->ReadPixels(reinterpret_cast<u8*>(converted.data()), 0, 0, 256, 1, 256);
+        expect(converted == premultiplied);
+        std::cout << "PASS: cursor masks, recolor snapshots/no-op, glyph bounds/alignment and all ARGB alpha values" << std::endl;
+        return 0;
+    }
+    if (std::string(argv[1]) == "--cursor-hotpath") {
+        auto& screen = server.GetScreen();
+        uint64_t checksum = 0;
+        const auto start = std::chrono::steady_clock::now();
+        for (unsigned iteration = 0; iteration < 100000; ++iteration) {
+            ludashi::x11::PointerSprite cursor(screen, 100, u32(68), u32(69), 0, 0xffffff);
+            checksum += cursor.Image()->GetWidth() + cursor.GetHotspotX();
+        }
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+        std::cout << std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count()
+                  << " " << checksum << std::endl;
+        return 0;
+    }
+    if (std::string(argv[1]) == "--cursor-font-dump") {
+        auto& screen = server.GetScreen();
+        for (u32 code = 0; code < 154; code += 2) {
+            ludashi::x11::PointerSprite cursor(screen, 100, code, code + 1, 0x123456, 0xabcdef);
+            const auto* image = cursor.Image().get();
+            const u16 width = image->GetWidth(), height = image->GetHeight();
+            std::vector<u32> pixels(size_t(width) * height);
+            cursor.Image()->ReadPixels(reinterpret_cast<u8*>(pixels.data()), 0, 0, width, height, width);
+            std::cout << code << " " << width << " " << height << " "
+                      << cursor.GetHotspotX() << " " << cursor.GetHotspotY();
+            for (u32 pixel : pixels) std::cout << " " << pixel;
+            std::cout << "\n";
+        }
+        return 0;
+    }
+    if (std::string(argv[1]) == "--cursor-hud") {
+        auto& screen = server.GetScreen();
+        ludashi::x11::PointerSprite arrow(screen, 105, u32(68), u32(69), 0x000000, 0xffffff);
+        if (arrow.GetHotspotX() != 1 || arrow.GetHotspotY() != 1) return 20;
+        u32 tip{};
+        arrow.Image()->ReadPixels(reinterpret_cast<u8*>(&tip), 1, 1, 1, 1, 1);
+        if ((tip >> 24) != 255) return 21;
+        auto source = screen.CreateDrawable(3, 1, u8(1));
+        auto mask = screen.CreateDrawable(3, 1, u8(1));
+        const u8 src[] = {3,0,0,0}, msk[] = {5,0,0,0};
+        source->WriteBinaryPixels(src, 3, 1, 1, 0);
+        mask->WriteBinaryPixels(msk, 3, 1, 1, 0);
+        ludashi::x11::PointerSprite cursor(screen, 103, 1, 0, *source, mask.get(), 0x123456, 0xabcdef);
+        u32 pixels[3]{};
+        cursor.Image()->ReadPixels(reinterpret_cast<u8*>(pixels), 0, 0, 3, 1, 3);
         if (pixels[0] != 0xff123456 || pixels[1] != 0 || pixels[2] != 0xffabcdef || cursor.GetHotspotX() != 1) return 3;
         cursor.Recolor(0x908070, 0x102030);
-        cursor.GetDrawable()->ReadPixels(reinterpret_cast<u8*>(pixels), 0, 0, 3, 1, 3);
+        cursor.Image()->ReadPixels(reinterpret_cast<u8*>(pixels), 0, 0, 3, 1, 3);
         if (pixels[0] != 0xff908070 || pixels[1] != 0 || pixels[2] != 0xff102030) return 4;
-        xorg::Cursor opaque(screen, 104, 0, 0, &source, nullptr, 0x123456, 0xabcdef);
-        opaque.GetDrawable()->ReadPixels(reinterpret_cast<u8*>(pixels), 0, 0, 3, 1, 3);
+        ludashi::x11::PointerSprite opaque(screen, 104, 0, 0, *source, nullptr, 0x123456, 0xabcdef);
+        opaque.Image()->ReadPixels(reinterpret_cast<u8*>(pixels), 0, 0, 3, 1, 3);
         if (pixels[0] != 0xff123456 || pixels[1] != 0xff123456 || pixels[2] != 0xffabcdef) return 5;
         // The HUD counts producer frames, including more than one per compositor draw.
         auto lock = server.Lock();
-        auto* root = server.GetWindowManager().GetRootWindow();
-        auto makeWindow = [&](u32 id, xorg::Window* parent) {
-            auto w = std::make_shared<xorg::Window>(server.GetWindowManager(), id, parent, false, 0,0,64,64,24,0,nullptr);
-            w->GetAttributes().mapped = true; server.AddResource(w); return w;
+        auto* root = server.Windows().GetRootWindow();
+        auto makeWindow = [&](u32 id, ludashi::x11::WindowNode* parent) {
+            const ludashi::x11::WindowNode::Definition initial{
+                .parent = parent, .width = 64, .height = 64, .depth = 24,
+            };
+            auto w = std::make_shared<ludashi::x11::WindowNode>(server.Windows(), id, initial);
+            w->SetTestMapping(true); server.AddResource(w); return w;
         };
         auto game = makeWindow(201, root), child = makeWindow(202, game.get()), desktop = makeWindow(203, root);
-        auto atom = xorg::Atom::Intern("_MESA_DRV_ENGINE_NAME");
-        game->ModifyProperty(atom, 31, 8, 0, {'D','X','V','K'});
+        auto atom = server.Atoms().Intern("_MESA_DRV_ENGINE_NAME");
+        const u8 engine[] = {'D', 'X', 'V', 'K'};
+        game->ModifyProperty(atom, 31, 8, 0, engine);
         screen.HudFrame(child->id);
         if (screen.HudFrames() || screen.HudWindow()) return 6;
         screen.SetHudEnabled(true);
@@ -352,30 +468,30 @@ int main(int argc, char** argv) {
         if (screen.HudFrames() || screen.HudWindow()) return 8;
         std::cout << "cursor mask/colors/recolor/hotspot and optional producer HUD passed" << std::endl;
         // These standalone resource fixtures are not attached to the managed tree.
-        game->GetAttributes().mapped = child->GetAttributes().mapped = desktop->GetAttributes().mapped = false;
+        for (const auto& node : {game, child, desktop}) node->SetTestMapping(false);
         return 0;
     }
     if (std::string(argv[1]) == "--disconnected-output") {
         int pair[2];
         if (socketpair(AF_UNIX, SOCK_STREAM, 0, pair) < 0) return 2;
-        xorg::XClient client(server, pair[0]);
+        ludashi::x11::ClientSession client(server, ludashi::x11::OwnedDescriptor(pair[0]));
         close(pair[1]);
         xEvent event{};
         // Input and scene notifications use this same path outside RunLoop's catch.
-        client.SendEvent(event);
-        client.SendEvent(event);
+        client.DeliverEvent(event);
+        client.DeliverEvent(event);
         std::cout << "disconnected output survived" << std::endl;
         return 0;
     }
     if (std::string(argv[1]) == "--pointer-drag") {
         int sockets[2]; if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) return 2;
-        xorg::XClient client(server, sockets[0]);
-        auto& wm = server.GetWindowManager();
+        ludashi::x11::ClientSession client(server, ludashi::x11::OwnedDescriptor(sockets[0]));
+        auto& wm = server.Windows();
         const u32 mask = ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
-        auto window = wm.CreateWindow(&client, 0x200001, wm.GetRootWindow(), 20, 30, 64, 64,
+        auto window = wm.CreateWindow(&client, 0x400001, wm.GetRootWindow(), 20, 30, 64, 64,
                                        0, InputOutput, 24, CWEventMask, &mask);
         wm.MapWindow(&client, window.get());
-        auto& mouse = server.GetMouse();
+        auto& mouse = server.PointerDevice();
         mouse.MoveTo(24, 34); // Enter first; the next move generates MotionNotify.
         mouse.MoveTo(25, 35);
         auto expect = [&](u8 type, u32 target, s16 x, s16 y) {
@@ -396,7 +512,7 @@ int main(int argc, char** argv) {
         mouse.SetButton(1, false); expect(ButtonRelease, window->id, 300, 350);
         mouse.MoveTo(400, 450); // Implicit grab must have ended.
         char byte; if (recv(sockets[1], &byte, 1, MSG_DONTWAIT) >= 0) return 3;
-        wm.GrabPointer(&client, window.get(), nullptr, nullptr, 0, mask, true, false, false);
+        wm.GrabPointer(&client, window.get(), nullptr, nullptr, 0, mask, true);
         mouse.MoveTo(500, 550); expect(MotionNotify, window->id, 500, 550);
         mouse.SetButton(1, true); expect(ButtonPress, window->id, 500, 550);
         mouse.SetButton(1, false); expect(ButtonRelease, window->id, 500, 550);
@@ -406,16 +522,94 @@ int main(int argc, char** argv) {
         std::cout << "PASS: implicit drag outside window, release, explicit owner_events fallback and normal routing" << std::endl;
         return 0;
     }
+    if (std::string(argv[1]) == "--focus-hotpath") {
+        int sockets[2];
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) != 0) return 2;
+        ludashi::x11::ClientSession client(server, ludashi::x11::OwnedDescriptor(sockets[0]));
+        auto lock = server.Lock();
+        auto& wm = server.Windows();
+        auto* root = wm.GetRootWindow();
+        auto left = wm.CreateWindow(&client, 0x400001, root, 0, 0, 32, 32, 0, InputOnly, 0, 0, nullptr);
+        auto right = wm.CreateWindow(&client, 0x400002, root, 32, 0, 32, 32, 0, InputOnly, 0, 0, nullptr);
+        left->SetTestMapping(true);
+        right->SetTestMapping(true);
+        const auto start = std::chrono::steady_clock::now();
+        for (u32 index = 0; index < 500000; ++index) {
+            wm.FocusInOutNotify(left.get(), right.get(), root, root, NotifyNormal);
+            wm.FocusInOutNotify(right.get(), left.get(), root, root, NotifyNormal);
+        }
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+        close(sockets[1]);
+        std::cout << std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count() << std::endl;
+        return 0;
+    }
+    if (std::string(argv[1]) == "--window-crossing-hotpath") {
+        int sockets[2];
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) != 0) return 2;
+        ludashi::x11::ClientSession client(server, ludashi::x11::OwnedDescriptor(sockets[0]));
+        auto lock = server.Lock();
+        auto& wm = server.Windows();
+        auto left = wm.CreateWindow(&client, 0x400001, wm.GetRootWindow(), 0, 0, 32, 32,
+                                    0, InputOnly, 0, 0, nullptr);
+        auto right = wm.CreateWindow(&client, 0x400002, wm.GetRootWindow(), 32, 0, 32, 32,
+                                     0, InputOnly, 0, 0, nullptr);
+        left->SetTestMapping(true);
+        right->SetTestMapping(true);
+        const auto start = std::chrono::steady_clock::now();
+        for (u32 index = 0; index < 500000; ++index) {
+            left->LeaveEnterNotify(33, 1, right.get(), NotifyNormal);
+            right->LeaveEnterNotify(1, 1, left.get(), NotifyNormal);
+        }
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+        close(sockets[1]);
+        std::cout << std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count() << std::endl;
+        return 0;
+    }
+    if (std::string(argv[1]) == "--window-stacking-hotpath") {
+        int sockets[2];
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) != 0) return 2;
+        ludashi::x11::ClientSession client(server, ludashi::x11::OwnedDescriptor(sockets[0]));
+        auto lock = server.Lock();
+        auto& wm = server.Windows();
+        auto* root = wm.GetRootWindow();
+        std::vector<ludashi::x11::WindowNode*> windows;
+        for (u32 index = 0; index < 128; ++index) {
+            auto window = wm.CreateWindow(&client, 0x400001 + index, root, 0, 0, 1, 1,
+                                          0, InputOutput, 24, 0, nullptr);
+            window->SetTestMapping(true);
+            windows.push_back(window.get());
+        }
+        u32 checksum = 0;
+        const auto start = std::chrono::steady_clock::now();
+        for (u32 index = 0; index < 1000000; ++index)
+            checksum += root->HasStackOverlap(windows[127], windows[64]);
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+        close(sockets[1]);
+        std::cout << std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count()
+                  << " " << checksum << std::endl;
+        return checksum == 1000000 ? 0 : 1;
+    }
+    if (std::string(argv[1]) == "--input-hotpath") {
+        auto& keyboard = server.Keys();
+        const auto start = std::chrono::steady_clock::now();
+        for (unsigned iteration = 0; iteration < 1000000; ++iteration) {
+            keyboard.SetKeyState(38, true);
+            keyboard.SetKeyState(38, false);
+        }
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+        std::cout << std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count() << std::endl;
+        return keyboard.GetModifiersMask() ? 1 : 0;
+    }
     if (std::string(argv[1]) == "--fence-hotpath") {
         auto lock = server.Lock();
-        auto& screen = static_cast<xorg::NativeScreen&>(server.GetScreen());
-        auto fence = std::make_shared<xorg::NativeFence>(0x300001, false);
+        auto& screen = server.GetScreen();
+        auto fence = std::make_shared<ludashi::x11::NativeFence>(0x300001, false);
         server.AddResource(fence);
-        auto drawable = std::make_shared<xorg::NativeDrawable>(64, 64, 32);
+        auto drawable = std::make_shared<ludashi::x11::NativeDrawable>(64, 64, 32);
         const auto start = std::chrono::steady_clock::now();
         for (u32 i = 0; i < 50000; ++i) {
-            auto ticket = std::make_shared<xorg::PresentTicket>();
-            ticket->window = server.GetWindowManager().GetRootWindow()->id;
+            auto ticket = std::make_shared<ludashi::x11::PresentTicket>();
+            ticket->window = server.Windows().GetRootWindow()->id;
             ticket->pixmap = 0x300002; ticket->serial = i;
             ticket->drawable = drawable; ticket->idleFence = fence->id;
             fence->triggered = false;
@@ -432,18 +626,18 @@ int main(int argc, char** argv) {
     }
     server.UpdateSurface(new ANativeWindow);
     if (const char* hidden = std::getenv("LUDASHI_HOST_HIDDEN_WM_CLASS"); hidden && *hidden)
-        static_cast<xorg::NativeScreen&>(server.GetScreen()).SetUnviewableWMClasses({hidden});
+        server.GetScreen().SetUnviewableWMClasses({hidden});
     if (const char* rates = std::getenv("LUDASHI_HOST_RANDR_RATES")) {
         std::vector<u16> values; std::stringstream list(rates); std::string value;
         while (std::getline(list, value, ',')) values.push_back(std::stoi(value));
-        static_cast<xorg::NativeScreen&>(server.GetScreen()).SetRandrRates(std::move(values));
+        server.GetScreen().SetRandrRates(std::move(values));
     }
     if (const char* diagnostics = std::getenv("WINLATOR_X11"))
-        static_cast<xorg::NativeScreen&>(server.GetScreen()).SetDiagnostics(std::string(diagnostics) == "1");
+        server.GetScreen().SetDiagnostics(std::string(diagnostics) == "1");
     if (const char* limit = std::getenv("LUDASHI_HOST_FPS_LIMIT"))
-        static_cast<xorg::NativeScreen&>(server.GetScreen()).SetOptions(false, true, std::atoi(limit), 60.f);
+        server.GetScreen().SetOptions(false, true, std::atoi(limit), 60.f);
     if (std::getenv("LUDASHI_HOST_CURSOR_HIDDEN"))
-        static_cast<xorg::NativeScreen&>(server.GetScreen()).SetOptions(false, false, 0, 60.f);
+        server.GetScreen().SetOptions(false, false, 0, 60.f);
     server.StartTest(std::stoi(argv[1]), argc == 3 ? std::stoi(argv[2]) : -1);
     std::cout << "ready" << std::endl;
     const bool inputTest = std::getenv("LUDASHI_HOST_INPUT") != nullptr;
@@ -456,13 +650,14 @@ int main(int argc, char** argv) {
         std::istringstream parser(line); parser >> command >> a >> b;
         {
             auto lock = server.Lock();
-            auto& mouse = server.GetMouse();
-            if (command == "relative") mouse.MoveBy(a, b);
+            auto& mouse = server.PointerDevice();
+            if (command == "key") server.Keys().SetKeyState(a, b != 0);
+            else if (command == "relative") mouse.MoveBy(a, b);
             else if (command == "absolute") mouse.MoveTo(a, b);
             else if (command == "anchor") mouse.AnchorTo(a, b);
             else if (command == "button") mouse.SetButton(a, b != 0);
             else if (command == "raw") mouse.SetRawInputEnabled(a != 0);
-            else if (command == "cursor") static_cast<xorg::NativeScreen&>(server.GetScreen()).SetOptions(false, a != 0, 0, 60.f);
+            else if (command == "cursor") server.GetScreen().SetOptions(false, a != 0, 0, 60.f);
         }
         std::cout << "input" << std::endl;
     }

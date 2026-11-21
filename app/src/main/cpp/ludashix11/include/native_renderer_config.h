@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-namespace xorg {
+namespace ludashi::x11 {
 // Immutable startup options, initialized before the screen worker is created.
 struct NativeRendererConfig {
     enum class Backend { Vulkan, EGL, DisplayX };

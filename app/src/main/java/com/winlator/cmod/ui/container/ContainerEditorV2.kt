@@ -93,7 +93,7 @@ import com.winlator.cmod.ui.settings.SettingMappedChoice
 import com.winlator.cmod.ui.settings.SettingText
 import com.winlator.cmod.ui.settings.SettingToggle
 import com.winlator.cmod.ui.settings.SettingWineRuntimeChoice
-import com.winlator.cmod.ui.settings.AudioOutputOptions
+import com.winlator.cmod.ui.settings.AudioDriverOptions
 import com.winlator.cmod.ui.settings.audioOutputKeys
 import com.winlator.cmod.ui.settings.SettingsCard
 import com.winlator.cmod.ui.settings.SettingsCatalog
@@ -779,14 +779,13 @@ private fun ContainerCategoryV2(
                 SettingWineRuntimeChoice(uiStr(R.string.ui_wine_proton), s.runtime, runtimes, installing, installWine) { s.runtime = it }
             }
             SettingsCard {
-                SettingChoice(
-                    uiStr(R.string.audio_driver),
-                    audioEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(s.audio, true) } ?: s.audio,
-                    audioEntries
-                ) { s.audio = StringUtils.parseIdentifier(it) }
-                AudioOutputOptions(s.audio, { s.audioOptions[it].orEmpty() }) { key, value ->
-                    if (value == null) s.audioOptions.remove(key) else s.audioOptions[key] = value
-                }
+                AudioDriverOptions(
+                    s.audio,
+                    audioEntries,
+                    value = { s.audioOptions[it].orEmpty() },
+                    onDriverChanged = { s.audio = it },
+                    onOptionsConfirmed = { s.audioOptions.putAll(it) }
+                )
                 SettingsDivider()
                 val hudEntries = listOf("Off", "Classic", "Modern")
                 SettingChoice(uiStr(R.string.ui_winlator_hud), hudEntries.getOrElse(s.hudMode) { "Off" }, hudEntries) {

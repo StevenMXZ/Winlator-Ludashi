@@ -17,6 +17,6 @@ with tempfile.TemporaryDirectory(prefix='ludashi-egl-') as directory:
         '-include', str(root / 'include/common.h'), '-I' + str(folder),
         *['-I' + str(root / p) for p in ['tests/egl_stubs', 'tests/stubs', '.', 'include', 'third_party']],
         str(root / 'tests/test_egl_renderer.cpp'), str(root / 'src/native_egl_renderer.cpp'),
-        str(root / 'src/native_drawable.cpp'), str(root / 'core/drawable.cpp'),
+        str(root / 'src/native_drawable.cpp'),
         '-l:libEGL.so.1', '-l:libGL.so.1', '-ldl', '-pthread', '-o', str(binary)], check=True)
     subprocess.run([str(binary)], env={**os.environ, 'EGL_PLATFORM': 'surfaceless', 'LIBGL_ALWAYS_SOFTWARE': '1'}, check=True)

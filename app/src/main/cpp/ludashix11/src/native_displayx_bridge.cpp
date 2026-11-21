@@ -1,15 +1,15 @@
+#include "base/diagnostics.h"
 #include "native_displayx_bridge.h"
 #include "native_screen.h"
-#include "core/xserver.h"
-#include "core/window.h"
-#include "base/log.h"
+#include "core/display_runtime.h"
+#include "core/window_node.h"
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <poll.h>
 #include <set>
 #include "../../winlator/renderer/displayx_protocol.hpp"
 
-namespace xorg {
+namespace ludashi::x11 {
 namespace {
 struct Peer {
     int fd;
@@ -34,7 +34,7 @@ struct Peer {
 };
 } // namespace
 struct NativeDisplayXBridge::Impl {
-    XServer &server;
+    DisplayRuntime &server;
     int listener{-1};
     std::atomic<bool> stopped{false};
     std::thread acceptThread;
@@ -52,7 +52,7 @@ struct NativeDisplayXBridge::Impl {
         std::vector<sp<NativeDrawable>> images;
         sp<NativeExternalFrame> latest;
     };
-    explicit Impl(XServer &value) : server(value) {
+    explicit Impl(DisplayRuntime &value) : server(value) {
         clients.reserve(16);
         listener = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
         if (listener < 0)
@@ -128,7 +128,7 @@ struct NativeDisplayXBridge::Impl {
         std::map<u8, Swapchain> chains;
         auto remove = [&](Swapchain &chain) {
             auto lock = server.Lock();
-            static_cast<NativeScreen &>(server.GetScreen())
+            server.GetScreen()
                 .RemoveExternal(chain.window, chain.generation, chain.latest);
             chain.latest.reset();
         };
@@ -157,8 +157,8 @@ struct NativeDisplayXBridge::Impl {
                     {
                         auto lock = server.Lock();
                         auto *resource = server.GetResource(window);
-                        if (!resource || resource->GetType() != XResourceType::Window) break;
-                        auto *w = resource->As<Window>();
+                        if (!resource || resource->GetType() != ObjectKind::WindowNode) break;
+                        auto *w = resource->As<WindowNode>();
                         width = w->GetWidth(); height = w->GetHeight(); generation = w->generation;
                     }
                     if (!width || !height) break;
@@ -183,8 +183,8 @@ struct NativeDisplayXBridge::Impl {
                     {
                         auto lock = server.Lock();
                         auto *resource = server.GetResource(window);
-                        if (!resource || resource->GetType() != XResourceType::Window ||
-                            resource->As<Window>()->generation != generation) break;
+                        if (!resource || resource->GetType() != ObjectKind::WindowNode ||
+                            resource->As<WindowNode>()->generation != generation) break;
                     }
                     if (auto found = chains.find(id); found != chains.end())
                         remove(found->second);
@@ -215,11 +215,11 @@ struct NativeDisplayXBridge::Impl {
                     {
                         auto lock = server.Lock();
                         auto *resource = server.GetResource(chain.window);
-                        if (!resource || resource->GetType() != XResourceType::Window ||
-                            resource->As<Window>()->generation != chain.generation)
+                        if (!resource || resource->GetType() != ObjectKind::WindowNode ||
+                            resource->As<WindowNode>()->generation != chain.generation)
                             break;
                         chain.latest = frame;
-                        static_cast<NativeScreen &>(server.GetScreen())
+                        server.GetScreen()
                             .UpdateExternal(chain.window, chain.generation, frame);
                     }
                     // FIFO publishes the next image only after Draw has claimed this one.
@@ -255,14 +255,14 @@ struct NativeDisplayXBridge::Impl {
                     break;
             }
         } catch (const std::exception &error) {
-            LOGE("X++ DisplayX+ peer rejected: {}", error.what());
+            diagnostics::Write(diagnostics::Severity::Error, "X++ DisplayX+ peer rejected: {}", error.what());
         }
         peer->Stop();
         for (auto &[id, chain] : chains)
             remove(chain);
     }
 };
-NativeDisplayXBridge::NativeDisplayXBridge(XServer &server) : impl(std::make_unique<Impl>(server)) {}
+NativeDisplayXBridge::NativeDisplayXBridge(DisplayRuntime &server) : impl(std::make_unique<Impl>(server)) {}
 NativeDisplayXBridge::~NativeDisplayXBridge() = default;
 void NativeDisplayXBridge::ResetState() {
     std::lock_guard clients(impl->clientsMutex);
@@ -276,4 +276,4 @@ void NativeDisplayXBridge::ResetState() {
         }
     }
 }
-} // namespace xorg
+} // namespace ludashi::x11

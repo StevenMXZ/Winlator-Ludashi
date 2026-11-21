@@ -5,21 +5,24 @@
 #include <deque>
 #include <functional>
 #include <map>
-#include "core/xscreen.h"
-#include "core/xresource.h"
+#include <mutex>
+#include <thread>
+#include <android/native_window.h>
+#include "core/protocol_object.h"
 #include "native_drawable.h"
 
-namespace xorg {
-class XClient;
-class Window;
-struct NativeFence : XResource {
-    explicit NativeFence(u32 id, bool value) : XResource(XResourceType::Fence, id), triggered(value) {}
+namespace ludashi::x11 {
+class ClientSession;
+class DisplayRuntime;
+class WindowNode;
+struct NativeFence : ProtocolObject {
+    explicit NativeFence(u32 id, bool value) : ProtocolObject(ObjectKind::Fence, id), triggered(value) {}
     bool triggered;
 };
-struct Subscription : XResource {
-    Subscription(u32 id, XClient* c, u32 w, u32 m)
-        : XResource(XResourceType::PresentSubscription, id), client(c), window(w), mask(m) {}
-    XClient* client;
+struct Subscription : ProtocolObject {
+    Subscription(u32 id, ClientSession* c, u32 w, u32 m)
+        : ProtocolObject(ObjectKind::PresentSubscription, id), client(c), window(w), mask(m) {}
+    ClientSession* client;
     u32 window, mask;
 };
 struct PresentTicket {
@@ -131,34 +134,32 @@ public:
 };
 std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 width, u16 height, bool validation = false, const NativeRendererConfig& config = {});
 
-class NativeScreen final : public XScreen {
+class NativeScreen final {
 public:
-    explicit NativeScreen(XServer&);
-    ~NativeScreen() override;
-    sp<Drawable> CreateDrawable(u16, u16, u8) override;
-    sp<Drawable> CreateDrawable(u16, u16, AHardwareBuffer*) override;
-    void UpdateSurface(ANativeWindow*) override;
+    explicit NativeScreen(DisplayRuntime&);
+    ~NativeScreen();
+    sp<NativeDrawable> CreateDrawable(u16, u16, u8);
+    sp<NativeDrawable> CreateDrawable(u16, u16, AHardwareBuffer*);
+    void UpdateSurface(ANativeWindow*);
     void SetFrameTimeline(int64_t id);
-    void UpdateCursor(Drawable*, s16, s16) override;
-    void PostInvalidate() override;
-    void DrawableChanged(Drawable* drawable);
+    void UpdateCursor(const sp<NativeDrawable>&, s16, s16);
+    void PostInvalidate(sp<PresentTicket> present = {});
+    void DrawableChanged(NativeDrawable* drawable);
     // Serialize CPU writes with snapshot selection. Pending scenes do not need
     // an immutable copy; frames already selected for the GPU still do.
-    template<class Write> void MutateDrawable(Drawable* drawable, const Write& write) {
+    template<class Write> void MutateDrawable(NativeDrawable* drawable, const Write& write) {
         // Borrow the callback for this synchronous call instead of allocating
         // a std::function for drawing requests with several captured arguments.
         MutateDrawable(drawable, &write, [](const void* callback) {
             (*static_cast<const Write*>(callback))();
         });
     }
-    void WaitIdle() override;
-    void SetUpScalerEnabled(bool) override {}
-    void SetPostProcessingEnabled(bool) override {}
+    void WaitIdle();
     void Present(sp<PresentTicket>);
     void Subscribe(sp<Subscription>);
-    void RemoveClient(XClient*);
-    void WindowDestroyed(u32);
-    void WindowGeometryChanged(Window*, u32 pixmapFlags = 0);
+    void RemoveClient(ClientSession*);
+    void WindowDestroyed(WindowNode& window);
+    void WindowGeometryChanged(WindowNode*, u32 pixmapFlags = 0);
     void DispatchCompletions();
     // epoll timeout for delayed producer IDLE notifications (negative = infinite).
     int IdleTimeoutMs() const;
@@ -172,16 +173,16 @@ public:
     u64 MSC() const;
     float RefreshRate() const { return refresh; }
     // RandR is a virtual display contract, independent of compositor pacing.
-    // Configure under XServer::Lock before starting Wine.
+    // Configure under DisplayRuntime::Lock before starting Wine.
     void SetRandrRates(std::vector<u16> rates);
     const std::vector<u16>& RandrRates() const { return randrRates; }
     u16 RandrRate() const { return randrRate.load(std::memory_order_relaxed); }
     bool SelectRandrRate(u16 rate);
-    // Called under the XServer lock, as with scene/property changes.
+    // Called under the DisplayRuntime lock, as with scene/property changes.
     void SetUnviewableWMClasses(std::vector<std::string> classes);
     void UpdateExternal(u32 window, u64 generation, sp<NativeExternalFrame> frame);
     void RemoveExternal(u32 window, u64 generation, const sp<NativeExternalFrame>& frame);
-    void WindowPropertyChanged(Window* window, u32 atom);
+    void WindowPropertyChanged(WindowNode* window, u32 atom);
     void SetDiagnostics(bool enabled);
     void RecordDri3Import() { metricDri3Imports.fetch_add(1, std::memory_order_relaxed); }
     void SetCommandCacheEnabled(bool enabled) { commandCacheEnabled.store(enabled, std::memory_order_relaxed); }
@@ -201,29 +202,32 @@ public:
     bool DiagnosticsEnabled() const { return diagnostics.load(std::memory_order_relaxed); }
     std::string LastError();
     std::atomic<u64> presentedCount{0};
-    // Accessed only under XServer::Lock; disabled HUD adds one branch per update.
+    // Accessed only under DisplayRuntime::Lock; disabled HUD adds one branch per update.
     void SetHudEnabled(bool enabled) { hudEnabled = enabled; hudWindow = 0; hudFrames = 0; }
     void HudFrame(u32 drawable);
     void StartupWindowUpdated(u32 window);
-    void StartupDrawableUpdated(Drawable* drawable);
+    void StartupDrawableUpdated(NativeDrawable* drawable);
     u32 HudWindow() const { return hudWindow; }
     u64 HudFrames() const { return hudFrames; }
     bool HasStartupContent() const { return startupContent.load(std::memory_order_relaxed); }
 private:
+    DisplayRuntime& server;
     std::atomic<bool> startupContent{false};
 public:
 private:
-    void MutateDrawable(Drawable*, const void*, void (*)(const void*));
+    void MutateDrawable(NativeDrawable*, const void*, void (*)(const void*));
     std::atomic<int64_t> displayXFrameTimeline{-1};
     bool hudEnabled{};
     u32 hudWindow{};
     u64 hudFrames{};
     s32 hudEngineAtom{-1}, hudGpuAtom{-1};
     u32 hudAtomCount{};
-    // Only the pending scene needs an index for pixmap replacement. GPU frames
-    // retain tickets through entries/requests without copying this map.
+    // Keep the index with the pending scene. In-flight frames retain their images
+    // through their entries and do not copy this index.
     struct Scene : NativeFrame {
-        std::map<u32, sp<PresentTicket>> tickets;
+        void Reindex();
+        NativeEntry* FindEntry(u32 window);
+        std::vector<std::pair<u32, size_t>> entriesByWindow;
     };
     struct Timing {
         std::atomic<u64> count{0}, total{0}, maximum{0};
@@ -238,12 +242,14 @@ private:
             return {total.exchange(0) / 1000.0 / std::max<u64>(1, n), maximum.exchange(0) / 1000.0};
         }
     };
-    void Collect(Window*, Scene&, bool ancestorsMapped);
+    void Collect(WindowNode*, Scene&, bool ancestorsMapped);
     bool PatchPresent(const sp<PresentTicket>&, const sp<PresentTicket>& previousDirect);
-    bool IsWindowFiltered(Window*) const;
+    bool IsWindowFiltered(WindowNode*) const;
     void Worker();
     bool PrepareIdle(const sp<PresentTicket>&);
     void Idle(const sp<PresentTicket>&);
+    void FinishIdle(const sp<PresentTicket>&);
+    void SendIdleEvent(const sp<PresentTicket>&);
     void FlushDeferredIdles();
     void Complete(const sp<PresentTicket>&, bool idleFirst = false);
     std::mutex state;
@@ -280,15 +286,15 @@ private:
     std::map<u32, sp<PresentTicket>> direct;
     struct External { u64 generation; sp<NativeExternalFrame> frame; };
     std::map<u32, External> externalFrames;
-    std::vector<sp<PresentTicket>> requests, waiting;
-    // Only touched under the XServer lock (the same thread as Present/Idle).
+    std::vector<sp<PresentTicket>> waiting;
+    // Only touched under the DisplayRuntime lock (the same thread as Present/Idle).
     std::vector<sp<PresentTicket>> deferredIdles;
+    std::chrono::steady_clock::time_point nextIdleDeadline{std::chrono::steady_clock::time_point::max()};
     std::map<u32, std::chrono::steady_clock::time_point> limiterDeadlines;
     int lastProducerLimit{};
     std::unordered_map<u32, std::vector<sp<Subscription>>> subscriptions;
     sp<NativeDrawable> cursor;
     int cursorX{}, cursorY{};
-    u64 cursorSource{}, cursorRevision{};
     std::string error;
 };
 }

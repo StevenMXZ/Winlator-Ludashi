@@ -57,8 +57,8 @@ def run(binary, filtered, depth=0):
                 c.send(present, 3, struct.pack("<III", c.base | 7, win, 6))
                 c.barrier()
 
-                def submit(pixmap, serial, x=0, y=0, expected=None):
-                    c.send(present, 1, struct.pack("<IIIIIhhIIIIIQQQ", win, pixmap, serial,
+                def submit(pixmap, serial, x=0, y=0, expected=None, target=win):
+                    c.send(present, 1, struct.pack("<IIIIIhhIIIIIQQQ", target, pixmap, serial,
                            0, 0, x, y, 0, 0, 0, 0, 0, 0, 0, 0))
                     kinds = []
                     for _ in range(2):
@@ -163,7 +163,7 @@ def run(binary, filtered, depth=0):
                 patches, builds, cursors = wait_report(reports)
                 assert patches > 0 and builds == 0 and cursors == 128, (patches, builds, cursors)
                 assert re.search(rf"HostScene serial=117 .*cursor={first_cursor[1]} cursor_x=525 cursor_y=407", logpath.read_text()), logpath.read_text()
-                # A new cursor image/hotspot must replace the cached clone.
+                # A new cursor image and hotspot must replace the pending snapshot.
                 cursor2 = c.base | 13
                 c.send(93, payload=struct.pack("<III8H", cursor2, cursor_bitmap, 0, 0, 0, 0,
                                               65535, 65535, 65535, 4, 5))
@@ -171,6 +171,13 @@ def run(binary, filtered, depth=0):
                 submit(p0, 118, expected=(3, p0, 30, 40, 64, 64))
                 replacement = re.search(r"HostScene serial=118 .*cursor=(\d+) cursor_x=523 cursor_y=405", logpath.read_text())
                 assert replacement and replacement[1] != first_cursor[1], logpath.read_text()
+                # The child has a larger XID but is earlier in the scene's
+                # stack. Both windows must keep distinct slots for their Presents.
+                c.send(present, 3, struct.pack("<III", c.base | 16, child_window, 6))
+                c.barrier()
+                submit(small, 119, expected=(3, small, 2, 3, 32, 32), target=child_window)
+                submit(p1, 120, expected=(3, p1, 30, 40, 64, 64))
+                submit(small, 121, expected=(3, small, 2, 3, 32, 32), target=child_window)
                 c.send(4, payload=struct.pack("<I", cursor_window)); c.barrier(); c.close()
                 print(f"PASS: socket recovery, pixmap/geometry/culling, window ID reuse; WM_CLASS filter={filtered}, visible children, cursor snapshots without scene rebuilds")
             finally:

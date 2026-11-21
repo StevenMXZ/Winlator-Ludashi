@@ -1,7 +1,7 @@
 #pragma once
 #include "native_screen.h"
 
-namespace xorg {
+namespace ludashi::x11 {
 // Scene order is bottom to top. Only drop a lower layer if a single opaque
 // upper layer covers its complete destination. Partial/transparent overlaps
 // remain intact; buffer dimensions need not match the window destination.
