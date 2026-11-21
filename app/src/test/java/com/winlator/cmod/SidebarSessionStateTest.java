@@ -32,6 +32,20 @@ public class SidebarSessionStateTest {
     }
     @Rule public TemporaryFolder temporary = new TemporaryFolder();
 
+    @Test public void backgroundSuspensionKeepsTheResidentSteamClientRunning() throws Exception {
+        Container container = new Container(1);
+        container.setRootDir(temporary.newFolder());
+        Shortcut shortcut = new Shortcut(container, temporary.newFile("steam.desktop"));
+        assertTrue(XServerDisplayActivity.shouldSuspendGuestOnPause(null));
+        assertTrue(XServerDisplayActivity.shouldSuspendGuestOnPause(shortcut));
+        shortcut.putExtra("steamAppId", "200260");
+        assertFalse(XServerDisplayActivity.shouldSuspendGuestOnPause(shortcut));
+        shortcut.putExtra("steamLaunchMode", "RealSteam");
+        assertFalse(XServerDisplayActivity.shouldSuspendGuestOnPause(shortcut));
+        shortcut.putExtra("steamLaunchMode", "Goldberg");
+        assertTrue(XServerDisplayActivity.shouldSuspendGuestOnPause(shortcut));
+    }
+
     private XServerDisplayActivity activity(Container container) {
         XServerDisplayActivity activity = Robolectric.buildActivity(XServerDisplayActivity.class).get();
         activity.setTheme(R.style.AppTheme);

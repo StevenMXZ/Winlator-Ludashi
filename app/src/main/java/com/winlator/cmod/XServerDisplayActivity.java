@@ -861,13 +861,20 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
     }
 
+    static boolean shouldSuspendGuestOnPause(Shortcut shortcut) {
+        return shortcut == null || shortcut.getExtra("steamAppId").isEmpty()
+                || !"RealSteam".equals(shortcut.getExtra("steamLaunchMode", "RealSteam"));
+    }
+
     @Override
     public void onResume() {
         super.onResume();
 
         if (!isInPictureInPictureMode()) {
-            ProcessHelper.resumeAllWineProcesses();
-            if (environment != null) environment.onResume();
+            if (shouldSuspendGuestOnPause(shortcut)) {
+                ProcessHelper.resumeAllWineProcesses();
+                if (environment != null) environment.onResume();
+            }
             if (xServerView != null) xServerView.onResume();
         }
         startTime = System.currentTimeMillis();
@@ -881,12 +888,14 @@ public class XServerDisplayActivity extends AppCompatActivity {
         super.onPause();
 
         if (!isInPictureInPictureMode()) {
+            boolean suspendGuest = shouldSuspendGuestOnPause(shortcut);
             if (environment != null) {
                 if (xServerView != null) xServerView.onPause();
-                environment.onPause();
+                // The Steam client needs to keep exchanging heartbeats while the app is backgrounded.
+                if (suspendGuest) environment.onPause();
             }
 
-            ProcessHelper.pauseAllWineProcesses();
+            if (suspendGuest) ProcessHelper.pauseAllWineProcesses();
         }
 
         savePlaytimeData();
