@@ -3423,7 +3423,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         String args = "";
 
         if (shortcut != null) {
-            String execArgs = shortcut.getExtra("execArgs");
+            String execArgs = com.winlator.cmod.steam.SteamLaunch.launcherArguments(shortcut);
             execArgs = !execArgs.isEmpty() ? " " + execArgs : "";
 
             if (shortcut.path.endsWith(".lnk")) {

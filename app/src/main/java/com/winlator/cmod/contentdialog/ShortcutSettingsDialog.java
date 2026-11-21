@@ -107,7 +107,7 @@ public class ShortcutSettingsDialog extends ContentDialog implements DXVKConfigD
         etName.setText(shortcut.name);
 
         final EditText etExecArgs = findViewById(R.id.ETExecArgs);
-        etExecArgs.setText(shortcut.getExtra("execArgs"));
+        etExecArgs.setText(com.winlator.cmod.steam.SteamLaunch.gameArguments(shortcut));
 
         ContainerDetailFragment containerDetailFragment = new ContainerDetailFragment(shortcut.container.id);
 

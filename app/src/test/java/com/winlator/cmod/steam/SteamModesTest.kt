@@ -14,6 +14,34 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [28], shadows = [com.winlator.cmod.container.AudioDriverMigrationTest.GpuShadow::class])
 class SteamModesTest {
+    @Test fun steamGameArgumentsAreSeparateFromTheLauncherSpec() {
+        val context = RuntimeEnvironment.getApplication()
+        val directory = File(context.filesDir, "steam-arguments-test").apply { mkdirs() }
+        val container = Container(1).apply { rootDir = directory }
+        val file = File(directory, "Counter-Strike.desktop").apply {
+            writeText("[Desktop Entry]\nName=Counter-Strike\nExec=wine steam.exe\n")
+        }
+        val shortcut = Shortcut(container, file)
+        val spec = "\"C:\\Program Files (x86)\\Steam\\ludashi-game-10.txt\""
+        shortcut.putExtra("steamAppId", "10")
+        shortcut.putExtra("steamLaunchMode", "RealSteam")
+        shortcut.putExtra("execArgs", spec)
+        assertEquals("", SteamLaunch.gameArguments(shortcut))
+        assertEquals(spec, SteamLaunch.launcherArguments(shortcut))
+
+        shortcut.putExtra("execArgs", "$spec -game cstrike")
+        assertEquals("-game cstrike", SteamLaunch.gameArguments(shortcut))
+        assertEquals(spec, SteamLaunch.launcherArguments(shortcut))
+        shortcut.putExtra("execArgs", "-game cstrike")
+        assertEquals("-game cstrike", SteamLaunch.gameArguments(shortcut))
+        assertEquals(spec, SteamLaunch.launcherArguments(shortcut))
+
+        shortcut.putExtra("steamLaunchMode", "Goldberg")
+        assertEquals("-game cstrike", SteamLaunch.launcherArguments(shortcut))
+        shortcut.putExtra("steamAppId", null)
+        assertEquals("-game cstrike", SteamLaunch.launcherArguments(shortcut))
+    }
+
     @Test fun disablingSteamKeepsDataButRejectsSteamLaunchAndPersistsFlag() {
         val context = RuntimeEnvironment.getApplication()
         val marker = File(context.filesDir, "steam-library/99811.json").apply { parentFile!!.mkdirs(); writeText("{}") }

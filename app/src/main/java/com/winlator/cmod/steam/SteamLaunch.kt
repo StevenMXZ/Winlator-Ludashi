@@ -25,6 +25,20 @@ object SteamLaunch {
     private val modeProgress = mutableStateMapOf<Int, ModeProgress>()
     private val modeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = Handler(Looper.getMainLooper())
+
+    private fun specArgument(appId: Int): String = "\"$ROOT\\ludashi-game-$appId.txt\""
+
+    internal fun gameArguments(appId: Int?, stored: String): String =
+        if (appId == null) stored else stored.removePrefix(specArgument(appId)).trimStart()
+
+    @JvmStatic fun gameArguments(shortcut: Shortcut): String =
+        gameArguments(shortcut.getExtra("steamAppId").toIntOrNull(), shortcut.getExtra("execArgs"))
+
+    @JvmStatic fun launcherArguments(shortcut: Shortcut): String {
+        val appId = shortcut.getExtra("steamAppId").toIntOrNull()
+        return if (appId != null && shortcut.getExtra("steamLaunchMode", "RealSteam") == "RealSteam")
+            specArgument(appId) else gameArguments(shortcut)
+    }
     fun modeStatus(id: Int): ModeProgress? = modeProgress[id]
     fun switchMode(context: Context, shortcut: Shortcut, mode: String, onFailure: (String) -> Unit = {}) {
         val id = shortcut.getExtra("steamAppId").toInt()
@@ -67,7 +81,7 @@ object SteamLaunch {
             link.parentFile?.mkdirs()
             if (!Files.exists(link.toPath())) Files.createSymbolicLink(link.toPath(), game.toPath())
             check(link.canonicalFile == game) { "Game path differs from the configured installation" }
-            return writeShortcut(container, id, "C:\\LudashiGames\\$id\\${exe.replace('/', '\\')}", "", mode)
+            return writeShortcut(container, id, "C:\\LudashiGames\\$id\\${exe.replace('/', '\\')}", mode)
         }
         val prefix = File(container.rootDir, ".wine")
         val steam = File(prefix, "drive_c/Program Files (x86)/Steam")
@@ -105,20 +119,20 @@ object SteamLaunch {
             registry.setStringValue("Software\\Valve\\Steam", "SteamPath", ROOT)
             registry.setStringValue("Software\\Valve\\Steam", "SteamExe", "$ROOT\\steam.exe")
         }
-        return writeShortcut(container, id, "$ROOT\\steam.exe", "\"$ROOT\\${spec.name}\"", mode)
+        return writeShortcut(container, id, "$ROOT\\steam.exe", mode)
     }
-    private fun writeShortcut(container: Container, id: Int, target: String, args: String, mode: String): File {
+    private fun writeShortcut(container: Container, id: Int, target: String, mode: String): File {
         container.desktopDir.mkdirs()
         val file = container.desktopDir.listFiles()?.firstOrNull {
             it.extension == "desktop" && Shortcut(container, it).getExtra("steamAppId") == id.toString()
         } ?: File(container.desktopDir, "Steam-$id.desktop")
         val previous = if (file.isFile) Shortcut(container, file) else null
-        val effectiveArgs = if (mode != "RealSteam" && previous?.getExtra("steamLaunchMode") == mode) previous.getExtra("execArgs") else args
+        val args = previous?.let(::gameArguments)?.takeUnless { it.isBlank() }
         val exec = "Exec=wine ${SteamCatalog.desktopExecPath(target)}"
         if (file.isFile) file.writeText(file.readLines().joinToString("\n") { if (it.startsWith("Exec=")) exec else it } + "\n")
         else file.writeText("[Desktop Entry]\nName=Steam $id\n$exec\nType=Application\n\n[Extra Data]\n")
         Shortcut(container, file).apply {
-            putExtra("steamAppId", id.toString()); putExtra("steamLaunchMode", mode); putExtra("execArgs", effectiveArgs); saveData()
+            putExtra("steamAppId", id.toString()); putExtra("steamLaunchMode", mode); putExtra("execArgs", args); saveData()
         }
         return file
     }
@@ -175,6 +189,7 @@ object SteamLaunch {
         env.put("LUDASHI_STEAM_USERNAME", saved.getString("account"))
         env.put("LUDASHI_STEAM_STEAMID", saved.getLong("id"))
         env.put("LUDASHI_STEAM_APPID", id)
+        gameArguments(shortcut).takeUnless { it.isBlank() }?.let { env.put("LUDASHI_STEAM_USER_ARGS", it) }
         if (shortcut.getExtra(SKIP_PREREQUISITES) == "1") env.put("LUDASHI_STEAM_SKIP_PREREQUISITES", "1")
         val info = JSONObject(File(context.filesDir, "steam-library/$id.json").readText())
         if (SteamSocial.enabled(context) || SteamAchievements.enabled(context)) SteamSocial.beginGuest(context, env, id)

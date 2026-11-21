@@ -295,7 +295,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var midiSoundFont by mutableStateOf(shortcut.getExtra("midiSoundFont", container.getMIDISoundFont()))
     var gameSavesEnabled by mutableStateOf(GameSaveManager.isEnabled(shortcut))
     var autoSaveBackup by mutableStateOf(GameSaveManager.isAutoBackupEnabled(shortcut))
-    var execArgs by mutableStateOf(shortcut.getExtra("execArgs"))
+    var execArgs by mutableStateOf(SteamLaunch.gameArguments(shortcut))
     var autoMesaGlVersionOverride by mutableStateOf(
         shortcut.getExtra(
             "autoMesaGlVersionOverride",
