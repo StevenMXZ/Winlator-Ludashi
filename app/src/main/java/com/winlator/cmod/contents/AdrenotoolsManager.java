@@ -90,12 +90,22 @@ public class AdrenotoolsManager {
         return adrenotoolsContentDir.getAbsolutePath() + "/" + adrenotoolsDriverId + "/";
     }
 
+    /** Resolve an installed library, extracting the bundled copy if its cache was removed. */
+    public String ensureDriverLibrary(String id) {
+        if (id == null || id.isEmpty() || "System".equalsIgnoreCase(id)) return "";
+        synchronized (AdrenotoolsManager.class) {
+            File directory = new File(adrenotoolsContentDir, id);
+            if (!directory.isDirectory() && isFromResources(id)) extractDriverFromResources(id);
+            String library = getLibraryName(id);
+            return !library.isEmpty() && new File(directory, library).isFile() ? library : "";
+        }
+    }
+
     private void reloadContainers(String adrenoToolsDriverId) {
         ContainerManager containerManager = new ContainerManager(mContext);
         for (Container container : containerManager.getContainers()) {
             HashMap<String, String> config = GraphicsDriverConfigDialog.parseGraphicsDriverConfig(container.getGraphicsDriverConfig());
-            Log.d("AdrenotoolsManager", "Checking if container driver version " + config.get("version") + " matches " + getDriverName(adrenoToolsDriverId));
-            if (config.get("version").contains(getDriverName(adrenoToolsDriverId))) {
+            if (adrenoToolsDriverId.equalsIgnoreCase(config.get("version"))) {
                 Log.d("AdrenotoolsManager", "Found a match for container " + container.getName());
                 config.put("version", GPUInformation.isDriverSupported(DefaultVersion.WRAPPER_ADRENO, mContext) ? DefaultVersion.WRAPPER_ADRENO : DefaultVersion.WRAPPER);
                 container.setGraphicsDriverConfig(GraphicsDriverConfigDialog.toGraphicsDriverConfig(config));
@@ -104,8 +114,7 @@ public class AdrenotoolsManager {
         }
         for (Shortcut shortcut : containerManager.loadShortcuts()) {
             HashMap<String, String> config = GraphicsDriverConfigDialog.parseGraphicsDriverConfig(shortcut.getExtra("graphicsDriverConfig", shortcut.container.getGraphicsDriverConfig()));
-            Log.d("AdrenotoolsManager", "Checking if shortcut driver version " + config.get("version") + " matches " + getDriverName(adrenoToolsDriverId));
-            if (config.get("version").contains(getDriverName(adrenoToolsDriverId))) {
+            if (adrenoToolsDriverId.equalsIgnoreCase(config.get("version"))) {
                 Log.d("AdrenotoolsManager", "Found a match for shortcut " + shortcut.name);
                 config.put("version", GPUInformation.isDriverSupported(DefaultVersion.WRAPPER_ADRENO, mContext) ? DefaultVersion.WRAPPER_ADRENO : DefaultVersion.WRAPPER);
                 shortcut.putExtra("graphicsDriverConfig", GraphicsDriverConfigDialog.toGraphicsDriverConfig(config));
@@ -117,8 +126,12 @@ public class AdrenotoolsManager {
     public void removeDriver(String adrenoToolsDriverId) {
         Log.d("AdrenotoolsManager", "Removing driver " + adrenoToolsDriverId);
         File driverPath = new File(adrenotoolsContentDir, adrenoToolsDriverId);
-        reloadContainers(adrenoToolsDriverId);
-        FileUtils.delete(driverPath);
+        synchronized (AdrenotoolsManager.class) {
+            // Bundled drivers can be restored on demand. Removing their cached
+            // files does not change the user's driver selections.
+            if (!isFromResources(adrenoToolsDriverId)) reloadContainers(adrenoToolsDriverId);
+            FileUtils.delete(driverPath);
+        }
     }
 
     public ArrayList<String> enumarateInstalledDrivers() {

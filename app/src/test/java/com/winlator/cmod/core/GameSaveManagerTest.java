@@ -1,6 +1,7 @@
 package com.winlator.cmod.core;
 
 import com.winlator.cmod.container.Container;
+import com.winlator.cmod.container.DisplayXPresentModeTest;
 import com.winlator.cmod.container.Shortcut;
 
 import org.junit.Rule;
@@ -8,6 +9,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 
 import java.io.File;
 import java.io.IOException;
@@ -19,6 +21,7 @@ import java.util.zip.ZipOutputStream;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
+@Config(shadows = DisplayXPresentModeTest.GpuShadow.class)
 public class GameSaveManagerTest {
     @Rule public TemporaryFolder temporary = new TemporaryFolder();
 
