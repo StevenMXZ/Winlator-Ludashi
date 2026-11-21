@@ -94,6 +94,7 @@ import com.winlator.cmod.core.GameSaveManager
 import com.winlator.cmod.core.OpenGLDriverDefaults
 import com.winlator.cmod.core.StringUtils
 import com.winlator.cmod.steam.SteamLaunch
+import com.winlator.cmod.ui.library.GameSaveLocationsButton
 import com.winlator.cmod.fexcore.FEXCorePresetManager
 import com.winlator.cmod.inputcontrols.InputControlsManager
 import com.winlator.cmod.midi.MidiManager
@@ -813,7 +814,7 @@ private fun ShortcutGameSavesCard(s: ShortcutEditorStateV2, context: Context) {
             ) {
                 Text(uiStr(R.string.ui_backup_folder), style = MaterialTheme.typography.labelLarge)
                 Text(
-                    uiStr(R.string.ui_winlator_saves_1_s, GameSaveManager.getGameDir(s.shortcut).name),
+                    GameSaveManager.getGameDir(s.shortcut).path,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -838,6 +839,11 @@ private fun ShortcutGameSavesCard(s: ShortcutEditorStateV2, context: Context) {
             }
 
             SettingsDivider()
+            GameSaveLocationsButton(
+                s.shortcut,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+            ) { refreshKey++ }
             OutlinedButton(
                 onClick = {
                     if (!busy) {

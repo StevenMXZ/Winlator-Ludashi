@@ -101,6 +101,11 @@
   <string name="audio_output_api">API de áudio</string>
   <string name="audio_buffer_size">Tamanho do buffer de áudio</string>
   <string name="audio_pulse_latency">Latência do PulseAudio</string>
+  <string name="game_save_edit_locations">Editar pastas de saves</string>
+  <string name="game_save_source_folder">Pasta dos saves no Windows</string>
+  <string name="game_save_source_hint">Deixe em branco para detectar as pastas automaticamente.</string>
+  <string name="game_save_choose_backup_folder">Escolher pasta de backups</string>
+  <string name="game_save_use_default_backup_folder">Usar pasta de backups padrão</string>
   <string name="loading">"Carregando…"</string>
   <string name="press_any_button_on_your_controller">"Pressione qualquer botão do controle"</string>
   <string name="bindings">"atribuições"</string>

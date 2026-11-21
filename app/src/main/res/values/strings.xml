@@ -107,6 +107,11 @@
     <string name="audio_buffer_bytes">%1$d B</string>
     <string name="audio_pulse_latency">PulseAudio latency</string>
     <string name="audio_latency_ms">%1$d ms</string>
+    <string name="game_save_edit_locations">Edit save folders</string>
+    <string name="game_save_source_folder">Windows save folder</string>
+    <string name="game_save_source_hint">Leave empty to detect save locations automatically.</string>
+    <string name="game_save_choose_backup_folder">Choose backup folder</string>
+    <string name="game_save_use_default_backup_folder">Use default backup folder</string>
     <string name="loading">Loading…</string>
     <string name="press_any_button_on_your_controller">Press any button on your controller</string>
     <string name="bindings">bindings</string>

@@ -160,7 +160,7 @@ private fun ColumnScope.GameSavesPanel(shortcut: Shortcut, onClose: () -> Unit, 
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text(uiStr(R.string.ui_backup_folder), style = MaterialTheme.typography.labelLarge)
                         Text(
-                            uiStr(R.string.ui_winlator_saves_1_s, GameSaveManager.getGameDir(shortcut).name),
+                            GameSaveManager.getGameDir(shortcut).path,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -212,6 +212,11 @@ private fun ColumnScope.GameSavesPanel(shortcut: Shortcut, onClose: () -> Unit, 
                     roots.forEach {
                         Text("• $it", style = MaterialTheme.typography.bodySmall)
                     }
+                }
+
+                GameSaveLocationsButton(shortcut, enabled = !busy && !loading, modifier = Modifier.fillMaxWidth()) {
+                    refreshLatest()
+                    rescan()
                 }
 
                 OutlinedButton(

@@ -46,6 +46,9 @@ public final class GameSaveManager {
     private static final String TAG = "GameSaveManager";
     public static final String EXTRA_ENABLED = "gameSavesEnabled";
     public static final String EXTRA_AUTO_BACKUP = "autoSaveBackup";
+    private static final String EXTRA_SAVE_FOLDER = "gameSaveFolder";
+    private static final String EXTRA_BACKUP_LOCATION = "gameBackupLocation";
+    private static final String CUSTOM_ENTRY_PREFIX = ".ludashi-save-folder/";
     public static final String PREF_ALL_SHORTCUTS = "game_saves_all_shortcuts";
     private static final String AUTO_FILE = "auto-latest.zip";
     private static final String MAP_FILE = "save.json";
@@ -106,6 +109,12 @@ public final class GameSaveManager {
     }
 
     public static File getGameDir(Shortcut shortcut) {
+        String selected = shortcut.getExtra(EXTRA_BACKUP_LOCATION);
+        if (!selected.isEmpty()) return new File(selected, sanitize(shortcut.name));
+        return defaultGameDir(shortcut);
+    }
+
+    private static File defaultGameDir(Shortcut shortcut) {
         File root = new File(Environment.getExternalStorageDirectory(), "Winlator/Saves");
         File named = new File(root, sanitize(shortcut.name));
         if (!named.isDirectory() && (!shortcut.getExtra("gogGameId").isEmpty() || !shortcut.getExtra("ludashiStore").isEmpty())) {
@@ -113,6 +122,63 @@ public final class GameSaveManager {
             if (legacy.isDirectory()) return legacy;
         }
         return named;
+    }
+
+    public static String getSaveFolder(Shortcut shortcut) {
+        String path = shortcut.getExtra(EXTRA_SAVE_FOLDER);
+        return path.isEmpty() ? "" : "C:\\" + path.replace('/', '\\');
+    }
+
+    public static String getBackupLocation(Shortcut shortcut) {
+        return shortcut.getExtra(EXTRA_BACKUP_LOCATION);
+    }
+
+    public static void setLocations(Shortcut shortcut, String saveFolder, String backupLocation) throws IOException {
+        String source = saveFolder.trim().isEmpty() ? "" : normalizeSaveFolder(saveFolder);
+        if (!source.isEmpty()) {
+            File directory = resolveSaveFolder(shortcut, source);
+            if (directory.exists() && !directory.isDirectory()) throw new IOException("The save path is not a folder");
+        }
+        File destination = backupLocation.trim().isEmpty() ? null : new File(backupLocation).getCanonicalFile();
+        if (destination != null && (!destination.isDirectory() || !destination.canWrite())) {
+            throw new IOException("The backup folder is not writable");
+        }
+        shortcut.putExtra(EXTRA_SAVE_FOLDER, source.isEmpty() ? null : source);
+        shortcut.putExtra(EXTRA_BACKUP_LOCATION, destination == null ? null : destination.getPath());
+        shortcut.saveData();
+    }
+
+    static String normalizeSaveFolder(String input) throws IOException {
+        String path = input.trim().replace('\\', '/');
+        if (path.regionMatches(true, 0, "C:/", 0, 3)) path = path.substring(3);
+        while (path.endsWith("/")) path = path.substring(0, path.length() - 1);
+        for (String part : path.split("/", -1)) {
+            if (part.isEmpty() || part.equals(".") || part.equals("..") || part.indexOf(':') >= 0
+                    || part.indexOf(0) >= 0) throw new IOException("Enter a folder inside the C: drive");
+        }
+        return path;
+    }
+
+    private static File resolveSaveFolder(Shortcut shortcut, String source) throws IOException {
+        File drive = new File(shortcut.container.getRootDir(), ".wine/drive_c").getCanonicalFile();
+        File current = drive;
+        for (String component : normalizeSaveFolder(source).split("/")) {
+            File next = new File(current, component);
+            if (!next.exists()) {
+                File[] matches = current.listFiles((dir, name) -> name.equalsIgnoreCase(component));
+                if (matches != null && matches.length == 1) next = matches[0];
+            }
+            current = next.getCanonicalFile();
+            if (!current.getPath().startsWith(drive.getPath() + File.separator)) {
+                throw new IOException("The save folder points outside the C: drive");
+            }
+        }
+        return current;
+    }
+
+    private static File customSaveFolder(Shortcut shortcut) throws IOException {
+        String source = shortcut.getExtra(EXTRA_SAVE_FOLDER);
+        return source.isEmpty() ? null : resolveSaveFolder(shortcut, source);
     }
 
     public static boolean isEnabled(Shortcut shortcut) {
@@ -158,12 +224,16 @@ public final class GameSaveManager {
     }
 
     public static List<String> getSaveRoots(Shortcut shortcut) {
+        String selected = getSaveFolder(shortcut);
+        if (!selected.isEmpty()) return Collections.singletonList(selected);
         List<String> remembered = loadMap(shortcut);
         if (!remembered.isEmpty()) return remembered;
         return rediscoverSaveRoots(shortcut);
     }
 
     public static List<String> rediscoverSaveRoots(Shortcut shortcut) {
+        String selected = getSaveFolder(shortcut);
+        if (!selected.isEmpty()) return Collections.singletonList(selected);
         List<String> roots = discover(shortcut);
         if (!roots.isEmpty()) saveMap(shortcut, roots);
         return roots;
@@ -171,18 +241,27 @@ public final class GameSaveManager {
 
     public static BackupResult backup(Shortcut shortcut, boolean automatic) {
         try {
+            File custom = customSaveFolder(shortcut);
             File profile = profileDir(shortcut);
-            if (!profile.isDirectory()) {
+            if (custom != null && !custom.isDirectory()) {
+                return new BackupResult(false, null, 0, false, "The configured save folder does not exist");
+            }
+            if (custom == null && !profile.isDirectory()) {
                 return new BackupResult(false, null, 0, false, "Wine profile not found");
             }
 
-            List<String> roots = getSaveRoots(shortcut);
-            boolean wholeProfile = roots.isEmpty();
+            List<String> roots = custom == null ? getSaveRoots(shortcut) : Collections.emptyList();
+            boolean wholeProfile = custom == null && roots.isEmpty();
             if (automatic && wholeProfile) {
                 return new BackupResult(false, null, 0, false, "No per-game save location detected");
             }
 
             File gameDir = getGameDir(shortcut);
+            File canonicalGameDir = gameDir.getCanonicalFile();
+            if (custom != null && (canonicalGameDir.equals(custom)
+                    || canonicalGameDir.getPath().startsWith(custom.getPath() + File.separator))) {
+                return new BackupResult(false, null, 0, false, "The backup folder is inside the save folder");
+            }
             if (!gameDir.exists() && !gameDir.mkdirs()) {
                 return new BackupResult(false, null, 0, wholeProfile, "Could not create save folder");
             }
@@ -193,7 +272,7 @@ public final class GameSaveManager {
             File tmp = new File(gameDir, out.getName() + ".tmp");
             if (tmp.exists()) tmp.delete();
 
-            List<String> effectiveRoots = wholeProfile ? null : new ArrayList<>(roots);
+            List<String> effectiveRoots = wholeProfile || custom != null ? null : new ArrayList<>(roots);
             if (effectiveRoots != null) {
                 for (String identityRoot : IDENTITY_ROOTS) {
                     if (new File(profile, identityRoot).exists() && !effectiveRoots.contains(identityRoot)) {
@@ -202,7 +281,8 @@ public final class GameSaveManager {
                 }
             }
 
-            int count = writeZip(profile, effectiveRoots, tmp);
+            int count = writeZip(custom == null ? profile : custom, effectiveRoots, tmp,
+                    custom == null ? "" : CUSTOM_ENTRY_PREFIX);
             if (count == 0) {
                 tmp.delete();
                 return new BackupResult(false, null, 0, wholeProfile, "No save files to back up");
@@ -238,21 +318,30 @@ public final class GameSaveManager {
                 return new RestoreResult(false, 0, "Could not create Wine profile");
             }
             File canonicalProfile = profile.getCanonicalFile();
-            String base = canonicalProfile.getPath() + File.separator;
+            File customTarget = null;
             int written = 0;
 
             try (ZipInputStream zis = new ZipInputStream(
                     new BufferedInputStream(new FileInputStream(archive)))) {
                 ZipEntry entry;
                 while ((entry = zis.getNextEntry()) != null) {
-                    String rel = remapArchiveEntry(entry.getName());
+                    String name = entry.getName().replace('\\', '/');
+                    boolean customEntry = name.startsWith(CUSTOM_ENTRY_PREFIX);
+                    if (customEntry && customTarget == null) {
+                        customTarget = customSaveFolder(shortcut);
+                        if (customTarget == null) {
+                            return new RestoreResult(false, written, "Set the save folder before restoring this backup");
+                        }
+                    }
+                    File target = customEntry ? customTarget : canonicalProfile;
+                    String rel = customEntry ? name.substring(CUSTOM_ENTRY_PREFIX.length()) : remapArchiveEntry(name);
                     if (rel == null || rel.isEmpty()) {
                         zis.closeEntry();
                         continue;
                     }
 
-                    File out = new File(canonicalProfile, rel).getCanonicalFile();
-                    if (!out.getPath().startsWith(base)) {
+                    File out = new File(target, rel).getCanonicalFile();
+                    if (!out.getPath().startsWith(target.getPath() + File.separator)) {
                         zis.closeEntry();
                         continue;
                     }
@@ -260,7 +349,7 @@ public final class GameSaveManager {
                     if (entry.isDirectory()) {
                         out.mkdirs();
                     } else {
-                        if (isIdentityPath(rel) && out.isFile()) {
+                        if (!customEntry && isIdentityPath(rel) && out.isFile()) {
                             zis.closeEntry();
                             continue;
                         }
@@ -288,7 +377,7 @@ public final class GameSaveManager {
         return new File(shortcut.container.getRootDir(), ".wine/drive_c/users/" + ImageFs.USER);
     }
 
-    private static int writeZip(File profile, List<String> roots, File out) throws IOException {
+    private static int writeZip(File profile, List<String> roots, File out, String entryPrefix) throws IOException {
         List<File> starts = new ArrayList<>();
         if (roots == null) {
             starts.add(profile);
@@ -322,7 +411,7 @@ public final class GameSaveManager {
                 if (isFrontendShortcut(rel)) continue;
                 if (!seen.add(rel)) continue;
 
-                zos.putNextEntry(new ZipEntry(rel));
+                zos.putNextEntry(new ZipEntry(entryPrefix + rel));
                 try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(f))) {
                     byte[] buffer = new byte[64 * 1024];
                     int read;
@@ -336,7 +425,7 @@ public final class GameSaveManager {
     }
 
     private static List<String> loadMap(Shortcut shortcut) {
-        File mapFile = new File(getGameDir(shortcut), MAP_FILE);
+        File mapFile = new File(defaultGameDir(shortcut), MAP_FILE);
         if (!mapFile.isFile()) return Collections.emptyList();
         try {
             JSONObject json = new JSONObject(FileUtils.readString(mapFile));
@@ -356,7 +445,7 @@ public final class GameSaveManager {
 
     private static void saveMap(Shortcut shortcut, List<String> roots) {
         try {
-            File dir = getGameDir(shortcut);
+            File dir = defaultGameDir(shortcut);
             dir.mkdirs();
             JSONObject json = new JSONObject();
             json.put("game", shortcut.name);
