@@ -70,6 +70,7 @@
     <string name="steam_ui_preparing">Preparing…</string>
     <string name="steam_ui_save_launch">Save Steam launch</string>
     <string name="steam_ui_client">Steam Client</string>
+    <string name="steam_skip_prerequisites">Skip Steam dependency installers</string>
     <string name="steam_ui_launch">Steam launch</string>
     <string name="steam_ui_launch_saved">Steam launch saved</string>
     <string name="steam_ui_connect_achievements">Connect Steam to load achievements</string>

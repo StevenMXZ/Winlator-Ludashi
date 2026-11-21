@@ -3287,9 +3287,14 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::vector<std::string> installScriptDirs;
-    run_install_scripts(gameRootDir, installScriptDirs);
-    scan_and_install_redists(gameRootDir, installScriptDirs);
+    const bool skipPrerequisites = env_int("LUDASHI_STEAM_SKIP_PREREQUISITES", 0) != 0;
+    if (skipPrerequisites) {
+        log_line("[ludashi-launcher] dependency installers skipped by game setting");
+    } else {
+        std::vector<std::string> installScriptDirs;
+        run_install_scripts(gameRootDir, installScriptDirs);
+        scan_and_install_redists(gameRootDir, installScriptDirs);
+    }
 
     bool svcRunning = start_steam_client_service();
     log_line("[ludashi-launcher] steamservice running: %d", svcRunning ? 1 : 0);
@@ -3342,14 +3347,14 @@ int main(int argc, char** argv) {
     bool launchedViaFallback = false;
     const char* launchFailureReason = "LaunchApp path unavailable";
 
-    // User override: skip LaunchApp (it would spawn the app's configured entry, not the chosen exe) and CreateProcess the selected exe directly; the Steam session is already up.
+    // Steam's LaunchApp can run its own first-time installers. Reuse the direct
+    // launch path with the Steam client session already running.
     const char* directExeEnv = getenv("LUDASHI_STEAM_DIRECT_EXE");
-    const bool directExe = directExeEnv && directExeEnv[0] != '\0';
+    const bool directExe = skipPrerequisites || (directExeEnv && directExeEnv[0] != '\0');
 
     if (directExe) {
-        log_line("[ludashi-launcher] LUDASHI_STEAM_DIRECT_EXE set — user-selected exe \"%s\"; "
-                 "skipping Steam LaunchApp, launching directly via CreateProcess",
-                 exeName);
+        log_line("[ludashi-launcher] skipping Steam LaunchApp for \"%s\" (%s)",
+                 exeName, skipPrerequisites ? "skip dependency installers" : "direct-exe override");
         launchFailureReason = "direct-exe mode (LaunchApp skipped by override)";
     } else if (engine && appId != 0) {
         void** engine_vt = *(void***) engine;

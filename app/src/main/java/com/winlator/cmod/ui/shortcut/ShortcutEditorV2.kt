@@ -93,6 +93,7 @@ import com.winlator.cmod.core.GPUInformation
 import com.winlator.cmod.core.GameSaveManager
 import com.winlator.cmod.core.OpenGLDriverDefaults
 import com.winlator.cmod.core.StringUtils
+import com.winlator.cmod.steam.SteamLaunch
 import com.winlator.cmod.fexcore.FEXCorePresetManager
 import com.winlator.cmod.inputcontrols.InputControlsManager
 import com.winlator.cmod.midi.MidiManager
@@ -171,6 +172,9 @@ private data class ShortcutCategoryItemV2(val label: String, val icon: ImageVect
 private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     val container: Container = shortcut.container
     val arm64 = container.getWineVersion().contains("arm64ec", true)
+    var skipSteamPrerequisites by mutableStateOf(
+        shortcut.getExtra(SteamLaunch.SKIP_PREREQUISITES) == "1"
+    )
 
     var name by mutableStateOf(com.winlator.cmod.steam.SteamGames.displayName(shortcut))
     var screen by mutableStateOf(normalizeResolution(shortcut.getExtra("screenSize", container.getScreenSize())))
@@ -1007,6 +1011,16 @@ private fun ShortcutCategoryV2(
                     Icon(Icons.Outlined.PlayArrow, null)
                     Spacer(Modifier.size(7.dp))
                     Text(uiStr(R.string.ui_enter_container))
+                }
+            }
+            if (s.shortcut.getExtra("steamAppId").toIntOrNull() != null &&
+                s.shortcut.getExtra("steamLaunchMode", "RealSteam") == "RealSteam"
+            ) {
+                SettingsCard {
+                    SettingToggle(uiStr(R.string.steam_skip_prerequisites), s.skipSteamPrerequisites) {
+                        s.skipSteamPrerequisites = it
+                        s.extra(SteamLaunch.SKIP_PREREQUISITES, if (it) "1" else null)
+                    }
                 }
             }
             SettingsCard {

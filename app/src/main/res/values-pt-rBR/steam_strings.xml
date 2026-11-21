@@ -70,6 +70,7 @@
     <string name="steam_ui_preparing">Preparando…</string>
     <string name="steam_ui_save_launch">Salvar inicialização Steam</string>
     <string name="steam_ui_client">Cliente Steam</string>
+    <string name="steam_skip_prerequisites">Pular instaladores de dependências da Steam</string>
     <string name="steam_ui_launch">Inicialização Steam</string>
     <string name="steam_ui_launch_saved">Inicialização Steam salva</string>
     <string name="steam_ui_connect_achievements">Conecte a Steam para carregar conquistas</string>

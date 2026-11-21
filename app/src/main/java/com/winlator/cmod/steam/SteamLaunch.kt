@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 
 /** Adapts Ludashi's resident Steam launcher to Ludashi's existing Wine launch path. */
 object SteamLaunch {
+    internal const val SKIP_PREREQUISITES = "steamSkipPrerequisites"
     private const val ROOT = "C:\\Program Files (x86)\\Steam"
     data class ModeProgress(val stage: String = "prepare", val done: Long = 0, val total: Long = 0, val busy: Boolean = true, val error: String = "")
     private val modeProgress = mutableStateMapOf<Int, ModeProgress>()
@@ -174,6 +175,7 @@ object SteamLaunch {
         env.put("LUDASHI_STEAM_USERNAME", saved.getString("account"))
         env.put("LUDASHI_STEAM_STEAMID", saved.getLong("id"))
         env.put("LUDASHI_STEAM_APPID", id)
+        if (shortcut.getExtra(SKIP_PREREQUISITES) == "1") env.put("LUDASHI_STEAM_SKIP_PREREQUISITES", "1")
         val info = JSONObject(File(context.filesDir, "steam-library/$id.json").readText())
         if (SteamSocial.enabled(context) || SteamAchievements.enabled(context)) SteamSocial.beginGuest(context, env, id)
         val cloudEnabled = SteamCloud.supportsCloud(info) != false
