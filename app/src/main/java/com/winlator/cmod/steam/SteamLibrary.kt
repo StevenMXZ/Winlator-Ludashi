@@ -39,8 +39,6 @@ object SteamLibrary {
         val apps = runCatching { JSONObject(json).optJSONArray("owned_apps") }.getOrNull() ?: return emptySequence()
         return (0 until apps.length()).asSequence().mapNotNull { apps.optJSONObject(it)?.takeIf { app -> app.optInt("id") > 0 } }
     }
-    internal fun ownsApp(json: String, id: Int): Boolean = ownedApps(json).any { it.optInt("id") == id }
-
     fun items(context: Context, json: String, filterType: String = "game", mainLibraryOnly: Boolean = false, includeDemos: Boolean = false): List<LibraryItem> {
         val owned = ownedApps(json).toList()
         val records = File(context.filesDir, "steam-library").listFiles().orEmpty().filter {

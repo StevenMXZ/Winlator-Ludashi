@@ -108,6 +108,11 @@ class StoreDetailFragment : Fragment() {
                 val prefs = context.getSharedPreferences(if (storeId == "gog") "gog-settings" else "ludashi-store-games", 0)
                 val favorite = prefs.getBoolean(if (storeId == "gog") "favorite-$gameId" else "$storeId-${storeHash(gameId).take(32)}-favorite", false)
                 GameDetailComposeHost.StoreContent(item.title, item.brand, item.artwork?.path, favorite, item.shortcut, callbacks, item.record.optLong("installedSize").takeIf { it > 0 }?.let { if (it >= 1073741824L) "%.1f GiB".format(it / 1073741824.0) else "%.1f MiB".format(it / 1048576.0) } ?: if (StoreSessions.paused) "—" else null, installed = item.installed, executable = item.record.optString("executable"), installOptions = { StoreInstallOptions(storeId, gameId, item.record) }) {
+                    if (item.installed && extraStore != null && StoreSessions.isHiddenFromLibrary(context, extraStore, gameId)) {
+                        OutlinedButton(onClick = { StoreSessions.setLibraryVisibility(context, extraStore, gameId, true) }) {
+                            Text(uiStr(R.string.store_add_library))
+                        }
+                    }
                     StoreInformation(storeId, gameId, item.record)
                     if (storeId == "itch") {
                         val description = item.record.optJSONObject("game")?.optJSONObject("metadata")?.optJSONObject("information")?.optString("description").orEmpty()

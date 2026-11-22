@@ -204,11 +204,13 @@ object LibraryComposeHost {
                             override fun onGridViewChanged(value: Boolean) = callbacks.onGridViewChanged(value)
                             override fun onAction(path: String, action: String) {
                                 val steamId = SteamLibrary.appId(path)
+                                val store = LudashiStore.fromPath(path)
                                 if (steamId != null && action == ACTION_EXPORT) {
                                     SteamLibrary.exportShortcut(context, steamId)
                                 } else if (steamId != null) SteamLibrary.open(context, path)
                                 else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path)
-                                else if (LudashiStore.fromPath(path) != null) StoreSessions.openGame(context, path)
+                                else if (store != null && action == ACTION_REMOVE) StoreSessions.removeFromLibrary(context, store, path)
+                                else if (store != null) StoreSessions.openGame(context, path)
                                 else callbacks.onAction(path, action)
                             }
                             override fun onArtworkNeeded(path: String, kind: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.requestArtwork(context, path, kind) else if (GogLibrary.id(path) != null) GogLibrary.requestArt(context, path) else if (LudashiStore.fromPath(path) != null) StoreSessions.requestArt(context, path) else callbacks.onArtworkNeeded(path, kind) }

@@ -705,4 +705,5 @@
 <string name="gog_resume_download">Continuar</string>
 <string name="gog_delete_download">Excluir download</string>
 <string name="gog_download_cancelled">Cancelado</string>
+  <string name="steam_demo_access_denied">A Steam recusou o acesso ao download desta demo. Se ela ainda estiver disponível, adicione-a à mesma conta pelo cliente Steam e tente novamente.</string>
 </resources>

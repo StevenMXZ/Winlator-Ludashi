@@ -800,4 +800,5 @@ E.g. <b>META</b> for <i>META key</i>, \n
 <string name="gog_resume_download">Resume</string>
 <string name="gog_delete_download">Delete download</string>
 <string name="gog_download_cancelled">Cancelled</string>
+    <string name="steam_demo_access_denied">Steam denied access to this demo’s download. If the demo is still offered, add it to the same Steam account in Steam and try again.</string>
 </resources>

@@ -70,7 +70,6 @@ class SteamLibraryTest {
             assertEquals("Steam · Installed", SteamLibrary.items(context, snapshot, filterType = "demo")
                 .single { it.shortcutPath == "steam://3714190" }.containerName)
             assertTrue(SteamLibrary.items(context, snapshot).isEmpty())
-            assertFalse(SteamLibrary.ownsApp(snapshot, 3714190))
         } finally { marker.delete() }
     }
 

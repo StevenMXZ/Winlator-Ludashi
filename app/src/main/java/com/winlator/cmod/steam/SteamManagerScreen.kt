@@ -184,8 +184,9 @@ import java.io.File
                             }
                         }
                     }
-                    if (state.status.startsWith("Download failed"))
-                        Text(steamStatusText(state.status), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    val failure = SteamSession.installError.takeIf { SteamSession.installErrorAppId == state.id && it.isNotBlank() }
+                    if (failure != null)
+                        Text(steamStatusText(failure), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
         } else item {

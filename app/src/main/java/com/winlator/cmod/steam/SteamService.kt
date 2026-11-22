@@ -453,11 +453,14 @@ object SteamSession {
         private set
     @Volatile var installError = ""
         private set
+    @Volatile var installErrorAppId = 0
+        private set
 
     @Synchronized fun install(id: Int) {
         if (installRequestId != 0) return
         installRequestId = id
         installError = ""
+        installErrorAppId = id
         work {
             try { installNow(id) }
             catch (error: Exception) {
@@ -474,17 +477,16 @@ object SteamSession {
         val s = session ?: error("Steam is starting")
         check(s.state() == 3) { "Sign in first" }
         var info = info(id)
-        if (info.optJSONObject("common")?.optString("type").equals("demo", true) &&
-            !SteamLibrary.ownsApp(library, id)) {
+        val isDemo = info.optJSONObject("common")?.optString("type").equals("demo", true)
+        if (isDemo && !File(context.filesDir, "steam-library/$id.json").isFile) {
+            // A cached library entry can outlive a free weekend or demo package.
             val license = s.requestFreeLicense(id)?.let(::JSONObject)
+            android.util.Log.i("SteamDownload", "Demo license app=$id status=${license?.optString("status")} result=${license?.optInt("eresult")} visible=${license?.optBoolean("libraryUpdated")}")
             if (license?.optBoolean("granted") == true) {
                 appMetadata.clear()
                 librarySync.reset(forceRefresh = true)
                 libraryCacheSaved = false
-                info = this.info(id)
-            } else {
-                // A demo may already have a license outside the cached library. Let Steam check its depots.
-                android.util.Log.w("SteamDownload", "Demo license app=$id status=${license?.optString("status")} result=${license?.optInt("eresult")}")
+                info = runCatching { this.info(id) }.getOrDefault(info)
             }
         }
         val name = SteamCatalog.installName(info)
@@ -534,10 +536,22 @@ object SteamSession {
                                     SteamGoldberg.invalidate(dir)
                                     main.post { SteamGames.changed() }
                                 }
-                                status = if (success) "$name installed" else if (gameActive) "Download paused while the container runs" else "Download failed: $error"
+                                val deniedDemo = isDemo && error.startsWith("download: no entitled depots")
+                                status = when {
+                                    success -> "$name installed"
+                                    gameActive -> "Download paused while the container runs"
+                                    deniedDemo -> context.getString(R.string.steam_demo_access_denied)
+                                    else -> "Download failed: $error"
+                                }
+                                if (!success && !gameActive && error != "cancelled") {
+                                    installErrorAppId = id
+                                    installError = status
+                                }
                             } catch (failure: Exception) {
                                 android.util.Log.e("SteamDownload", "Cannot finalize installation for app $id", failure)
                                 status = "Download failed: ${failure.message ?: "Cannot finalize installation"}"
+                                installErrorAppId = id
+                                installError = status
                             } finally {
                                 downloading = false
                                 downloadMeter = null

@@ -96,7 +96,7 @@ object SteamSheets {
                 }
             }
             if (SteamSession.installRequestId == id) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-            if (SteamSession.installError.isNotBlank()) Text(SteamSession.installError,
+            if (SteamSession.installErrorAppId == id && SteamSession.installError.isNotBlank()) Text(SteamSession.installError,
                 Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.error)
             SteamStoreDetails(id, installed, state)
             if (state.downloading && state.id == id) SteamDownloadPanel(state)
