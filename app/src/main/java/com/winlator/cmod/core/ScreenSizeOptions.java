@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Locale;
 
 public final class ScreenSizeOptions {
-    private static final int[] ADAPTIVE_HEIGHTS = {480, 540, 600, 720, 900, 1080, 1440};
+    private static final int[] ADAPTIVE_HEIGHTS = {480, 540, 576, 600, 648, 720, 768, 810, 864, 900, 960, 1080, 1200, 1440};
     private static final String[] FIXED_16_9 = {
             "640x360", "854x480", "960x540", "1120x630", "1280x720", "1366x768", "1440x810", "1600x900", "1920x1080"
     };
