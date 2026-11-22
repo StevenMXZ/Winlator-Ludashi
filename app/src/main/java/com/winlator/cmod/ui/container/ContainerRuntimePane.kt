@@ -51,7 +51,7 @@ internal fun ContainerRuntimePane(
     val context = LocalContext.current
     val container = remember(containerId) { ContainerManager(context).getContainerById(containerId) } ?: return
     val arm64 = remember(container.getWineVersion()) { container.getWineVersion().contains("arm64ec", true) }
-    val screenEntries = remember { context.resources.getStringArray(R.array.screen_size_entries).toList() }
+    val screenEntries = remember { com.winlator.cmod.core.ScreenSizeOptions.build(context) }
     val graphicsEntries = remember { context.resources.getStringArray(R.array.graphics_driver_entries).toList() }
     val audioEntries = remember { context.resources.getStringArray(R.array.audio_driver_entries).toList() }
     val wrapperEntries = remember { context.resources.getStringArray(R.array.dxwrapper_entries).toList() }

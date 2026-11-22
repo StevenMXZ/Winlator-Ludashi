@@ -145,7 +145,7 @@ private class ContainerEditorStateV2(
 
     var runtime by mutableStateOf(editing?.wineVersion.orEmpty())
     var name by mutableStateOf(editing?.name ?: "Container-${manager.nextContainerId}")
-    var screen by mutableStateOf(editing?.screenSize ?: Container.DEFAULT_SCREEN_SIZE)
+    var screen by mutableStateOf(editing?.screenSize ?: com.winlator.cmod.core.ScreenSizeOptions.defaultSize(context))
     var builtinDecoder by mutableStateOf(editing?.getBuiltinDecoder() ?: "gstreamer")
     var softwareDecoding by mutableStateOf(editing?.getSoftwareDecoding() ?: false)
     var audio by mutableStateOf(editing?.audioDriver ?: Container.DEFAULT_AUDIO_DRIVER)
@@ -398,7 +398,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         }
     }
 
-    val screenEntries = remember { context.resources.getStringArray(R.array.screen_size_entries).toList() }
+    val screenEntries = remember { com.winlator.cmod.core.ScreenSizeOptions.build(context) }
     val graphicsEntries = remember { context.resources.getStringArray(R.array.graphics_driver_entries).toList() }
     val wrapperEntries = remember { context.resources.getStringArray(R.array.dxwrapper_entries).toList() }
     val audioEntries = remember { context.resources.getStringArray(R.array.audio_driver_entries).toList() }
