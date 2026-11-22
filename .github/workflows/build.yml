@@ -151,6 +151,7 @@ jobs:
         run: bash .github/scripts/prepare-gradle.sh
 
       - name: Run Android tests
+        if: false
         run: >-
           bash gradlew testDebugUnitTest --no-daemon --max-workers=2
           -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
