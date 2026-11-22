@@ -517,6 +517,7 @@ public class ShortcutsFragment extends Fragment {
             if (generation != libraryLoadGeneration.get()) return;
             ArrayList<Shortcut> shortcuts = new ContainerManager(appContext).loadShortcuts();
             shortcuts.removeIf(shortcut -> shortcut == null || shortcut.file == null || shortcut.file.getName().isEmpty());
+            shortcuts.removeIf(shortcut -> !com.winlator.cmod.stores.StoreInstalls.INSTANCE.isPublishedShortcut(appContext, shortcut));
             Bitmap defaultIcon = BitmapFactory.decodeResource(appContext.getResources(), R.drawable.icon_wine);
             for (Shortcut shortcut : shortcuts) if (shortcut.icon == null) shortcut.icon = defaultIcon;
             libraryHandler.post(() -> {

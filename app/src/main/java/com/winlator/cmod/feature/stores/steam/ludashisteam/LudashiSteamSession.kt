@@ -469,6 +469,12 @@ class LudashiSteamSession : AutoCloseable {
         return nativeGetPicsAppInfo(h, appId, accessToken)
     }
 
+    fun requestFreeLicense(appId: Int): String? {
+        require(appId > 0)
+        val h = nativeHandle.get(); if (h == 0L) return null
+        return nativeRequestFreeLicense(h, intArrayOf(appId))
+    }
+
     // Blocking PICS access-token request.
     fun getPicsAccessTokens(appIds: List<Int>, packageIds: List<Int>): String? {
         val h = nativeHandle.get(); if (h == 0L) return null
@@ -784,6 +790,7 @@ class LudashiSteamSession : AutoCloseable {
         @JvmStatic private external fun nativeCloudCompleteUploadBatch(handle: Long, appId: Int, batchId: Long, batchEresult: Int): Boolean
         @JvmStatic private external fun nativeGetPicsChangesSince(handle: Long, sinceChangeNumber: Long): String?
         @JvmStatic private external fun nativeGetPicsAppInfo(handle: Long, appId: Int, accessToken: Long): String?
+        @JvmStatic private external fun nativeRequestFreeLicense(handle: Long, appIds: IntArray): String?
         @JvmStatic private external fun nativeGetPicsAccessTokens(handle: Long, appIds: String, packageIds: String): String?
         @JvmStatic private external fun nativeGetPicsAppProductInfo(handle: Long, appIds: String, tokens: String): String?
         @JvmStatic private external fun nativeGetPicsPackageInfo(handle: Long, packageIds: String, tokens: String): String?

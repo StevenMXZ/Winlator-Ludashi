@@ -82,10 +82,7 @@ object StoreSessions {
     internal fun installed(context: Context, store: LudashiStore, check: () -> Unit = {}) {
         val records = records(context, store).listFiles().orEmpty().filter { it.extension == "json" }.mapNotNull { file ->
             check()
-            runCatching {
-                val record = JSONObject(file.readText())
-                if (File(record.getString("path")).isDirectory) file.nameWithoutExtension to record else null
-            }.getOrNull()
+            StoreInstalls.installedRecord(context, store, file.nameWithoutExtension)?.let { file.nameWithoutExtension to it }
         }.toMap()
         state(store).update { it.copy(installed = records, revision = it.revision + 1) }
     }

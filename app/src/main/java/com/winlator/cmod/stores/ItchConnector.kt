@@ -17,11 +17,11 @@ internal object ItchConnector {
         require(slug.size == 1 && slug[0].matches(Regex("[A-Za-z0-9_.-]+"))) { "Enter the game's main page URL" }
         return "https://${uri.host}/${slug[0]}"
     }
-    private fun html(context: Context, url: String, fields: Map<String, String>? = null, cookie: String? = null): String {
+    private fun html(context: Context, url: String, fields: Map<String, String>? = null, cookie: String? = null, referer: String = url): String {
         require(StoreNetwork.trustedItch(url))
         val credentials = cookie ?: StoreVault.load(context, store)?.optString("cookie") ?: error("Sign in to itch.io first")
         val builder = Request.Builder().url(url).header("Cookie", credentials).header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36")
-            .header("Referer", url).header("Origin", "https://${URI(url).host}")
+            .header("Referer", referer).header("Origin", "https://${URI(referer).host}")
         if (fields != null) builder.post(FormBody.Builder().apply { fields.forEach { (k, v) -> add(k, v) } }.build())
         return StoreNetwork.request(context, store, builder.build()) { it.body?.string() ?: error("Empty itch.io response") }
     }
@@ -102,8 +102,16 @@ internal object ItchConnector {
     }
     fun uploads(context: Context, game: StoreGame): List<StoreUpload> {
         if (ItchApi.key(context).isNotBlank()) return ItchApi.uploads(context, game)
-        val download = downloadPage(context, game.id)
-        return parseUploads(html(context, download))
+        val page = gameUrl(game.id)
+        val project = html(context, page)
+        val direct = parseUploads(project)
+        val download = try { parseUploads(html(context, downloadPage(context, page, project))) }
+        catch (error: Exception) {
+            StoreNetwork.check(context, store)
+            if (direct.isEmpty()) throw error
+            emptyList()
+        }
+        return (download + direct).distinctBy { it.id }
     }
     fun parseUploads(html: String): List<StoreUpload> {
         val document = Jsoup.parse(html)
@@ -125,19 +133,28 @@ internal object ItchConnector {
     private fun size(text: String): Long {
         val match = Regex("([\\d.]+)\\s*(B|KB|MB|GB|TB)", RegexOption.IGNORE_CASE).find(text) ?: return 0
         val unit = listOf("B", "KB", "MB", "GB", "TB").indexOf(match.groupValues[2].uppercase())
-        return (match.groupValues[1].toDouble() * Math.pow(1024.0, unit.toDouble())).toLong()
+        return ((match.groupValues[1].toDoubleOrNull() ?: return 0) * Math.pow(1024.0, unit.toDouble())).toLong()
     }
-    private fun downloadPage(context: Context, game: String): String {
-        val normalized = gameUrl(game)
-        val page = html(context, normalized)
-        val result = JSONObject(html(context, "$normalized/download_url", mapOf("csrf_token" to csrf(page))))
-        return result.optString("url").takeIf { StoreNetwork.trustedItch(it) } ?: error("itch.io did not grant access to this download. Check ownership and sign in again.")
+    private fun downloadPage(context: Context, url: String, project: String): String {
+        val result = JSONObject(html(context, "$url/download_url", mapOf("csrf_token" to csrf(project)), referer = url))
+        val page = URI(url).resolve(result.optString("url").ifBlank {
+            error("itch.io did not grant access to this download. Check ownership and sign in again.")
+        }).toString()
+        require(StoreNetwork.trustedItch(page)) { "itch.io returned an invalid download page" }
+        return page
     }
     fun file(context: Context, game: StoreGame, upload: StoreUpload): String {
         if (ItchApi.key(context).isNotBlank()) return ItchApi.download(game, upload)
-        val page = downloadPage(context, game.id)
-        val token = csrf(html(context, page))
-        val response = JSONObject(html(context, "${gameUrl(game.id)}/file/${upload.id}?source=game_download&after_download_lightbox=1&as_props=1", mapOf("csrf_token" to token)))
+        require(upload.id.toLongOrNull()?.let { it > 0 } == true) { "Invalid itch.io download" }
+        val url = gameUrl(game.id)
+        val project = html(context, url)
+        val direct = parseUploads(project).any { it.id == upload.id }
+        val page = if (direct) url else downloadPage(context, url, project)
+        val token = csrf(if (direct) project else html(context, page))
+        val source = if (direct) "view_game" else "game_download"
+        val response = JSONObject(html(context, "$url/file/${upload.id}?source=$source&as_props=1", mapOf("csrf_token" to token), referer = page))
+        val errors = response.optJSONArray("errors")
+        if (errors != null && errors.length() > 0) error(errors.optString(0).ifBlank { "itch.io rejected this download" })
         return response.optString("url").takeIf { it.startsWith("https://") } ?: error("itch.io did not provide a download URL")
     }
     private fun normalizeImage(url: String) = (if (url.startsWith("//")) "https:$url" else url).takeIf { it.startsWith("https://") }.orEmpty()

@@ -11,46 +11,59 @@ import com.winlator.cmod.core.unpack.SevenZip
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.util.zip.ZipInputStream
+import java.util.zip.CRC32
+import java.util.zip.ZipFile
 
 internal object StoreInstalls {
     fun extract(context: Context, store: LudashiStore, archive: File, destination: File) {
         StoreNetwork.check(context, store)
         if (archive.name.endsWith(".zip", true)) {
-            val entries = java.util.zip.ZipFile(archive).use { zip -> zip.size() }
-            require(entries > 0) { "Empty game archive" }
-            var extracted = 0
-            ZipInputStream(archive.inputStream().buffered()).use { zip ->
+            ZipFile(archive).use { zip ->
+                require(zip.size() > 0) { "Empty game archive" }
                 val seen = mutableSetOf<String>()
-                while (true) {
+                val buffer = ByteArray(256 * 1024)
+                for (entry in zip.entries()) {
                     StoreNetwork.check(context, store)
-                    val entry = zip.nextEntry ?: break
-                    val relative = entry.name.trimEnd('/')
+                    val normalized = entry.name.replace('\\', '/')
+                    val relative = normalized.trimEnd('/')
                     val target = safeStorePath(destination, relative)
                     check(seen.add(relative.lowercase())) { "Archive has duplicate file paths" }
-                    if (entry.isDirectory) target.mkdirs() else {
+                    if (normalized.endsWith('/')) target.mkdirs() else {
                         target.parentFile?.mkdirs()
-                        target.outputStream().use { output ->
-                            val buffer = ByteArray(256 * 1024)
-                            var bytes = 0L
-                            while (true) {
-                                StoreNetwork.check(context, store)
-                                val size = zip.read(buffer); if (size < 0) break
-                                check(target.parentFile.usableSpace > size + 1024 * 1024L) { "Not enough space for this game" }
-                                output.write(buffer, 0, size); bytes += size
+                        zip.getInputStream(entry).use { input ->
+                            target.outputStream().use { output ->
+                                val crc = CRC32()
+                                var bytes = 0L
+                                while (true) {
+                                    StoreNetwork.check(context, store)
+                                    val size = input.read(buffer); if (size < 0) break
+                                    check(target.parentFile.usableSpace > size + 1024 * 1024L) { "Not enough space for this game" }
+                                    output.write(buffer, 0, size); crc.update(buffer, 0, size); bytes += size
+                                }
+                                check(bytes == entry.size && crc.value == entry.crc) { "Incomplete or damaged ZIP entry" }
                             }
-                            check(entry.size < 0 || bytes == entry.size) { "Incomplete ZIP entry" }
                         }
                     }
-                    zip.closeEntry(); extracted++
                 }
             }
-            check(extracted == entries) { "Incomplete ZIP archive" }
         } else if (archive.extension.equals("exe", true)) {
             check(archive.inputStream().use { it.read() == 'M'.code && it.read() == 'Z'.code }) { "The download was not a Windows executable" }
             archive.inputStream().use { input ->
                 safeStorePath(destination, archive.name).outputStream().use { output -> copyPayload(context, store, input, output) }
             }
+        } else if (archive.name.endsWith(".tar.gz", true) || archive.name.endsWith(".tar.xz", true)) {
+            check(SevenZip.isAvailable(context)) { "The archive extractor is unavailable" }
+            val tar = File.createTempFile("store-payload-", ".tar", destination.parentFile)
+            try {
+                val process = SevenZip.newProcess(context, "x", "-so", "-bse0", archive.path).start()
+                StoreSessions.trackProcess(store.id, process)
+                process.outputStream.close()
+                try {
+                    process.inputStream.use { input -> tar.outputStream().use { output -> copyPayload(context, store, input, output) } }
+                    check(process.waitFor() == 0) { "Could not decompress the game archive" }
+                } finally { process.destroy() }
+                extract(context, store, tar, destination)
+            } finally { tar.delete() }
         } else {
             check(SevenZip.isAvailable(context)) { "The archive extractor is unavailable" }
             val listing = SevenZip.newProcess(context, "l", "-slt", "-ba", archive.path).redirectErrorStream(true).start()
@@ -90,11 +103,25 @@ internal object StoreInstalls {
         val target = File(container.rootDir, ".wine/drive_c/Ludashi Games/${game.store.id}-${game.key}")
         val desktop = File(container.desktopDir, "${game.store.id}-${game.key}.desktop")
         val selected = StoreExecutables.default(executables, game.title)
+        val recordFile = File(StoreSessions.records(context, game.store), "${game.key}.json")
         check(ContainerSessionGate.edit(containerId)) { "Exit the container before finishing this installation" }
         var moved = false
         var committed = false
+        var previousShortcut: String? = null
         try {
-            check(!target.exists() && !desktop.exists()) { "An installation already exists at this location" }
+            check(!target.exists() && installedRecord(context, game.store, game.key) == null) { "An installation already exists at this location" }
+            if (recordFile.exists()) {
+                val old = JSONObject(recordFile.readText())
+                check(old.optInt("container") == containerId && old.optString("path") == target.canonicalPath &&
+                    old.optJSONObject("game")?.optString("id") == game.id) { "A different installation already exists" }
+            }
+            if (desktop.exists()) {
+                val old = Shortcut(container, desktop)
+                check(old.getExtra("ludashiStore") == game.store.id && old.getExtra("storeGameId") == game.id) {
+                    "A different shortcut already exists at this location"
+                }
+                previousShortcut = desktop.readText()
+            }
             target.parentFile?.mkdirs()
             check(stage.renameTo(target)) { "Could not finalize the game directory" }; moved = true
             val record = JSONObject().put("installedSize", installedSize).put("game", game.json()).put("path", target.canonicalPath).put("container", containerId)
@@ -102,18 +129,39 @@ internal object StoreInstalls {
             val information = File(context.filesDir, "store-information/${game.store.id}-${storeHash(game.id)}.json")
             if (information.isFile) runCatching { record.put("information", JSONObject(information.readText())) }
             if (selected.isNotBlank()) writeShortcut(context, record)
-            icon(context, game, containerId)
-            atomicStoreFile(File(StoreSessions.records(context, game.store), "${game.key}.json"), record.toString())
+            runCatching { icon(context, game, containerId) }
+                .onFailure { android.util.Log.w("StoreInstall", "Could not save the shortcut icon", it) }
+            StoreNetwork.check(context, game.store)
+            atomicStoreFile(recordFile, record.toString())
             committed = true
             StoreSessions.installed(context, game.store)
             return record
         } finally {
             if (moved && !committed) {
                 if (target.renameTo(stage)) StoreSessions.discard(stage) else if (!StoreSessions.paused) target.deleteRecursively()
-                desktop.delete()
+                val previous = previousShortcut
+                if (previous == null) desktop.delete() else runCatching { atomicStoreFile(desktop, previous) }
             }
             ContainerSessionGate.edited(containerId)
         }
+    }
+
+    fun installedRecord(context: Context, store: LudashiStore, gameKey: String): JSONObject? = runCatching {
+        val record = JSONObject(File(StoreSessions.records(context, store), "$gameKey.json").readText())
+        val path = File(record.getString("path"))
+        val selected = record.optString("executable")
+        val candidates = record.optJSONArray("executables")
+        val ready = if (selected.isNotBlank()) safeStorePath(path, selected).isFile else
+            candidates != null && (0 until candidates.length()).any { safeStorePath(path, candidates.getString(it)).isFile }
+        record.takeIf { ready }
+    }.getOrNull()
+
+    fun isPublishedShortcut(context: Context, shortcut: Shortcut): Boolean {
+        val gameId = shortcut.getExtra("storeGameId").takeIf { it.isNotBlank() } ?: return true
+        val store = LudashiStore.find(shortcut.getExtra("ludashiStore")) ?: return true
+        val record = installedRecord(context, store, storeHash(gameId).take(32)) ?: return false
+        return record.optInt("container") == shortcut.container.id &&
+            record.optString("shortcut") == shortcut.file.path
     }
     fun writeShortcut(context: Context, record: JSONObject) {
         val game = StoreGame.parse(record.getJSONObject("game"))

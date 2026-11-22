@@ -57,4 +57,32 @@ class SteamLibraryTest {
             assertEquals("Steam · Installed", items.single().containerName)
         } finally { marker.delete() }
     }
+
+    @Test fun installedDemoAppearsWithoutAnOwnedLibraryEntryOrShortcut() {
+        val context = RuntimeEnvironment.getApplication()
+        val marker = File(context.filesDir, "steam-library/3714190.json")
+        marker.parentFile!!.mkdirs()
+        marker.writeText("""{"common":{"name":"NINJA GAIDEN: Ragebound Demo","type":"Demo"}}""")
+        try {
+            val snapshot = """{"owned_apps":[{"id":3564860,"name":"Stellar Blade Demo","type":"demo"}]}"""
+            val shortcuts = SteamLibrary.items(context, snapshot, mainLibraryOnly = true, includeDemos = true)
+            assertEquals(listOf("steam://3714190"), shortcuts.map { it.shortcutPath })
+            assertEquals("Steam · Installed", SteamLibrary.items(context, snapshot, filterType = "demo")
+                .single { it.shortcutPath == "steam://3714190" }.containerName)
+            assertTrue(SteamLibrary.items(context, snapshot).isEmpty())
+            assertFalse(SteamLibrary.ownsApp(snapshot, 3714190))
+        } finally { marker.delete() }
+    }
+
+    @Test fun artworkUsesPublishedHashedAssetsAndCommunityIcon() {
+        val common = org.json.JSONObject("""{
+            "library_assets_full":{"library_capsule":{"image2x":{"english":"de8119957c34795d7bdd949a87a836e76ad1e662/library_600x900_2x.jpg"}}},
+            "header_image":{"english":"02d95cefbfabfdf69ea0563164f90b14d1db98e5/header.jpg"},
+            "icon":"77b83cc2b8e63a0aca31ddefc7cc4ced5cfa3bcc"
+        }""")
+        val urls = SteamArtwork.fromCommon(3564860, common, "cover")
+        assertTrue(urls.first().endsWith("/3564860/de8119957c34795d7bdd949a87a836e76ad1e662/library_600x900_2x.jpg"))
+        assertTrue(urls.last().endsWith("/3564860/77b83cc2b8e63a0aca31ddefc7cc4ced5cfa3bcc.jpg"))
+        assertFalse(SteamArtwork.isSteamAsset("https://shared.steamstatic.com.invalid/art.jpg"))
+    }
 }

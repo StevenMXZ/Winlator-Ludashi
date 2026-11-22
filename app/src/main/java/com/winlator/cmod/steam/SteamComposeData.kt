@@ -2,16 +2,32 @@ package com.winlator.cmod.steam
 
 import android.content.Context
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.winlator.cmod.ui.library.LibraryItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-@Composable fun rememberSteamLibrary(context: Context, json: String, enabled: Boolean = true, filterType: String = "game", mainLibraryOnly: Boolean = false): List<LibraryItem> {
+@Composable internal fun rememberSteamArtwork(id: Int, kind: String): String? {
+    val context = LocalContext.current.applicationContext
+    val revision = SteamLibrary.artworkVersion
+    val path = remember(context, id, kind, revision) { SteamLibrary.artworkPath(context, id, kind) }
+    LaunchedEffect(context, id, kind, path) {
+        if (path == null && id > 0) SteamLibrary.requestArtwork(context, "steam://$id", kind)
+    }
+    return path
+}
+
+@Composable internal fun SteamAppArt(id: Int, kind: String, modifier: Modifier) {
+    SteamArt(rememberSteamArtwork(id, kind) ?: SteamArtwork.defaultUrl(id, kind), modifier)
+}
+
+@Composable fun rememberSteamLibrary(context: Context, json: String, enabled: Boolean = true, filterType: String = "game", mainLibraryOnly: Boolean = false, includeDemos: Boolean = false): List<LibraryItem> {
     val changes = SteamGames.version
     val artwork = SteamLibrary.artworkVersion
-    val items by produceState(emptyList<LibraryItem>(), json, enabled, changes, artwork, filterType, mainLibraryOnly) {
-        value = if (enabled) withContext(Dispatchers.IO) { SteamLibrary.items(context, json, filterType, mainLibraryOnly) } else emptyList()
+    val items by produceState(emptyList<LibraryItem>(), json, enabled, changes, artwork, filterType, mainLibraryOnly, includeDemos) {
+        value = if (enabled) withContext(Dispatchers.IO) { SteamLibrary.items(context, json, filterType, mainLibraryOnly, includeDemos) } else emptyList()
     }
     return items
 }

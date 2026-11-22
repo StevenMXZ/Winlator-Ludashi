@@ -7,7 +7,6 @@ import com.winlator.cmod.R
 import android.content.Context
 import android.content.Intent
 import android.view.ViewGroup
-import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,8 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.bumptech.glide.Glide
 import com.winlator.cmod.ui.theme.WinZOverlayTheme
 
 object SteamSheets {
@@ -79,8 +76,7 @@ object SteamSheets {
             var added by remember(id) { mutableStateOf(SteamLibrary.added(context, id)) }
             var favorite by remember { mutableStateOf(context.getSharedPreferences("steam-settings", 0).getBoolean("favorite-$id", false)) }
             Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                AndroidView(factory = { ImageView(it).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
-                    update = { SteamArtwork.request(it.context, "https://shared.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900_2x.jpg").into(it) }, modifier = Modifier.size(32.dp, 48.dp))
+                SteamAppArt(id, "cover", Modifier.size(32.dp, 48.dp))
                 Text(item?.name ?: uiStr(R.string.steam_ui_game), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             }
             val installed = java.io.File(context.filesDir, "steam-library/$id.json").isFile

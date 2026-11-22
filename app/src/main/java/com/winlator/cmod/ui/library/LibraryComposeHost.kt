@@ -184,7 +184,7 @@ object LibraryComposeHost {
                             val saved = withContext(Dispatchers.IO) { enabled && SteamCredentials.load(context) != null }
                             if (saved) context.startForegroundService(Intent(context, SteamService::class.java))
                         }
-                        val steamItems = rememberSteamLibrary(context, steam.library, enabled, mainLibraryOnly = !showUninstalled.value)
+                        val steamItems = rememberSteamLibrary(context, steam.library, enabled, mainLibraryOnly = !showUninstalled.value, includeDemos = true)
                         val merged = remember(items.value, steamItems, gogItems, gog.installed, gogEnabled, itchItems, itch.installed, itchEnabled) {
                             val knownSteam = steamItems.mapNotNull { SteamLibrary.appId(it.shortcutPath) }.toSet()
                             val gogShortcuts = if (gogEnabled) gog.installed.values.map { it.optString("shortcut") }.toSet() else emptySet()

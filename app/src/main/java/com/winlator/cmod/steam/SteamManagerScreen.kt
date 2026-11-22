@@ -42,8 +42,8 @@ import java.io.File
     var sorting by remember { mutableStateOf(false) }
     var sort by rememberSaveable { mutableStateOf("Recent") }
     val apps = rememberSteamLibrary(context, state.library)
-    val demos = rememberSteamLibrary(context, state.library, enabled = tab == 4, filterType = "demo")
-    val installed = remember(apps) { apps.count { it.containerName == "Steam · Installed" } }
+    val demos = rememberSteamLibrary(context, state.library, filterType = "demo")
+    val installedApps = remember(apps, demos) { (apps + demos).filter { it.containerName == "Steam · Installed" } }
     val user = rememberSteamUserSnapshot(context)
     val profile = user.profile
     val owned = user.owned
@@ -105,11 +105,11 @@ import java.io.File
                 }
             }
         } else {
-            val sourceApps = if (tab == 4) demos else apps
-            val filtered = remember(sourceApps, query, tab) { sourceApps.filter { it.name.contains(query, true) && (tab != 2 || it.containerName == "Steam · Installed") } }
+            val sourceApps = when (tab) { 2 -> installedApps; 4 -> demos; else -> apps }
+            val filtered = remember(sourceApps, query) { sourceApps.filter { it.name.contains(query, true) } }
             val visible = remember(filtered, owned, sort) { sortSteamLibrary(filtered, owned, sort) }
             LazyVerticalGrid(if (grid) GridCells.Adaptive(160.dp) else GridCells.Fixed(1), Modifier.weight(1f), contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item(key = "account", span = { GridItemSpan(maxLineSpan) }) { SteamAccountCard(profile, state.signedIn, apps.size, installed) }
+                item(key = "account", span = { GridItemSpan(maxLineSpan) }) { SteamAccountCard(profile, state.signedIn, apps.size, installedApps.size) }
                 item(key = "controls", span = { GridItemSpan(maxLineSpan) }) {
                     Column {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -128,7 +128,7 @@ import java.io.File
                     val id = SteamLibrary.appId(app.shortcutPath)!!
                     val isInstalled = app.containerName == "Steam · Installed"
                     OutlinedCard(onClick = { if (isInstalled) openGame(id) else SteamSheets.game(context, id) }, shape = RoundedCornerShape(16.dp)) {
-                        SteamArt("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/header.jpg", Modifier.fillMaxWidth().padding(6.dp).aspectRatio(460f / 215f).clip(RoundedCornerShape(12.dp)))
+                        SteamAppArt(id, "banner", Modifier.fillMaxWidth().padding(6.dp).aspectRatio(460f / 215f).clip(RoundedCornerShape(12.dp)))
                         Row(Modifier.fillMaxWidth().padding(start = 10.dp, end = 6.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(app.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
@@ -157,7 +157,7 @@ import java.io.File
         item { Text(uiStr(R.string.steam_ui_downloads), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
         if (state.id > 0) item {
             OutlinedCard(shape = RoundedCornerShape(20.dp)) {
-                SteamArt("https://shared.steamstatic.com/store_item_assets/steam/apps/${state.id}/header.jpg", Modifier.fillMaxWidth().aspectRatio(460f / 215f))
+                SteamAppArt(state.id, "banner", Modifier.fillMaxWidth().aspectRatio(460f / 215f))
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(state.name, style = MaterialTheme.typography.titleLarge)
                     Text(if (state.downloading) uiStr(R.string.steam_ui_downloading) else if (installed) uiStr(R.string.steam_ui_installed_game) else uiStr(R.string.steam_ui_paused), color = MaterialTheme.colorScheme.onSurfaceVariant)

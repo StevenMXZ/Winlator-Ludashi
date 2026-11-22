@@ -107,17 +107,12 @@ private fun GameDetailScreen(title: String, subtitle: String, artworkPath: Strin
         onDispose { }
     }
     val artworkRevision = LibraryImageCache.revision
-    val key = LibraryImageCache.keyFor(artworkPath)
+    val steamArtwork = if (steamId != null && artworkPath == null) com.winlator.cmod.steam.rememberSteamArtwork(steamId, "banner") else null
+    val imagePath = artworkPath ?: steamArtwork
+    val key = LibraryImageCache.keyFor(imagePath)
     val artwork by produceState(LibraryImageCache.peek(key) ?: fallback, key, fallback, artworkRevision) {
         value = withContext(Dispatchers.IO) {
-            LibraryImageCache.load(artworkPath) ?: fallback ?: steamId?.let { id ->
-                runCatching {
-                    val request = com.bumptech.glide.Glide.with(context).downloadOnly()
-                        .load("https://shared.steamstatic.com/store_item_assets/steam/apps/$id/header.jpg").submit()
-                    try { android.graphics.BitmapFactory.decodeFile(request.get(20, java.util.concurrent.TimeUnit.SECONDS).path) }
-                    finally { com.bumptech.glide.Glide.with(context).clear(request) }
-                }.getOrNull()
-            }
+            LibraryImageCache.load(imagePath) ?: fallback
         }
     }
     var resumeSerial by remember { mutableIntStateOf(0) }

@@ -160,13 +160,14 @@ class StoreDetailFragment : Fragment() {
             return Detail(record.getString("title"), "GOG", File(context.cacheDir, "gog-art/$gameId.jpg").takeIf { it.isFile }, record, shortcut)
         }
         val store = LudashiStore.find(storeId) ?: error("Unknown store")
-        val file = File(StoreSessions.records(context, store), "${storeHash(gameId).take(32)}.json")
-        if (!file.isFile) {
-            val game = StoreSessions.state(store).value.games.find { it.id == gameId } ?: ItchCatalog.selected(context, gameId) ?: error("Game not found in the library")
+        val key = storeHash(gameId).take(32)
+        val record = StoreInstalls.installedRecord(context, store, key)
+        if (record == null) {
+            val previous = runCatching { StoreGame.parse(JSONObject(File(StoreSessions.records(context, store), "$key.json").readText()).getJSONObject("game")) }.getOrNull()
+            val game = StoreSessions.state(store).value.games.find { it.id == gameId } ?: ItchCatalog.selected(context, gameId) ?: previous ?: error("Game not found in the library")
             StoreSessions.requestArt(context, game.uri)
             return Detail(game.title, store.title, File(context.cacheDir, "$storeId-art/${game.key}.jpg").takeIf { it.isFile }, JSONObject().put("game", game.json()), null, false)
         }
-        val record = JSONObject(file.readText())
         val game = StoreGame.parse(record.getJSONObject("game"))
         return Detail(game.title, store.title, File(context.cacheDir, "$storeId-art/${game.key}.jpg").takeIf { it.isFile }, record, runCatching { StoreInstalls.shortcut(context, record) }.getOrNull())
     }

@@ -473,7 +473,20 @@ object SteamSession {
         val context = app ?: error("Steam is starting")
         val s = session ?: error("Steam is starting")
         check(s.state() == 3) { "Sign in first" }
-        val info = info(id)
+        var info = info(id)
+        if (info.optJSONObject("common")?.optString("type").equals("demo", true) &&
+            !SteamLibrary.ownsApp(library, id)) {
+            val license = s.requestFreeLicense(id)?.let(::JSONObject)
+            if (license?.optBoolean("granted") == true) {
+                appMetadata.clear()
+                librarySync.reset(forceRefresh = true)
+                libraryCacheSaved = false
+                info = this.info(id)
+            } else {
+                // A demo may already have a license outside the cached library. Let Steam check its depots.
+                android.util.Log.w("SteamDownload", "Demo license app=$id status=${license?.optString("status")} result=${license?.optInt("eresult")}")
+            }
+        }
         val name = SteamCatalog.installName(info)
         val branch = SteamInstallOptions.branch(context, id)
         val language = SteamInstallOptions.language(context, id)
