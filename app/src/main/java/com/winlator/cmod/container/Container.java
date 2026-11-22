@@ -27,7 +27,7 @@ public class Container {
         THUMBSTICK_UP, THUMBSTICK_DOWN, THUMBSTICK_LEFT, THUMBSTICK_RIGHT
     }
     public static final String DEFAULT_DISPLAY_DRIVER = "egl";
-    public static final String DEFAULT_ENV_VARS = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=1 FD_MESA_DEBUG=hiprio,sysmem TU_DEBUG=noconform,sysmem VKD3D_SHADER_MODEL=6_6";
+    public static final String DEFAULT_ENV_VARS = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=1 FD_MESA_DEBUG=hiprio,sysmem TU_DEBUG=noconform,sysmem VKD3D_SHADER_MODEL=6_6 DXVK_LOG_LEVEL=none";
     public static final String DEFAULT_SCREEN_SIZE = "1280x720";
     public static final String DEFAULT_GRAPHICS_DRIVER = "wrapper";
     public static final String DEFAULT_AUDIO_DRIVER = "alsa-oboe";
@@ -50,6 +50,7 @@ public class Container {
     private String envVars = DEFAULT_ENV_VARS;
     private String graphicsDriver = DEFAULT_GRAPHICS_DRIVER;
     private String graphicsDriverConfig = DEFAULT_GRAPHICSDRIVERCONFIG;
+    private String vkWrapper = "default";
     private String dxwrapper = DEFAULT_DXWRAPPER;
     private String dxwrapperConfig = "";
     private String wincomponents = DEFAULT_WINCOMPONENTS;
@@ -131,6 +132,14 @@ public class Container {
 
     public void setGraphicsDriver(String graphicsDriver) {
         this.graphicsDriver = graphicsDriver;
+    }
+
+    public String getVkWrapper() {
+        return vkWrapper;
+    }
+
+    public void setVkWrapper(String vkWrapper) {
+        this.vkWrapper = vkWrapper != null && !vkWrapper.isEmpty() ? vkWrapper : "default";
     }
 
     public String getGraphicsDriverConfig() {
@@ -569,6 +578,7 @@ public class Container {
             if (syncCpuTopology) data.put("syncCpuTopology", true);
             data.put("graphicsDriver", graphicsDriver);
             data.put("graphicsDriverConfig", getGraphicsDriverConfig());
+            data.put("vkWrapper", vkWrapper);
             data.put("rendererNative", rendererNative);
             data.put("rendererPresentMode", rendererPresentMode);
             if (!rendererDriverId.isEmpty()) data.put("rendererDriverId", rendererDriverId);
@@ -606,6 +616,7 @@ public class Container {
     public void loadData(JSONObject data) throws JSONException {
         wineVersion = WineInfo.MAIN_WINE_VERSION.identifier();
         dxwrapperConfig = "";
+        vkWrapper = "default";
         VideoDecoderSettings.migrateLegacy(data, true);
         checkObsoleteOrMissingProperties(data);
 
@@ -635,6 +646,9 @@ public class Container {
                     break;
                 case "graphicsDriverConfig" :
                     setGraphicsDriverConfig(data.getString(key));
+                    break;
+                case "vkWrapper" :
+                    setVkWrapper(data.getString(key));
                     break;
                 case "rendererNative" :
                     rendererNative = data.getBoolean(key);

@@ -87,6 +87,7 @@ import com.winlator.cmod.container.Container
 import com.winlator.cmod.container.ContainerManager
 import com.winlator.cmod.container.Shortcut
 import com.winlator.cmod.container.ShortcutPresetManager
+import com.winlator.cmod.contents.WrapperManager
 import com.winlator.cmod.core.DefaultVersion
 import com.winlator.cmod.core.FileUtils
 import com.winlator.cmod.core.GPUInformation
@@ -214,6 +215,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     )
 
     var graphicsDriver by mutableStateOf(StringUtils.parseIdentifier(shortcut.getExtra("graphicsDriver", container.getGraphicsDriver())))
+    var vkWrapper by mutableStateOf(shortcut.getExtra(WrapperManager.EXTRA_KEY, container.getVkWrapper()))
     private val defaultDriverVersion = runCatching {
         val context = container.manager.context
         if (GPUInformation.isDriverSupported(DefaultVersion.WRAPPER_ADRENO, context)) DefaultVersion.WRAPPER_ADRENO else DefaultVersion.WRAPPER
@@ -376,6 +378,12 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
         save()
     }
 
+    fun selectVkWrapper(value: String) {
+        vkWrapper = value
+        shortcut.putExtra(WrapperManager.EXTRA_KEY, value)
+        save()
+    }
+
     fun selectGraphicsDriver(value: String) {
         graphicsDriver = value
         shortcut.putExtra("graphicsDriver", value)
@@ -409,7 +417,7 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
 
     fun updateDxvkHud(enabled: Boolean) {
         dxvkHud = enabled
-        setEnvironment(envPut(envVars, "DXVK_HUD", if (enabled) "fps,devinfo,gpuload,version" else null))
+        setEnvironment(envPut(envVars, "DXVK_HUD", if (enabled) "fps,gpuload,version" else null))
     }
 
     fun applyRenderingMode(mode: String) {
@@ -499,7 +507,7 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
         return "${container.name} · $runtime"
     }
 
-    val screenEntries = remember { context.resources.getStringArray(R.array.screen_size_entries).toList() }
+    val screenEntries = remember { com.winlator.cmod.core.ScreenSizeOptions.build(context) }
     val graphicsEntries = remember { context.resources.getStringArray(R.array.graphics_driver_entries).toList() }
     val audioEntries = remember { context.resources.getStringArray(R.array.audio_driver_entries).toList() }
     val wrapperEntries = remember { context.resources.getStringArray(R.array.dxwrapper_entries).toList() }
@@ -1208,6 +1216,14 @@ private fun ShortcutCategoryV2(
                         s.extra("freedrenoVersion", it)
                     }
                 }
+                SettingsDivider()
+                val wrapperManager = remember { WrapperManager(context) }
+                val wrapperLabels = remember { wrapperManager.labels() }
+                SettingChoice(
+                    "Vulkan Wrapper",
+                    wrapperManager.labelFor(wrapperManager.resolve(s.vkWrapper)),
+                    wrapperLabels
+                ) { s.selectVkWrapper(wrapperManager.identifierForLabel(it)) }
                 catalog?.let { c ->
                     SettingsDivider()
                     SettingDriverChoice(uiStr(R.string.ui_driver_version), s.driverVersion, c.drivers, s.installing, installDriver) {

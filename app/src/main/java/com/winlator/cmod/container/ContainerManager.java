@@ -200,6 +200,7 @@ public class ContainerManager {
         dstContainer.setCPUList(srcContainer.getCPUList());
         dstContainer.setCPUListWoW64(srcContainer.getCPUListWoW64());
         dstContainer.setGraphicsDriver(srcContainer.getGraphicsDriver());
+        dstContainer.setVkWrapper(srcContainer.getVkWrapper());
         dstContainer.setDXWrapper(srcContainer.getDXWrapper());
         dstContainer.setDXWrapperConfig(srcContainer.getDXWrapperConfig());
         dstContainer.setAudioDriver(srcContainer.getAudioDriver());

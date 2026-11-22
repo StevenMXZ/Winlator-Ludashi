@@ -82,7 +82,7 @@ public class ContainerSectionFragment extends Fragment {
 
     private View buildSectionView(ContentsManager contentsManager) {
         String[] rendererEntries = new String[]{"Vulkan", "EGL", "DisplayX"};
-        String[] screenEntries = getResources().getStringArray(R.array.screen_size_entries);
+        String[] screenEntries = com.winlator.cmod.core.ScreenSizeOptions.buildArray(requireContext());
         String[] graphicsEntries = getResources().getStringArray(R.array.graphics_driver_entries);
         String[] audioEntries = getResources().getStringArray(R.array.audio_driver_entries);
         String[] wrapperEntries = getResources().getStringArray(R.array.dxwrapper_entries);

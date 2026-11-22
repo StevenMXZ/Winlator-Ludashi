@@ -412,7 +412,7 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
         });
         if (btWineVersionOptions != null) btWineVersionOptions.setOnClickListener(v -> showWineVersionDownloadPopup(v, sWineVersion, refreshWineVersion));
 
-        loadScreenSizeSpinner(view, isEditMode() ? container.getScreenSize() : Container.DEFAULT_SCREEN_SIZE);
+        loadScreenSizeSpinner(view, isEditMode() ? container.getScreenSize() : com.winlator.cmod.core.ScreenSizeOptions.defaultSize(view.getContext()));
 
         final Spinner sGraphicsDriver = view.findViewById(R.id.SGraphicsDriver);
 
@@ -1003,6 +1003,7 @@ public class ContainerDetailFragment extends Fragment implements DXVKConfigDialo
         final Spinner sScreenSize = view.findViewById(R.id.SScreenSize);
 
         final LinearLayout llCustomScreenSize = view.findViewById(R.id.LLCustomScreenSize);
+        sScreenSize.setAdapter(new ArrayAdapter<>(view.getContext(), android.R.layout.simple_spinner_dropdown_item, com.winlator.cmod.core.ScreenSizeOptions.build(view.getContext())));
         sScreenSize.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
