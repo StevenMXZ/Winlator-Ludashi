@@ -46,6 +46,7 @@ object StoreSessions {
     }
     @JvmStatic fun pauseForGame() {
         paused = true
+        com.winlator.cmod.steam.SteamLibrary.pauseArtwork()
         LudashiStore.entries.forEach(::cancel)
         processes.values.forEach { it.destroy() }
         com.winlator.cmod.gog.GogLibrary.cancelled = true
@@ -100,7 +101,7 @@ object StoreSessions {
                 StoreNetwork.check(app, store)
                 installed(app, store) { StoreNetwork.check(app, store) }
                 StoreNetwork.check(app, store)
-                state(store).update { it.copy(transfers = StoreTransfers.load(app, store)) }
+                StoreTransfers.restore(app, store)
                 val saved = StoreVault.load(app, store)
                 state(store).update { it.copy(signedIn = saved != null) }
                 val cache = cache(app, store)

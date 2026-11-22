@@ -19,6 +19,21 @@ import java.util.zip.ZipOutputStream
 class StoreInstallsTest {
     @get:Rule val temporary = TemporaryFolder()
 
+    @Test fun deletingAnItchDownloadOnlyDeletesItsPartialFiles() {
+        val root = temporary.newFolder()
+        val game = StoreGame(LudashiStore.ITCH, "https://example.itch.io/game", "Test Game")
+        val upload = JSONObject().put("id", "98").put("name", "windows.zip")
+        val otherUpload = JSONObject().put("id", "99").put("name", "windows.zip")
+        val partial = StoreTransfers.partialFolder(root, game, upload).apply { mkdirs() }
+        val other = StoreTransfers.partialFolder(root, game, otherUpload).apply { mkdirs() }
+        StoreTransfers.partialArchive(partial, upload).writeText("downloaded bytes")
+        StoreTransfers.partialArchive(other, otherUpload).writeText("unrelated download")
+        File(partial, ".validator").writeText("etag")
+        StoreTransfers.removePartial(root, game, upload)
+        assertFalse(partial.exists())
+        assertTrue(StoreTransfers.partialArchive(other, otherUpload).isFile)
+    }
+
     @Test fun aRecordWithMissingGameFilesIsNotAnInstallation() {
         val context = RuntimeEnvironment.getApplication()
         val store = LudashiStore.ITCH

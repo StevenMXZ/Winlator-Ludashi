@@ -29,6 +29,9 @@ import com.winlator.cmod.ui.theme.WinZTheme
 import com.winlator.cmod.ui.uiStr
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 class StoreActivity : ImmersiveSteamActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,10 +99,16 @@ class StoreActivity : ImmersiveSteamActivity() {
                 if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (state.error.isNotBlank()) Text(state.error, Modifier.padding(14.dp), color = MaterialTheme.colorScheme.error)
                 if (!state.signedIn) FilledTonalButton(enabled = !state.loading, onClick = { login.launch(Intent(this@StoreActivity, StoreLoginActivity::class.java).putExtra("store", store.id)) }, modifier = Modifier.padding(14.dp)) { Text(uiStr(R.string.store_sign_in, store.title)) }
-                if (tab == 2) androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val history = state.transfers.values.sortedByDescending { it.optLong("updated") }
-                    items(history.size) { index -> StoreTransferPanel(store, state, transfer = history[index]) }
-                    if (history.isEmpty()) item { Text(uiStr(R.string.store_no_downloads)) }
+                if (tab == 2) {
+                    val active = state.activeGame
+                    val history = remember(state.transfers, active) {
+                        state.transfers.entries.filter { it.key != active?.key }.sortedByDescending { it.value.optLong("updated") }
+                    }
+                    androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (active != null) item(key = active.key) { StoreTransferPanel(store, state) }
+                        items(history.size, key = { history[it].key }) { index -> StoreTransferPanel(store, state, transfer = history[index].value) }
+                        if (history.isEmpty() && active == null) item { Text(uiStr(R.string.store_no_downloads)) }
+                    }
                 }
                 else {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -136,27 +145,51 @@ class StoreActivity : ImmersiveSteamActivity() {
 @Composable internal fun StoreTransferPanel(store: LudashiStore, state: StoreSnapshot, modifier: Modifier = Modifier, transfer: JSONObject? = null) {
     val context = androidx.compose.ui.platform.LocalContext.current
     if (!state.busy && transfer == null) { Text(uiStr(R.string.store_no_downloads), modifier); return }
-    val game = remember(state.games, state.active, transfer) {
-        transfer?.optJSONObject("game")?.let { StoreGame.parse(it) } ?: state.games.find { it.id == state.active }
-    }
-    val active = state.busy && state.active == game?.id
+    val game = remember(transfer, state.activeGame) { state.gameForTransfer(transfer) }
+    val active = game != null && state.activeGame?.id == game.id
+    val scope = rememberCoroutineScope()
+    var confirmDelete by remember(game?.id) { mutableStateOf(false) }
+    var deleting by remember(game?.id) { mutableStateOf(false) }
+    val incomplete = !active && transfer != null && transfer.optString("status") != "completed"
     val label = if (active) state.stage else uiStr(when (transfer?.optString("status")) { "completed" -> R.string.store_download_complete; "failed" -> R.string.store_download_failed; else -> R.string.store_download_paused })
     val done = if (active) state.done else transfer?.optLong("done") ?: 0L
     val total = if (active) state.total else transfer?.optLong("total") ?: 0L
     OutlinedCard(modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                AndroidView(factory = { android.widget.ImageView(it) }, update = { Glide.with(it).load(game?.image).error(store.icon).into(it) }, onRelease = { Glide.with(it.context.applicationContext).clear(it) }, modifier = Modifier.size(48.dp))
+                AndroidView(factory = { android.widget.ImageView(it) }, update = {
+                    val image = game?.image.orEmpty()
+                    if (it.tag != image) { it.tag = image; Glide.with(it).load(image).error(store.icon).into(it) }
+                }, onRelease = { Glide.with(it.context.applicationContext).clear(it) }, modifier = Modifier.size(48.dp))
                 Column(Modifier.weight(1f)) { Text(game?.title ?: store.title, style = MaterialTheme.typography.titleSmall); Text(label, style = MaterialTheme.typography.bodySmall) }
-                if (active) TextButton(onClick = { StoreSessions.cancel(store) }) { Text(uiStr(R.string.cancel)) }
-                else if (transfer?.optString("status") != "completed" && !state.busy && state.signedIn && game != null) TextButton(onClick = {
-                    context.startForegroundService(Intent(context, StoreDownloadService::class.java).putExtra("store", store.id).putExtra("game", game.json().toString()).putExtra("container", transfer?.optInt("container") ?: 0).putExtra("upload", transfer?.optString("upload")))
-                }) { Text(uiStr(R.string.store_retry_download)) }
+                if (active) TextButton(onClick = { StoreSessions.cancel(store) }) { Text(uiStr(R.string.steam_ui_pause)) }
+            }
+            if (incomplete && game != null && transfer != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(enabled = !state.busy && !deleting && state.signedIn && !StoreSessions.paused, onClick = {
+                    context.startForegroundService(Intent(context, StoreDownloadService::class.java).putExtra("store", store.id).putExtra("game", game.json().toString()).putExtra("container", transfer.optInt("container")).putExtra("upload", transfer.optString("upload")))
+                }) { Text(uiStr(if (transfer.optString("status") == "failed") R.string.store_retry_download else R.string.steam_ui_resume)) }
+                OutlinedButton(enabled = !state.busy && !deleting, onClick = { confirmDelete = true }) {
+                    Text(uiStr(R.string.steam_download_cancel_delete))
+                }
             }
             if (active) { if (total > 0) LinearProgressIndicator(progress = { (done.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth()) else LinearProgressIndicator(Modifier.fillMaxWidth()) }
             if (active && state.speed > 0) StoreTransferStatistics(done, total, state.speed)
             if (total > 0) Text("${done / 1048576} / ${total / 1048576} MiB")
             if (!active && transfer?.optString("error").orEmpty().isNotBlank()) Text(transfer!!.optString("error"), color = MaterialTheme.colorScheme.error)
         }
+    }
+    if (confirmDelete && incomplete && game != null) {
+        AlertDialog(onDismissRequest = { confirmDelete = false },
+            title = { Text(uiStr(R.string.steam_download_cancel_delete)) }, text = { Text(uiStr(R.string.steam_download_cancel_confirm)) },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(uiStr(R.string.cancel)) } },
+            confirmButton = { TextButton(onClick = {
+                confirmDelete = false
+                deleting = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { runCatching { StoreTransfers.delete(context, game) } }
+                    deleting = false
+                    result.onFailure { android.widget.Toast.makeText(context, it.message.orEmpty(), android.widget.Toast.LENGTH_LONG).show() }
+                }
+            }) { Text(uiStr(R.string.steam_download_cancel_delete)) } })
     }
 }

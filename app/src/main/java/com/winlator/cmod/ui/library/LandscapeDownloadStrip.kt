@@ -21,7 +21,6 @@ import com.winlator.cmod.steam.downloadTimingText
 import com.winlator.cmod.stores.DownloadNotifications
 import com.winlator.cmod.stores.LudashiStore
 import com.winlator.cmod.stores.StoreSnapshot
-import com.winlator.cmod.stores.storeHash
 import com.winlator.cmod.stores.transferTimingText
 import com.winlator.cmod.ui.uiStr
 
@@ -39,8 +38,7 @@ internal fun LandscapeDownloadStrip(steam: SteamUiSnapshot, gog: GogState?, itch
             TransferCard("GOG", title, gog.done, gog.total, status, Modifier.weight(1f))
         }
         if (itch != null && itch.busy) {
-            val title = itch.games.firstOrNull { it.id == itch.active }?.title
-                ?: itch.transfers[storeHash(itch.active).take(32)]?.optJSONObject("game")?.optString("title").orEmpty()
+            val title = itch.activeGame?.title.orEmpty()
             val status = if (itch.speed > 0) transferTimingText(itch.done, itch.total, itch.speed) else itch.stage
             TransferCard(LudashiStore.ITCH.title, title, itch.done, itch.total, status, Modifier.weight(1f))
         }

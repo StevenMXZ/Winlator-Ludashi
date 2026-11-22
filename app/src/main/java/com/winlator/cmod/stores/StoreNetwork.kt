@@ -97,34 +97,61 @@ internal object StoreNetwork {
             bytes.toByteArray()
         }
     fun transfer(context: Context, store: LudashiStore, url: String, destination: File, expected: Long = -1,
-        archiveValidated: Boolean = false, progress: (Long) -> Unit) {
+        archiveValidated: Boolean = false, onLength: (Long, Long) -> Unit, progress: (Long) -> Unit): Long {
         val rate = StoreDownloadPreferences.limit(context, store.id)
+        val validatorFile = File(destination.parentFile, ".validator")
         var failure: Exception? = null
         for (attempt in 0..2) {
             check(context, store)
             try {
-                request(context, store, Request.Builder().url(url).header("Accept-Encoding", "identity").build()) { response ->
+                val validator = validatorFile.takeIf { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }?.readText()?.trim().orEmpty()
+                val offset = if (validator.isNotBlank()) destination.length() else 0L
+                val request = Request.Builder().url(url).header("Accept-Encoding", "identity")
+                if (offset > 0) request.header("Range", "bytes=$offset-").header("If-Range", validator)
+                return request(context, store, request.build()) { response ->
                     val transport = response.body?.contentLength() ?: -1L
-                    if (expected >= 0 && transport >= 0) check(expected == transport) { "Store download length does not match its manifest" }
-                    val required = if (expected >= 0) expected else transport
+                    val resumed = response.code == 206
+                    val required = if (resumed) {
+                        val range = Regex("bytes (\\d+)-(\\d+)/(\\d+)").matchEntire(response.header("Content-Range").orEmpty())
+                            ?: throw IllegalArgumentException("Invalid download range")
+                        val (start, end, size) = range.destructured
+                        require(offset > 0 && start.toLong() == offset && end.toLong() == size.toLong() - 1) { "Invalid download range" }
+                        size.toLong()
+                    } else if (expected >= 0) expected else transport
+                    if (!resumed && expected >= 0 && transport >= 0) check(expected == transport) { "Store download length does not match its manifest" }
                     check(required >= 0 || archiveValidated) { "Download has no verifiable length" }
                     destination.parentFile?.mkdirs()
-                    var done = 0L
+                    if (!resumed) {
+                        destination.delete()
+                        java.nio.file.Files.deleteIfExists(validatorFile.toPath())
+                        val current = response.header("ETag")?.takeUnless { it.startsWith("W/") } ?: response.header("Last-Modified")
+                        if (!current.isNullOrBlank()) validatorFile.writeText(current)
+                    }
+                    var done = if (resumed) offset else 0L
+                    onLength(required, done)
+                    progress(done)
                     val pacer = TransferPacer(rate)
-                    response.body!!.byteStream().use { input -> destination.outputStream().use { output ->
+                    response.body!!.byteStream().use { input -> java.io.FileOutputStream(destination, resumed).use { output ->
                         val buffer = ByteArray(256 * 1024)
                         while (true) {
                             check(context, store)
                             val count = input.read(buffer); if (count < 0) break
                             output.write(buffer, 0, count)
-                            done += count; pacer.pace(done) { check(context, store) }; progress(done)
+                            done += count; pacer.pace(done - if (resumed) offset else 0L) { check(context, store) }; progress(done)
                         }
                         output.fd.sync()
                     } }
                     check(required < 0 || done == required) { "Incomplete store download" }
+                    done
                 }
-                return
-            } catch (error: Exception) { destination.delete(); failure = error; check(context, store) }
+            } catch (error: Exception) {
+                check(context, store)
+                failure = error
+                if (error.message?.contains("HTTP 416") == true || error is IllegalArgumentException) {
+                    destination.delete()
+                    validatorFile.delete()
+                }
+            }
         }
         throw failure ?: IllegalStateException("Store download failed")
     }

@@ -99,7 +99,12 @@ internal fun preferredStoreUpload(uploads: List<StoreUpload>, locale: Locale): I
         if (!canDownload) return@Column
         if (busy) {
             if (extra == null && gog.activeId == gameId) GogDownloadPanel(gog)
-            else if (extra != null && remote?.active == gameId) StoreTransferPanel(extra, remote)
+            else if (extra != null && remote?.activeGame?.id == gameId) StoreTransferPanel(extra, remote)
+        }
+        if (extra != null && remote != null && remote.activeGame?.id != gameId) {
+            remote.transfers[storeHash(gameId).take(32)]?.takeIf { it.optString("status") != "completed" }?.let {
+                StoreTransferPanel(extra, remote, transfer = it)
+            }
         }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (error.isNotBlank()) {

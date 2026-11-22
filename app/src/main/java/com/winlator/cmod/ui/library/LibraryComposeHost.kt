@@ -11,8 +11,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.AlertDialog
 import android.content.Intent
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Box
@@ -39,9 +42,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.winlator.cmod.MainActivity
+import com.winlator.cmod.R
 import com.winlator.cmod.ui.LibraryToolbarActions
 import com.winlator.cmod.ui.applyAppFullscreen
 import com.winlator.cmod.ui.theme.WinZTheme
+import com.winlator.cmod.ui.uiStr
 import java.util.concurrent.atomic.AtomicInteger
 
 @Immutable
@@ -166,6 +171,8 @@ object LibraryComposeHost {
                         }
                         val itch by StoreSessions.state(LudashiStore.ITCH).collectAsStateWithLifecycle()
                         val itchEnabled = LudashiStore.ITCH.enabled(context)
+                        val pendingStoreRemoval = remember { mutableStateOf<String?>(null) }
+                        val removalScope = rememberCoroutineScope()
                         val libraryOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
                         LaunchedEffect(libraryOwner, gogEnabled, itchEnabled) {
                             libraryOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
@@ -209,12 +216,46 @@ object LibraryComposeHost {
                                     SteamLibrary.exportShortcut(context, steamId)
                                 } else if (steamId != null) SteamLibrary.open(context, path)
                                 else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path)
-                                else if (store != null && action == ACTION_REMOVE) StoreSessions.removeFromLibrary(context, store, path)
+                                else if (store != null && action == ACTION_REMOVE) {
+                                    val id = android.net.Uri.decode(path.substringAfter("://"))
+                                    if (StoreSessions.state(store).value.installed.containsKey(storeHash(id).take(32))) {
+                                        pendingStoreRemoval.value = path
+                                    } else StoreSessions.removeFromLibrary(context, store, path)
+                                }
                                 else if (store != null) StoreSessions.openGame(context, path)
                                 else callbacks.onAction(path, action)
                             }
                             override fun onArtworkNeeded(path: String, kind: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.requestArtwork(context, path, kind) else if (GogLibrary.id(path) != null) GogLibrary.requestArt(context, path) else if (LudashiStore.fromPath(path) != null) StoreSessions.requestArt(context, path) else callbacks.onArtworkNeeded(path, kind) }
                         } }
+                        pendingStoreRemoval.value?.let { path ->
+                            val store = LudashiStore.ITCH
+                            val id = android.net.Uri.decode(path.substringAfter("://"))
+                            val record = itch.installed[storeHash(id).take(32)]
+                            if (record != null) AlertDialog(
+                                onDismissRequest = { pendingStoreRemoval.value = null },
+                                title = { Text(uiStr(R.string.store_remove_library)) },
+                                text = { Text(uiStr(R.string.itch_remove_installed_help)) },
+                                dismissButton = { TextButton(onClick = { pendingStoreRemoval.value = null }) { Text(uiStr(R.string.cancel)) } },
+                                confirmButton = {
+                                    Column {
+                                        TextButton(onClick = {
+                                            StoreSessions.removeFromLibrary(context, store, path)
+                                            pendingStoreRemoval.value = null
+                                        }) { Text(uiStr(R.string.itch_remove_shortcut_only)) }
+                                        TextButton(onClick = {
+                                            pendingStoreRemoval.value = null
+                                            removalScope.launch {
+                                                val result = withContext(Dispatchers.IO) { runCatching {
+                                                    StoreInstalls.uninstall(context, record)
+                                                    StoreSessions.removeFromLibrary(context, store, path)
+                                                } }
+                                                result.onFailure { android.widget.Toast.makeText(context, it.message.orEmpty(), android.widget.Toast.LENGTH_LONG).show() }
+                                            }
+                                        }) { Text(uiStr(R.string.steam_ui_uninstall)) }
+                                    }
+                                }
+                            )
+                        }
                         Column(Modifier.fillMaxSize()) {
                             val configuration = androidx.compose.ui.platform.LocalConfiguration.current
                             if (configuration.screenWidthDp <= configuration.screenHeightDp) {

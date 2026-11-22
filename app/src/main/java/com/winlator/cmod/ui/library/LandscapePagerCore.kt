@@ -120,10 +120,7 @@ internal fun LandscapePagerCore(
             }
     }
 
-    LaunchedEffect(item.id) {
-        if (item.coverPath == null) callbacks.onArtworkNeeded(item.shortcutPath, "cover")
-        if (item.bannerPath == null) callbacks.onArtworkNeeded(item.shortcutPath, "banner")
-    }
+    RequestArtworkCompat(item, callbacks)
 
     Box(Modifier.fillMaxSize().clipToBounds().background(MaterialTheme.colorScheme.background)) {
         PagerImage(userArtworkPath(item) ?: item.bannerPath ?: item.coverPath, item.fallbackIcon, Modifier.fillMaxSize().kenBurns(amplitude = 0.04f, pan = 0.5f))

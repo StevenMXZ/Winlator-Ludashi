@@ -44,9 +44,14 @@ internal data class StoreGame(val store: LudashiStore, val id: String, val title
 internal data class StoreUpload(val id: String, val name: String, val size: Long, val metadata: JSONObject = JSONObject())
 internal data class StoreSnapshot(
     val games: List<StoreGame> = emptyList(), val transfers: Map<String, JSONObject> = emptyMap(), val installed: Map<String, JSONObject> = emptyMap(), val signedIn: Boolean = false,
-    val loading: Boolean = false, val error: String = "", val busy: Boolean = false, val active: String = "", val stage: String = "",
+    val loading: Boolean = false, val error: String = "", val activeGame: StoreGame? = null, val stage: String = "",
     val done: Long = 0, val total: Long = 0, val speed: Long = 0, val revision: Int = 0
-)
+) {
+    val busy get() = activeGame != null
+
+    fun gameForTransfer(record: JSONObject?): StoreGame? =
+        if (record == null) activeGame else StoreGame.parse(record.getJSONObject("game"))
+}
 internal fun atomicStoreFile(file: File, content: String) {
     file.parentFile?.mkdirs()
     val pending = File(file.parentFile, file.name + ".pending")

@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.winlator.cmod.ui.library.LibraryItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,14 +16,17 @@ import org.json.JSONObject
     val context = LocalContext.current.applicationContext
     val revision = SteamLibrary.artworkVersion
     val path = remember(context, id, kind, revision) { SteamLibrary.artworkPath(context, id, kind) }
-    LaunchedEffect(context, id, kind, path) {
-        if (path == null && id > 0) SteamLibrary.requestArtwork(context, "steam://$id", kind)
+    val owner = LocalLifecycleOwner.current
+    LaunchedEffect(owner, context, id, kind, path) {
+        if (path == null && id > 0) owner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            SteamLibrary.requestArtwork(context, "steam://$id", kind)
+        }
     }
     return path
 }
 
 @Composable internal fun SteamAppArt(id: Int, kind: String, modifier: Modifier) {
-    SteamArt(rememberSteamArtwork(id, kind) ?: SteamArtwork.defaultUrl(id, kind), modifier)
+    SteamArt(rememberSteamArtwork(id, kind).orEmpty(), modifier)
 }
 
 @Composable fun rememberSteamLibrary(context: Context, json: String, enabled: Boolean = true, filterType: String = "game", mainLibraryOnly: Boolean = false, includeDemos: Boolean = false): List<LibraryItem> {

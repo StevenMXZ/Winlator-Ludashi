@@ -1,13 +1,16 @@
 package com.winlator.cmod.steam
 
 import android.content.Context
-import android.content.Intent
 import com.bumptech.glide.Glide
+import com.winlator.cmod.stores.StoreSessions
 import com.winlator.cmod.ui.library.LibraryItem
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
+import java.util.concurrent.FutureTask
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 object SteamLibrary {
     private val artworkRevision = androidx.compose.runtime.mutableIntStateOf(0)
@@ -15,9 +18,27 @@ object SteamLibrary {
     private val main by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
     private val invalidateArtwork = Runnable { artworkRevision.intValue++ }
     @JvmStatic fun shortcutAppId(shortcut: com.winlator.cmod.container.Shortcut): Int? = shortcut.getExtra("steamAppId").toIntOrNull()
-    private val images = Executors.newFixedThreadPool(2)
-    private val requested = ConcurrentHashMap.newKeySet<String>()
+    private val images = ThreadPoolExecutor(2, 2, 0L, TimeUnit.MILLISECONDS, LinkedBlockingQueue())
+    private val requested = ConcurrentHashMap<String, FutureTask<Unit>>()
     private val artworkFailures = android.util.LruCache<String, Long>(256)
+    private var artworkSnapshot = ""
+    private var artworkByApp = emptyMap<Int, JSONObject>()
+
+    @Synchronized private fun ownedArtwork(id: Int): JSONObject? {
+        val library = SteamSession.library
+        if (artworkSnapshot != library) {
+            artworkByApp = ownedApps(library).mapNotNull { app -> app.optJSONObject("art")?.let { app.optInt("id") to it } }.toMap()
+        }
+        artworkSnapshot = library
+        return artworkByApp[id]
+    }
+
+    private fun artworkAllowed() = !StoreSessions.paused && !SteamSession.gameActive
+
+    internal fun pauseArtwork() {
+        requested.values.forEach { it.cancel(true) }
+        images.purge()
+    }
     fun appId(path: String): Int? = path.removePrefix("steam://").takeIf { path.startsWith("steam://") }?.toIntOrNull()
 
     internal fun exportShortcut(context: Context, appId: Int) {
@@ -73,23 +94,29 @@ object SteamLibrary {
     internal fun artworkPath(context: Context, id: Int, kind: String) = artwork(context, id, kind).takeIf { it.isFile }?.path
 
     fun requestArtwork(context: Context, path: String, kind: String) {
+        if (!artworkAllowed()) return
         val id = appId(path) ?: return
         val type = if (kind.contains("banner", true)) "banner" else "cover"
         val app = context.applicationContext
         val target = artwork(app, id, type)
         val key = target.path
-        if (target.isFile || (artworkFailures.get(key) ?: 0L) > android.os.SystemClock.elapsedRealtime() || !requested.add(key)) return
-        images.execute {
+        if (target.isFile || (artworkFailures.get(key) ?: 0L) > android.os.SystemClock.elapsedRealtime() || requested.containsKey(key)) return
+        val fetch = Runnable {
             val tried = mutableSetOf<String>()
+            fun checkActive() {
+                if (!artworkAllowed() || Thread.currentThread().isInterrupted) throw InterruptedException()
+            }
             fun save(urls: List<String>): Boolean = urls.any { url ->
+                checkActive()
                 if (!tried.add(url)) return@any false
                 val request = Glide.with(app).downloadOnly().load(url).submit()
                 try {
                     val file = request.get(12, java.util.concurrent.TimeUnit.SECONDS)
+                    checkActive()
                     if (file.length() == 0L) return@any false
-                    val temporary = File(target.parentFile, target.name + ".pending")
                     target.parentFile?.mkdirs()
-                    try { file.copyTo(temporary, true); check(temporary.renameTo(target)) }
+                    val temporary = File.createTempFile("${target.name}-", ".pending", target.parentFile)
+                    try { file.copyTo(temporary, true); checkActive(); check(temporary.renameTo(target)) }
                     finally { temporary.delete() }
                     main.removeCallbacks(invalidateArtwork); main.postDelayed(invalidateArtwork, 500)
                     true
@@ -98,24 +125,35 @@ object SteamLibrary {
                 finally { Glide.with(app).clear(request) }
             }
             try {
-                val ownedArt = ownedApps(SteamSession.library).firstOrNull { it.optInt("id") == id }?.optJSONObject("art")
+                checkActive()
+                val ownedArt = ownedArtwork(id)
                 val local = runCatching { SteamGames.info(app, id).optJSONObject("common") }.getOrNull()
-                if (ownedArt != null && save(SteamArtwork.fromSnapshot(ownedArt, type))) return@execute
-                if (local != null && save(SteamArtwork.fromCommon(id, local, type))) return@execute
-                if (save(SteamArtwork.urls(SteamArtwork.defaultUrl(id, type)))) return@execute
-                val live = if (SteamSession.signedIn && !SteamSession.gameActive) runCatching {
+                if (ownedArt != null && save(SteamArtwork.fromSnapshot(ownedArt, type))) return@Runnable
+                if (local != null && save(SteamArtwork.fromCommon(id, local, type))) return@Runnable
+                if (save(SteamArtwork.urls(SteamArtwork.defaultUrl(id, type)))) return@Runnable
+                checkActive()
+                val live = if (SteamSession.signedIn) runCatching {
                     SteamSession.info(id).optJSONObject("common")
-                }.getOrNull() else null
-                if (live != null && save(SteamArtwork.fromCommon(id, live, type))) return@execute
+                }.onFailure { if (it is InterruptedException) throw it }.getOrNull() else null
+                if (live != null && save(SteamArtwork.fromCommon(id, live, type))) return@Runnable
+                checkActive()
                 val store = runCatching { SteamStoreMetadata.fetch(id) }.getOrNull()
-                if (store != null && save(listOf(store.optString("header_image"), store.optString("capsule_image")).filter(SteamArtwork::isSteamAsset))) return@execute
+                if (store != null && save(listOf(store.optString("header_image"), store.optString("capsule_image")).filter(SteamArtwork::isSteamAsset))) return@Runnable
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
             } catch (error: Exception) {
                 android.util.Log.d("SteamArtwork", "Could not cache Steam artwork for app $id", error)
             } finally {
-                if (!target.isFile) artworkFailures.put(key, android.os.SystemClock.elapsedRealtime() + 60_000)
-                requested.remove(key)
+                if (!target.isFile && artworkAllowed() && !Thread.currentThread().isInterrupted) {
+                    artworkFailures.put(key, android.os.SystemClock.elapsedRealtime() + 60_000)
+                }
             }
         }
+        val task = object : FutureTask<Unit>(fetch, Unit) {
+            override fun done() { requested.remove(key, this) }
+        }
+        if (requested.putIfAbsent(key, task) != null) return
+        if (!artworkAllowed()) task.cancel(false) else images.execute(task)
     }
     @JvmStatic fun showMenu(context: Context) {
         SteamSheets.menu(context)

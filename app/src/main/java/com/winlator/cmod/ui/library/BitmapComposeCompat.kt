@@ -1,5 +1,7 @@
 package com.winlator.cmod.ui.library
 
+import androidx.lifecycle.repeatOnLifecycle
+
 import com.winlator.cmod.ui.uiStr
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
@@ -504,10 +506,13 @@ internal fun CoverArtworkCard(item: LibraryItem, cb: LibraryCallbacks) {
 }
 
 @Composable
-private fun RequestArtworkCompat(item: LibraryItem, cb: LibraryCallbacks) {
-    LaunchedEffect(item.id, item.coverPath, item.bannerPath) {
-        if (item.coverPath == null) cb.onArtworkNeeded(item.shortcutPath, "cover")
-        if (item.bannerPath == null) cb.onArtworkNeeded(item.shortcutPath, "banner")
+internal fun RequestArtworkCompat(item: LibraryItem, cb: LibraryCallbacks) {
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(owner, item.id, item.coverPath, item.bannerPath) {
+        owner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            if (item.coverPath == null) cb.onArtworkNeeded(item.shortcutPath, "cover")
+            if (item.bannerPath == null) cb.onArtworkNeeded(item.shortcutPath, "banner")
+        }
     }
 }
 

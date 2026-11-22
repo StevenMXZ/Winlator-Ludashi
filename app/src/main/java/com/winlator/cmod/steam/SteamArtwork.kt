@@ -50,6 +50,7 @@ internal object SteamArtwork {
 
     fun request(context: Context, url: String): RequestBuilder<Drawable> {
         val glide = Glide.with(context)
+        if (url.isBlank()) return glide.load(R.drawable.ic_steam)
         return urls(url).asReversed().fold<String, RequestBuilder<Drawable>?>(null) { fallback, candidate ->
             glide.load(candidate).let { if (fallback == null) it.error(R.drawable.ic_steam) else it.error(fallback) }
         }!!

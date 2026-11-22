@@ -16,6 +16,19 @@ import com.winlator.cmod.ui.bindOverlayOwners
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [28])
 class StoreExperienceTest {
+    @Test fun catalogDownloadHasALiveGameWithoutAnOwnedLibraryEntry() {
+        val game = StoreGame(LudashiStore.ITCH, "https://example.itch.io/catalog-game", "Catalog game")
+        val old = JSONObject().put("game", game.json()).put("status", "paused")
+        val snapshot = StoreSnapshot(activeGame = game, stage = "Downloading", done = 42, total = 100,
+            transfers = mapOf(game.key to old))
+        assertTrue(snapshot.games.isEmpty())
+        assertTrue(snapshot.busy)
+        assertSame(game, snapshot.gameForTransfer(null))
+        assertEquals(game.id, snapshot.gameForTransfer(old)?.id)
+        val completed = snapshot.copy(activeGame = null)
+        assertFalse(completed.busy)
+        assertNull(completed.gameForTransfer(null))
+    }
     @Test fun itchRefreshKeepsManualLibrarySelectionWhenOwnedMetadataIsRefreshed() {
         val previous = StoreGame(LudashiStore.ITCH, "https://author.itch.io/game", "Old", metadata = JSONObject().put("custom", true))
         val owned = previous.copy(title = "Updated", metadata = JSONObject().put("owned", true))
