@@ -93,7 +93,7 @@ import java.io.File
             SteamDownloadsScreen(state, openGame, Modifier.weight(1f))
         } else if (tab == 3) {
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item { SteamAccountCard(profile, state.signedIn, apps.size, installed) }
+                item { SteamAccountCard(profile, state.signedIn, apps.size, installedApps.size) }
                 item { Text(uiStr(R.string.steam_ui_achievements), style = MaterialTheme.typography.titleLarge) }
                 item { Text(uiStr(R.string.steam_ui_achievements_help), style = MaterialTheme.typography.bodySmall) }
                 items(achievementCache.keys.toList()) { id ->
