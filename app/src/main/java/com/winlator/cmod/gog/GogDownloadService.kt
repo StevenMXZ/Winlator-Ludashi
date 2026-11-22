@@ -97,13 +97,13 @@ class GogDownloadService : Service() {
                 { GogLibrary.cancelled }, { done, actualSize ->
                     pacer.pace(completed + done) { check(!GogLibrary.cancelled && !com.winlator.cmod.stores.StoreSessions.paused) { "Download paused" } }
                     val speed = meter.update(completed + done)
-                    com.winlator.cmod.stores.DownloadNotifications.update(this, 311, "gog-downloads", "GOG", game.title, completed + done, GogLibrary.mutable.value.total, getString(R.string.gog_downloading))
                     val now = android.os.SystemClock.elapsedRealtime()
                     if (now - lastUpdate >= 250) {
                         GogLibrary.mutable.update { it.copy(done = completed + done, speed = speed,
                             total = completed + actualSize.coerceAtLeast(done) + (i + 1 until parts.length()).sumOf { index -> parts.getJSONObject(index).optLong("size").coerceAtLeast(0) }) }
                         lastUpdate = now
                     }
+                    com.winlator.cmod.stores.DownloadNotifications.update(this, 311, "gog-downloads", "GOG", game.title, completed + done, GogLibrary.mutable.value.total, getString(R.string.gog_downloading), speed = speed)
                     if (now - lastSaved >= 1000) {
                         val current = GogLibrary.mutable.value
                         GogTransfers.save(this, game, "downloading", current.done, current.total, containerId, installer.toString())
@@ -126,6 +126,7 @@ class GogDownloadService : Service() {
             check(!destination.exists()) { "A GOG installation already exists at this location" }
             if (staging.exists()) staging.deleteRecursively()
             GogLibrary.mutable.update { it.copy(stage = getString(R.string.gog_extracting), speed = 0, cancellable = false) }
+            com.winlator.cmod.stores.DownloadNotifications.update(this, 311, "gog-downloads", "GOG", game.title, 0, 0, getString(R.string.gog_extracting), force = true)
             GogTransfers.save(this, game, "installing", completed, completed, containerId, installer.toString())
             val result = Innoextract.extract(this, setup, staging, {}, {}, { com.winlator.cmod.stores.StoreSessions.trackProcess("gog", it) })
             check(result.exitCode == 0) { "The GOG installer could not be extracted (code ${result.exitCode}). Its files were kept for retry." }

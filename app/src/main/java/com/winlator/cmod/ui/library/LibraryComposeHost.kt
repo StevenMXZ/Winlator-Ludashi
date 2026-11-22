@@ -202,7 +202,15 @@ object LibraryComposeHost {
                             override fun onOpen(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else if (LudashiStore.fromPath(path) != null) StoreSessions.openGame(context, path) else callbacks.onOpen(path) }
                             override fun onRun(path: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else if (LudashiStore.fromPath(path) != null) StoreSessions.openGame(context, path) else callbacks.onRun(path) }
                             override fun onGridViewChanged(value: Boolean) = callbacks.onGridViewChanged(value)
-                            override fun onAction(path: String, action: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.open(context, path) else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path) else if (LudashiStore.fromPath(path) != null) StoreSessions.openGame(context, path) else callbacks.onAction(path, action) }
+                            override fun onAction(path: String, action: String) {
+                                val steamId = SteamLibrary.appId(path)
+                                if (steamId != null && action == ACTION_EXPORT) {
+                                    SteamLibrary.exportShortcut(context, steamId)
+                                } else if (steamId != null) SteamLibrary.open(context, path)
+                                else if (GogLibrary.id(path) != null) GogLibrary.openGame(context, path)
+                                else if (LudashiStore.fromPath(path) != null) StoreSessions.openGame(context, path)
+                                else callbacks.onAction(path, action)
+                            }
                             override fun onArtworkNeeded(path: String, kind: String) { if (SteamLibrary.appId(path) != null) SteamLibrary.requestArtwork(context, path, kind) else if (GogLibrary.id(path) != null) GogLibrary.requestArt(context, path) else if (LudashiStore.fromPath(path) != null) StoreSessions.requestArt(context, path) else callbacks.onArtworkNeeded(path, kind) }
                         } }
                         Column(Modifier.fillMaxSize()) {
@@ -211,6 +219,8 @@ object LibraryComposeHost {
                                 SteamDownloadPanel(steam)
                                 if (gogEnabled && gog.busy) GogDownloadPanel(gog, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
                                 if (itchEnabled && itch.busy) StoreTransferPanel(LudashiStore.ITCH, itch, Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                            } else {
+                                LandscapeDownloadStrip(steam, gog.takeIf { gogEnabled }, itch.takeIf { itchEnabled })
                             }
                             Box(Modifier.weight(1f)) {
                                 LibraryRootWithoutEmptyDescription(merged, grid.value, query.value, selectedShortcutPath, combined, showAddGames, steamFilterAvailable)

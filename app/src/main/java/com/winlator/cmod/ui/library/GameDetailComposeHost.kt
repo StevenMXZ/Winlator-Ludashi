@@ -251,6 +251,11 @@ private fun PortraitDetail(title: String, subtitle: String, artwork: Bitmap?, fa
             LocalSteamInfoId.current?.let { com.winlator.cmod.steam.SteamGameInfoPanel(it) }
             if (LocalStoreInstalled.current) {
                 PlayButton(callbacks::onPlay, { mode -> (callbacks as? SteamDetailCallbacks)?.onSteamMode(mode) }, { if (callbacks is StoreDetailCallbacks) callbacks.onStoreExecutable() else (callbacks as? SteamDetailCallbacks)?.onSteamExecutable() })
+                val steamId = LocalSteamInfoId.current
+                val context = LocalContext.current
+                if (steamId != null) DetailAction(Icons.Outlined.FileUpload, stringResource(R.string.export), click = {
+                    com.winlator.cmod.steam.SteamLibrary.exportShortcut(context, steamId)
+                })
                 DetailAction(Icons.Outlined.Settings, stringResource(R.string.ui_configure), callbacks::onConfigure)
                 DetailAction(Icons.Outlined.Dns, stringResource(R.string.ui_enter_container), callbacks::onArguments)
                 DetailAction(Icons.Outlined.Backup, savesLabel(), callbacks::onSaves)
@@ -295,6 +300,16 @@ private fun PlayButton(click: () -> Unit, chooseMode: (String) -> Unit, chooseEx
                         trailingIcon = { if (mode == value) Icon(Icons.Outlined.Check, null) })
                 }
             }
+        }
+        val steamId = LocalSteamInfoId.current
+        val context = LocalContext.current
+        val configuration = LocalConfiguration.current
+        if (steamId != null && configuration.screenWidthDp > configuration.screenHeightDp) {
+            IconButton(
+                onClick = { com.winlator.cmod.steam.SteamLibrary.exportShortcut(context, steamId) },
+                enabled = !modeBusy,
+                modifier = Modifier.size(40.dp)
+            ) { Icon(Icons.Outlined.FileUpload, stringResource(R.string.export)) }
         }
     }
     if (modeProgress != null && modeBusy) {

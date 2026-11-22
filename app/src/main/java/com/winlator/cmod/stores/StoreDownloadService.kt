@@ -54,7 +54,7 @@ class StoreDownloadService : Service() {
                     val speed = meter.update(done)
                     val now = android.os.SystemClock.elapsedRealtime()
                     if (now - last >= 200) { state.update { it.copy(done = done, speed = speed) }; last = now }
-                    DownloadNotifications.update(this@StoreDownloadService, 312, "store-downloads", selected.title, game.title, done, state.value.total, state.value.stage)
+                    DownloadNotifications.update(this@StoreDownloadService, 312, "store-downloads", selected.title, game.title, done, state.value.total, state.value.stage, speed = speed)
                     if (now - lastSaved >= 1000) {
                         StoreTransfers.save(this@StoreDownloadService, game, "downloading", done, state.value.total, container, upload?.toString().orEmpty())
                         lastSaved = now

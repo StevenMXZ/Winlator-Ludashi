@@ -50,12 +50,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.drawerlayout.widget.DrawerLayout
 import com.winlator.cmod.MainActivity
 import com.winlator.cmod.R
+import com.winlator.cmod.stores.LudashiStore
 import com.winlator.cmod.ui.KeepLandscapeChromeHidden
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -171,7 +173,10 @@ internal fun LandscapePagerCore(
                                 color = Color.Black.copy(.30f),
                                 border = BorderStroke(if (selected) 2.dp else 1.dp, Color.White.copy(if (selected) .88f else .20f))
                             ) {
-                                PagerImage(userArtworkPath(candidate) ?: candidate.coverPath ?: candidate.bannerPath ?: candidate.iconPath, candidate.fallbackIcon, Modifier.fillMaxSize().kenBurns(amplitude = 0.05f, periodMs = 18_000, strength = if (selected) 1f else 0f))
+                                Box(Modifier.fillMaxSize().clipToBounds()) {
+                                    PagerImage(userArtworkPath(candidate) ?: candidate.coverPath ?: candidate.bannerPath ?: candidate.iconPath, candidate.fallbackIcon, Modifier.fillMaxSize().kenBurns(amplitude = 0.05f, periodMs = 18_000, strength = if (selected) 1f else 0f))
+                                    LandscapeStoreBadge(candidate, Modifier.align(Alignment.TopEnd).padding(10.dp))
+                                }
                             }
                         }
                     }
@@ -200,6 +205,21 @@ internal fun LandscapePagerCore(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LandscapeStoreBadge(item: LibraryItem, modifier: Modifier) {
+    val (label, logo) = when {
+        item.steamAppId != null || item.shortcutPath.startsWith("steam://") -> "Steam" to R.drawable.ic_steam
+        item.shortcutPath.startsWith("gog://") -> "GOG" to R.drawable.ic_gog
+        else -> LudashiStore.fromPath(item.shortcutPath)?.let { it.title to it.icon } ?: return
+    }
+    Surface(modifier = modifier, shape = CircleShape, color = Color(0xFF171820).copy(alpha = .9f)) {
+        Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+            Icon(painterResource(logo), label, Modifier.size(26.dp),
+                tint = if (logo == R.drawable.ic_steam) Color.White else Color.Unspecified)
         }
     }
 }

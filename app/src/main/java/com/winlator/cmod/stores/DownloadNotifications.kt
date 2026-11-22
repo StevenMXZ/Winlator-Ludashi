@@ -17,12 +17,20 @@ internal object DownloadNotifications {
             description = uiStr(R.string.ludashi_download_channel_help)
         })
     }
-    fun build(context: Context, channel: String, store: String, game: String, done: Long = 0, total: Long = 0, stage: String = "", ongoing: Boolean = true, showProgress: Boolean = true): Notification {
-        val open = if (store == "Steam") Intent(context, SteamActivity::class.java).putExtra("steam_tab", 1)
+    fun downloadsIntent(context: Context, store: String): Intent =
+        if (store == "Steam") Intent(context, SteamActivity::class.java).putExtra("steam_tab", 1)
             else if (store == "GOG") Intent(context, com.winlator.cmod.gog.GogActivity::class.java).putExtra("gog_tab", 1)
             else Intent(context, StoreActivity::class.java).putExtra("store", "itch").putExtra("tab", 1)
+
+    fun build(context: Context, channel: String, store: String, game: String, done: Long = 0, total: Long = 0, stage: String = "", ongoing: Boolean = true, showProgress: Boolean = true, speed: Long? = null): Notification {
+        val open = downloadsIntent(context, store)
         val pending = PendingIntent.getActivity(context, if (store == "Steam") 310 else if (store == "GOG") 311 else 312, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val detail = listOf(game, stage).filter { it.isNotBlank() }.joinToString(" · ") + if (showProgress && total > 0) " · ${progress(done, total) / 10}%" else ""
+        val detail = buildList {
+            if (game.isNotBlank()) add(game)
+            if (stage.isNotBlank()) add(stage)
+            if (showProgress && total > 0) add("${progress(done, total) / 10}%")
+            if (showProgress && speed != null) add(transferTimingText(done, total, speed))
+        }.joinToString(" · ")
         return Notification.Builder(context, channel).setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("Ludashi · $store").setSubText(uiStr(R.string.ludashi_downloads))
             .setContentText(detail).setStyle(Notification.BigTextStyle().bigText(detail)).setContentIntent(pending)
@@ -31,10 +39,10 @@ internal object DownloadNotifications {
             .build()
     }
     fun progress(done: Long, total: Long): Int = if (total <= 0) 0 else (done.toDouble() / total * 1000).toInt().coerceIn(0, 1000)
-    fun update(context: Context, id: Int, channel: String, store: String, game: String, done: Long, total: Long, stage: String, force: Boolean = false, active: Boolean = true) {
+    fun update(context: Context, id: Int, channel: String, store: String, game: String, done: Long, total: Long, stage: String, force: Boolean = false, active: Boolean = true, speed: Long? = null) {
         val now = SystemClock.elapsedRealtime()
         if (!force && now - (last[id] ?: -2000L) < 1000) return
         last[id] = now
-        runCatching { context.getSystemService(NotificationManager::class.java).notify(id, build(context, channel, store, game, done, total, stage, showProgress = active)) }
+        runCatching { context.getSystemService(NotificationManager::class.java).notify(id, build(context, channel, store, game, done, total, stage, showProgress = active, speed = speed)) }
     }
 }

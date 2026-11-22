@@ -500,7 +500,8 @@ object SteamSession {
                         val reading = downloadReading()
                         downloadDone = reading?.done ?: depotDone; downloadTotal = reading?.total ?: depotTotal
                         if (!closing && downloading && !gameActive && downloadId == id) com.winlator.cmod.stores.DownloadNotifications.update(context, SteamService.NOTIFICATION_ID, "steam", "Steam", name, downloadDone, downloadTotal,
-                            com.winlator.cmod.ui.uiStr(if (verifying) R.string.steam_download_verifying else R.string.gog_downloading))
+                            com.winlator.cmod.ui.uiStr(if (verifying) R.string.steam_download_verifying else R.string.gog_downloading),
+                            speed = if (verifying) null else reading?.bytesPerSecond ?: 0L)
                         status = "$name: depot ${depotsDone + 1}/$depotsTotal — ${if (depotTotal > 0) depotDone * 100 / depotTotal else 0}%" + if (verifying) " (verifying)" else ""
                     }
                     override fun onComplete(success: Boolean, error: String, bytesWritten: Long, depotsCompleted: Int, depotsSkipped: Int) {

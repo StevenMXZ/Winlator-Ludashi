@@ -18,6 +18,16 @@ object SteamLibrary {
     private val images = Executors.newFixedThreadPool(2)
     private val requested = ConcurrentHashMap.newKeySet<String>()
     fun appId(path: String): Int? = path.removePrefix("steam://").takeIf { path.startsWith("steam://") }?.toIntOrNull()
+
+    internal fun exportShortcut(context: Context, appId: Int) {
+        val shortcut = SteamGames.shortcut(context, appId)
+        if (shortcut != null && shortcut.getExtra("steamConfigured") == "1") {
+            com.winlator.cmod.ui.library.ShortcutExporter.export(context, shortcut)
+        } else {
+            android.widget.Toast.makeText(context, com.winlator.cmod.ui.uiStr(com.winlator.cmod.R.string.steam_ui_configure_game_first),
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
     fun added(context: Context, id: Int) = context.getSharedPreferences("steam-settings", 0).getBoolean("library-added-$id", false)
     fun setAdded(context: Context, id: Int, value: Boolean) {
         require(id > 0)

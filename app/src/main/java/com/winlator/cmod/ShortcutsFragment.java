@@ -35,7 +35,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SearchView;
-import androidx.documentfile.provider.DocumentFile;
 import androidx.fragment.app.Fragment;
 import androidx.preference.PreferenceManager;
 
@@ -66,11 +65,8 @@ import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -817,7 +813,7 @@ public class ShortcutsFragment extends Fragment {
             addShortcutToScreen(shortcut);
         }
         else if (LibraryComposeHost.ACTION_EXPORT.equals(action)) {
-            exportShortcut(shortcut);
+            com.winlator.cmod.ui.library.ShortcutExporter.export(requireContext(), shortcut);
         }
     }
 
@@ -877,47 +873,6 @@ public class ShortcutsFragment extends Fragment {
         } catch (Exception e) {
             Toast.makeText(requireContext(), com.winlator.cmod.ui.UiStrings.get(R.string.ui_preset_import_failed, e.getMessage() != null ? e.getMessage() : ""), Toast.LENGTH_LONG).show();
         }
-    }
-
-    private void exportShortcut(Shortcut shortcut) {
-        SharedPreferences sharedPreferences =
-                PreferenceManager.getDefaultSharedPreferences(getContext());
-        String uriString = sharedPreferences.getString("shortcuts_export_path_uri", null);
-        File shortcutsDir;
-
-        if (uriString != null) {
-            Uri folderUri = Uri.parse(uriString);
-            DocumentFile pickedDir = DocumentFile.fromTreeUri(requireContext(), folderUri);
-            if (pickedDir == null || !pickedDir.canWrite()) return;
-            shortcutsDir = new File(FileUtils.getFilePathFromUri(requireContext(), folderUri));
-        } else {
-            shortcutsDir = new File(SettingsFragment.DEFAULT_SHORTCUT_EXPORT_PATH);
-        }
-
-        if (!shortcutsDir.exists() && !shortcutsDir.mkdirs()) return;
-        File exportFile = new File(shortcutsDir, shortcut.file.getName());
-        boolean containerIdFound = false;
-
-        try {
-            List<String> lines = new ArrayList<>();
-            try (BufferedReader reader = new BufferedReader(new FileReader(shortcut.file))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (line.startsWith("container_id:")) {
-                        lines.add("container_id:" + shortcut.container.id);
-                        containerIdFound = true;
-                    } else {
-                        lines.add(line);
-                    }
-                }
-            }
-            if (!containerIdFound) lines.add("container_id:" + shortcut.container.id);
-            try (FileWriter writer = new FileWriter(exportFile, false)) {
-                for (String line : lines) writer.write(line + "\n");
-                writer.flush();
-            }
-            Toast.makeText(getContext(), exportFile.getAbsolutePath(), Toast.LENGTH_LONG).show();
-        } catch (IOException ignored) {}
     }
 
     private static Bitmap centerCropSquare(Bitmap source) {
