@@ -129,76 +129,85 @@ internal fun LandscapePagerCore(
         Column(Modifier.fillMaxSize().padding(horizontal = 26.dp, vertical = 12.dp)) {
             header()
             Spacer(Modifier.size(9.dp))
-            Row(Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                BoxWithConstraints(
-                    modifier = Modifier
-                        .weight(1.16f)
-                        .fillMaxHeight()
-                ) {
-                    val pageWidth = 214.dp
-                    val edgePadding = 8.dp
-                    val trailingPadding = (maxWidth - pageWidth - edgePadding).coerceAtLeast(edgePadding)
-
-                    HorizontalPager(
-                        state = pager,
-                        modifier = Modifier.fillMaxSize(),
-                        pageSize = PageSize.Fixed(pageWidth),
-                        pageSpacing = 6.dp,
-                        contentPadding = PaddingValues(
-                            start = edgePadding,
-                            end = trailingPadding
-                        ),
-                        verticalAlignment = Alignment.CenterVertically,
-                        userScrollEnabled = items.size > 1,
-                        beyondViewportPageCount = 2,
-                        snapPosition = SnapPosition.Start,
-                        key = { page -> items.getOrNull(page)?.id ?: "stale-library-page-$page" }
-                    ) { page ->
-                        val candidate = items.getOrNull(page) ?: return@HorizontalPager
-                        val pageOffset = ((pager.currentPage - page) + pager.currentPageOffsetFraction)
-                            .absoluteValue
-                            .coerceIn(0f, 1f)
-                        val cardScale = 1f - (0.30f * pageOffset)
-                        val selected = pageOffset < 0.5f
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Surface(
-                                onClick = { callbacks.onOpen(candidate.shortcutPath) },
-                                modifier = Modifier
-                                    .size(206.dp, 322.dp)
-                                    .scale(cardScale),
-                                shape = RoundedCornerShape(16.dp),
-                                color = Color.Black.copy(.30f),
-                                border = BorderStroke(if (selected) 2.dp else 1.dp, Color.White.copy(if (selected) .88f else .20f))
-                            ) {
-                                Box(Modifier.fillMaxSize().clipToBounds()) {
-                                    PagerImage(userArtworkPath(candidate) ?: candidate.coverPath ?: candidate.bannerPath ?: candidate.iconPath, candidate.fallbackIcon, Modifier.fillMaxSize().kenBurns(amplitude = 0.05f, periodMs = 18_000, strength = if (selected) 1f else 0f))
-                                    LandscapeStoreBadge(candidate, Modifier.align(Alignment.TopEnd).padding(10.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                val cardHeight = maxHeight
+                val cardWidth = cardHeight * (2f / 3f)
+                val pageWidth = cardWidth + 8.dp
+                val edgePadding = 8.dp
+                val pageGap = 6.dp
+                val sideScale = 0.70f
+                val wantedWidth = edgePadding + (pageWidth + pageGap) * 2 + pageWidth / 2 + cardWidth * sideScale / 2 + 10.dp
+                val pagerWidth = wantedWidth
+                    .coerceAtMost(maxWidth - 26.dp - 240.dp)
+                    .coerceAtLeast(pageWidth + edgePadding * 2)
+                val trailingPadding = (pagerWidth - pageWidth - edgePadding).coerceAtLeast(edgePadding)
+                Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .width(pagerWidth)
+                            .fillMaxHeight()
+                    ) {
+                        HorizontalPager(
+                            state = pager,
+                            modifier = Modifier.fillMaxSize(),
+                            pageSize = PageSize.Fixed(pageWidth),
+                            pageSpacing = pageGap,
+                            contentPadding = PaddingValues(
+                                start = edgePadding,
+                                end = trailingPadding
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                            userScrollEnabled = items.size > 1,
+                            beyondViewportPageCount = 2,
+                            snapPosition = SnapPosition.Start,
+                            key = { page -> items.getOrNull(page)?.id ?: "stale-library-page-$page" }
+                        ) { page ->
+                            val candidate = items.getOrNull(page) ?: return@HorizontalPager
+                            val pageOffset = ((pager.currentPage - page) + pager.currentPageOffsetFraction)
+                                .absoluteValue
+                                .coerceIn(0f, 1f)
+                            val cardScale = 1f - ((1f - sideScale) * pageOffset)
+                            val selected = pageOffset < 0.5f
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Surface(
+                                    onClick = { callbacks.onOpen(candidate.shortcutPath) },
+                                    modifier = Modifier
+                                        .size(cardWidth, cardHeight)
+                                        .scale(cardScale),
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = Color.Black.copy(.30f),
+                                    border = BorderStroke(if (selected) 2.dp else 1.dp, Color.White.copy(if (selected) .88f else .20f))
+                                ) {
+                                    Box(Modifier.fillMaxSize().clipToBounds()) {
+                                        PagerImage(userArtworkPath(candidate) ?: candidate.coverPath ?: candidate.bannerPath ?: candidate.iconPath, candidate.fallbackIcon, Modifier.fillMaxSize())
+                                        LandscapeStoreBadge(candidate, Modifier.align(Alignment.TopEnd).padding(10.dp))
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                Spacer(Modifier.width(26.dp))
-                Column(Modifier.weight(.9f)) {
-                    Text(item.name, color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(environmentLabel, color = Color.White.copy(.72f), style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.size(13.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            onClick = { callbacks.onOpen(item.shortcutPath) },
-                            shape = RoundedCornerShape(11.dp),
-                            color = Color.White.copy(.20f),
-                            contentColor = Color.White,
-                            border = BorderStroke(1.dp, Color.White.copy(.22f))
-                        ) { Text(uiStr(R.string.ui_view_details), Modifier.padding(horizontal = 21.dp, vertical = 11.dp)) }
-                        Surface(
-                            onClick = { callbacks.onRun(item.shortcutPath) },
-                            modifier = Modifier.size(44.dp),
-                            shape = CircleShape,
-                            color = Color.Black.copy(.62f),
-                            contentColor = Color.White
-                        ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PlayArrow, uiStr(R.string.play)) } }
-                        footerActions(item)
+                    Spacer(Modifier.width(26.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(item.name, color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(environmentLabel, color = Color.White.copy(.72f), style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.size(13.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                onClick = { callbacks.onOpen(item.shortcutPath) },
+                                shape = RoundedCornerShape(11.dp),
+                                color = Color.White.copy(.20f),
+                                contentColor = Color.White,
+                                border = BorderStroke(1.dp, Color.White.copy(.22f))
+                            ) { Text(uiStr(R.string.ui_view_details), Modifier.padding(horizontal = 21.dp, vertical = 11.dp)) }
+                            Surface(
+                                onClick = { callbacks.onRun(item.shortcutPath) },
+                                modifier = Modifier.size(44.dp),
+                                shape = CircleShape,
+                                color = Color.Black.copy(.62f),
+                                contentColor = Color.White
+                            ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PlayArrow, uiStr(R.string.play)) } }
+                            footerActions(item)
+                        }
                     }
                 }
             }
