@@ -196,7 +196,7 @@ private fun prepareInitialContainer(
         )
         val data = JSONObject().apply {
             put("name", "Container-${manager.nextContainerId}")
-            put("screenSize", Container.DEFAULT_SCREEN_SIZE)
+            put("screenSize", com.winlator.cmod.core.ScreenSizeOptions.defaultSize(activity))
             put("envVars", cleanContainerEnvironment(Container.DEFAULT_ENV_VARS))
             put("graphicsDriver", Container.DEFAULT_GRAPHICS_DRIVER)
             put("graphicsDriverConfig", graphicsConfig)
