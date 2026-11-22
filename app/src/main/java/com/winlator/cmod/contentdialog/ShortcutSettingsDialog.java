@@ -562,7 +562,7 @@ public class ShortcutSettingsDialog extends ContentDialog implements DXVKConfigD
         applyDarkThemeToEditText(view.findViewById(R.id.ETScreenWidth), isDarkMode);
         applyDarkThemeToEditText(view.findViewById(R.id.ETScreenHeight), isDarkMode);
 
-        ArrayList<String> items = new ArrayList<>(Arrays.asList(context.getResources().getStringArray(R.array.screen_size_entries)));
+        ArrayList<String> items = new ArrayList<>(com.winlator.cmod.core.ScreenSizeOptions.build(context));
         sScreenSize.setAdapter(new ArrayAdapter<>(context, android.R.layout.simple_spinner_dropdown_item, items));
 
         sScreenSize.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
