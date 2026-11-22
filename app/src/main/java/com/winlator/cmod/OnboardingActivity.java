@@ -28,6 +28,7 @@ import com.winlator.cmod.contents.ContentProfile;
 import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.contents.LocalDriverArchive;
 import com.winlator.cmod.contents.RemoteDriverCatalog;
+import com.winlator.cmod.contents.WrapperManager;
 import com.winlator.cmod.core.DefaultVersion;
 import com.winlator.cmod.core.OpenGLDriverDefaults;
 import com.winlator.cmod.core.ProtonPackageManager;
@@ -81,6 +82,7 @@ public class OnboardingActivity extends AppCompatActivity {
     private static final int REQUEST_LOCAL_COMPONENT = 822;
     private static final int REQUEST_ALL_FILES = 823;
     private static final int REQUEST_LOCAL_DRIVER = 824;
+    private static final int REQUEST_LOCAL_WRAPPER = 825;
 
     private final OkHttpClient http = new OkHttpClient();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -164,6 +166,14 @@ public class OnboardingActivity extends AppCompatActivity {
                         intent.addCategory(Intent.CATEGORY_OPENABLE);
                         intent.setType("*/*");
                         startActivityForResult(intent, REQUEST_LOCAL_DRIVER);
+                    }
+
+                    @Override
+                    public void onBrowseWrapper() {
+                        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
+                        intent.setType("*/*");
+                        startActivityForResult(intent, REQUEST_LOCAL_WRAPPER);
                     }
 
                     @Override
@@ -440,6 +450,13 @@ public class OnboardingActivity extends AppCompatActivity {
             ));
             existingDrivers.add(label.trim().toLowerCase(Locale.ENGLISH));
         }
+        WrapperManager wrapperManager = new WrapperManager(this);
+        for (WrapperManager.Imported imported : wrapperManager.enumerateImported()) {
+            ui.add(new OnboardingComponent(
+                    "wrapper:" + imported.identifier, "Wrapper", imported.label, true, false, true,
+                    null, wrapperManager.isInUse(imported.identifier), false
+            ));
+        }
         synchronized (remoteDrivers) {
             for (RemoteDriverCatalog.Entry driver : remoteDrivers) {
                 if (existingDrivers.contains(driver.name.toLowerCase(Locale.ENGLISH))) continue;
@@ -623,6 +640,10 @@ public class OnboardingActivity extends AppCompatActivity {
     }
 
     private void requestRemoveComponent(String componentId) {
+        if (componentId.startsWith("wrapper:")) {
+            com.winlator.cmod.ui.ThemedAlertHost.confirm(this, "Delete wrapper?", "The imported wrapper package will be removed.", "Delete", () -> removeWrapper(componentId.substring("wrapper:".length())), true);
+            return;
+        }
         if (componentId.startsWith("adrenotools:")) {
             com.winlator.cmod.ui.ThemedAlertHost.confirm(this, "Delete driver?", "The installed driver files will be removed.", "Delete", () -> removeDriver(componentId.substring("adrenotools:".length())), true);
             return;
@@ -670,6 +691,20 @@ public class OnboardingActivity extends AppCompatActivity {
             contentsManager.syncContents();
             rebuildCatalog();
             runOnUiThread(() -> finishInstall(id, null));
+        });
+    }
+
+    private void removeWrapper(String id) {
+        if (installBusy) return;
+        installBusy = true;
+        composeController.setInstallBusy("wrapper:" + id, true);
+        io.execute(() -> {
+            new WrapperManager(this).deleteImported(id);
+            runOnUiThread(() -> {
+                installBusy = false;
+                composeController.setInstallBusy(null, false);
+                syncComposeCatalog();
+            });
         });
     }
 
@@ -797,6 +832,24 @@ public class OnboardingActivity extends AppCompatActivity {
             Uri uri = data.getData();
             composeController.updateInstallProgress("Installing " + localDisplayName(uri), -1);
             io.execute(() -> installLocalDriverPackage(uri, localDisplayName(uri), "driver-local"));
+        } else if (requestCode == REQUEST_LOCAL_WRAPPER && resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+            if (installBusy) return;
+            installBusy = true;
+            composeController.setInstallBusy("wrapper-local", true);
+            Uri uri = data.getData();
+            String displayName = localDisplayName(uri);
+            composeController.updateInstallProgress("Importing " + displayName, -1);
+            io.execute(() -> {
+                String imported = new WrapperManager(this).importWrapper(uri, displayName);
+                runOnUiThread(() -> {
+                    installBusy = false;
+                    composeController.setInstallBusy(null, false);
+                    syncComposeCatalog();
+                    if (imported == null || imported.isEmpty()) {
+                        Toast.makeText(this, "Unable to import the wrapper. Choose a valid wrapper .tzst package.", Toast.LENGTH_LONG).show();
+                    }
+                });
+            });
         } else if (requestCode == REQUEST_ALL_FILES) {
             continuePermissionFlow();
         }
