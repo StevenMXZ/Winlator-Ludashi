@@ -892,7 +892,7 @@ public class OnboardingActivity extends AppCompatActivity {
         try {
             JSONObject data = new JSONObject();
             data.put("name", "Container-" + manager.getNextContainerId());
-            data.put("screenSize", Container.DEFAULT_SCREEN_SIZE);
+            data.put("screenSize", com.winlator.cmod.core.ScreenSizeOptions.defaultSize(this));
             data.put("envVars", Container.DEFAULT_ENV_VARS);
             data.put("graphicsDriver", Container.DEFAULT_GRAPHICS_DRIVER);
             data.put("graphicsDriverConfig", Container.DEFAULT_GRAPHICSDRIVERCONFIG);
