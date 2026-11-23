@@ -157,6 +157,7 @@ class GogDownloadService : Service() {
             com.winlator.cmod.stores.StoreSessions.discard(downloads)
             GogLibrary.updateInstalled(this)
             GogTransfers.save(this, game, "completed", completed, completed, containerId, installer.toString())
+            com.winlator.cmod.stores.DownloadNotifications.completed(this, 311, "gog-downloads", "GOG", game.title)
         } finally {
             if (moved && !committed) {
                 staging.mkdirs()

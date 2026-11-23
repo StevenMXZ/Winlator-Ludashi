@@ -15,11 +15,8 @@ class SteamService : Service() {
     override fun onCreate() {
         super.onCreate()
         if (!SteamSettings.enabled(this)) { stopSelf(); return }
-        val manager = getSystemService(NotificationManager::class.java)
         com.winlator.cmod.stores.DownloadNotifications.channel(this, "steam")
-        val open = PendingIntent.getActivity(this, 0, Intent(this, SteamActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        startForeground(NOTIFICATION_ID, Notification.Builder(this, "steam").setSmallIcon(R.drawable.ic_steam)
-            .setContentTitle("Ludashi · Steam").setContentText(com.winlator.cmod.ui.uiStr(R.string.ludashi_steam_session)).setContentIntent(open).build())
+        startForeground(NOTIFICATION_ID, sessionNotification(this))
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         SteamSession.open(applicationContext)
@@ -39,6 +36,20 @@ class SteamService : Service() {
     }
     companion object {
         const val NOTIFICATION_ID = 310
+        private fun sessionNotification(context: Context, message: String? = null): Notification {
+            val intent = if (message == null) Intent(context, SteamActivity::class.java)
+                else com.winlator.cmod.stores.DownloadNotifications.downloadsIntent(context, "Steam")
+            val open = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            return Notification.Builder(context, "steam").setSmallIcon(R.drawable.ic_steam)
+                .setContentTitle("Ludashi · Steam")
+                .setContentText(message ?: context.getString(R.string.ludashi_steam_session))
+                .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).build()
+        }
+        internal fun updateSessionNotification(context: Context, message: String? = null) {
+            runCatching {
+                context.getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, sessionNotification(context, message))
+            }
+        }
         @JvmStatic fun shutdown(context: Context) {
             // Remove the visible notification before app exit can kill the process.
             context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
@@ -555,7 +566,10 @@ object SteamSession {
                             } finally {
                                 downloading = false
                                 downloadMeter = null
-                                if (!closing) com.winlator.cmod.stores.DownloadNotifications.update(context, SteamService.NOTIFICATION_ID, "steam", "Steam", name, 0, 0, status, true, false)
+                                if (!closing) {
+                                    SteamService.updateSessionNotification(context, if (finalized) null else status)
+                                    if (finalized) com.winlator.cmod.stores.DownloadNotifications.completed(context, SteamService.NOTIFICATION_ID, "steam", "Steam", name)
+                                }
                             }
                             if (finalized) {
                                 runCatching {
@@ -570,7 +584,7 @@ object SteamSession {
                 }, SteamDownloadSettings.processing(SteamDownloadSettings.tier(context)))
         } catch (e: Exception) {
             downloading = false; downloadMeter = null
-            if (!closing) com.winlator.cmod.stores.DownloadNotifications.update(context, SteamService.NOTIFICATION_ID, "steam", "Steam", name, 0, 0, e.message.orEmpty(), true, false)
+            if (!closing) SteamService.updateSessionNotification(context, e.message)
             throw e
         }
     }
