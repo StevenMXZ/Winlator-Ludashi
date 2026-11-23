@@ -15,6 +15,10 @@ internal object ContainerStorageUsage {
     private data class Cached(val measuredAt: Long, val usage: StorageUsage)
     private val cache = ConcurrentHashMap<String, Cached>()
 
+    fun invalidate(root: File) {
+        cache.remove(root.absolutePath)
+    }
+
     // One bounded-to-container traversal; do not follow drive links into shared storage.
     fun measure(root: File): StorageUsage {
         val key = root.absolutePath
