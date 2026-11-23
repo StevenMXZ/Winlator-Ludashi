@@ -18,6 +18,7 @@ class StoreArchiveTest {
     }
     @Test fun zipExtractionRequiresTheCompleteCentralDirectory() {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("ludashi-stores", 0).edit().putBoolean("itch-enabled", true).apply()
         val root = Files.createTempDirectory("store-archive").toFile()
         StoreSessions.resumeForLibrary(); StoreSessions.fresh(LudashiStore.ITCH)
         try {
@@ -31,6 +32,7 @@ class StoreArchiveTest {
     }
     @Test fun archivePathsCannotEscapeTheStagingDirectory() {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("ludashi-stores", 0).edit().putBoolean("itch-enabled", true).apply()
         val root = Files.createTempDirectory("store-archive-path").toFile()
         StoreSessions.resumeForLibrary(); StoreSessions.fresh(LudashiStore.ITCH)
         try {

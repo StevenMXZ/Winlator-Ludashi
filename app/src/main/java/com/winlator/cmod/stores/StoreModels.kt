@@ -12,7 +12,7 @@ enum class LudashiStore(val id: String, val title: String, val icon: Int, val bi
     ITCH("itch", "itch.io", R.drawable.ic_itch, 8);
     fun enabled(context: Context): Boolean {
         revision.intValue
-        return context.getSharedPreferences("ludashi-stores", 0).getBoolean("$id-enabled", true)
+        return context.getSharedPreferences("ludashi-stores", 0).getBoolean("$id-enabled", false)
     }
     fun setEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences("ludashi-stores", 0).edit().putBoolean("$id-enabled", enabled).apply()

@@ -50,13 +50,15 @@ class StoreInstallsTest {
     }
 
     @Test fun zipWithWindowsPathsPublishesTheExecutableToStaging() {
+        val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("ludashi-stores", 0).edit().putBoolean("itch-enabled", true).apply()
         val archive = temporary.newFile("game.zip")
         ZipOutputStream(archive.outputStream()).use { zip ->
             zip.putNextEntry(ZipEntry("Build\\")); zip.closeEntry()
             zip.putNextEntry(ZipEntry("Build\\Game.exe")); zip.write("MZ".toByteArray()); zip.closeEntry()
         }
         val staging = temporary.newFolder()
-        StoreInstalls.extract(RuntimeEnvironment.getApplication(), LudashiStore.ITCH, archive, staging)
+        StoreInstalls.extract(context, LudashiStore.ITCH, archive, staging)
         assertEquals("MZ", File(staging, "Build/Game.exe").readText())
     }
 }
