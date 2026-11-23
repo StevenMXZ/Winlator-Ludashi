@@ -100,15 +100,52 @@ public class SidebarFpsPersistenceTest {
         // A real legacy spinner can still persist its preset.
         a.views.put(4,new Spinner()); a.saveSidebarGraphicsState();
         equal("0",a.shortcut.disk.get("graphicsFpsPreset"));
+        // Turning FG off must override an enabled preset, even after graphics autosave.
+        a.container.putExtra("frameGen","1"); a.shortcut.putExtra("frameGen","1");
+        a.saveSidebarFrameGeneration(false); a.saveSidebarGraphicsState();
+        equal("0",a.shortcut.disk.get("frameGen"));
+        equal("1",a.container.getExtra("frameGen",""));
+        a.saveSidebarFrameGeneration(true);
+        equal("1",a.shortcut.disk.get("frameGen"));
+        // Game-specific FG settings cannot leak into the container or other games.
+        a.container.putExtra("frameGenMultiplier", "2");
+        a.container.putExtra("frameGenTargetRate", "-1");
+        a.container.putExtra("frameGenFlowScale", "70");
+        a.saveSidebarFrameGenerationSettings(3, 90, 50);
+        equal("3",a.shortcut.disk.get("frameGenMultiplier"));
+        equal("90",a.shortcut.disk.get("frameGenTargetRate"));
+        equal("50",a.shortcut.disk.get("frameGenFlowScale"));
+        equal("2",a.container.getExtra("frameGenMultiplier",""));
+        equal("-1",a.container.getExtra("frameGenTargetRate",""));
+        equal("70",a.container.getExtra("frameGenFlowScale",""));
+        a.saveSidebarFrameGeneration(false); a.saveSidebarGraphicsState();
+        equal("3",a.shortcut.disk.get("frameGenMultiplier"));
+        equal("90",a.shortcut.disk.get("frameGenTargetRate"));
+        equal("50",a.shortcut.disk.get("frameGenFlowScale"));
+        Shortcut firstGame=a.shortcut;
+        a.shortcut=new Shortcut();
+        a.saveSidebarFrameGenerationSettings(4, 144, 100);
+        equal("4",a.shortcut.disk.get("frameGenMultiplier"));
+        equal("144",a.shortcut.disk.get("frameGenTargetRate"));
+        equal("100",a.shortcut.disk.get("frameGenFlowScale"));
+        equal("3",firstGame.disk.get("frameGenMultiplier"));
+        equal("90",firstGame.disk.get("frameGenTargetRate"));
+        equal("50",firstGame.disk.get("frameGenFlowScale"));
         // Container sessions still use the same persistence path.
         a.shortcut=null; fps.slider.setProgress(6); fps.saveAndApply();
         equal("30",a.container.getExtra("nativeFpsLimit",""));
-        System.out.println("PASS: sidebar FPS shortcut saves, exit saves, inheritance, custom/off and container sessions");
+        a.saveSidebarFrameGeneration(false);
+        equal("0",a.container.getExtra("frameGen",""));
+        a.saveSidebarFrameGenerationSettings(4, 120, 40);
+        equal("4",a.container.getExtra("frameGenMultiplier",""));
+        equal("120",a.container.getExtra("frameGenTargetRate",""));
+        equal("40",a.container.getExtra("frameGenFlowScale",""));
+        System.out.println("PASS: FPS and FG settings, independent shortcuts and container sessions");
     }
 }
 '''
 fixture = fixture.replace('ACTIVITY_METHODS', '\n'.join(method(activity, s) for s in [
-    'private void saveSidebarGraphicsState()', 'public Shortcut getShortcut()']))
+    'private void saveSidebarGraphicsState()', 'private void saveSidebarFrameGeneration(', 'private void saveSidebarFrameGenerationSettings(', 'public Shortcut getShortcut()']))
 fixture = fixture.replace('CONTROL_METHODS', '\n'.join(method(control, s) for s in [
     'private void loadState(', 'private void saveAndApply()', 'private int getChosenLimit()', 'private int parsePositiveOrZero(']))
 with tempfile.TemporaryDirectory(prefix='ludashi-fps-') as folder:

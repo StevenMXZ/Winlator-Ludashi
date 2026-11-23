@@ -2230,6 +2230,32 @@ public class XServerDisplayActivity extends AppCompatActivity {
         return shortcut != null ? shortcut.getExtra(key, fallback) : fallback;
     }
 
+    private void saveSidebarFrameGeneration(boolean enabled) {
+        String value = enabled ? "1" : "0";
+        if (shortcut != null) {
+            shortcut.putExtra("frameGen", value);
+            shortcut.saveData();
+        } else if (container != null) {
+            container.putExtra("frameGen", value);
+            container.saveData();
+        }
+    }
+
+    private void saveSidebarFrameGenerationSettings(int multiplier, int targetRate, int flowScale) {
+        String[][] values = {
+            {"frameGenMultiplier", String.valueOf(multiplier)},
+            {"frameGenTargetRate", String.valueOf(targetRate)},
+            {"frameGenFlowScale", String.valueOf(flowScale)}
+        };
+        if (shortcut != null) {
+            for (String[] value : values) shortcut.putExtra(value[0], value[1]);
+            shortcut.saveData();
+        } else if (container != null) {
+            for (String[] value : values) container.putExtra(value[0], value[1]);
+            container.saveData();
+        }
+    }
+
     private void saveSidebarGraphicsState() {
         if (!graphicsControlsReady || container == null) return;
         Switch enabled = findViewById(R.id.SWEnableFSR);
@@ -2489,11 +2515,36 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 frameGenQualityValues[qualityPos]);
         };
 
+        // Opening the sidebar must not overwrite inherited or saved preferences.
+        final int[] previousFrameGenSelections = {
+            spFrameGenMode != null ? spFrameGenMode.getSelectedItemPosition() : -1,
+            spFrameGenMultiplier != null ? spFrameGenMultiplier.getSelectedItemPosition() : -1,
+            spFrameGenQuality != null ? spFrameGenQuality.getSelectedItemPosition() : -1
+        };
+        Runnable onFrameGenSelectionChanged = () -> {
+            int mode = spFrameGenMode != null ? spFrameGenMode.getSelectedItemPosition() : -1;
+            int multiplier = spFrameGenMultiplier != null ? spFrameGenMultiplier.getSelectedItemPosition() : -1;
+            int quality = spFrameGenQuality != null ? spFrameGenQuality.getSelectedItemPosition() : -1;
+            if (mode == previousFrameGenSelections[0] &&
+                multiplier == previousFrameGenSelections[1] &&
+                quality == previousFrameGenSelections[2]) return;
+            previousFrameGenSelections[0] = mode;
+            previousFrameGenSelections[1] = multiplier;
+            previousFrameGenSelections[2] = quality;
+            if (swEnableFrameGen != null && swEnableFrameGen.isChecked()) {
+                applyFrameGenSettings.run();
+                saveSidebarFrameGenerationSettings(
+                    vkRenderer.getFrameGenerationMultiplier(),
+                    vkRenderer.getFrameGenerationTargetRate(),
+                    vkRenderer.getFrameGenerationFlowScale());
+            }
+        };
+
         if (spFrameGenMode != null) {
             spFrameGenMode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
                 @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
                     updateFrameGenVisibility.run();
-                    applyFrameGenSettings.run();
+                    onFrameGenSelectionChanged.run();
                 }
                 @Override public void onNothingSelected(AdapterView<?> p) {}
             });
@@ -2501,7 +2552,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         AdapterView.OnItemSelectedListener applyFrameGenSelection =
             new AdapterView.OnItemSelectedListener() {
                 @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
-                    applyFrameGenSettings.run();
+                    onFrameGenSelectionChanged.run();
                 }
                 @Override public void onNothingSelected(AdapterView<?> p) {}
             };
@@ -2537,6 +2588,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 }
                 updateFrameGenVisibility.run();
                 if (checked) applyFrameGenSettings.run();
+                saveSidebarFrameGeneration(checked);
                 Log.i("XServerDisplayActivity",
                     "LSFG runtime toggle: " + (checked ? "enabled" : "disabled"));
             });
