@@ -189,12 +189,15 @@ public:
     void updateCursorImage(void* pixels, short w, short h, short stride, short hotX, short hotY);
     void setCursorVisible(bool visible);
     void setRenderList(const int64_t* ids, const int* xs, const int* ys, int count);
-    // Native X11 supplies a complete scene snapshot without Java window-tree callbacks.
-    // This entry point is unused by the existing Java renderer.
-    void setExternalRenderList(const int64_t* ids, const int* xs, const int* ys, int count) {
+    struct RenderEntry { int64_t id; int x, y; };
+    // X++ drives renderFrame itself. Exchange the prepared list and cursor
+    // together without notifying the Java renderer's idle render thread.
+    void swapExternalScene(std::vector<RenderEntry>& scene, short x, short y, bool visible) {
         std::lock_guard<std::mutex> lock(renderMutex);
-        renderList.resize(count);
-        for (int i = 0; i < count; ++i) renderList[i] = {ids[i], xs[i], ys[i]};
+        renderList.swap(scene);
+        pointerX.store(x, std::memory_order_relaxed);
+        pointerY.store(y, std::memory_order_relaxed);
+        cursorVisible.store(visible, std::memory_order_relaxed);
         treeDirty = false;
     }
 #ifdef LUDASHI_NATIVE_X11
@@ -314,7 +317,6 @@ private:
         uint32_t height = 0;
     };
 
-    struct RenderEntry { int64_t id; int x, y; };
     struct DrawEntry {
         VkImage         img            = VK_NULL_HANDLE;
         VkDescriptorSet ds             = VK_NULL_HANDLE;

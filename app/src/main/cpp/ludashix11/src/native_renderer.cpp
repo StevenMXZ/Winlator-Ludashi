@@ -1,6 +1,7 @@
 #include "native_screen.h"
 #include "VulkanRendererContext.h"
 #include "native_magnifier.h"
+#include <type_traits>
 #ifdef __ANDROID__
 #include "VulkanDriver.h"
 #endif
@@ -112,7 +113,7 @@ public:
                 : submission.wait(submission.device, 1, &submission.fence, VK_TRUE, 0);
             if (status == VK_NOT_READY || status == VK_TIMEOUT) break;
             if (status != VK_SUCCESS) throw std::runtime_error("Native Vulkan fence status failed");
-            pending.pop_front();
+            RetireFront();
             ++ready;
         }
         return ready;
@@ -124,17 +125,14 @@ public:
             const auto& submission = pending.front();
             if (submission.wait(submission.device, 1, &submission.fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
                 throw std::runtime_error("Native Vulkan surface drain failed");
-            pending.pop_front();
+            RetireFront();
             ++ready;
         }
         return ready;
     }
     bool ReadyToDraw() const override {
         if (!context || context->surfaceDetached.load()) return true;
-        const uint32_t slot = context->currentFrame;
-        std::lock_guard lock(pendingMutex);
-        return std::none_of(pending.begin(), pending.end(),
-                            [slot](const Submission& item) { return item.slot == slot; });
+        return (pendingSlots.load(std::memory_order_acquire) & SlotMask(context->currentFrame)) == 0;
     }
     NativeAHBMetrics TakeAHBMetrics() override {
         NativeAHBMetrics snapshot = ahbMetrics;
@@ -177,14 +175,16 @@ public:
             std::lock_guard lock(pendingMutex);
             pending.push_back({slot, context->device, context->inFlightFences[slot],
                                context->vk_.GetFenceStatus, context->vk_.WaitForFences});
+            pendingSlots.store(pendingSlots.load(std::memory_order_relaxed) | SlotMask(slot),
+                               std::memory_order_release);
         }
         return true;
     }
 private:
     bool wfgSelected{};
     void UpdateScene(const NativeFrame& frame) {
-        ids.clear(); xs.clear(); ys.clear();
-        ids.reserve(frame.entries.size()); xs.reserve(frame.entries.size()); ys.reserve(frame.entries.size());
+        scene.clear();
+        scene.reserve(frame.entries.size());
         for (const auto& entry : frame.entries) {
             // Java-compatible IDLE does not invalidate scene content. Resource
             // references remain retained independently until this GPU work retires.
@@ -235,14 +235,13 @@ private:
                                              entry.x, entry.y);
                 revisions[id] = entry.revision;
             }
-            ids.push_back(id); xs.push_back(entry.x); ys.push_back(entry.y);
+            scene.push_back({static_cast<int64_t>(id), entry.x, entry.y});
         }
         for (auto i = registry.begin(); i != registry.end();) {
             if (i->second.expired()) {
                 context->removeWindow(i->first); revisions.erase(i->first); i = registry.erase(i);
             } else ++i;
         }
-        context->setExternalRenderList(ids.data(), xs.data(), ys.data(), ids.size());
         if (frame.cursor && frame.cursorPixels && cursorID != frame.cursor->ID()) {
             const auto& d = *frame.cursor;
             // PointerSprite pixels share the same BGRA byte order as desktop uploads.
@@ -250,8 +249,7 @@ private:
                                        d.GetWidth(), d.GetHeight(), d.GetWidth(), 0, 0);
             cursorID = d.ID();
         }
-        context->setCursorVisible(cursor && bool(frame.cursor));
-        context->updatePointerPosition(frame.cursorX, frame.cursorY);
+        context->swapExternalScene(scene, frame.cursorX, frame.cursorY, cursor && bool(frame.cursor));
         if (zoom > 1.f && (frame.cursorX != lastCursorX || frame.cursorY != lastCursorY)) {
             lastCursorX = frame.cursorX;
             lastCursorY = frame.cursorY;
@@ -286,6 +284,17 @@ private:
     };
     mutable std::mutex pendingMutex;
     std::deque<Submission> pending;
+    static_assert(std::extent_v<decltype(VulkanRendererContext::slotSerial)> <= 32);
+    static uint32_t SlotMask(uint32_t slot) { return uint32_t{1} << slot; }
+    std::atomic<uint32_t> pendingSlots{0};
+    // All mask writes are serialized with the queue. Readiness can be checked
+    // under the scene lock without also contending for the retirement lock.
+    void RetireFront() {
+        const uint32_t mask = SlotMask(pending.front().slot);
+        pending.pop_front();
+        pendingSlots.store(pendingSlots.load(std::memory_order_relaxed) & ~mask,
+                           std::memory_order_release);
+    }
     int width, height;
     const bool validation;
     const NativeRendererConfig rendererConfig;
@@ -299,9 +308,7 @@ private:
     std::unique_ptr<VulkanRendererContext> context;
     std::unordered_map<u64, u64> revisions;
     std::unordered_map<u64, std::weak_ptr<NativeDrawable>> registry;
-    // Stable window counts reuse these buffers across frames and cursor redraws.
-    std::vector<int64_t> ids;
-    std::vector<int> xs, ys;
+    std::vector<VulkanRendererContext::RenderEntry> scene;
 };
 std::unique_ptr<NativeRenderer> CreateNativeRenderer(u16 w, u16 h, bool validation, const NativeRendererConfig& config) {
 #ifdef __ANDROID__

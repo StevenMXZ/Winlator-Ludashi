@@ -78,8 +78,12 @@ public:
     }
     void updateWindowContent(int64_t id, void*, int, int, int, int, int) { texMap[id] = {}; }
     void removeWindow(int64_t id) { texMap.erase(id); }
-    void setExternalRenderList(const int64_t* ids, const int*, const int*, int count) {
-        if (count) boundImages.assign(ids, ids + count); else boundImages.clear();
+    struct RenderEntry { int64_t id; int x, y; };
+    std::vector<RenderEntry> boundScene;
+    void swapExternalScene(std::vector<RenderEntry>& scene, short, short, bool) {
+        boundScene.swap(scene);
+        boundImages.clear();
+        for (const auto& entry : boundScene) boundImages.push_back(entry.id);
     }
     void renderFrame() {
         if (acquireFails) return;

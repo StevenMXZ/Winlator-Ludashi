@@ -95,6 +95,8 @@ class DisplayXNativeRenderer final : public NativeRenderer {
         std::weak_ptr<NativeExternalFrame> presentation;
         bool attached{}, stateValid{}, visible{}, opaque{}, backPressure{};
         ARect source{}, destination{};
+        u64 layoutRevision{};
+        std::array<int, 6> layout{};
         int order{};
         u32 colorSpace{UINT32_MAX};
         std::array<float, 12> hdr{};
@@ -131,6 +133,7 @@ class DisplayXNativeRenderer final : public NativeRenderer {
     float zoom{1}, refresh{60};
     NativeMagnifierPan pan;
     NativeBackendGeometry geometry;
+    u64 layoutRevision{};
     std::chrono::steady_clock::time_point target{};
     static void OnComplete(void *value, ASurfaceTransactionStats *) {
         std::unique_ptr<Callback> callback(static_cast<Callback *>(value));
@@ -197,13 +200,28 @@ class DisplayXNativeRenderer final : public NativeRenderer {
             if (!layer.control)
                 throw std::runtime_error("Cannot create X++ DisplayX layer");
         }
-        const float left = geometry.ox + x * geometry.sx, top = geometry.oy + y * geometry.sy;
-        const float right = left + w * geometry.sx, bottom = top + h * geometry.sy;
-        ARect destination{std::max(geometry.left, int(std::floor(left))),
-                          std::max(geometry.top, int(std::floor(top))),
-                          std::min(geometry.right, int(std::ceil(right))),
-                          std::min(geometry.bottom, int(std::ceil(bottom)))};
-        const bool visible = destination.left < destination.right && destination.top < destination.bottom;
+        const int imageWidth = drawable->GetWidth(), imageHeight = drawable->GetHeight();
+        const std::array layout{x, y, w, h, imageWidth, imageHeight};
+        const bool layoutChanged = !layer.stateValid || !layer.visible ||
+            layer.layoutRevision != layoutRevision || layer.layout != layout;
+        ARect destination = layer.destination, source = layer.source;
+        bool visible = layer.visible;
+        if (layoutChanged) {
+            const float left = geometry.ox + x * geometry.sx, top = geometry.oy + y * geometry.sy;
+            const float right = left + w * geometry.sx, bottom = top + h * geometry.sy;
+            destination = {std::max(geometry.left, int(std::floor(left))),
+                           std::max(geometry.top, int(std::floor(top))),
+                           std::min(geometry.right, int(std::ceil(right))),
+                           std::min(geometry.bottom, int(std::ceil(bottom)))};
+            visible = destination.left < destination.right && destination.top < destination.bottom;
+            if (visible) {
+                source = {
+                    std::clamp(int(std::floor((destination.left - left) * imageWidth / (right - left))), 0, imageWidth),
+                    std::clamp(int(std::floor((destination.top - top) * imageHeight / (bottom - top))), 0, imageHeight),
+                    std::clamp(int(std::ceil((destination.right - left) * imageWidth / (right - left))), 0, imageWidth),
+                    std::clamp(int(std::ceil((destination.bottom - top) * imageHeight / (bottom - top))), 0, imageHeight)};
+            }
+        }
         if (!layer.stateValid || layer.visible != visible)
             api->visibility(transaction, layer.control,
                             visible ? ASURFACE_TRANSACTION_VISIBILITY_SHOW
@@ -226,15 +244,6 @@ class DisplayXNativeRenderer final : public NativeRenderer {
             layer.drawable = drawable->ID();
             layer.revision = revision;
         }
-        ARect source{
-            std::clamp(int(std::floor((destination.left - left) * drawable->GetWidth() / (right - left))), 0,
-                       int(drawable->GetWidth())),
-            std::clamp(int(std::floor((destination.top - top) * drawable->GetHeight() / (bottom - top))), 0,
-                       int(drawable->GetHeight())),
-            std::clamp(int(std::ceil((destination.right - left) * drawable->GetWidth() / (right - left))), 0,
-                       int(drawable->GetWidth())),
-            std::clamp(int(std::ceil((destination.bottom - top) * drawable->GetHeight() / (bottom - top))), 0,
-                       int(drawable->GetHeight()))};
         if (changed || !layer.attached || (external && layer.presentation.lock() != external)) {
             int fence = external && external->fence >= 0 ? dup(external->fence) : -1;
             api->buffer(transaction, layer.control, drawable->HardwareBuffer()
@@ -245,8 +254,8 @@ class DisplayXNativeRenderer final : public NativeRenderer {
         auto sameRect = [](const ARect &a, const ARect &b) {
             return a.left == b.left && a.top == b.top && a.right == b.right && a.bottom == b.bottom;
         };
-        if (!layer.stateValid || !sameRect(layer.source, source) ||
-            !sameRect(layer.destination, destination))
+        if (layoutChanged && (!layer.stateValid || !sameRect(layer.source, source) ||
+            !sameRect(layer.destination, destination)))
             api->geometry(transaction, layer.control, source, destination, 0);
         if (!layer.stateValid || layer.order != order)
             api->order(transaction, layer.control, order);
@@ -276,6 +285,8 @@ class DisplayXNativeRenderer final : public NativeRenderer {
             api->backPressure(transaction, layer.control, backPressure);
         layer.source = source;
         layer.destination = destination;
+        layer.layoutRevision = layoutRevision;
+        layer.layout = layout;
         layer.order = order;
         layer.opaque = opaque;
         layer.backPressure = backPressure;
@@ -359,7 +370,8 @@ class DisplayXNativeRenderer final : public NativeRenderer {
     bool Draw(NativeFrame &frame, const NativeFrameLatch &latch) override {
         if (!root)
             return false;
-        const auto workStart = std::chrono::steady_clock::now();
+        using Clock = std::chrono::steady_clock;
+        const auto workStart = hint ? Clock::now() : Clock::time_point{};
         if (latch)
             latch(frame);
         const int outerW = ANativeWindow_getWidth(window), outerH = ANativeWindow_getHeight(window);
@@ -378,7 +390,12 @@ class DisplayXNativeRenderer final : public NativeRenderer {
                             entry.external->Abandon();
             }
         } failed{frame, published};
-        geometry.Update(outerW, outerH, width, height, fullscreen, zoom, frame.cursorX, frame.cursorY, pan);
+        NativeBackendGeometry adjusted;
+        adjusted.Update(outerW, outerH, width, height, fullscreen, zoom, frame.cursorX, frame.cursorY, pan);
+        if (adjusted != geometry) {
+            geometry = adjusted;
+            ++layoutRevision;
+        }
         auto *transaction = std::exchange(reusableTransaction, nullptr);
         if (!transaction) transaction = api->transaction();
         struct Guard {

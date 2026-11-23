@@ -144,7 +144,6 @@ public:
     void SetFrameTimeline(int64_t id);
     void UpdateCursor(const sp<NativeDrawable>&, s16, s16);
     void PostInvalidate(sp<PresentTicket> present = {});
-    void DrawableChanged(NativeDrawable* drawable);
     // Serialize CPU writes with snapshot selection. Pending scenes do not need
     // an immutable copy; frames already selected for the GPU still do.
     template<class Write> void MutateDrawable(NativeDrawable* drawable, const Write& write) {
@@ -163,6 +162,7 @@ public:
     void DispatchCompletions();
     // epoll timeout for delayed producer IDLE notifications (negative = infinite).
     int IdleTimeoutMs() const;
+    bool HasWaitingPresents() const { return !waiting.empty(); }
     void ResumeWaitingClients();
     bool FenceTriggered(u32 id) const;
     void FenceSignaled();

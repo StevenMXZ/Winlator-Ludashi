@@ -82,6 +82,15 @@ int main() {
         assert((Pixel(110, 60) == std::array<u8, 4>{0x11, 0x22, 0x33, 0xff}));
         assert((Pixel(10, 10) == std::array<u8, 4>{0, 0, 0, 0xff}));
         assert(renderer->PollCompleted(1) == 1);
+        GLint sampling{};
+        glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &sampling);
+        assert(sampling == GL_NEAREST);
+        options.filter = 0;
+        renderer->VisualOptions(options);
+        assert(renderer->Draw(frame));
+        glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &sampling);
+        assert(sampling == GL_LINEAR);
+        assert(renderer->Drain() == 1);
         image->FillRect(0, 0, 32, 32, 0xff445566);
         frame.entries[0].pixels = image->Pixels();
         frame.entries[0].revision = image->Revision();

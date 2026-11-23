@@ -33,6 +33,7 @@ class EGLNativeRenderer final : public NativeRenderer {
         AHardwareBuffer *buffer{};
         u64 revision{}, used{};
         int width{}, height{};
+        GLint sampling{};
         std::weak_ptr<NativeDrawable> owner;
     };
     int width, height, outerW{}, outerH{}, filter{};
@@ -185,10 +186,15 @@ class EGLNativeRenderer final : public NativeRenderer {
                 texture = {};
                 throw;
             }
+        } else {
+            glBindTexture(GL_TEXTURE_2D, texture.name);
         }
-        glBindTexture(GL_TEXTURE_2D, texture.name);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter == 1 ? GL_NEAREST : GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter == 1 ? GL_NEAREST : GL_LINEAR);
+        const GLint sampling = filter == 1 ? GL_NEAREST : GL_LINEAR;
+        if (texture.sampling != sampling) {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, sampling);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, sampling);
+            texture.sampling = sampling;
+        }
         if (!buffer && texture.revision != revision) {
             Require(bool(pixels), "Missing X++ EGL pixel snapshot");
             glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
