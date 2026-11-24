@@ -28,6 +28,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Restore the existing release signing identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LUDASHI_KEYSTORE_B64: ${{ secrets.LUDASHI_KEYSTORE_B64 }}
+          LUDASHI_STORE_PASSWORD: ${{ secrets.LUDASHI_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LUDASHI_KEYSTORE_B64:-}" ] || [ -z "${LUDASHI_STORE_PASSWORD:-}" ]; then
+            echo '::error::Configure LUDASHI_KEYSTORE_B64 and LUDASHI_STORE_PASSWORD with the existing Ludashi signing identity.'
+            exit 1
+          fi
+          bash app/src/main/scripts/prepare-upstream-signing.sh
+
       - name: Set up Rust and ARMv7 Android target
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -64,6 +77,46 @@ jobs:
             -PwinlatorAbi=armeabi-v7a \
             -PwinlatorNativeCompileOnly=true \
             --stacktrace
+
+      - name: Build signed ARM32 release APK
+        run: |
+          ./gradlew :app:assembleRelease \
+            -PwinlatorAbi=armeabi-v7a \
+            -PwinlatorNativeCompileOnly=true \
+            --no-daemon --max-workers=2 --stacktrace
+
+      - name: Verify ARM32 APK architecture and release identity
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" > "$RUNNER_TEMP/arm32-release-cert.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | awk 'NR == 1' > "$RUNNER_TEMP/arm32-release-package.txt"
+          python3 - "$RUNNER_TEMP" "$apk" <<'PYVERIFY'
+          import pathlib, re, sys, zipfile
+          root = pathlib.Path(sys.argv[1])
+          apk = pathlib.Path(sys.argv[2])
+          certificate = re.search(r'Signer #1 certificate SHA-256 digest: (\\S+)', (root / 'arm32-release-cert.txt').read_text()).group(1)
+          assert certificate == 'e870d1c67cd197d13c52bc187632b9bbeff233d5abe0fb81a2833bf8f74a55ef', 'Release signing identity changed'
+          package = (root / 'arm32-release-package.txt').read_text()
+          assert re.search(r"name='([^']+)'", package).group(1) == 'com.winlator.cmod', 'Application ID changed'
+          assert re.search(r"versionName='([^']+)'", package).group(1) == '5.0', 'Unexpected release version'
+          with zipfile.ZipFile(apk) as z:
+              names = set(z.namelist())
+              assert 'lib/armeabi-v7a/libproot.so' in names, 'ARMv7 PRoot is missing'
+              assert 'lib/armeabi-v7a/libproot-loader.so' in names, 'ARMv7 PRoot loader is missing'
+              assert 'lib/armeabi-v7a/libwinlator.so' in names, 'ARMv7 Winlator native library is missing'
+              assert not any(n.startswith('lib/arm64-v8a/') for n in names), 'Unexpected ARM64 libraries in ARM32 APK'
+          print('ARM32 APK ABI and existing release signing identity verified')
+          PYVERIFY
+
+      - name: Upload signed ARM32 release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: winlator-arm32-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
 
       - name: Upload ARM32 debug APK
         uses: actions/upload-artifact@v4
