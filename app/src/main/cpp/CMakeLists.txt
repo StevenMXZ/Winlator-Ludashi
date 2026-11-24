@@ -14,6 +14,11 @@ if(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
     add_library(adrenotools STATIC winlator/adrenotools_stub.c)
     target_include_directories(adrenotools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/adrenotools/include)
     target_compile_options(adrenotools PRIVATE -Wall -Wextra)
+
+    # PRoot is the unprivileged ARMv7 userspace boundary. It runs an ARMHF
+    # Linux rootfs from the app's private files directory, allowing glibc
+    # Box86 and i386 Wine binaries to see their expected filesystem paths.
+    add_subdirectory(proot)
 else()
     add_subdirectory(adrenotools)
 endif()
