@@ -54,6 +54,16 @@ jobs:
           readelf -h box86-build/box86 | grep -E 'Class:|Machine:'
           readelf -A box86-build/box86 | grep -E 'Tag_ABI_VFP_args|Tag_CPU_arch' || true
           mkdir -p runtime-rootfs/usr/bin runtime-rootfs/usr/share/doc/box86
+          PROOT_SRC="$PWD/app/src/main/cpp/proot"
+          mkdir -p runtime-rootfs/usr/lib runtime-rootfs/usr/share/doc/proot
+          arm-linux-gnueabihf-gcc -marm -march=armv7-a -mfloat-abi=hard \
+            -fPIC -shared -nostdlib -Wl,-soname,libproot-loader.so \
+            -I"$PROOT_SRC/src" -I"$PROOT_SRC/talloc" \
+            "$PROOT_SRC/src/loader/loader.c" \
+            -o runtime-rootfs/usr/lib/proot-loader.so
+          file runtime-rootfs/usr/lib/proot-loader.so
+          install -m 0644 "$PROOT_SRC/src/COPYING" runtime-rootfs/usr/share/doc/proot/copyright
+          printf '%s\\n' "PRoot loader built for ARMHF with the NDK-hosted PRoot source tree." > runtime-rootfs/usr/share/doc/proot/BUILD-INFO
           install -m 0755 box86-build/box86 runtime-rootfs/usr/bin/box86
           install -m 0644 box86-src/COPYING runtime-rootfs/usr/share/doc/box86/copyright
           printf '%s\n' "${BOX86_COMMIT}" > runtime-rootfs/usr/share/doc/box86/source-commit.txt
