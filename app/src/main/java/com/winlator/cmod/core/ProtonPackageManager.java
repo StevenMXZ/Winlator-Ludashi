@@ -216,6 +216,10 @@ public abstract class ProtonPackageManager {
     }
 
     public static boolean installPackage(Context context, String identifier, File archiveFile) {
+        if (getPackage(identifier) == null || archiveFile == null || !archiveFile.isFile()) {
+            Log.e(TAG, "Refusing to install an unknown or ABI-incompatible Proton package: " + identifier);
+            return false;
+        }
         boolean installed = ImageFsInstaller.installWineArchive(context, identifier, archiveFile);
         if (!installed || !isInstalled(context, identifier)) {
             deletePackage(context, identifier);
