@@ -57,3 +57,18 @@ jobs:
             -PwinlatorAbi=armeabi-v7a \
             -PwinlatorNativeCompileOnly=true \
             --stacktrace
+
+      - name: Build installable ARM32 debug APK (runtime testing build)
+        run: |
+          ./gradlew :app:assembleDebug \
+            -PwinlatorAbi=armeabi-v7a \
+            -PwinlatorNativeCompileOnly=true \
+            --stacktrace
+
+      - name: Upload ARM32 debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: winlator-arm32-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
