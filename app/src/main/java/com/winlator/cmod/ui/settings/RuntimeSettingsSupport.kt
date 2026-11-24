@@ -149,8 +149,8 @@ internal suspend fun loadWineRuntimeOptions(context: Context): List<WineRuntimeO
     if (WineRuntimeGuard.isBundledMainInstalled(context) && out[mainId] == null) {
         out[mainId] = WineRuntimeOption(
             id = mainId,
-            label = ProtonPackageManager.getPackage(mainId)?.title ?: mainId,
-            type = ContentProfile.ContentType.CONTENT_TYPE_PROTON.toString(),
+            label = if (android.os.Process.is64Bit()) ProtonPackageManager.getPackage(mainId)?.title ?: mainId else "Wine 11.22 x86 (ARM32)",
+            type = if (android.os.Process.is64Bit()) ContentProfile.ContentType.CONTENT_TYPE_PROTON.toString() else ContentProfile.ContentType.CONTENT_TYPE_WINE.toString(),
             version = WineInfo.MAIN_WINE_VERSION.fullVersion(),
             installed = true
         )
