@@ -31,7 +31,7 @@ void ClientSession::ProcRender() {
         RequireExactRequest<xRenderQueryVersionReq>();
         const auto* r = GetRequestData<xRenderQueryVersionReq>();
         xRenderQueryVersionReply reply{}; reply.type = X_Reply; reply.sequenceNumber = sequence;
-        reply.majorVersion = 0; reply.minorVersion = r->majorVersion ? 8 : std::min(8u, r->minorVersion);
+        reply.majorVersion = 0; reply.minorVersion = r->majorVersion ? 8 : std::min(8u, static_cast<unsigned int>(r->minorVersion));
         WriteImmediately(&reply, sizeof(reply)); return;
     }
     case X_RenderQueryPictFormats: {
