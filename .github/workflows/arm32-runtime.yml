@@ -24,7 +24,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            debootstrap qemu-user-static binfmt-support \
+            debootstrap qemu-user-binfmt binfmt-support \
             gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross \
             cmake ninja-build git python3 python3-yaml \
             curl ca-certificates xz-utils zstd file binutils
@@ -67,7 +67,6 @@ jobs:
             bookworm "$ROOTFS" https://deb.debian.org/debian
 
           sudo update-binfmts --enable qemu-arm
-          sudo install -m 0755 /usr/bin/qemu-arm-static "$ROOTFS/usr/bin/qemu-arm-static"
           sudo chroot "$ROOTFS" /debootstrap/debootstrap --second-stage
 
           sudo chroot "$ROOTFS" /usr/bin/apt-get update
@@ -86,7 +85,6 @@ jobs:
           sudo chroot "$ROOTFS" /bin/bash -lc \
             "useradd --create-home --uid 1000 --shell /bin/bash xuser || true; mkdir -p /home/xuser/.wine /tmp; chown -R xuser:xuser /home/xuser; locale-gen en_US.UTF-8 || true"
 
-          sudo rm -f "$ROOTFS/usr/bin/qemu-arm-static"
           sudo rm -rf "$ROOTFS/debootstrap" "$ROOTFS/var/lib/apt/lists/"*
 
       - name: Install Wine 11.22 i386 runtime
