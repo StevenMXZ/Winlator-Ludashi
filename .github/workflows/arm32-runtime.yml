@@ -22,7 +22,6 @@ jobs:
 
       - name: Install cross-build and rootfs tools
         run: |
-          sudo dpkg --add-architecture armhf
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             debootstrap qemu-user-static binfmt-support \
