@@ -196,9 +196,9 @@ public abstract class ProcessHelper {
             if (quote != 0) {
                 if (current == quote) {
                     quote = 0;
-                } else if (current == '\\\\' && i + 1 < command.length()) {
+                } else if (current == '\\' && i + 1 < command.length()) {
                     char next = command.charAt(i + 1);
-                    if (next == quote || next == '\\\\') {
+                    if (next == quote || next == '\\') {
                         value.append(next);
                         i++;
                     } else {
@@ -210,9 +210,9 @@ public abstract class ProcessHelper {
                 continue;
             }
 
-            if (current == '"' || current == '\\'') {
+            if (current == '"' || current == '\'') {
                 quote = current;
-            } else if (current == '\\\\' && i + 1 < command.length()
+            } else if (current == '\\' && i + 1 < command.length()
                     && command.charAt(i + 1) == ' ') {
                 value.append(' ');
                 i++;
