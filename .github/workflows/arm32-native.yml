@@ -45,6 +45,11 @@ jobs:
             "platforms;android-35" "build-tools;35.0.0" \
             "ndk;29.0.14206865" "cmake;3.22.1"
 
+      - name: Install shader compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y glslang-tools
+
       - name: Compile ARM32 native libraries only
         run: |
           chmod +x ./gradlew
