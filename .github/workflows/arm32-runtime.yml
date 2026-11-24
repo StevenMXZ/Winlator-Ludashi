@@ -110,18 +110,18 @@ jobs:
           fi
 
           WINE_ROOT="$(dirname "$(dirname "$WINE_BIN")")"
-          mkdir -p runtime-rootfs/opt/wine-11.22-x86
-          cp -a "$WINE_ROOT/." runtime-rootfs/opt/wine-11.22-x86/
-          test -x runtime-rootfs/opt/wine-11.22-x86/bin/wine
-          find runtime-rootfs/opt/wine-11.22-x86 -type f -name 'ntdll.so' -print -quit
-          file runtime-rootfs/opt/wine-11.22-x86/bin/wine || true
+          sudo install -d runtime-rootfs/opt/wine-11.22-x86
+          sudo cp -a "$WINE_ROOT/." runtime-rootfs/opt/wine-11.22-x86/
+          sudo test -x runtime-rootfs/opt/wine-11.22-x86/bin/wine
+          sudo find runtime-rootfs/opt/wine-11.22-x86 -type f -name 'ntdll.so' -print -quit
+          sudo file runtime-rootfs/opt/wine-11.22-x86/bin/wine || true
 
       - name: Add Box86 Wine launcher and runtime metadata
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p runtime-rootfs/usr/local/bin runtime-rootfs/usr/share/winlator
-          cat > runtime-rootfs/usr/local/bin/winlator-wine <<'EOF'
+          sudo install -d runtime-rootfs/usr/local/bin runtime-rootfs/usr/share/winlator
+          sudo tee runtime-rootfs/usr/local/bin/winlator-wine > /dev/null <<'EOF'
           #!/bin/sh
           set -eu
           export HOME="${HOME:-/home/xuser}"
@@ -133,9 +133,9 @@ jobs:
           export WINEDEBUG="${WINEDEBUG:--all}"
           exec /usr/bin/box86 /opt/wine-11.22-x86/bin/wine "$@"
           EOF
-          chmod 0755 runtime-rootfs/usr/local/bin/winlator-wine
+          sudo chmod 0755 runtime-rootfs/usr/local/bin/winlator-wine
 
-          cat > runtime-rootfs/usr/share/winlator/arm32-runtime.json <<'EOF'
+          sudo tee runtime-rootfs/usr/share/winlator/arm32-runtime.json > /dev/null <<'EOF'
           {
             "runtime": "debian-bookworm-armhf",
             "emulator": "box86",
@@ -168,7 +168,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tar --numeric-owner --xattrs \
+          sudo tar --numeric-owner --xattrs \
             --exclude='./dev/*' --exclude='./proc/*' --exclude='./sys/*' \
             --exclude='./run/*' \
             -C runtime-rootfs -cf - . | zstd -T0 -5 -o arm32-runtime-bookworm-armhf.tar.zst
