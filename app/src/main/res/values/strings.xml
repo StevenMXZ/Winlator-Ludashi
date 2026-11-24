@@ -472,6 +472,7 @@
     <string name="enable_sendinput_mode">Use Windows SendInput Mode</string>
     <string name="enable_touchscreen_timeout">Touchscreen Timeout (Requires Restart)</string>
     <string name="enable_touchscreen_haptics">Enable Touchscreen Haptic Feedback</string>
+    <string name="enable_touch_highlights">Show Touch Highlights on Controls</string>
     <string name="help_steamgrid">SteamGrid API Key</string>
     <string name="disable_xinput_for_shortcut">Disable Xinput (For Exclusive M/KB Control)</string>
     <string name="fullscreen_stretched">Enable Fullscreen (Stretched)</string>
