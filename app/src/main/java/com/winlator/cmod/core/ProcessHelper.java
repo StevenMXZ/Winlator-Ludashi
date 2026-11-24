@@ -82,17 +82,22 @@ public abstract class ProcessHelper {
 
     public static int exec(String command, String[] envp, File workingDir, Callback<Integer> terminationCallback) {
         Log.d("ProcessHelper", "cmd: " + command);
+        Log.d("ProcessHelper", "Splitting command: " + command);
+        return exec(splitCommand(command), envp, workingDir, terminationCallback);
+    }
+
+    /** Executes a pre-tokenized argv vector without applying shell-style splitting. */
+    public static int exec(String[] command, String[] envp, File workingDir,
+                           Callback<Integer> terminationCallback) {
+        Log.d("ProcessHelper", "argv: " + Arrays.toString(command));
 
         // Store env vars for future use
         EnvironmentManager.setEnvVars(envp);
 
         int pid = -1;
         try {
-            Log.d("ProcessHelper", "Splitting command: " + command);
-            String[] splitCommand = splitCommand(command);
-            Log.d("ProcessHelper", "Split command result: " + Arrays.toString(splitCommand));
             Log.d("ProcessHelper", "Starting process...");
-            ProcessBuilder pb = new ProcessBuilder(splitCommand);
+            ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(workingDir);
             pb.environment().putAll(EnvironmentManager.getEnvVars());
             if (debugCallbacks.isEmpty()) {
