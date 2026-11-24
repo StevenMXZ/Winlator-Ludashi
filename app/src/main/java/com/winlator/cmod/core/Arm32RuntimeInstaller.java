@@ -125,6 +125,86 @@ public final class Arm32RuntimeInstaller {
         }
     }
 
+    /**
+     * Create a real Wine prefix before the normal Winlator UI modifies registry
+     * files and dosdevices. The Android process remains ARMv7; PRoot enters the
+     * isolated ARMHF guest and Box86 starts Wine's i386 wineboot.
+     */
+    public static boolean initializeWinePrefix(Context context, ImageFs imageFs, File containerDir) {
+        if (android.os.Process.is64Bit()) return false;
+        if (!isInstalled(context) || containerDir == null) return false;
+
+        File prefix = new File(containerDir, ".wine");
+        File systemReg = new File(prefix, "system.reg");
+        File userReg = new File(prefix, "user.reg");
+        File windowsDir = new File(prefix, "drive_c/windows");
+        if (systemReg.isFile() && userReg.isFile() && windowsDir.isDirectory()) return true;
+        if (!prefix.isDirectory() && !prefix.mkdirs()) return false;
+
+        File nativeDir = new File(context.getApplicationInfo().nativeLibraryDir);
+        File proot = new File(nativeDir, "libproot.so");
+        File prootLoader32 = new File(nativeDir, "libproot-loader.so");
+        if (!proot.isFile() || !prootLoader32.isFile()) {
+            Log.e(TAG, "Cannot bootstrap Wine prefix: ARMv7 PRoot or loader is missing");
+            return false;
+        }
+        FileUtils.chmod(proot, 0755);
+        FileUtils.chmod(prootLoader32, 0755);
+
+        File prootTmpDir = new File(imageFs.getTmpDir(), "proot-prefix-" + containerDir.getName());
+        if (!prootTmpDir.isDirectory() && !prootTmpDir.mkdirs()) return false;
+        File logFile = new File(prootTmpDir, "wineboot.log");
+        String guestHome = "/home/xuser";
+
+        String[] command = new String[] {
+                proot.getAbsolutePath(),
+                "-r", new File(imageFs.getRootDir(), "armhf-rootfs").getAbsolutePath(),
+                "-b", "/dev",
+                "-b", "/proc",
+                "-b", "/sys",
+                "-b", containerDir.getAbsolutePath() + ":" + guestHome,
+                "-w", guestHome,
+                "--kill-on-exit",
+                "/usr/local/bin/winlator-wine",
+                "wineboot", "-u"
+        };
+
+        try {
+            ProcessBuilder builder = new ProcessBuilder(command)
+                    .directory(containerDir)
+                    .redirectErrorStream(true)
+                    .redirectOutput(logFile);
+            java.util.Map<String, String> environment = builder.environment();
+            environment.clear();
+            environment.put("HOME", guestHome);
+            environment.put("USER", ImageFs.USER);
+            environment.put("LANG", "en_US.UTF-8");
+            environment.put("WINEPREFIX", guestHome + "/.wine");
+            environment.put("WINEDEBUG", "-all");
+            environment.put("PROOT_LOADER_32", prootLoader32.getAbsolutePath());
+            environment.put("PROOT_TMP_DIR", prootTmpDir.getAbsolutePath());
+            environment.put("PROOT_NO_SECCOMP", "1");
+
+            java.lang.Process process = builder.start();
+            if (!process.waitFor(180, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                Log.e(TAG, "Wine prefix bootstrap timed out for " + containerDir.getName());
+                return false;
+            }
+            int exitCode = process.exitValue();
+            boolean ready = exitCode == 0 && systemReg.isFile()
+                    && userReg.isFile() && windowsDir.isDirectory();
+            if (!ready) {
+                Log.e(TAG, "Wine prefix bootstrap failed for " + containerDir.getName()
+                        + " with exit code " + exitCode + "; log=" + logFile);
+            }
+            return ready;
+        } catch (Exception error) {
+            Log.e(TAG, "Unable to bootstrap ARM32 Wine prefix", error);
+            return false;
+        }
+    }
+
     private static String downloadChecksum() throws Exception {
         Request request = new Request.Builder()
                 .url(RELEASE_BASE + CHECKSUM_NAME)
