@@ -436,7 +436,7 @@ VkResult EffectComposer::createComposerTexture(Drawable *drawable) {
     srcDedicatedInfo.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
     srcDedicatedInfo.pNext = &srcImportAHB;
     srcDedicatedInfo.image = drawable->composerTexture->srcImage;
-    srcDedicatedInfo.buffer = nullptr;
+    srcDedicatedInfo.buffer = VK_NULL_HANDLE;
 
     VkMemoryAllocateInfo srcAllocateInfo{};
     srcAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -464,7 +464,7 @@ VkResult EffectComposer::createComposerTexture(Drawable *drawable) {
     dstDedicatedInfo.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
     dstDedicatedInfo.pNext = &dstImportAHB;
     dstDedicatedInfo.image = drawable->composerTexture->dstImage;
-    dstDedicatedInfo.buffer = nullptr;
+    dstDedicatedInfo.buffer = VK_NULL_HANDLE;
 
     VkMemoryAllocateInfo dstAllocateInfo{};
     dstAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
