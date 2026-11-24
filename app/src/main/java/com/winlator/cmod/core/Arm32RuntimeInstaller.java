@@ -49,9 +49,14 @@ public final class Arm32RuntimeInstaller {
     }
 
     public static boolean install(Context context, ImageFs imageFs, ProgressListener listener) {
+        File imageRoot = imageFs.getRootDir();
+        if (!imageRoot.isDirectory() && !imageRoot.mkdirs()) {
+            Log.e(TAG, "Unable to create the ImageFS directory for the ARMHF runtime");
+            return false;
+        }
         File cacheDir = new File(context.getFilesDir(), "arm32-runtime-cache");
         File stageDir = new File(context.getFilesDir(), "arm32-runtime-stage");
-        File runtimeRoot = new File(imageFs.getRootDir(), "armhf-rootfs");
+        File runtimeRoot = new File(imageRoot, "armhf-rootfs");
         File archive = new File(cacheDir, ARCHIVE_NAME);
         File partial = new File(cacheDir, ARCHIVE_NAME + ".part");
 
