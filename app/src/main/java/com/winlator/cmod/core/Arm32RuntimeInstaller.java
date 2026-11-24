@@ -44,7 +44,6 @@ public final class Arm32RuntimeInstaller {
         File root = new File(ImageFs.find(context).getRootDir(), "armhf-rootfs");
         return new File(root, "lib/ld-linux-armhf.so.3").isFile()
                 && new File(root, "usr/bin/box86").isFile()
-                && new File(root, "usr/lib/proot-loader.so").isFile()
                 && new File(root, "usr/local/bin/winlator-wine").isFile()
                 && new File(root, "opt/wine-11.22-x86/bin/wine").isFile();
     }
@@ -106,7 +105,6 @@ public final class Arm32RuntimeInstaller {
             }
 
             makeExecutable(runtimeRoot, "usr/bin/box86");
-            makeExecutable(runtimeRoot, "usr/lib/proot-loader.so");
             makeExecutable(runtimeRoot, "usr/local/bin/winlator-wine");
             makeExecutable(runtimeRoot, "opt/wine-11.22-x86/bin/wine");
 
@@ -190,7 +188,6 @@ public final class Arm32RuntimeInstaller {
     private static boolean hasRequiredRuntimeFiles(File root) {
         return new File(root, "lib/ld-linux-armhf.so.3").isFile()
                 && new File(root, "usr/bin/box86").isFile()
-                && new File(root, "usr/lib/proot-loader.so").isFile()
                 && new File(root, "usr/local/bin/winlator-wine").isFile()
                 && new File(root, "opt/wine-11.22-x86/bin/wine").isFile();
     }
