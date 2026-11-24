@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Gamepad
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.SportsEsports
@@ -76,7 +77,8 @@ data class InputControllerItem(
     val index: Int,
     val name: String,
     val bindings: Int,
-    val connected: Boolean
+    val connected: Boolean,
+    val blocked: Boolean
 )
 
 @Immutable
@@ -99,6 +101,7 @@ interface InputControlsCallbacks {
     fun onExportProfile()
     fun onOpenEditor()
     fun onOpenController(index: Int)
+    fun onToggleControllerBlocked(index: Int)
     fun onRemoveController(index: Int)
 }
 
@@ -122,6 +125,8 @@ object InputControlsComposeHost {
 
 @Composable
 private fun InputControlsScreen(model: InputControlsModel, callbacks: InputControlsCallbacks) {
+    var showBlocked by remember { mutableStateOf(false) }
+    val visible = model.controllers.filter { showBlocked || !it.blocked }
     val selectedName = model.profiles.firstOrNull { it.id == model.selectedProfileId }?.name ?: "-- Select Profile --"
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
@@ -171,18 +176,20 @@ private fun InputControlsScreen(model: InputControlsModel, callbacks: InputContr
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (model.controllers.isEmpty()) item { EmptyControllers() }
-                    else items(model.controllers, key = { "controller-${it.index}-${it.name}" }) { ControllerCard(it, callbacks) }
+                    item { BlockedFilter(showBlocked) { showBlocked = it } }
+                    if (visible.isEmpty()) item { EmptyControllers() }
+                    else items(visible, key = { "controller-${it.index}-${it.name}" }) { ControllerCard(it, callbacks) }
                 }
             }
         } else {
-            PortraitContent(model, selectedName, callbacks)
+            PortraitContent(model, selectedName, callbacks, showBlocked) { showBlocked = it }
         }
     }
 }
 
 @Composable
-private fun PortraitContent(model: InputControlsModel, selectedName: String, callbacks: InputControlsCallbacks) {
+private fun PortraitContent(model: InputControlsModel, selectedName: String, callbacks: InputControlsCallbacks, showBlocked: Boolean, onShowBlocked: (Boolean) -> Unit) {
+    val visible = model.controllers.filter { showBlocked || !it.blocked }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 28.dp),
@@ -201,8 +208,9 @@ private fun PortraitContent(model: InputControlsModel, selectedName: String, cal
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        if (model.controllers.isEmpty()) item { EmptyControllers() }
-        else items(model.controllers, key = { "controller-${it.index}-${it.name}" }) { ControllerCard(it, callbacks) }
+        item { BlockedFilter(showBlocked, onShowBlocked) }
+        if (visible.isEmpty()) item { EmptyControllers() }
+        else items(visible, key = { "controller-${it.index}-${it.name}" }) { ControllerCard(it, callbacks) }
     }
 }
 
@@ -344,7 +352,13 @@ private fun EmptyControllers() {
 }
 
 @Composable
+private fun BlockedFilter(show: Boolean, onChange: (Boolean) -> Unit) {
+    androidx.compose.material3.FilterChip(selected = show, onClick = { onChange(!show) }, label = { Text("Show blocked devices") })
+}
+
+@Composable
 private fun ControllerCard(controller: InputControllerItem, callbacks: InputControlsCallbacks) {
+    var menu by remember { mutableStateOf(false) }
     Surface(
         onClick = { callbacks.onOpenController(controller.index) },
         modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
@@ -360,10 +374,15 @@ private fun ControllerCard(controller: InputControllerItem, callbacks: InputCont
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {
                 Text(controller.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(uiStr(R.string.ui_1_s_bindings, controller.bindings), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (controller.blocked) "Blocked" else uiStr(R.string.ui_1_s_bindings, controller.bindings), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (controller.bindings > 0) IconButton(onClick = { callbacks.onRemoveController(controller.index) }) { Icon(Icons.Outlined.Delete, uiStr(R.string.ui_remove_controller)) }
-            Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "Device options") }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text(if (controller.blocked) "Unblock device" else "Block device") }, onClick = { menu = false; callbacks.onToggleControllerBlocked(controller.index) })
+                    if (controller.bindings > 0) DropdownMenuItem(text = { Text(uiStr(R.string.ui_remove_controller)) }, onClick = { menu = false; callbacks.onRemoveController(controller.index) })
+                }
+            }
             Spacer(Modifier.width(8.dp))
         }
     }

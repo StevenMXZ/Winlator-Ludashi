@@ -11,6 +11,7 @@ public final class WinlatorApplication extends Application {
     public void onCreate() {
         super.onCreate();
         UiStrings.install(this);
+        com.winlator.cmod.inputcontrols.ExternalController.initializeBlockedDevices(this);
         locales = getResources().getConfiguration().getLocales();
     }
 
