@@ -8,6 +8,7 @@ import android.util.Log;
 import com.winlator.cmod.R;
 import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.core.Callback;
+import com.winlator.cmod.core.Arm32RuntimeInstaller;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.MSLink;
 import com.winlator.cmod.core.OnExtractFileListener;
@@ -291,8 +292,8 @@ public class ContainerManager {
         // Winlator prefixPack archive. Create an empty prefix directory; Wine
         // will bootstrap it through winlator-wine/PRoot on its first launch.
         if (!android.os.Process.is64Bit() && "x86".equals(wineInfo.getArch())) {
-            File winePrefix = new File(containerDir, ".wine");
-            return winePrefix.isDirectory() || winePrefix.mkdirs();
+            return Arm32RuntimeInstaller.initializeWinePrefix(
+                    context, ImageFs.find(context), containerDir);
         }
 
         String containerPattern = wineVersion + "_container_pattern.tzst";
