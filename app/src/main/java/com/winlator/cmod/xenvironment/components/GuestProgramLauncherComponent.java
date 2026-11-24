@@ -17,6 +17,7 @@ import com.winlator.cmod.container.Shortcut;
 import com.winlator.cmod.contents.ContentProfile;
 import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.core.Callback;
+import com.winlator.cmod.core.Arm32RuntimeInstaller;
 import com.winlator.cmod.core.EnvVars;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.GPUInformation;
@@ -333,10 +334,116 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
 
     public void setFEXCorePreset (String fexcorePreset) { this.fexcorePreset = fexcorePreset; }
 
+    private int execArm32GuestProgram(Context context, ImageFs imageFs, File rootDir) {
+        if (!Arm32RuntimeInstaller.isInstalled(context)) {
+            Log.e("GuestProgramLauncherComponent", "ARMHF runtime is not installed");
+            return -1;
+        }
+
+        File proot = new File(context.getApplicationInfo().nativeLibraryDir, "libproot.so");
+        if (!proot.isFile()) {
+            Log.e("GuestProgramLauncherComponent", "Android ARMv7 PRoot executable is missing: " + proot);
+            return -1;
+        }
+        FileUtils.chmod(proot, 0755);
+
+        File prootTmpDir = new File(imageFs.getTmpDir(), "proot");
+        if (!prootTmpDir.isDirectory() && !prootTmpDir.mkdirs()) {
+            Log.e("GuestProgramLauncherComponent", "Unable to create PRoot temp directory");
+            return -1;
+        }
+
+        EnvVars hostEnv = new EnvVars();
+        hostEnv.put("HOME", "/home/xuser");
+        hostEnv.put("USER", ImageFs.USER);
+        hostEnv.put("DISPLAY", ":0");
+        hostEnv.put("PULSE_SERVER", "unix:/usr/tmp/.sound/PS0");
+        hostEnv.put("PROOT_LOADER_32", "/usr/lib/proot-loader.so");
+        hostEnv.put("PROOT_TMP_DIR", prootTmpDir.getAbsolutePath());
+        hostEnv.put("PROOT_NO_SECCOMP", "1");
+        hostEnv.put("LANG", "en_US.UTF-8");
+        hostEnv.put("WINEPREFIX", ImageFs.WINEPREFIX);
+        hostEnv.put("WINEDEBUG", "-all");
+
+        // Pass application/game compatibility variables to the guest, but never
+        // pass Bionic LD_PRELOAD or LD_LIBRARY_PATH into the ARMHF glibc process.
+        if (envVars != null) {
+            for (String key : envVars) {
+                if (key.startsWith("WINE_")
+                        || key.startsWith("DXVK_")
+                        || key.startsWith("VKD3D_")
+                        || key.startsWith("BOX86_")
+                        || key.startsWith("MESA_")
+                        || key.startsWith("GALLIUM_")
+                        || key.startsWith("SDL_")) {
+                    hostEnv.put(key, envVars.get(key));
+                }
+            }
+        }
+
+        ArrayList<String> command = new ArrayList<>();
+        command.add(proot.getAbsolutePath());
+        command.add("-r");
+        command.add(rootDir.getAbsolutePath());
+        command.add("-b");
+        command.add("/dev");
+        command.add("-b");
+        command.add("/proc");
+        command.add("-b");
+        command.add("/sys");
+
+        if (bindingPaths != null) {
+            for (String binding : bindingPaths) {
+                if (binding != null && !binding.trim().isEmpty()) {
+                    command.add("-b");
+                    command.add(binding);
+                }
+            }
+        }
+
+        command.add("-w");
+        command.add("/home/xuser");
+        command.add("--kill-on-exit");
+        command.add("/usr/local/bin/winlator-wine");
+
+        // XServerDisplayActivity supplies the normal Wine command as
+        // "wine explorer ...". The runtime wrapper supplies Wine itself.
+        String overriddenCommand = hostEnv.get("GUEST_PROGRAM_LAUNCHER_COMMAND");
+        String commandLine = overriddenCommand.isEmpty() ? guestExecutable : overriddenCommand.replace(';', ' ');
+        String[] guestArgs = ProcessHelper.splitCommand(commandLine == null ? "" : commandLine.trim());
+        int firstArgument = 0;
+        if (guestArgs.length > 0) {
+            String first = guestArgs[0];
+            if ("wine".equals(first) || "wine64".equals(first)
+                    || first.endsWith("/bin/wine") || first.endsWith("/bin/wine64")) {
+                firstArgument = 1;
+            }
+        }
+        for (int i = firstArgument; i < guestArgs.length; i++) {
+            if (!guestArgs[i].isEmpty()) command.add(guestArgs[i]);
+        }
+
+        Log.i("GuestProgramLauncherComponent", "Starting ARMHF Wine through PRoot: " +
+                command.subList(0, Math.min(command.size(), 12)));
+        return ProcessHelper.exec(command.toArray(new String[0]), hostEnv.toStringArray(),
+                rootDir, status -> {
+                    synchronized (lock) {
+                        pid = -1;
+                    }
+                    if (terminationCallback != null) terminationCallback.call(status);
+                });
+    }
+
     private int execGuestProgram() {
         Context context = environment.getContext();
         ImageFs imageFs = environment.getImageFs();
         File rootDir = imageFs.getRootDir();
+
+        // ARM32 Android cannot load the ARM64EC/Box64 stack. Start the
+        // ARMHF userspace with the Android-host PRoot executable instead.
+        if (!Process.is64Bit() && wineInfo != null && "x86".equals(wineInfo.getArch())) {
+            return execArm32GuestProgram(context, imageFs, rootDir);
+        }
 
         SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
         boolean enableBox64Logs = preferences.getBoolean("enable_box64_logs", false);
