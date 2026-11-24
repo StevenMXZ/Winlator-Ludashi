@@ -125,7 +125,12 @@ static void preload_vendor_icd_deps() {
 }
 
 static void init_original_vulkan() {
+#if defined(__aarch64__)
     vulkan_handle = dlopen("/system/lib64/libvulkan.so", RTLD_LOCAL | RTLD_NOW);
+#else
+    // 32-bit Android processes load the 32-bit system Vulkan loader.
+    vulkan_handle = dlopen("/system/lib/libvulkan.so", RTLD_LOCAL | RTLD_NOW);
+#endif
 }
 
 static void init_vulkan(JNIEnv  *env, jobject context, const char *driver_name) {
@@ -186,10 +191,18 @@ static VkResult create_instance_impl(jstring driverName, JNIEnv *env, jobject co
         if (labs_last_failure[0]) return VK_ERROR_INITIALIZATION_FAILED;
     }
 
+#if defined(__aarch64__)
     if (driver_name && strcmp(driver_name, "System"))
         init_vulkan(env, context, driver_name);
     else
         init_original_vulkan();
+#else
+    // Custom AdrenoTools packages are built for AArch64 only. ARMv7 safely
+    // falls back to the 32-bit Vulkan loader provided by Android.
+    (void)env;
+    (void)context;
+    init_original_vulkan();
+#endif
 
     if (!vulkan_handle) {
         if (caps_probe) {
