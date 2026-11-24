@@ -33,8 +33,11 @@ jobs:
         with:
           targets: armv7-linux-androideabi
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Verify Android SDK on hosted runner
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          test -x "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" || find "${ANDROID_HOME}/cmdline-tools" -maxdepth 3 -name sdkmanager -type f
+          command -v sdkmanager || true
 
       - name: Install Android platform, build tools, NDK and CMake
         run: |
