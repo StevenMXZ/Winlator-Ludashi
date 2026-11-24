@@ -29,6 +29,7 @@ import com.winlator.cmod.contents.ContentsManager;
 import com.winlator.cmod.contents.LocalDriverArchive;
 import com.winlator.cmod.contents.RemoteDriverCatalog;
 import com.winlator.cmod.core.DefaultVersion;
+import com.winlator.cmod.core.Arm32RuntimeInstaller;
 import com.winlator.cmod.core.OpenGLDriverDefaults;
 import com.winlator.cmod.core.ProtonPackageManager;
 import com.winlator.cmod.core.WineInfo;
@@ -71,11 +72,12 @@ public class OnboardingActivity extends AppCompatActivity {
     public static final String EXTRA_AUTO_INSTALL_VERSION_CODE = "auto_install_version_code";
 
     private static final String PREF_INITIAL_WINE = "winz_initial_wine_version";
-    private static final String BUNDLED_RUNTIME_ID = "bundled:" + ProtonPackageManager.DEFAULT_IDENTIFIER;
-    private static final String BUNDLED_RUNTIME_NAME =
-            ProtonPackageManager.getPackage(ProtonPackageManager.DEFAULT_IDENTIFIER) != null
+    private static final String BUNDLED_RUNTIME_ID = "bundled:" + WineInfo.MAIN_WINE_VERSION.identifier();
+    private static final String BUNDLED_RUNTIME_NAME = android.os.Process.is64Bit()
+            ? (ProtonPackageManager.getPackage(ProtonPackageManager.DEFAULT_IDENTIFIER) != null
                     ? ProtonPackageManager.getPackage(ProtonPackageManager.DEFAULT_IDENTIFIER).title
-                    : ProtonPackageManager.DEFAULT_IDENTIFIER;
+                    : ProtonPackageManager.DEFAULT_IDENTIFIER)
+            : "Wine 11.22 x86 (ARM32)";
     private static final int REQUEST_STORAGE = 820;
     private static final int REQUEST_NOTIFICATIONS = 821;
     private static final int REQUEST_LOCAL_COMPONENT = 822;
@@ -241,8 +243,17 @@ public class OnboardingActivity extends AppCompatActivity {
         io.execute(() -> {
             boolean success;
             try {
-                ImageFsInstaller.installWineFromAssets(null, OnboardingActivity.this);
-                success = WineRuntimeGuard.isBundledMainInstalled(OnboardingActivity.this);
+                if (android.os.Process.is64Bit()) {
+                    ImageFsInstaller.installWineFromAssets(null, OnboardingActivity.this);
+                } else {
+                    success = Arm32RuntimeInstaller.install(OnboardingActivity.this, ImageFs.find(OnboardingActivity.this),
+                            value -> runOnUiThread(() -> composeController.updateInstallProgress(BUNDLED_RUNTIME_NAME, value)));
+                }
+                if (android.os.Process.is64Bit()) {
+                    success = WineRuntimeGuard.isBundledMainInstalled(OnboardingActivity.this);
+                } else {
+                    success = success && WineRuntimeGuard.isBundledMainInstalled(OnboardingActivity.this);
+                }
             } catch (Exception error) {
                 success = false;
             }
@@ -260,10 +271,14 @@ public class OnboardingActivity extends AppCompatActivity {
     private void requestRemoveBundledRuntime() {
         String using = WineRuntimeGuard.getContainerUsing(this, WineInfo.MAIN_WINE_VERSION.identifier());
         if (using != null) {
-            com.winlator.cmod.ui.ThemedAlertHost.info(this, "Proton is in use", BUNDLED_RUNTIME_NAME + " cannot be deleted because it is used by " + using + ".");
+            com.winlator.cmod.ui.ThemedAlertHost.info(this, "Wine is in use", BUNDLED_RUNTIME_NAME + " cannot be deleted because it is used by " + using + ".");
             return;
         }
-        com.winlator.cmod.ui.ThemedAlertHost.confirm(this, "Delete " + BUNDLED_RUNTIME_NAME + "?", "The bundled Proton files will be removed. You can install them again later.", "Delete", () -> removeBundledRuntime(), true);
+        if (!android.os.Process.is64Bit()) {
+            com.winlator.cmod.ui.ThemedAlertHost.info(this, "Required runtime", "The ARM32 Wine runtime is required for this build and cannot be removed.");
+            return;
+        }
+        com.winlator.cmod.ui.ThemedAlertHost.confirm(this, "Delete " + BUNDLED_RUNTIME_NAME + "?", "The bundled runtime files will be removed. You can install them again later.", "Delete", () -> removeBundledRuntime(), true);
     }
 
     private void removeBundledRuntime() {
@@ -310,6 +325,7 @@ public class OnboardingActivity extends AppCompatActivity {
             for (ContentProfile profile : contentsManager.getProfiles(type)) {
                 String typeName = displayType(type);
                 if (typeName.isEmpty() || profile.verName == null || profile.verName.isEmpty()) continue;
+                if (!android.os.Process.is64Bit() && isUnsupportedArm32Component(typeName)) continue;
                 ComponentItem item = new ComponentItem();
                 item.profile = profile;
                 item.type = typeName;
@@ -330,6 +346,7 @@ public class OnboardingActivity extends AppCompatActivity {
             for (ContentProfile profile : contentsManager.getInstalledProfiles(type)) {
                 String typeName = displayType(type);
                 if (typeName.isEmpty()) continue;
+                if (!android.os.Process.is64Bit() && isUnsupportedArm32Component(typeName)) continue;
                 String key = typeName + ":" + profile.verCode + ":" + profile.verName;
                 if (seen.add(key)) {
                     ComponentItem item = new ComponentItem();
@@ -363,6 +380,13 @@ public class OnboardingActivity extends AppCompatActivity {
             catalog.clear();
             catalog.addAll(rebuilt);
         }
+    }
+
+    private boolean isUnsupportedArm32Component(String typeName) {
+        return typeName.equals("Wine") || typeName.equals("Proton")
+                || typeName.equals("FEXCore") || typeName.equals("Box64")
+                || typeName.equals("WOWBox64") || typeName.equals("Freedreno")
+                || typeName.equals("AdrenoTools");
     }
 
     private String installedEntryName(ContentProfile.ContentType type, ContentProfile candidate) {
