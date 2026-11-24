@@ -49,12 +49,13 @@ import java.util.TimerTask;
 
 public class InputControlsView extends View {
     public static final float DEFAULT_OVERLAY_OPACITY = 0.85f;
+    public static final String PREF_TOUCH_HIGHLIGHTS = "touchscreen_highlights_enabled";
+    private static final String PREF_HAPTICS = "touchscreen_haptics_enabled";
     private static final byte MOUSE_WHEEL_DELTA = 120;
     private static final boolean AUTO_HIDE_CONTROLS = false;
     private boolean editMode = false;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Path path = new Path();
-    private final Rect drawClip = new Rect();
     private final ColorFilter colorFilter = new PorterDuffColorFilter(0xff2184ff, PorterDuff.Mode.SRC_IN);
     private final Point cursor = new Point();
     private boolean readyToDraw = false;
@@ -77,6 +78,16 @@ public class InputControlsView extends View {
     private Runnable hideControlsRunnable; // Runnable to hide the controls
 
     private SharedPreferences preferences;
+    private boolean hapticsEnabled = true;
+    private boolean touchHighlightsEnabled = true;
+    private Vibrator vibrator;
+    private Bitmap staticLayer;
+    private Canvas staticLayerCanvas;
+    private boolean staticLayerDirty = true;
+    private boolean staticLayerUnavailable = false;
+    private final SharedPreferences.OnSharedPreferenceChangeListener preferenceListener = (prefs, key) -> {
+        if (key == null || PREF_TOUCH_HIGHLIGHTS.equals(key) || PREF_HAPTICS.equals(key)) loadCachedPreferences();
+    };
 
     private ControlElement stickElement;
 
@@ -104,6 +115,7 @@ public class InputControlsView extends View {
         setPointerIcon(PointerIcon.load(getResources(), R.drawable.hidden_pointer_arrow));
         setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         preferences = PreferenceManager.getDefaultSharedPreferences(this.getContext());
+        loadCachedPreferences();
     }
 
     @SuppressLint("ResourceType")
@@ -119,6 +131,7 @@ public class InputControlsView extends View {
         setPointerIcon(PointerIcon.load(getResources(), R.drawable.hidden_pointer_arrow));
         setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         preferences = PreferenceManager.getDefaultSharedPreferences(this.getContext());
+        loadCachedPreferences();
     }
 
     public InputControlsView(Context context, boolean focusOnStick) {
@@ -138,11 +151,111 @@ public class InputControlsView extends View {
         }
 
         preferences = PreferenceManager.getDefaultSharedPreferences(this.getContext());
+        loadCachedPreferences();
     }
 
 
+    private void loadCachedPreferences() {
+        boolean haptics = preferences.getBoolean(PREF_HAPTICS, true);
+        boolean highlights = preferences.getBoolean(PREF_TOUCH_HIGHLIGHTS, true);
+        boolean highlightsChanged = highlights != touchHighlightsEnabled;
+        hapticsEnabled = haptics;
+        touchHighlightsEnabled = highlights;
+        if (highlightsChanged) invalidateStaticLayer();
+    }
+
+    public boolean isTouchHighlightsEnabled() {
+        return touchHighlightsEnabled;
+    }
+
+    public void setTouchHighlightsEnabled(boolean enabled) {
+        if (touchHighlightsEnabled == enabled) return;
+        touchHighlightsEnabled = enabled;
+        invalidateStaticLayer();
+    }
+
+    public void invalidateStaticLayer() {
+        staticLayerDirty = true;
+        invalidate();
+    }
+
+    private boolean ensureStaticLayer(int width, int height) {
+        if (staticLayerUnavailable || width <= 0 || height <= 0) return false;
+        if (staticLayer != null && staticLayer.getWidth() == width && staticLayer.getHeight() == height) return true;
+        releaseStaticLayer();
+        try {
+            staticLayer = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            staticLayerCanvas = new Canvas(staticLayer);
+            staticLayerDirty = true;
+            return true;
+        }
+        catch (OutOfMemoryError e) {
+            staticLayer = null;
+            staticLayerCanvas = null;
+            staticLayerUnavailable = true;
+            return false;
+        }
+    }
+
+    private void releaseStaticLayer() {
+        if (staticLayer != null) staticLayer.recycle();
+        staticLayer = null;
+        staticLayerCanvas = null;
+        staticLayerDirty = true;
+    }
+
+    private void drawOverlayElements(Canvas canvas, int width, int height) {
+        java.util.List<ControlElement> elements = profile.getElements();
+        int count = elements.size();
+
+        if (editMode || !ensureStaticLayer(getWidth(), getHeight())) {
+            for (int i = 0; i < count; i++) elements.get(i).draw(canvas);
+            return;
+        }
+
+        if (staticLayerDirty) {
+            staticLayer.eraseColor(Color.TRANSPARENT);
+            for (int i = 0; i < count; i++) {
+                ControlElement element = elements.get(i);
+                if (!element.isLiveDrawn()) element.draw(staticLayerCanvas);
+            }
+            staticLayer.prepareToDraw();
+            staticLayerDirty = false;
+        }
+
+        canvas.drawBitmap(staticLayer, 0, 0, null);
+        for (int i = 0; i < count; i++) {
+            ControlElement element = elements.get(i);
+            if (element.isLiveDrawn()) element.draw(canvas);
+        }
+    }
+
+    private void vibrateTap() {
+        if (vibrator == null) vibrator = (Vibrator) getContext().getSystemService(Context.VIBRATOR_SERVICE);
+        if (vibrator == null || !vibrator.hasVibrator()) return;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
+        }
+        else vibrator.vibrate(50);
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        preferences.registerOnSharedPreferenceChangeListener(preferenceListener);
+        loadCachedPreferences();
+        staticLayerDirty = true;
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        releaseStaticLayer();
+    }
+
     public void setEditMode(boolean editMode) {
         this.editMode = editMode;
+        staticLayerDirty = true;
     }
 
     public boolean isEditMode() {
@@ -163,6 +276,7 @@ public class InputControlsView extends View {
 
     public void setOverlayOpacity(float overlayOpacity) {
         this.overlayOpacity = overlayOpacity;
+        staticLayerDirty = true;
     }
 
     public float getOverlayOpacity() {
@@ -216,30 +330,7 @@ public class InputControlsView extends View {
 
         if (profile != null && showTouchscreenControls && !isFocusedOnStick()) {
             if (!profile.isElementsLoaded()) profile.loadElements(this);
-            canvas.getClipBounds(drawClip);
-            for (ControlElement element : profile.getElements()) {
-                Rect bounds = element.getBoundingBox();
-                // A moving stick invalidates a small part of the overlay. Avoid
-                // rebuilding the paint and geometry of every other control.
-                if (element.getType() == ControlElement.Type.STICK) {
-                    int thumbOverhang = bounds.width() / 4;
-                    if (drawClip.right <= bounds.left - thumbOverhang ||
-                        drawClip.left >= bounds.right + thumbOverhang ||
-                        drawClip.bottom <= bounds.top - thumbOverhang ||
-                        drawClip.top >= bounds.bottom + thumbOverhang) continue;
-                }
-                else if (element.getType() == ControlElement.Type.DYNAMIC_STICK) {
-                    if (!editMode && !element.isDynamicStickActive()) continue;
-                    int overhang = element.isDynamicStickActive()
-                            ? element.getDynamicStickRadiusPixels() * 2 : 0;
-                    if (drawClip.right <= bounds.left - overhang ||
-                        drawClip.left >= bounds.right + overhang ||
-                        drawClip.bottom <= bounds.top - overhang ||
-                        drawClip.top >= bounds.bottom + overhang) continue;
-                }
-                else if (!Rect.intersects(drawClip, bounds)) continue;
-                element.draw(canvas);
-            }
+            drawOverlayElements(canvas, width, height);
         }
 
         super.onDraw(canvas);
@@ -378,6 +469,7 @@ public class InputControlsView extends View {
             deselectAllElements();
         }
         else this.profile = null;
+        staticLayerDirty = true;
     }
 
     public boolean isShowTouchscreenControls() {
@@ -386,6 +478,7 @@ public class InputControlsView extends View {
 
     public void setShowTouchscreenControls(boolean showTouchscreenControls) {
         this.showTouchscreenControls = showTouchscreenControls;
+        staticLayerDirty = true;
     }
 
     public int getPrimaryColor() {
@@ -446,6 +539,8 @@ public class InputControlsView extends View {
 
     @Override
     protected void onDetachedFromWindow() {
+        preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener);
+        releaseStaticLayer();
         if (mouseMoveTimer != null) {
             mouseMoveTimer.cancel();
             mouseMoveTimer = null;
@@ -550,19 +645,7 @@ public class InputControlsView extends View {
 
 
     @Override
-    public boolean dispatchGenericMotionEvent(MotionEvent event) {
-        Log.d("InputControlsView", "dispatchGenericMotionEvent called. Source: " + event.getSource());
-        return super.dispatchGenericMotionEvent(event);
-    }
-
-
-    @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
-
-        Log.d("InputControlsView", "Motion event received. Source: " + event.getSource());
-        Log.d("InputControlsView", "Device ID: " + event.getDeviceId());
-        Log.d("InputControlsView", "Profile is " + (profile != null ? "set" : "null"));
-
 
         if (!editMode && profile != null) {
             // Retrieve the associated controller for this event
@@ -584,10 +667,6 @@ public class InputControlsView extends View {
                     handleInputEvent(controller, controllerBinding.getBinding(), controller.state.isPressed(ExternalController.IDX_BUTTON_R2));
                 }
 
-                Log.d("InputEvent", "Event source: " + event.getSource());
-                Log.d("InputEvent", "Device ID: " + event.getDeviceId());
-                Log.d("InputEvent", "Action: " + event.getAction());
-
                 // Process joystick inputs for mouse movement and other bindings
                 processJoystickInput(controller);
 
@@ -604,10 +683,6 @@ public class InputControlsView extends View {
     @Override
     public boolean onTouchEvent(MotionEvent event) {
 
-        boolean hapticsEnabled = preferences.getBoolean("touchscreen_haptics_enabled", true);
-
-        // Do not let the auto-hide runnable hide controls while a finger is still down.
-        // This fixes controls disappearing under load or while holding a stick/button.
         updateTouchscreenTimeout(event);
 
         if (editMode && readyToDraw) {
@@ -667,20 +742,7 @@ public class InputControlsView extends View {
                         if (element.getType() != ControlElement.Type.DYNAMIC_STICK &&
                                 element.handleTouchDown(pointerId, x, y)) {
                             handled = true;
-
-                            // Trigger haptic feedback for input controls
-                            if (hapticsEnabled) {
-                                Vibrator vibrator = (Vibrator) getContext().getSystemService(Context.VIBRATOR_SERVICE);
-                                if (vibrator != null && vibrator.hasVibrator()) {
-                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                        vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE));
-                                    } else {
-                                        vibrator.vibrate(50); // Legacy method for older Android versions
-                                    }
-
-                                }
-
-                            }
+                            if (hapticsEnabled) vibrateTap();
                         }
                         if (element.getBindingAt(0) == Binding.MOUSE_LEFT_BUTTON) {
                             touchpadView.setPointerButtonLeftEnabled(false);
@@ -977,6 +1039,7 @@ public class InputControlsView extends View {
 
     public void invalidateIconCache() {
         icons.clear();
+        staticLayerDirty = true;
     }
 
     public Bitmap getIcon(byte id) {
