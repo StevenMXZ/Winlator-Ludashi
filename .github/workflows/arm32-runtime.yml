@@ -56,7 +56,7 @@ jobs:
           mkdir -p runtime-rootfs/usr/bin runtime-rootfs/usr/share/doc/box86
           PROOT_SRC="$PWD/app/src/main/cpp/proot"
           mkdir -p runtime-rootfs/usr/lib runtime-rootfs/usr/share/doc/proot
-          arm-linux-gnueabihf-gcc -marm -march=armv7-a -mfloat-abi=hard \
+          arm-linux-gnueabihf-gcc -marm -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard \
             -fPIC -shared -nostdlib -Wl,-soname,libproot-loader.so \
             -I"$PROOT_SRC/src" -I"$PROOT_SRC/talloc" \
             "$PROOT_SRC/src/loader/loader.c" \
