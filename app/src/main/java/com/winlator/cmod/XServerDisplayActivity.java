@@ -2713,6 +2713,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         Switch swShowTouchscreenControls = findViewById(R.id.SWShowTouchscreenControls);
         Switch swEnableTimeout = findViewById(R.id.SWEnableTouchscreenTimeout);
         Switch swEnableHaptics = findViewById(R.id.SWEnableTouchscreenHaptics);
+        Switch swTouchHighlights = findViewById(R.id.SWEnableTouchHighlights);
         View btInputControlsSettings = findViewById(R.id.BTInputControlsSettings);
         SeekBar sbControlsOpacity = findViewById(R.id.SBControlsOpacity);
 
@@ -2746,6 +2747,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
             swEnableTimeout.setChecked(preferences.getBoolean("touchscreen_timeout_enabled", false));
         if (swEnableHaptics != null)
             swEnableHaptics.setChecked(preferences.getBoolean("touchscreen_haptics_enabled", false));
+        if (swTouchHighlights != null)
+            swTouchHighlights.setChecked(preferences.getBoolean(InputControlsView.PREF_TOUCH_HIGHLIGHTS, true));
 
         if (sbControlsOpacity != null) {
             sbControlsOpacity.setValue(preferences.getFloat("overlay_opacity", InputControlsView.DEFAULT_OVERLAY_OPACITY) * 100f);
@@ -2766,9 +2769,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
             boolean isTimeoutEnabled = swEnableTimeout != null && swEnableTimeout.isChecked();
             boolean isHapticsEnabled = swEnableHaptics != null && swEnableHaptics.isChecked();
+            boolean isHighlightsEnabled = swTouchHighlights != null
+                    ? swTouchHighlights.isChecked()
+                    : preferences.getBoolean(InputControlsView.PREF_TOUCH_HIGHLIGHTS, true);
             SharedPreferences.Editor editor = preferences.edit();
             editor.putBoolean("touchscreen_timeout_enabled", isTimeoutEnabled);
             editor.putBoolean("touchscreen_haptics_enabled", isHapticsEnabled);
+            editor.putBoolean(InputControlsView.PREF_TOUCH_HIGHLIGHTS, isHighlightsEnabled);
             editor.putInt("selected_profile_index", spInputControlsProfile.getSelectedItemPosition() - 1);
             editor.apply();
 
@@ -2804,6 +2811,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
             swEnableTimeout.setOnCheckedChangeListener((buttonView, isChecked) -> applySidebarInputControls.run());
         if (swEnableHaptics != null)
             swEnableHaptics.setOnCheckedChangeListener((buttonView, isChecked) -> applySidebarInputControls.run());
+        if (swTouchHighlights != null)
+            swTouchHighlights.setOnCheckedChangeListener((buttonView, isChecked) -> applySidebarInputControls.run());
 
         if (btInputControlsSettings != null) {
             btInputControlsSettings.setOnClickListener(v -> {
@@ -2865,6 +2874,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
         final CheckBox cbEnableHaptics = dialog.findViewById(R.id.CBEnableHaptics);
         cbEnableHaptics.setChecked(preferences.getBoolean("touchscreen_haptics_enabled", false));
 
+        final CheckBox cbTouchHighlights = dialog.findViewById(R.id.CBEnableTouchHighlights);
+        cbTouchHighlights.setChecked(preferences.getBoolean(InputControlsView.PREF_TOUCH_HIGHLIGHTS, true));
+
         final Runnable updateProfile = () -> {
             int position = sProfile.getSelectedItemPosition();
             if (position > 0) {
@@ -2895,6 +2907,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             SharedPreferences.Editor editor = preferences.edit();
             editor.putBoolean("touchscreen_timeout_enabled", isTimeoutEnabled);
             editor.putBoolean("touchscreen_haptics_enabled", isHapticsEnabled);
+            editor.putBoolean(InputControlsView.PREF_TOUCH_HIGHLIGHTS, cbTouchHighlights.isChecked());
             editor.apply();
 
             if (isTimeoutEnabled) {
