@@ -9,6 +9,7 @@ This branch is an **experimental ARM32 bring-up**, not a finished or installable
   - `aarch64-linux-android` for `arm64-v8a`
   - `armv7-linux-androideabi` for `armeabi-v7a`
 - A JNI-only native compile mode is available with `-PwinlatorNativeCompileOnly=true`. It deliberately skips downloading/package-staging the ARM64 runtime payloads.
+- The native build bypasses the AArch64-only AdrenoTools hook on ARMv7 and loads Android's 32-bit system Vulkan library instead. Custom AdrenoTools driver packages, GPU-memory hooks and turbo controls are not enabled in ARM32 mode.
 
 ## Why this is not yet a usable ARM32 APK
 
@@ -17,7 +18,8 @@ The current application runtime is still built around 64-bit components:
 1. The normal build downloads a Proton **ARM64EC** package. ARM64EC/FEX runtime payloads cannot be treated as 32-bit ARMv7 binaries.
 2. The component-tools manifest and published helper libraries currently target `arm64-v8a`; there is no matching `armeabi-v7a` manifest in this repository.
 3. The project does not include an ARMHF Linux root filesystem plus a matching 32-bit Wine/Box86 runtime.
-4. JNI build success alone would only show that selected native source files compile. It does not prove Windows applications can start inside a container.
+4. The upstream AdrenoTools submodule explicitly rejects `armeabi-v7a`; its driver hook contains AArch64-specific code. The prototype therefore bypasses it on ARMv7 and uses the system Vulkan loader only.
+5. JNI build success alone would only show that selected native source files compile. It does not prove Windows applications can start inside a container.
 
 For these reasons, a normal ARM32 APK build is intentionally stopped with a clear Gradle error instead of packaging a misleading APK with missing or wrong-architecture runtime files.
 
