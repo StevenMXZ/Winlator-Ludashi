@@ -123,7 +123,7 @@ public class WineInfo implements Parcelable {
 
         Log.d("WineInfo", "Creating WineInfo from identifier " + identifier);
 
-        if (identifier.equals(MAIN_WINE_VERSION.identifier())) return new WineInfo(MAIN_WINE_VERSION.type, MAIN_WINE_VERSION.version, MAIN_WINE_VERSION.subversion, MAIN_WINE_VERSION.arch, imageFs.getRootDir().getPath() + "/opt/" + MAIN_WINE_VERSION.identifier());
+        if (identifier.equals(MAIN_WINE_VERSION.identifier())) return new WineInfo(MAIN_WINE_VERSION.type, MAIN_WINE_VERSION.version, MAIN_WINE_VERSION.subversion, MAIN_WINE_VERSION.arch, imageFs.getWinePath());
 
         ContentProfile wineProfile = contentsManager.getProfileByEntryName(identifier);
 
@@ -150,7 +150,7 @@ public class WineInfo implements Parcelable {
 
             return new WineInfo(matcher.group(1), matcher.group(2), matcher.group(3), matcher.group(4), path);
         }
-        else return new WineInfo(MAIN_WINE_VERSION.type, MAIN_WINE_VERSION.version, MAIN_WINE_VERSION.subversion, MAIN_WINE_VERSION.arch, imageFs.getRootDir().getPath() + "/opt/" + MAIN_WINE_VERSION.identifier());
+        else return new WineInfo(MAIN_WINE_VERSION.type, MAIN_WINE_VERSION.version, MAIN_WINE_VERSION.subversion, MAIN_WINE_VERSION.arch, imageFs.getWinePath());
     }
 
     public static boolean isMainWineVersion(String wineVersion) {
