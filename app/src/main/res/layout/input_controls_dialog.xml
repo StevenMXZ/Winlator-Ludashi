@@ -54,5 +54,12 @@
             android:text="@string/enable_touchscreen_haptics"
             android:checked="false" />
 
+        <CheckBox
+            android:id="@+id/CBEnableTouchHighlights"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/enable_touch_highlights"
+            android:checked="true" />
+
     </LinearLayout>
 </HorizontalScrollView>
