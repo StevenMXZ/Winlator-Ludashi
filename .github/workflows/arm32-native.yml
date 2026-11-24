@@ -36,8 +36,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NDK and CMake
-        run: sdkmanager "ndk;29.0.14206865" "cmake;3.22.1"
+      - name: Install Android platform, build tools, NDK and CMake
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" \
+            "ndk;29.0.14206865" "cmake;3.22.1"
 
       - name: Compile ARM32 native libraries only
         run: |
