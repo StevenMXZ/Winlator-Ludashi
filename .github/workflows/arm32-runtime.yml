@@ -67,12 +67,12 @@ jobs:
           sudo debootstrap --foreign --variant=minbase --arch=armhf \
             bookworm "$ROOTFS" https://deb.debian.org/debian
 
+          sudo update-binfmts --enable qemu-arm
           sudo install -m 0755 /usr/bin/qemu-arm-static "$ROOTFS/usr/bin/qemu-arm-static"
-          sudo chroot "$ROOTFS" /usr/bin/qemu-arm-static \
-            /debootstrap/debootstrap --second-stage
+          sudo chroot "$ROOTFS" /debootstrap/debootstrap --second-stage
 
-          sudo chroot "$ROOTFS" /usr/bin/qemu-arm-static /usr/bin/apt-get update
-          sudo chroot "$ROOTFS" /usr/bin/qemu-arm-static /usr/bin/apt-get install -y --no-install-recommends \
+          sudo chroot "$ROOTFS" /usr/bin/apt-get update
+          sudo chroot "$ROOTFS" /usr/bin/apt-get install -y --no-install-recommends \
             ca-certificates locales \
             libc6 libgcc-s1 libstdc++6 libatomic1 libunwind8 \
             libx11-6 libxext6 libxrender1 libxfixes3 libxrandr2 \
@@ -84,7 +84,7 @@ jobs:
             libvulkan1 libgl1 libegl1 libwayland-client0 \
             x11-utils xauth xterm
 
-          sudo chroot "$ROOTFS" /usr/bin/qemu-arm-static /bin/bash -lc \
+          sudo chroot "$ROOTFS" /bin/bash -lc \
             "useradd --create-home --uid 1000 --shell /bin/bash xuser || true; mkdir -p /home/xuser/.wine /tmp; chown -R xuser:xuser /home/xuser; locale-gen en_US.UTF-8 || true"
 
           sudo rm -f "$ROOTFS/usr/bin/qemu-arm-static"
