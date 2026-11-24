@@ -65,7 +65,7 @@ jobs:
           install -m 0644 "$PROOT_SRC/src/COPYING" runtime-rootfs/usr/share/doc/proot/copyright
           printf '%s\\n' "PRoot loader built for ARMHF with the NDK-hosted PRoot source tree." > runtime-rootfs/usr/share/doc/proot/BUILD-INFO
           install -m 0755 box86-build/box86 runtime-rootfs/usr/bin/box86
-          install -m 0644 box86-src/COPYING runtime-rootfs/usr/share/doc/box86/copyright
+          install -m 0644 box86-src/LICENSE runtime-rootfs/usr/share/doc/box86/copyright
           printf '%s\n' "${BOX86_COMMIT}" > runtime-rootfs/usr/share/doc/box86/source-commit.txt
 
       - name: Create Debian Bookworm ARMHF userspace
