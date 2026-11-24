@@ -33,15 +33,17 @@ jobs:
         with:
           targets: armv7-linux-androideabi
 
-      - name: Verify Android SDK on hosted runner
-        run: |
-          echo "ANDROID_HOME=${ANDROID_HOME}"
-          test -x "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" || find "${ANDROID_HOME}/cmdline-tools" -maxdepth 3 -name sdkmanager -type f
-          command -v sdkmanager || true
-
       - name: Install Android platform, build tools, NDK and CMake
+        shell: bash
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" \
+          SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          if [ -z "${SDKMANAGER}" ]; then
+            echo "sdkmanager was not found under ANDROID_HOME=${ANDROID_HOME}" >&2
+            exit 1
+          fi
+          chmod +x "${SDKMANAGER}"
+          "${SDKMANAGER}" --install \
+            "platforms;android-35" "build-tools;35.0.0" \
             "ndk;29.0.14206865" "cmake;3.22.1"
 
       - name: Compile ARM32 native libraries only
