@@ -45,7 +45,8 @@ public final class Arm32RuntimeInstaller {
         return new File(root, "lib/ld-linux-armhf.so.3").isFile()
                 && new File(root, "usr/bin/box86").isFile()
                 && new File(root, "usr/local/bin/winlator-wine").isFile()
-                && new File(root, "opt/wine-11.22-x86/bin/wine").isFile();
+                && new File(root, "opt/wine-11.22-x86/bin/wine").isFile()
+                && new File(root, "opt/wine-11.22-x86/bin/wineboot").isFile();
     }
 
     public static boolean install(Context context, ImageFs imageFs, ProgressListener listener) {
@@ -112,6 +113,7 @@ public final class Arm32RuntimeInstaller {
             makeExecutable(runtimeRoot, "usr/bin/box86");
             makeExecutable(runtimeRoot, "usr/local/bin/winlator-wine");
             makeExecutable(runtimeRoot, "opt/wine-11.22-x86/bin/wine");
+            makeExecutable(runtimeRoot, "opt/wine-11.22-x86/bin/wineboot");
 
             if (!isInstalled(context)) {
                 Log.e(TAG, "Installed runtime is missing one or more required files");
@@ -279,7 +281,8 @@ public final class Arm32RuntimeInstaller {
         return new File(root, "lib/ld-linux-armhf.so.3").isFile()
                 && new File(root, "usr/bin/box86").isFile()
                 && new File(root, "usr/local/bin/winlator-wine").isFile()
-                && new File(root, "opt/wine-11.22-x86/bin/wine").isFile();
+                && new File(root, "opt/wine-11.22-x86/bin/wine").isFile()
+                && new File(root, "opt/wine-11.22-x86/bin/wineboot").isFile();
     }
 
         private static void makeExecutable(File root, String relativePath) {
