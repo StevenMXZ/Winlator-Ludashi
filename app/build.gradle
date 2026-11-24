@@ -193,7 +193,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.winlator.cmod"
+        applicationId winlatorAbi == "armeabi-v7a" ? "com.winlator.cmod.arm32" : "com.winlator.cmod"
         minSdkVersion 28
         // We’re preserving Winlator’s request to keep targetSdkVersion at 28
         targetSdkVersion 28
