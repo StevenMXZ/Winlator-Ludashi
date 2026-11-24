@@ -52,6 +52,7 @@ public class ContentsManager {
         ERROR_MISSINGFILES,
         ERROR_EXIST,
         ERROR_UNTRUSTPROFILE,
+        ERROR_UNSUPPORTED_ARCH,
         ERROR_UNKNOWN
     }
 
@@ -192,6 +193,16 @@ public class ContentsManager {
         ContentProfile profile = readProfile(proFile);
         if (profile == null) {
             callback.onFailed(InstallFailedReason.ERROR_BADPROFILE, null);
+            return;
+        }
+        // This ARM32 build ships its own ARMHF + Box86 + i386 Wine runtime.
+        // WCP Wine/Proton packages are not interchangeable with that runtime,
+        // and Proton ARM64EC cannot execute in a 32-bit Android process.
+        if (!android.os.Process.is64Bit()
+                && (profile.type == ContentProfile.ContentType.CONTENT_TYPE_WINE
+                || profile.type == ContentProfile.ContentType.CONTENT_TYPE_PROTON)) {
+            FileUtils.delete(file);
+            callback.onFailed(InstallFailedReason.ERROR_UNSUPPORTED_ARCH, null);
             return;
         }
         String imagefsPath = context.getFilesDir().getAbsolutePath() + "/imagefs";
