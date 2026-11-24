@@ -78,7 +78,7 @@ private val bundledRuntimeName = if (android.os.Process.is64Bit()) {
 
 private val componentCategories = if (android.os.Process.is64Bit()) listOf(
     "Recommended", "Wine & Proton", "DXVK", "VKD3D", "FEXCore", "Box64", "WOWBox64", "Freedreno", "AdrenoTools"
-) else listOf("Recommended", "Wine & Proton", "DXVK")
+) else listOf("Recommended", "Wine (ARM32)", "DXVK")
 
 private val latestRecommendedTypes = setOf("DXVK", "VKD3D", "FEXCore", "Box64", "WOWBox64")
 
@@ -180,7 +180,7 @@ internal fun OnboardingComponentsScreen(
         all.filter {
             when (category) {
                 "Recommended" -> it.id in recommendedIds
-                "Wine & Proton" -> it.type == "Wine" || it.type == "Proton"
+                "Wine & Proton", "Wine (ARM32)" -> it.type == "Wine" || it.type == "Proton"
                 else -> it.type == category
             }
         // Installed rows first. The catalog order is by type and version code, so an installed
@@ -192,7 +192,7 @@ internal fun OnboardingComponentsScreen(
     val hasInstalledRuntime = bundledInstalled.value || all.any {
         it.installed && (it.type == "Wine" || it.type == "Proton") && !it.runtimeIdentifier.isNullOrBlank()
     }
-    val showBundled = category == "Recommended" || category == "Wine & Proton"
+    val showBundled = category == "Recommended" || category == "Wine & Proton" || category == "Wine (ARM32)"
     val showLocalInstallProgress = installing == "local" || installing == "driver-local"
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -207,6 +207,7 @@ internal fun OnboardingComponentsScreen(
                 onBack = onBack,
                 title = if (managerMode) uiStr(R.string.ui_components) else uiStr(R.string.ui_choose_components),
                 subtitle = if (managerMode) uiStr(R.string.ui_install_and_manage_runtime_versions)
+                else if (!android.os.Process.is64Bit()) "ARM32 uses built-in Wine 11.22 x86. Proton ARM64EC requires 64-bit Android."
                 else uiStr(R.string.ui_install_a_wine_or_proton_layer_before_con),
                 onBrowseLocal = { cb.onBrowseLocal() },
                 onOpenServers = { Unit }
@@ -258,6 +259,7 @@ internal fun OnboardingComponentsScreen(
                     }
                     Text(
                         if (managerMode) uiStr(R.string.ui_install_and_manage_runtime_versions)
+                        else if (!android.os.Process.is64Bit()) "ARM32 uses built-in Wine 11.22 x86. Proton ARM64EC requires 64-bit Android."
                         else uiStr(R.string.ui_install_as_many_versions_as_you_want_at_l),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = LocalTextStyle.current.copy(
