@@ -41,7 +41,7 @@ public final class Arm32RuntimeInstaller {
     private Arm32RuntimeInstaller() {}
 
     public static boolean isInstalled(Context context) {
-        File root = ImageFs.find(context).getRootDir();
+        File root = new File(ImageFs.find(context).getRootDir(), "armhf-rootfs");
         return new File(root, "lib/ld-linux-armhf.so.3").isFile()
                 && new File(root, "usr/bin/box86").isFile()
                 && new File(root, "usr/lib/proot-loader.so").isFile()
@@ -52,6 +52,7 @@ public final class Arm32RuntimeInstaller {
     public static boolean install(Context context, ImageFs imageFs, ProgressListener listener) {
         File cacheDir = new File(context.getFilesDir(), "arm32-runtime-cache");
         File stageDir = new File(context.getFilesDir(), "arm32-runtime-stage");
+        File runtimeRoot = new File(imageFs.getRootDir(), "armhf-rootfs");
         File archive = new File(cacheDir, ARCHIVE_NAME);
         File partial = new File(cacheDir, ARCHIVE_NAME + ".part");
 
@@ -95,15 +96,19 @@ public final class Arm32RuntimeInstaller {
             }
 
             notifyProgress(listener, 90);
-            if (!mergeRuntimeRoot(stageDir, imageFs.getRootDir())) {
+            if (runtimeRoot.exists() && !FileUtils.delete(runtimeRoot)) {
+                Log.e(TAG, "Unable to replace previous ARMHF runtime");
+                return false;
+            }
+            if (!stageDir.renameTo(runtimeRoot)) {
                 Log.e(TAG, "Unable to install ARMHF root filesystem");
                 return false;
             }
 
-            makeExecutable(imageFs.getRootDir(), "usr/bin/box86");
-            makeExecutable(imageFs.getRootDir(), "usr/lib/proot-loader.so");
-            makeExecutable(imageFs.getRootDir(), "usr/local/bin/winlator-wine");
-            makeExecutable(imageFs.getRootDir(), "opt/wine-11.22-x86/bin/wine");
+            makeExecutable(runtimeRoot, "usr/bin/box86");
+            makeExecutable(runtimeRoot, "usr/lib/proot-loader.so");
+            makeExecutable(runtimeRoot, "usr/local/bin/winlator-wine");
+            makeExecutable(runtimeRoot, "opt/wine-11.22-x86/bin/wine");
 
             if (!isInstalled(context)) {
                 Log.e(TAG, "Installed runtime is missing one or more required files");
@@ -190,31 +195,7 @@ public final class Arm32RuntimeInstaller {
                 && new File(root, "opt/wine-11.22-x86/bin/wine").isFile();
     }
 
-    private static boolean mergeRuntimeRoot(File stage, File destination) {
-        if (!destination.isDirectory() && !destination.mkdirs()) return false;
-        File[] children = stage.listFiles();
-        if (children == null) return false;
-
-        for (File child : children) {
-            // Keep the user's existing Wine prefix and home data during runtime updates.
-            if ("home".equals(child.getName())) {
-                File home = new File(destination, "home");
-                if (!home.exists() && !child.renameTo(home)) return false;
-                if (child.exists()) FileUtils.delete(child);
-                continue;
-            }
-
-            File target = new File(destination, child.getName());
-            if (target.exists() && !FileUtils.delete(target)) return false;
-            if (!child.renameTo(target)) {
-                Log.e(TAG, "Same-filesystem runtime move failed for " + child);
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static void makeExecutable(File root, String relativePath) {
+        private static void makeExecutable(File root, String relativePath) {
         File file = new File(root, relativePath);
         if (file.isFile()) FileUtils.chmod(file, 0755);
     }
