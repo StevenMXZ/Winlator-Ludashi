@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.LineHeightStyle
 import com.winlator.cmod.core.ProtonPackageManager
+import com.winlator.cmod.core.WineInfo
 import com.winlator.cmod.ui.theme.controlAccentColor
 import com.winlator.cmod.ui.theme.destructiveColor
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
@@ -67,13 +68,17 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import com.winlator.cmod.ui.theme.WinZShapes
 import com.winlator.cmod.ui.theme.hairlineColor
 
-private val bundledRuntimeId = "bundled:${ProtonPackageManager.DEFAULT_IDENTIFIER}"
-private val bundledRuntimeName = ProtonPackageManager.getPackage(ProtonPackageManager.DEFAULT_IDENTIFIER)?.title
-    ?: ProtonPackageManager.DEFAULT_IDENTIFIER
+private val bundledRuntimeId = "bundled:${WineInfo.MAIN_WINE_VERSION.identifier()}"
+private val bundledRuntimeName = if (android.os.Process.is64Bit()) {
+    ProtonPackageManager.getPackage(ProtonPackageManager.DEFAULT_IDENTIFIER)?.title
+        ?: ProtonPackageManager.DEFAULT_IDENTIFIER
+} else {
+    "Wine 11.22 x86 (ARM32)"
+}
 
-private val componentCategories = listOf(
+private val componentCategories = if (android.os.Process.is64Bit()) listOf(
     "Recommended", "Wine & Proton", "DXVK", "VKD3D", "FEXCore", "Box64", "WOWBox64", "Freedreno", "AdrenoTools"
-)
+) else listOf("Recommended", "Wine & Proton", "DXVK")
 
 private val latestRecommendedTypes = setOf("DXVK", "VKD3D", "FEXCore", "Box64", "WOWBox64")
 
@@ -494,10 +499,10 @@ private fun CoreComponentCard(
                 busy || (!ready.value && !installed) -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
                 installed -> Button(
                     onClick = onRemove,
-                    enabled = !locked && !inUse,
+                    enabled = !locked && !inUse && android.os.Process.is64Bit(),
                     colors = ButtonDefaults.buttonColors(containerColor = destructiveColor(), contentColor = MaterialTheme.colorScheme.onError)
                 ) {
-                    Text(if (inUse) uiStr(R.string.ui_in_use) else uiStr(R.string.ui_delete))
+                    Text(if (!android.os.Process.is64Bit()) "Required" else if (inUse) uiStr(R.string.ui_in_use) else uiStr(R.string.ui_delete))
                 }
                 else -> Button(
                     onClick = onInstall,
