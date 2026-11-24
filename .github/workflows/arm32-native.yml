@@ -29,6 +29,7 @@ jobs:
           java-version: '17'
 
       - name: Restore the existing release signing identity
+        id: restore_signing
         env:
           GH_TOKEN: ${{ github.token }}
           LUDASHI_KEYSTORE_B64: ${{ secrets.LUDASHI_KEYSTORE_B64 }}
@@ -36,10 +37,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${LUDASHI_KEYSTORE_B64:-}" ] || [ -z "${LUDASHI_STORE_PASSWORD:-}" ]; then
-            echo '::error::Configure LUDASHI_KEYSTORE_B64 and LUDASHI_STORE_PASSWORD with the existing Ludashi signing identity.'
-            exit 1
+            echo '::notice::Release signing secrets are not configured; building the installable debug APK only.'
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           bash app/src/main/scripts/prepare-upstream-signing.sh
+          echo 'available=true' >> "$GITHUB_OUTPUT"
 
       - name: Set up Rust and ARMv7 Android target
         uses: dtolnay/rust-toolchain@stable
@@ -79,6 +82,7 @@ jobs:
             --stacktrace
 
       - name: Build signed ARM32 release APK
+        if: steps.restore_signing.outputs.available == 'true'
         run: |
           ./gradlew :app:assembleRelease \
             -PwinlatorAbi=armeabi-v7a \
@@ -86,6 +90,7 @@ jobs:
             --no-daemon --max-workers=2 --stacktrace
 
       - name: Verify ARM32 APK architecture and release identity
+        if: steps.restore_signing.outputs.available == 'true'
         run: |
           set -euo pipefail
           apk=app/build/outputs/apk/release/app-release.apk
@@ -110,6 +115,7 @@ jobs:
           PYVERIFY
 
       - name: Upload signed ARM32 release APK
+        if: steps.restore_signing.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: winlator-arm32-release-apk
