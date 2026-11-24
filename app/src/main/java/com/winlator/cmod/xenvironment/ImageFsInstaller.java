@@ -12,6 +12,7 @@ import com.winlator.cmod.container.Container;
 import com.winlator.cmod.container.ContainerManager;
 import com.winlator.cmod.contents.AdrenotoolsManager;
 import com.winlator.cmod.core.AppUtils;
+import com.winlator.cmod.core.Arm32RuntimeInstaller;
 import com.winlator.cmod.core.DownloadProgressDialog;
 import com.winlator.cmod.core.FileUtils;
 import com.winlator.cmod.core.PreloaderDialog;
