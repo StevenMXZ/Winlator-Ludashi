@@ -13,14 +13,22 @@ set(LUDASHI_STEAM_CLIENT_VERSION_STRING
 
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
-if(NOT CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
-    message(FATAL_ERROR "Rust ludashisteam currently supports arm64-v8a; got ${CMAKE_ANDROID_ARCH_ABI}")
-endif()
 if(NOT DEFINED ANDROID_NDK)
     message(FATAL_ERROR "ANDROID_NDK not defined; Rust ludashisteam must be built via Android Gradle/CMake")
 endif()
 
-set(LUDASHISTEAM_RUST_TARGET "aarch64-linux-android")
+# Rust target triple and NDK clang executable differ for the 32-bit ARM ABI.
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+    set(LUDASHISTEAM_RUST_TARGET "aarch64-linux-android")
+    set(LUDASHISTEAM_NDK_CLANG_PREFIX "aarch64-linux-android")
+elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
+    set(LUDASHISTEAM_RUST_TARGET "armv7-linux-androideabi")
+    set(LUDASHISTEAM_NDK_CLANG_PREFIX "armv7a-linux-androideabi")
+else()
+    message(FATAL_ERROR "Rust ludashisteam does not support Android ABI: ${CMAKE_ANDROID_ARCH_ABI}")
+endif()
+string(REPLACE "-" "_" LUDASHISTEAM_RUST_TARGET_ENV "${LUDASHISTEAM_RUST_TARGET}")
+string(TOUPPER "${LUDASHISTEAM_RUST_TARGET_ENV}" LUDASHISTEAM_RUST_TARGET_ENV_UPPER)
 if(DEFINED ANDROID_PLATFORM)
     string(REGEX REPLACE "^android-" "" LUDASHISTEAM_ANDROID_API "${ANDROID_PLATFORM}")
 elseif(DEFINED CMAKE_SYSTEM_VERSION)
@@ -54,14 +62,14 @@ set(LUDASHISTEAM_RUST_LIB
     "${LUDASHISTEAM_RUST_DIR}/target/${LUDASHISTEAM_RUST_TARGET}/release/libludashisteam.so")
 set(LUDASHISTEAM_RUST_OUT "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/libludashisteam.so")
 set(LUDASHISTEAM_RUST_LINKER
-    "${ANDROID_NDK}/toolchains/llvm/prebuilt/${LUDASHISTEAM_NDK_HOST_TAG}/bin/${LUDASHISTEAM_RUST_TARGET}${LUDASHISTEAM_ANDROID_API}-clang${LUDASHISTEAM_LINKER_SUFFIX}")
+    "${ANDROID_NDK}/toolchains/llvm/prebuilt/${LUDASHISTEAM_NDK_HOST_TAG}/bin/${LUDASHISTEAM_NDK_CLANG_PREFIX}${LUDASHISTEAM_ANDROID_API}-clang${LUDASHISTEAM_LINKER_SUFFIX}")
 
 add_custom_command(
     OUTPUT "${LUDASHISTEAM_RUST_OUT}"
     COMMAND "${CMAKE_COMMAND}" -E env
-        "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=${LUDASHISTEAM_RUST_LINKER}"
-        "CC_aarch64_linux_android=${LUDASHISTEAM_RUST_LINKER}"
-        "AR_aarch64_linux_android=${ANDROID_NDK}/toolchains/llvm/prebuilt/${LUDASHISTEAM_NDK_HOST_TAG}/bin/llvm-ar${LUDASHISTEAM_AR_SUFFIX}"
+        "CARGO_TARGET_${LUDASHISTEAM_RUST_TARGET_ENV_UPPER}_LINKER=${LUDASHISTEAM_RUST_LINKER}"
+        "CC_${LUDASHISTEAM_RUST_TARGET_ENV}=${LUDASHISTEAM_RUST_LINKER}"
+        "AR_${LUDASHISTEAM_RUST_TARGET_ENV}=${ANDROID_NDK}/toolchains/llvm/prebuilt/${LUDASHISTEAM_NDK_HOST_TAG}/bin/llvm-ar${LUDASHISTEAM_AR_SUFFIX}"
         "${CARGO_EXECUTABLE}" rustc --locked --release --target "${LUDASHISTEAM_RUST_TARGET}" --lib --
         -Clink-arg=-Wl,-soname,libludashisteam.so
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
