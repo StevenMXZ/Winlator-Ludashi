@@ -551,7 +551,11 @@ public class OnboardingActivity extends AppCompatActivity {
         }, new ContentsManager.OnInstallFinishedCallback() {
             @Override
             public void onFailed(ContentsManager.InstallFailedReason reason, Exception error) {
-                failure.call("Package validation failed: " + reason);
+                if (reason == ContentsManager.InstallFailedReason.ERROR_UNSUPPORTED_ARCH) {
+                    failure.call("This ARM32 build uses its built-in Wine 11.22 x86 runtime. Proton ARM64EC and external Wine/Proton packages are not compatible.");
+                } else {
+                    failure.call("Package validation failed: " + reason);
+                }
             }
 
             @Override
