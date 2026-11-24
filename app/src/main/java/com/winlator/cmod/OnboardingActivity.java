@@ -241,7 +241,7 @@ public class OnboardingActivity extends AppCompatActivity {
         composeController.setInstallBusy(BUNDLED_RUNTIME_ID, true);
         composeController.updateInstallProgress("Installing " + BUNDLED_RUNTIME_NAME, -1);
         io.execute(() -> {
-            boolean success;
+            boolean success = false;
             try {
                 if (android.os.Process.is64Bit()) {
                     ImageFsInstaller.installWineFromAssets(null, OnboardingActivity.this);
