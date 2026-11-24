@@ -95,7 +95,7 @@ jobs:
           import pathlib, re, sys, zipfile
           root = pathlib.Path(sys.argv[1])
           apk = pathlib.Path(sys.argv[2])
-          certificate = re.search(r'Signer #1 certificate SHA-256 digest: (\\S+)', (root / 'arm32-release-cert.txt').read_text()).group(1)
+          certificate = re.search(r'Signer #1 certificate SHA-256 digest: (\S+)', (root / 'arm32-release-cert.txt').read_text()).group(1)
           assert certificate == 'e870d1c67cd197d13c52bc187632b9bbeff233d5abe0fb81a2833bf8f74a55ef', 'Release signing identity changed'
           package = (root / 'arm32-release-package.txt').read_text()
           assert re.search(r"name='([^']+)'", package).group(1) == 'com.winlator.cmod', 'Application ID changed'
