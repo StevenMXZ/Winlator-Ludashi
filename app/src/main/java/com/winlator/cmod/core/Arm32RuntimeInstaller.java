@@ -170,8 +170,9 @@ public final class Arm32RuntimeInstaller {
                 "-b", containerDir.getAbsolutePath() + ":" + guestHome,
                 "-w", guestHome,
                 "--kill-on-exit",
-                "/usr/local/bin/winlator-wine",
-                "wineboot", "-u"
+                "/usr/bin/box86",
+                "/opt/wine-11.22-x86/bin/wineboot",
+                "-u"
         };
 
         try {
@@ -186,12 +187,16 @@ public final class Arm32RuntimeInstaller {
             environment.put("LANG", "en_US.UTF-8");
             environment.put("WINEPREFIX", guestHome + "/.wine");
             environment.put("WINEDEBUG", "-all");
+            environment.put("PATH", "/usr/local/bin:/usr/bin:/bin:/opt/wine-11.22-x86/bin");
+            environment.put("BOX86_PATH", "/usr/bin:/opt/wine-11.22-x86/bin");
+            environment.put("BOX86_LD_LIBRARY_PATH",
+                    "/lib/arm-linux-gnueabihf:/usr/lib/arm-linux-gnueabihf:/usr/lib");
             environment.put("PROOT_LOADER_32", prootLoader32.getAbsolutePath());
             environment.put("PROOT_TMP_DIR", prootTmpDir.getAbsolutePath());
             environment.put("PROOT_NO_SECCOMP", "1");
 
             java.lang.Process process = builder.start();
-            if (!process.waitFor(180, TimeUnit.SECONDS)) {
+            if (!process.waitFor(600, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
                 Log.e(TAG, "Wine prefix bootstrap timed out for " + containerDir.getName());
                 return false;
