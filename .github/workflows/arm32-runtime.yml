@@ -1,0 +1,193 @@
+name: Build ARMHF runtime bundle
+
+on:
+  push:
+    branches:
+      - arm32-port-prototype
+    paths:
+      - ".github/workflows/arm32-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-armhf-runtime:
+    name: Build Debian ARMHF + Box86 + Wine i386 runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout app source
+        uses: actions/checkout@v4
+
+      - name: Install cross-build and rootfs tools
+        run: |
+          sudo dpkg --add-architecture armhf
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            debootstrap qemu-user-static binfmt-support \
+            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross \
+            cmake ninja-build git python3 python3-yaml \
+            curl ca-certificates xz-utils zstd file binutils
+
+      - name: Build Box86 for ARMHF
+        shell: bash
+        run: |
+          set -euo pipefail
+          BOX86_COMMIT="bb716a2a6576cc06da811bf55e31e2f6f03b7596"
+          git clone https://github.com/ptitSeb/box86.git box86-src
+          git -C box86-src checkout "${BOX86_COMMIT}"
+
+          mkdir -p box86-build
+          cmake -S box86-src -B box86-build -G Ninja \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=armhf \
+            -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DARM_DYNAREC=OFF \
+            -DNOLOADADDR=ON \
+            -DNOGIT=ON \
+            -DNO_LIB_INSTALL=ON \
+            -DNO_CONF_INSTALL=ON
+          cmake --build box86-build --target box86 --parallel 2
+
+          file box86-build/box86
+          readelf -h box86-build/box86 | grep -E 'Class:|Machine:'
+          readelf -A box86-build/box86 | grep -E 'Tag_ABI_VFP_args|Tag_CPU_arch' || true
+          mkdir -p runtime-rootfs/usr/bin runtime-rootfs/usr/share/doc/box86
+          install -m 0755 box86-build/box86 runtime-rootfs/usr/bin/box86
+          install -m 0644 box86-src/COPYING runtime-rootfs/usr/share/doc/box86/copyright
+          printf '%s\n' "${BOX86_COMMIT}" > runtime-rootfs/usr/share/doc/box86/source-commit.txt
+
+      - name: Create Debian Bookworm ARMHF userspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOTFS="$PWD/runtime-rootfs"
+          sudo debootstrap --foreign --variant=minbase --arch=armhf \
+            bookworm "$ROOTFS" https://deb.debian.org/debian
+
+          sudo install -m 0755 /usr/bin/qemu-arm-static "$ROOTFS/usr/bin/qemu-arm-static"
+          sudo chroot "$ROOTFS" /usr/bin/qemu-arm-static \
+            /debootstrap/debootstrap --second-stage
+
+          sudo chroot "$ROOTFS" /usr/bin/qemu-arm-static /usr/bin/apt-get update
+          sudo chroot "$ROOTFS" /usr/bin/qemu-arm-static /usr/bin/apt-get install -y --no-install-recommends \
+            ca-certificates locales \
+            libc6 libgcc-s1 libstdc++6 libatomic1 libunwind8 \
+            libx11-6 libxext6 libxrender1 libxfixes3 libxrandr2 \
+            libxcursor1 libxi6 libxinerama1 libxcomposite1 libxdamage1 \
+            libxkbcommon0 libxkbcommon-x11-0 \
+            libasound2 libpulse0 libdbus-1-3 libudev1 \
+            libfontconfig1 libfreetype6 libpng16-16 libjpeg62-turbo \
+            libgnutls30 libssl3 libzstd1 \
+            libvulkan1 libgl1 libegl1 libwayland-client0 \
+            x11-utils xauth xterm
+
+          sudo chroot "$ROOTFS" /usr/bin/qemu-arm-static /bin/bash -lc \
+            "useradd --create-home --uid 1000 --shell /bin/bash xuser || true; mkdir -p /home/xuser/.wine /tmp; chown -R xuser:xuser /home/xuser; locale-gen en_US.UTF-8 || true"
+
+          sudo rm -f "$ROOTFS/usr/bin/qemu-arm-static"
+          sudo rm -rf "$ROOTFS/debootstrap" "$ROOTFS/var/lib/apt/lists/"*
+
+      - name: Install Wine 11.22 i386 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          WINE_URL="https://github.com/Kron4ek/Wine-Builds/releases/download/11.22/wine-11.22-x86.tar.xz"
+          WINE_SHA256="d8b1e7b2a3f99a4413c39070d7fbb4b61b806c536b132be3feac532429343098"
+
+          curl --fail --location --retry 4 --retry-all-errors "$WINE_URL" -o /tmp/wine-11.22-x86.tar.xz
+          echo "${WINE_SHA256}  /tmp/wine-11.22-x86.tar.xz" | sha256sum --check -
+
+          mkdir -p /tmp/wine-stage
+          tar -xJf /tmp/wine-11.22-x86.tar.xz -C /tmp/wine-stage
+          WINE_BIN="$(find /tmp/wine-stage -path '*/bin/wine' -print -quit)"
+          if [ -z "$WINE_BIN" ]; then
+            echo "Could not locate Wine's bin/wine in the verified archive" >&2
+            find /tmp/wine-stage -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          WINE_ROOT="$(dirname "$(dirname "$WINE_BIN")")"
+          mkdir -p runtime-rootfs/opt/wine-11.22-x86
+          cp -a "$WINE_ROOT/." runtime-rootfs/opt/wine-11.22-x86/
+          test -x runtime-rootfs/opt/wine-11.22-x86/bin/wine
+          find runtime-rootfs/opt/wine-11.22-x86 -type f -name 'ntdll.so' -print -quit
+          file runtime-rootfs/opt/wine-11.22-x86/bin/wine || true
+
+      - name: Add Box86 Wine launcher and runtime metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime-rootfs/usr/local/bin runtime-rootfs/usr/share/winlator
+          cat > runtime-rootfs/usr/local/bin/winlator-wine <<'EOF'
+          #!/bin/sh
+          set -eu
+          export HOME="${HOME:-/home/xuser}"
+          export USER="${USER:-xuser}"
+          export WINEPREFIX="${WINEPREFIX:-/home/xuser/.wine}"
+          export PATH="/usr/local/bin:/usr/bin:/bin:/opt/wine-11.22-x86/bin"
+          export BOX86_PATH="/usr/bin:/opt/wine-11.22-x86/bin"
+          export BOX86_LD_LIBRARY_PATH="/lib/arm-linux-gnueabihf:/usr/lib/arm-linux-gnueabihf:/usr/lib"
+          export WINEDEBUG="${WINEDEBUG:--all}"
+          exec /usr/bin/box86 /opt/wine-11.22-x86/bin/wine "$@"
+          EOF
+          chmod 0755 runtime-rootfs/usr/local/bin/winlator-wine
+
+          cat > runtime-rootfs/usr/share/winlator/arm32-runtime.json <<'EOF'
+          {
+            "runtime": "debian-bookworm-armhf",
+            "emulator": "box86",
+            "wine": "wine-11.22-x86",
+            "wine_url": "https://github.com/Kron4ek/Wine-Builds/releases/download/11.22/wine-11.22-x86.tar.xz",
+            "wine_sha256": "d8b1e7b2a3f99a4413c39070d7fbb4b61b806c536b132be3feac532429343098",
+            "box86_source": "https://github.com/ptitSeb/box86/tree/bb716a2a6576cc06da811bf55e31e2f6f03b7596",
+            "box86_mode": "interpreter",
+            "notes": "Wine i386 executes through Box86 inside the ARMHF glibc root filesystem."
+          }
+          EOF
+
+      - name: Verify runtime ELF architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          readelf -h runtime-rootfs/usr/bin/box86 | grep -E 'Class:|Machine:'
+          test -x runtime-rootfs/usr/local/bin/winlator-wine
+          test -f runtime-rootfs/usr/share/winlator/arm32-runtime.json
+          WINE_ELF="$(find runtime-rootfs/opt/wine-11.22-x86 -type f -name 'ntdll.so' -print -quit)"
+          if [ -z "$WINE_ELF" ]; then
+            echo "Wine i386 ntdll.so was not found in the runtime archive" >&2
+            exit 1
+          fi
+          file "$WINE_ELF"
+          file runtime-rootfs/usr/bin/box86
+          test -f runtime-rootfs/lib/ld-linux-armhf.so.3
+
+      - name: Package ARMHF runtime root filesystem
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --numeric-owner --xattrs \
+            --exclude='./dev/*' --exclude='./proc/*' --exclude='./sys/*' \
+            --exclude='./run/*' \
+            -C runtime-rootfs -cf - . | zstd -T0 -5 -o arm32-runtime-bookworm-armhf.tar.zst
+          sha256sum arm32-runtime-bookworm-armhf.tar.zst > arm32-runtime-bookworm-armhf.sha256
+          ls -lh arm32-runtime-bookworm-armhf.tar.zst
+          cat arm32-runtime-bookworm-armhf.sha256
+
+      - name: Publish versioned runtime release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="arm32-runtime-v1.0.0"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "ARM32 Box86 + Wine i386 runtime 1.0.0" \
+              --notes "Debian Bookworm ARMHF root filesystem with Box86 interpreter and Wine 11.22 i386. Box86 source commit: bb716a2a6576cc06da811bf55e31e2f6f03b7596. This runtime is experimental; graphics acceleration and app-specific compatibility still require device testing."
+          gh release upload "$TAG" \
+            arm32-runtime-bookworm-armhf.tar.zst \
+            arm32-runtime-bookworm-armhf.sha256 \
+            --repo "$GITHUB_REPOSITORY" --clobber
