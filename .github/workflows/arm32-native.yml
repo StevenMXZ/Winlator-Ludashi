@@ -41,7 +41,6 @@ jobs:
             echo "sdkmanager was not found under ANDROID_HOME=${ANDROID_HOME}" >&2
             exit 1
           fi
-          chmod +x "${SDKMANAGER}"
           "${SDKMANAGER}" --install \
             "platforms;android-35" "build-tools;35.0.0" \
             "ndk;29.0.14206865" "cmake;3.22.1"
