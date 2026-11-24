@@ -1,14 +1,6 @@
 import java.net.URL
 import java.security.MessageDigest
 
-// The normal Winlator build remains ARM64. ARM32 is currently supported only for
-// native compile experiments until matching Box86/Wine/rootfs runtime assets exist.
-def winlatorAbi = providers.gradleProperty("winlatorAbi").getOrElse("arm64-v8a")
-def winlatorNativeCompileOnly = providers.gradleProperty("winlatorNativeCompileOnly")
-        .map { it.toBoolean() }.getOrElse(false)
-if (!(winlatorAbi in ["arm64-v8a", "armeabi-v7a"])) {
-    throw new GradleException("Unsupported Winlator ABI: " + winlatorAbi)
-}
 
 buildscript {
     repositories {
@@ -27,6 +19,15 @@ plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.compose'
+}
+
+// The normal Winlator build remains ARM64. ARM32 is currently supported only for
+// native compile experiments until matching Box86/Wine/rootfs runtime assets exist.
+def winlatorAbi = providers.gradleProperty("winlatorAbi").getOrElse("arm64-v8a")
+def winlatorNativeCompileOnly = providers.gradleProperty("winlatorNativeCompileOnly")
+        .map { it.toBoolean() }.getOrElse(false)
+if (!(winlatorAbi in ["arm64-v8a", "armeabi-v7a"])) {
+    throw new GradleException("Unsupported Winlator ABI: " + winlatorAbi)
 }
 
 tasks.register("downloadImageFS") {
