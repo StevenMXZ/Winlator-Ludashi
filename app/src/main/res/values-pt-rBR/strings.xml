@@ -404,6 +404,7 @@
   <string name="enable_sendinput_mode">"Usar modo SendInput do Windows"</string>
   <string name="enable_touchscreen_timeout">"Tempo limite dos controles na tela (requer reinicialização)"</string>
   <string name="enable_touchscreen_haptics">"Ativar resposta tátil dos controles na tela"</string>
+  <string name="enable_touch_highlights">"Mostrar destaque ao tocar nos controles"</string>
   <string name="help_steamgrid">"Chave da API SteamGrid"</string>
   <string name="disable_xinput_for_shortcut">"Desativar XInput (para controle exclusivo por mouse/teclado)"</string>
   <string name="fullscreen_stretched">"Ativar tela cheia (esticada)"</string>
