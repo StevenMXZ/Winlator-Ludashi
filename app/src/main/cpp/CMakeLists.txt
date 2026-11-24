@@ -6,7 +6,17 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -Wno-unused-function -Wimplicit-function
 
 add_subdirectory(OpenXR-SDK)
 add_subdirectory(patchelf)
-add_subdirectory(adrenotools)
+
+# libadrenotools is intentionally AArch64-only (its hook code uses AArch64
+# instructions and /system/lib64 paths). ARMv7 uses the Android system Vulkan
+# loader and a small compatibility target so the rest of the project can link.
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
+    add_library(adrenotools STATIC winlator/adrenotools_stub.c)
+    target_include_directories(adrenotools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/adrenotools/include)
+    target_compile_options(adrenotools PRIVATE -Wall -Wextra)
+else()
+    add_subdirectory(adrenotools)
+endif()
 
 add_library(gpuusage SHARED gpuusage/kgsl_busy.c)
 
