@@ -53,6 +53,7 @@ class StoreWorkTest {
     }
     @Test fun startingAGameStopsExecutableCopyBeforeTheNextDiskWrite() {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("ludashi-stores", 0).edit().putBoolean("itch-enabled", true).apply()
         val store = LudashiStore.ITCH
         StoreSessions.resumeForLibrary(); StoreSessions.fresh(store)
         val output = java.io.ByteArrayOutputStream()
@@ -71,6 +72,7 @@ class StoreWorkTest {
     @Suppress("UNCHECKED_CAST")
     @Test fun cancellingQueuedArtworkReleasesItsPendingMarker() = runBlocking {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("ludashi-stores", 0).edit().putBoolean("itch-enabled", true).apply()
         val store = LudashiStore.ITCH
         StoreSessions.resumeForLibrary(); StoreSessions.fresh(store)
         val state = StoreSessions.state(store); val old = state.value

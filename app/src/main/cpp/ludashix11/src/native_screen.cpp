@@ -11,6 +11,16 @@
 #include <X11/extensions/presentproto.h>
 
 namespace ludashi::x11 {
+namespace {
+bool TrackFrameRequests([[maybe_unused]] bool diagnostics) {
+#ifdef LUDASHI_HOST_TEST
+    // Host renderers use serials to synchronize injected acquire and fence waits.
+    return true;
+#else
+    return diagnostics;
+#endif
+}
+}
 NativeScreen::NativeScreen(DisplayRuntime& display) : server(display) {
     worker = std::thread([this] { Worker(); });
 }
@@ -223,49 +233,37 @@ void NativeScreen::Collect(WindowNode* w, Scene& frame, bool ancestorsMapped) {
 void NativeScreen::MutateDrawable(NativeDrawable* drawable, const void* callback, void (*write)(const void*)) {
     auto* image = drawable;
     const u64 before = image->Revision();
+    bool rebuild = false;
     {
         std::unique_lock lock(state);
         for (auto& entry : latest.entries)
             if (entry.drawable.get() == image) entry.pixels.reset();
         // Restore a valid snapshot even if validation/allocation throws.
-        auto restore = [&] {
-            for (auto& entry : latest.entries) if (entry.drawable.get() == image) {
-                entry.pixels = image->Pixels();
-                entry.revision = image->Revision();
-            }
-        };
-        try { write(callback); }
-        catch (...) { restore(); throw; }
-        restore();
-    }
-    StartupDrawableUpdated(drawable);
-    if (image->Revision() != before) {
-        const bool firstContent = image->PublishContent();
-        if (firstContent) PostInvalidate();
-        else DrawableChanged(drawable);
-    }
-}
-void NativeScreen::DrawableChanged(NativeDrawable* drawable) {
-    // Called under DisplayRuntime::Lock: pixels changed, but geometry/visibility did not.
-    auto* image = drawable;
-    {
-        std::lock_guard lock(state);
-        if (sceneCurrent) {
+        const auto restore = [&] {
             bool visible = false;
             for (auto& entry : latest.entries) if (entry.drawable.get() == image) {
                 entry.pixels = image->Pixels();
                 entry.revision = image->Revision();
                 visible = true;
             }
-            if (visible) {
-                if (!std::exchange(dirty, true)) cv.notify_one();
-                if (DiagnosticsEnabled()) metricDrawablePatches.fetch_add(1, std::memory_order_relaxed);
-            } else if (DiagnosticsEnabled()) metricOffscreenWrites.fetch_add(1, std::memory_order_relaxed);
-            // Offscreen/occluded content will be collected if later made visible.
-            return;
+            return visible;
+        };
+        try { write(callback); }
+        catch (...) { restore(); throw; }
+        const bool visible = restore();
+        if (image->Revision() != before) {
+            rebuild = image->PublishContent() || !sceneCurrent;
+            // Already updated the retained pixels above. Publish the repaint in
+            // the same critical section so Draw never sees a half-patched scene.
+            if (!rebuild && visible && !std::exchange(dirty, true)) cv.notify_one();
+            if (!rebuild && DiagnosticsEnabled()) {
+                auto& counter = visible ? metricDrawablePatches : metricOffscreenWrites;
+                counter.fetch_add(1, std::memory_order_relaxed);
+            }
         }
     }
-    PostInvalidate();
+    StartupDrawableUpdated(drawable);
+    if (rebuild) PostInvalidate();
 }
 void NativeScreen::Scene::Reindex() {
     if (entries.size() < 2) return;
@@ -290,7 +288,8 @@ void NativeScreen::PostInvalidate(sp<PresentTicket> present) {
         }
         else ++it;
     }
-    if (DiagnosticsEnabled()) metricSceneBuilds.fetch_add(1, std::memory_order_relaxed);
+    const bool trace = DiagnosticsEnabled();
+    if (trace) metricSceneBuilds.fetch_add(1, std::memory_order_relaxed);
     Scene frame;
     Collect(server.Windows().GetRootWindow(), frame, true);
     // An opaque fullscreen game makes desktop/background draws unnecessary.
@@ -312,17 +311,16 @@ void NativeScreen::PostInvalidate(sp<PresentTicket> present) {
     frame.cursorPixels = cursor ? cursor->Pixels() : nullptr;
     frame.cursorX = cursorX; frame.cursorY = cursorY;
     std::lock_guard lock(state);
-    // Preserve pending requests still selected in the new snapshot. Protocol
-    // acknowledgements have already been sent, just as in Java X11.
-    for (const auto& old : latest.requests) {
-        const auto* next = frame.FindEntry(old->window);
-        if (next && next->ticket == old)
-            frame.requests.push_back(old);
-        else {
-            if (DiagnosticsEnabled()) metricCoalesced.fetch_add(1, std::memory_order_relaxed);
+    // Entries retain their Present tickets independently. This separate list
+    // measures queue time and coalescing; it never controls protocol release.
+    if (TrackFrameRequests(trace)) {
+        for (const auto& old : latest.requests) {
+            const auto* next = frame.FindEntry(old->window);
+            if (next && next->ticket == old) frame.requests.push_back(old);
+            else if (trace) metricCoalesced.fetch_add(1, std::memory_order_relaxed);
         }
+        if (present) frame.requests.push_back(std::move(present));
     }
-    if (present) frame.requests.push_back(std::move(present));
     if (frameGenRequested.load(std::memory_order_relaxed) && visualOptions.frameGenEngine == 1)
         frame.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
     latest = std::move(frame);
@@ -357,16 +355,21 @@ bool NativeScreen::PatchPresent(const sp<PresentTicket>& ticket, const sp<Presen
     entry->revision = ticket->drawable->Revision();
     // A frame already claimed by Draw owns its separate request list. Updating
     // this pending snapshot never drops the resource references of that frame.
-    const auto superseded = std::erase_if(latest.requests,
-        [&](const auto& pending) { return pending->window == ticket->window; });
-    if (superseded && DiagnosticsEnabled()) metricCoalesced.fetch_add(superseded, std::memory_order_relaxed);
-    latest.requests.push_back(ticket);
+    const bool trace = DiagnosticsEnabled();
+    if (TrackFrameRequests(trace)) {
+        const auto superseded = std::erase_if(latest.requests,
+            [&](const auto& pending) { return pending->window == ticket->window; });
+        if (superseded && trace) metricCoalesced.fetch_add(superseded, std::memory_order_relaxed);
+        latest.requests.push_back(ticket);
+    } else if (!latest.requests.empty()) {
+        latest.requests.clear();
+    }
     if (frameGenRequested.load(std::memory_order_relaxed) && visualOptions.frameGenEngine == 1)
         latest.frameGenSourceFrames = frameGenSources.load(std::memory_order_relaxed);
     // Do not wake a slot-blocked worker for every producer Present. It will
     // consume the newest snapshot after retirement notifies cv, or after Draw.
     if (!std::exchange(dirty, true)) cv.notify_one();
-    if (DiagnosticsEnabled()) metricScenePatches.fetch_add(1, std::memory_order_relaxed);
+    if (trace) metricScenePatches.fetch_add(1, std::memory_order_relaxed);
     return true;
 }
 // Same condition as Java Window.isApplicationWindow(), evaluated on a content
@@ -622,15 +625,12 @@ void NativeScreen::Complete(const sp<PresentTicket>& t, bool idleFirst) {
     const bool sendIdle = idleFirst && PrepareIdle(t);
     t->complete = true;
     auto selected = subscriptions.find(t->window);
-    if (selected == subscriptions.end() && !DiagnosticsEnabled()) return;
-    auto now = std::chrono::steady_clock::now().time_since_epoch();
-    if (DiagnosticsEnabled() && t->diagnosticQueued != std::chrono::steady_clock::time_point{})
-        metricCompleteDelay.Record(std::chrono::duration_cast<std::chrono::nanoseconds>(now - t->diagnosticQueued.time_since_epoch()).count());
-    const u64 ust = std::chrono::duration_cast<std::chrono::microseconds>(now).count();
-    // Use the same timestamp for UST and MSC instead of another clock read for
-    // every subscriber. MSC retains the configured physical refresh rate.
-    const u64 msc = u64(ust * double(refresh.load(std::memory_order_relaxed)) / 1000000.0);
+    using Clock = std::chrono::steady_clock;
+    const bool trace = DiagnosticsEnabled() && t->diagnosticQueued != Clock::time_point{};
+    auto now = trace ? Clock::now() : Clock::time_point{};
+    if (trace) metricCompleteDelay.Record(std::chrono::duration_cast<std::chrono::nanoseconds>(now - t->diagnosticQueued).count());
     if (selected == subscriptions.end()) return;
+    u64 ust{}, msc{};
     for (auto& sub : selected->second) {
         const bool idleEvent = sendIdle && (sub->mask & PresentIdleNotifyMask);
         const bool completeEvent = sub->mask & PresentCompleteNotifyMask;
@@ -645,7 +645,14 @@ void NativeScreen::Complete(const sp<PresentTicket>& t, bool idleFirst) {
         e.length = (sizeof(e) - 32) / 4; e.evtype = PresentCompleteNotify;
         e.kind = PresentCompleteKindPixmap; e.mode = PresentCompleteModeCopy;
         e.eid = sub->id; e.window = t->window; e.serial = t->serial;
-        e.ust = ust; e.msc = msc;
+        if (completeEvent) {
+            if (ust == 0) {
+                if (!trace) now = Clock::now();
+                ust = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+                msc = u64(ust * double(refresh.load(std::memory_order_relaxed)) / 1000000.0);
+            }
+            e.ust = ust; e.msc = msc;
+        }
         auto& idle = packet.idle;
         idle.type = GenericEvent; idle.extension = t->opcode; idle.sequenceNumber = e.sequenceNumber;
         idle.length = (sizeof(idle) - 32) / 4; idle.evtype = PresentIdleNotify;

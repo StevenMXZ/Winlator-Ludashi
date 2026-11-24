@@ -98,6 +98,7 @@ class StoreDownloadService : Service() {
                 persist("installing", bytes, bytes)
                 StoreInstalls.publish(this@StoreDownloadService, game, staging, container)
                 persist("completed", bytes, bytes)
+                DownloadNotifications.completed(this@StoreDownloadService, 312, "store-downloads", selected.title, game.title)
                 runCatching { StoreTransfers.removePartial(root, game, source) }
             } catch (error: Exception) {
                 val stopped = StoreSessions.paused || !StoreSessions.live(selected)

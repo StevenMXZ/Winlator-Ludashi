@@ -18,6 +18,23 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [28])
 class SteamNotificationCleanupTest {
+    @Test fun completedDownloadUsesStaticIconAndSurvivesForegroundRemoval() {
+        val context = RuntimeEnvironment.getApplication()
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val notices = com.winlator.cmod.stores.DownloadNotifications
+        val id = SteamService.NOTIFICATION_ID
+        notices.channel(context, "steam")
+        manager.notify(id, notices.build(context, "steam", "Steam", "Test game"))
+        notices.completed(context, id, "steam", "Steam", "Test game")
+        manager.cancel(id)
+
+        val result = manager.activeNotifications.single { it.id == id }.notification
+        assertEquals(com.winlator.cmod.R.drawable.ic_download_complete, result.smallIcon.resId)
+        assertEquals(0, result.flags and Notification.FLAG_ONGOING_EVENT)
+        assertTrue(result.flags and Notification.FLAG_AUTO_CANCEL != 0)
+        assertEquals(0, result.extras.getInt(Notification.EXTRA_PROGRESS_MAX))
+        assertFalse(result.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE))
+    }
     @Test fun appNotificationExposesTheSharedExitAction() {
         val context = RuntimeEnvironment.getApplication()
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

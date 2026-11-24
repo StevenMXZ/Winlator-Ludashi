@@ -101,9 +101,11 @@ void DisplayRuntime::SetWritable(int fd, bool enabled) {
 void DisplayRuntime::RunLoop() {
     for (;;) {
         int timeout;
+        bool pendingPresents;
         {
             auto lock = Lock();
             timeout = screen->IdleTimeoutMs();
+            pendingPresents = timeout >= 0 || screen->HasWaitingPresents();
             // A bounded client turn may leave requests in userspace after the
             // socket was drained. Poll epoll without sleeping in that case.
             for (const auto& [fd, client] : clients)
@@ -113,7 +115,7 @@ void DisplayRuntime::RunLoop() {
         if (count < 0) { if (errno == EINTR) continue; break; }
         // Prioritize producer buffer returns over another batch of requests.
         // This also services completions when a client keeps epoll continuously busy.
-        {
+        if (pendingPresents) {
             auto lock = Lock();
             try { screen->DispatchCompletions(); }
             catch (const std::exception& e) { diagnostics::Write(diagnostics::Severity::Warning, "X11 completion: {}", e.what()); }

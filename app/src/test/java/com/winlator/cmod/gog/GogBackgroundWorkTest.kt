@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class GogBackgroundWorkTest {
     @Test fun oldBackgroundWorkStaysCancelledAfterReturningFromAGame() {
         val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("gog-settings", 0).edit().putBoolean("enabled", true).apply()
         StoreSessions.resumeForLibrary()
         val old = GogLibrary.backgroundTicket()
         assertTrue(GogLibrary.backgroundAllowed(context, old))
@@ -34,6 +35,7 @@ class GogBackgroundWorkTest {
     @Suppress("UNCHECKED_CAST")
     @Test fun gameEntryCancelsQueuedArtworkBeforeItCanStart() {
         val context = RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("gog-settings", 0).edit().putBoolean("enabled", true).apply()
         StoreSessions.resumeForLibrary()
         val pool = GogLibrary::class.java.getDeclaredField("artwork").apply { isAccessible = true }.get(GogLibrary) as ExecutorService
         val jobs = GogLibrary::class.java.getDeclaredField("artworkJobs").apply { isAccessible = true }.get(GogLibrary) as ConcurrentHashMap<String, FutureTask<Unit>>
@@ -71,14 +73,14 @@ class GogBackgroundWorkTest {
     @Test fun disablingGogInvalidatesBackgroundWork() {
         val context = RuntimeEnvironment.getApplication()
         val prefs = context.getSharedPreferences("gog-settings", 0)
-        val original = prefs.getBoolean("enabled", true)
+        prefs.edit().putBoolean("enabled", true).apply()
         StoreSessions.resumeForLibrary()
         val ticket = GogLibrary.backgroundTicket()
         try {
             GogSettings.setEnabled(context, false)
             assertFalse(GogLibrary.backgroundAllowed(context, ticket))
             assertFalse(GogLibrary.backgroundAllowed(context, GogLibrary.backgroundTicket()))
-        } finally { prefs.edit().putBoolean("enabled", original).commit() }
+        } finally { prefs.edit().remove("enabled").commit() }
     }
     @Test fun delayedInstallIsBlockedBeforeInspectingFilesWhenAGameStarts() {
         RuntimeEnvironment.getApplication()

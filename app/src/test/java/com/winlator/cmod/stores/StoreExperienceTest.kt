@@ -16,6 +16,19 @@ import com.winlator.cmod.ui.bindOverlayOwners
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [28])
 class StoreExperienceTest {
+    @Test fun storeIntegrationsDefaultOffAndRespectSavedOptIn() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        assertFalse(com.winlator.cmod.steam.SteamSettings.enabled(context))
+        assertFalse(com.winlator.cmod.gog.GogSettings.enabled(context))
+        assertFalse(LudashiStore.ITCH.enabled(context))
+
+        context.getSharedPreferences("steam-settings", 0).edit().putBoolean("enabled", true).apply()
+        context.getSharedPreferences("gog-settings", 0).edit().putBoolean("enabled", true).apply()
+        context.getSharedPreferences("ludashi-stores", 0).edit().putBoolean("itch-enabled", true).apply()
+        assertTrue(com.winlator.cmod.steam.SteamSettings.enabled(context))
+        assertTrue(com.winlator.cmod.gog.GogSettings.enabled(context))
+        assertTrue(LudashiStore.ITCH.enabled(context))
+    }
     @Test fun catalogDownloadHasALiveGameWithoutAnOwnedLibraryEntry() {
         val game = StoreGame(LudashiStore.ITCH, "https://example.itch.io/catalog-game", "Catalog game")
         val old = JSONObject().put("game", game.json()).put("status", "paused")
@@ -39,6 +52,7 @@ class StoreExperienceTest {
     }
     @Test fun removingAnUninstalledItchGameHidesItEvenAfterStoreRefresh() {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
+        context.getSharedPreferences("ludashi-stores", 0).edit().putBoolean("itch-enabled", true).apply()
         val store = LudashiStore.ITCH
         val game = StoreGame(store, "https://example.itch.io/galvan", "GALVAN", metadata = JSONObject().put("custom", true))
         val owned = game.copy(metadata = JSONObject().put("owned", true))

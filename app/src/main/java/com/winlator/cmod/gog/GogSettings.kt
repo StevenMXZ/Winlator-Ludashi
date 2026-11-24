@@ -7,7 +7,7 @@ object GogSettings {
     private val revision = mutableIntStateOf(0)
     fun enabled(context: Context): Boolean {
         revision.intValue
-        return context.getSharedPreferences("gog-settings", 0).getBoolean("enabled", true)
+        return context.getSharedPreferences("gog-settings", 0).getBoolean("enabled", false)
     }
     fun setEnabled(context: Context, enabled: Boolean) {
         check(!GogLibrary.mutable.value.busy) { "Finish or cancel the GOG download before changing this setting" }
