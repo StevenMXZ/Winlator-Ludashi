@@ -119,6 +119,23 @@ public abstract class ImageFsInstaller {
 
     public static void installFromAssets(final MainActivity activity, onInstallationFinish callback) {
         AppUtils.keepScreenOn(activity);
+        if (!android.os.Process.is64Bit()) {
+            ImageFs arm32ImageFs = ImageFs.find(activity);
+            SettingsFragment.resetEmulatorsVersion(activity);
+            final DownloadProgressDialog arm32Dialog = new DownloadProgressDialog(activity);
+            arm32Dialog.show(R.string.installing_system_files);
+            Executors.newSingleThreadExecutor().execute(() -> {
+                boolean success = Arm32RuntimeInstaller.install(activity, arm32ImageFs,
+                        progress -> activity.runOnUiThread(() -> arm32Dialog.setProgress(progress)));
+                if (success) resetContainerImgVersions(activity);
+                else AppUtils.showToast(activity, R.string.unable_to_install_system_files);
+                arm32Dialog.closeOnUiThread();
+                activity.runOnUiThread(() -> {
+                    if (callback != null) callback.call();
+                });
+            });
+            return;
+        }
         ImageFs imageFs = ImageFs.find(activity);
         File rootDir = imageFs.getRootDir();
 
@@ -160,6 +177,25 @@ public abstract class ImageFsInstaller {
     public static void installFromAssetsSilently(final AppCompatActivity activity,
                                                    final InstallationProgressListener listener) {
         AppUtils.keepScreenOn(activity);
+        if (!android.os.Process.is64Bit()) {
+            ImageFs arm32ImageFs = ImageFs.find(activity);
+            SettingsFragment.resetEmulatorsVersion(activity);
+            Executors.newSingleThreadExecutor().execute(() -> {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+                boolean success = Arm32RuntimeInstaller.install(activity, arm32ImageFs,
+                        progress -> {
+                            if (listener != null) {
+                                activity.runOnUiThread(() -> listener.onProgress(progress));
+                            }
+                        });
+                if (success) resetContainerImgVersions(activity);
+                activity.runOnUiThread(() -> {
+                    if (listener != null && success) listener.onProgress(100);
+                    if (listener != null) listener.onFinished(success);
+                });
+            });
+            return;
+        }
         ImageFs imageFs = ImageFs.find(activity);
         File rootDir = imageFs.getRootDir();
         SettingsFragment.resetEmulatorsVersion(activity);
@@ -217,6 +253,13 @@ public abstract class ImageFsInstaller {
 
     public static boolean installIfNeeded(final MainActivity activity, onInstallationFinish callback) {
         ImageFs imageFs = ImageFs.find(activity);
+        if (!android.os.Process.is64Bit()) {
+            if (!Arm32RuntimeInstaller.isInstalled(activity)) {
+                installFromAssets(activity, callback);
+                return true;
+            }
+            return false;
+        }
         
         if (!imageFs.isValid() || imageFs.getVersion() < LATEST_VERSION) {
             installFromAssets(activity, callback);
