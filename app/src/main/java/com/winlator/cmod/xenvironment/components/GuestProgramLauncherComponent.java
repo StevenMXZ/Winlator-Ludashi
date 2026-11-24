@@ -347,12 +347,16 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
             return -1;
         }
 
-        File proot = new File(context.getApplicationInfo().nativeLibraryDir, "libproot.so");
-        if (!proot.isFile()) {
-            Log.e("GuestProgramLauncherComponent", "Android ARMv7 PRoot executable is missing: " + proot);
+        File nativeDir = new File(context.getApplicationInfo().nativeLibraryDir);
+        File proot = new File(nativeDir, "libproot.so");
+        File prootLoader32 = new File(nativeDir, "libproot-loader.so");
+        if (!proot.isFile() || !prootLoader32.isFile()) {
+            Log.e("GuestProgramLauncherComponent", "Android ARMv7 PRoot or its Bionic 32-bit loader is missing: "
+                    + proot + " / " + prootLoader32);
             return -1;
         }
         FileUtils.chmod(proot, 0755);
+        FileUtils.chmod(prootLoader32, 0755);
 
         File prootTmpDir = new File(imageFs.getTmpDir(), "proot");
         if (!prootTmpDir.isDirectory() && !prootTmpDir.mkdirs()) {
@@ -365,7 +369,7 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         hostEnv.put("USER", ImageFs.USER);
         hostEnv.put("DISPLAY", ":0");
         hostEnv.put("PULSE_SERVER", "unix:/usr/tmp/.sound/PS0");
-        hostEnv.put("PROOT_LOADER_32", "/usr/lib/proot-loader.so");
+        hostEnv.put("PROOT_LOADER_32", prootLoader32.getAbsolutePath());
         hostEnv.put("PROOT_TMP_DIR", prootTmpDir.getAbsolutePath());
         hostEnv.put("PROOT_NO_SECCOMP", "1");
         hostEnv.put("LANG", "en_US.UTF-8");
