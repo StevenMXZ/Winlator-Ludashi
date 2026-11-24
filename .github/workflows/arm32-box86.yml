@@ -1,0 +1,56 @@
+name: ARM32 Box86 ARMHF build
+
+on:
+  push:
+    branches:
+      - arm32-port-prototype
+    paths:
+      - ".github/workflows/arm32-box86.yml"
+      - ".github/scripts/build-box86-armhf.sh"
+  pull_request:
+    branches:
+      - arm32-port-prototype
+    paths:
+      - ".github/workflows/arm32-box86.yml"
+      - ".github/scripts/build-box86-armhf.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arm32-box86-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  box86-armhf:
+    name: Cross-build Box86 for ARMHF Linux
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Winlator port
+        uses: actions/checkout@v4
+
+      - name: Install ARMHF cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build python3 git zstd binutils-arm-linux-gnueabihf \
+            gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+
+      - name: Build and verify Box86 ARMHF runtime component
+        run: bash .github/scripts/build-box86-armhf.sh
+        env:
+          BOX86_COMMIT: bb716a2a6576cc06da811bf55e31e2f6f03b7596
+
+      - name: Upload Box86 ARMHF component
+        uses: actions/upload-artifact@v4
+        with:
+          name: box86-armhf-runtime
+          path: |
+            dist/box86-armhf-runtime.tar.zst
+            dist/box86-armhf-runtime.tar.zst.sha256
+            dist/box86-elf-header.txt
+            dist/box86-elf-program-headers.txt
+            dist/box86-arm-attributes.txt
+          if-no-files-found: error
+          retention-days: 30
