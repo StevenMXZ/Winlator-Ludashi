@@ -76,13 +76,30 @@ public abstract class ProtonPackageManager {
                     new long[]{52428800L, 52428800L, 52428800L, 52428800L, 7195940L})
     );
 
+    /**
+     * Proton ARM64EC and x86_64 archives require a 64-bit Android process.
+     * The ARM32 build uses the separately installed ARMHF + Box86 + 32-bit
+     * Wine runtime; exposing these Proton packages there only creates
+     * downloads that can never produce a runnable Wine environment.
+     */
+    public static boolean isPackageCompatible(PackageInfo packageInfo) {
+        if (packageInfo == null) return false;
+        if (!android.os.Process.is64Bit()) return false;
+        return packageInfo.identifier.endsWith("-arm64ec")
+                || packageInfo.identifier.endsWith("-x86_64");
+    }
+
     public static List<PackageInfo> getPackages() {
-        return new ArrayList<>(PACKAGES);
+        ArrayList<PackageInfo> compatible = new ArrayList<>();
+        for (PackageInfo packageInfo : PACKAGES)
+            if (isPackageCompatible(packageInfo)) compatible.add(packageInfo);
+        return compatible;
     }
 
     public static PackageInfo getPackage(String identifier) {
         for (PackageInfo packageInfo : PACKAGES)
-            if (packageInfo.identifier.equals(identifier)) return packageInfo;
+            if (packageInfo.identifier.equals(identifier)
+                    && isPackageCompatible(packageInfo)) return packageInfo;
         return null;
     }
 
@@ -108,8 +125,11 @@ public abstract class ProtonPackageManager {
     }
 
     public static boolean downloadPackage(PackageInfo packageInfo, File output, Callback<Integer> progressCallback) {
-        if (packageInfo == null || output == null || packageInfo.partSizes == null || packageInfo.partSizes.length == 0)
+        if (!isPackageCompatible(packageInfo) || output == null
+                || packageInfo.partSizes == null || packageInfo.partSizes.length == 0) {
+            Log.e(TAG, "Refusing to download an incompatible Proton package on this Android ABI");
             return false;
+        }
 
         long totalSize = 0;
         for (long size : packageInfo.partSizes) totalSize += size;
