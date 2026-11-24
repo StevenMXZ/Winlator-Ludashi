@@ -186,49 +186,47 @@ public abstract class ProcessHelper {
 
     public static String[] splitCommand(String command) {
         ArrayList<String> result = new ArrayList<>();
-        boolean startedQuotes = false;
-        String value = "";
-        char currChar, nextChar;
-        for (int i = 0, count = command.length(); i < count; i++) {
-            currChar = command.charAt(i);
+        if (command == null || command.isEmpty()) return new String[0];
 
-            if (startedQuotes) {
-                if (currChar == '"') {
-                    startedQuotes = false;
-                    if (!value.isEmpty()) {
-                        value += '"';
-                        result.add(value);
-                        value = "";
-                    }
-                }
-                else value += currChar;
-            }
-            else if (currChar == '"') {
-                startedQuotes = true;
-                value += '"';
-            }
-            else {
-                nextChar = i < count-1 ? command.charAt(i+1) : '\0';
-                if (currChar == ' ' || (currChar == '\\' && nextChar == ' ')) {
-                    if (currChar == '\\') {
-                        value += ' ';
+        StringBuilder value = new StringBuilder();
+        char quote = 0;
+        for (int i = 0; i < command.length(); i++) {
+            char current = command.charAt(i);
+
+            if (quote != 0) {
+                if (current == quote) {
+                    quote = 0;
+                } else if (current == '\\\\' && i + 1 < command.length()) {
+                    char next = command.charAt(i + 1);
+                    if (next == quote || next == '\\\\') {
+                        value.append(next);
                         i++;
+                    } else {
+                        value.append(current);
                     }
-                    else if (!value.isEmpty()) {
-                        result.add(value);
-                        value = "";
-                    }
+                } else {
+                    value.append(current);
                 }
-                else {
-                    value += currChar;
-                    if (i == count-1) {
-                        result.add(value);
-                        value = "";
-                    }
+                continue;
+            }
+
+            if (current == '"' || current == '\\'') {
+                quote = current;
+            } else if (current == '\\\\' && i + 1 < command.length()
+                    && command.charAt(i + 1) == ' ') {
+                value.append(' ');
+                i++;
+            } else if (Character.isWhitespace(current)) {
+                if (value.length() > 0) {
+                    result.add(value.toString());
+                    value.setLength(0);
                 }
+            } else {
+                value.append(current);
             }
         }
 
+        if (value.length() > 0) result.add(value.toString());
         return result.toArray(new String[0]);
     }
 
