@@ -118,6 +118,7 @@ internal suspend fun loadWineRuntimeOptions(context: Context): List<WineRuntimeO
         ContentProfile.ContentType.CONTENT_TYPE_WINE,
         ContentProfile.ContentType.CONTENT_TYPE_PROTON
     ).forEach { type ->
+        if (!android.os.Process.is64Bit()) return@forEach
         manager.getProfiles(type).orEmpty().forEach { profile ->
             val id = ContentsManager.getEntryName(profile)
             out[id] = WineRuntimeOption(
@@ -209,8 +210,11 @@ internal suspend fun loadSettingsCatalog(
         selected: String,
         filterArm: Boolean = true
     ): VersionCatalog {
+        val supportedOnAbi = arm64 || (type != ContentProfile.ContentType.CONTENT_TYPE_FEXCORE
+                && type != ContentProfile.ContentType.CONTENT_TYPE_BOX64
+                && type != ContentProfile.ContentType.CONTENT_TYPE_WOWBOX64)
         val allowed: (String) -> Boolean = { value ->
-            !filterArm || arm64 || !value.contains("arm64ec", ignoreCase = true)
+            supportedOnAbi && (!filterArm || arm64 || !value.contains("arm64ec", ignoreCase = true))
         }
         val all = linkedSetOf<String>()
         bundled.filter { it.isNotBlank() && allowed(it) }.forEach(all::add)
@@ -234,7 +238,7 @@ internal suspend fun loadSettingsCatalog(
             driverOptions[version.lowercase()] = DriverOption(version, version, true)
         }
     }
-    runCatching { adreno.enumerateRendererDrivers() }.getOrNull().orEmpty().forEach { id ->
+    (if (arm64) runCatching { adreno.enumerateRendererDrivers() }.getOrNull().orEmpty() else emptyList()).forEach { id ->
         val label = listOf(adreno.getDriverName(id), adreno.getDriverVersion(id))
             .filter { it.isNotBlank() }
             .joinToString(" ")
@@ -242,7 +246,7 @@ internal suspend fun loadSettingsCatalog(
         rendererDrivers[id] = label
         driverOptions[id.lowercase()] = DriverOption(id, label, true)
     }
-    runCatching { RemoteDriverCatalog.load(context) }.getOrNull().orEmpty().forEach { remote ->
+    (if (arm64) runCatching { RemoteDriverCatalog.load(context) }.getOrNull().orEmpty() else emptyList()).forEach { remote ->
         val alreadyInstalled = driverOptions.values.any {
             it.id.equals(remote.name, ignoreCase = true) || it.label.equals(remote.name, ignoreCase = true)
         }
