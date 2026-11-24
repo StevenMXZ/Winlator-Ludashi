@@ -38,10 +38,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.winlator.cmod.core.ProtonPackageManager
+import com.winlator.cmod.core.WineInfo
 
-private val bundledRuntimeId = "bundled:${ProtonPackageManager.DEFAULT_IDENTIFIER}"
-private val bundledRuntimeName = ProtonPackageManager.getPackage(ProtonPackageManager.DEFAULT_IDENTIFIER)?.title
-    ?: "Proton 10.0-5 arm64ec"
+private val bundledRuntimeId = "bundled:${WineInfo.MAIN_WINE_VERSION.identifier()}"
+private val bundledRuntimeType = if (android.os.Process.is64Bit()) "Proton" else "Wine"
+private val bundledRuntimeName = if (android.os.Process.is64Bit()) {
+    ProtonPackageManager.getPackage(ProtonPackageManager.DEFAULT_IDENTIFIER)?.title
+        ?: ProtonPackageManager.DEFAULT_IDENTIFIER
+} else {
+    "Wine 11.22 x86 (ARM32)"
+}
 
 @Composable
 internal fun OnboardingRuntimeSelectionScreen(
@@ -57,12 +63,12 @@ internal fun OnboardingRuntimeSelectionScreen(
                 add(
                     OnboardingComponent(
                         id = bundledRuntimeId,
-                        type = "Proton",
+                        type = bundledRuntimeType,
                         name = bundledRuntimeName,
                         installed = true,
                         recommended = true,
                         removable = true,
-                        runtimeIdentifier = ProtonPackageManager.DEFAULT_IDENTIFIER,
+                        runtimeIdentifier = WineInfo.MAIN_WINE_VERSION.identifier(),
                         bundled = true
                     )
                 )
@@ -71,7 +77,7 @@ internal fun OnboardingRuntimeSelectionScreen(
                 .asSequence()
                 .filter { it.installed && (it.type == "Wine" || it.type == "Proton") }
                 .filter { !it.runtimeIdentifier.isNullOrBlank() }
-                .filterNot { it.runtimeIdentifier == ProtonPackageManager.DEFAULT_IDENTIFIER }
+                .filterNot { it.runtimeIdentifier == WineInfo.MAIN_WINE_VERSION.identifier() }
                 .distinctBy { it.runtimeIdentifier }
                 .forEach(::add)
         }
