@@ -224,11 +224,17 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
     @Override
     public void start() {
         synchronized (lock) {
-            if (wineInfo.isArm64EC())
-                extractEmulatorsDlls();
-            else
-                extractBox64Files();
-            checkDependencies();
+            boolean arm32Wine = !Process.is64Bit() && wineInfo != null
+                    && "x86".equals(wineInfo.getArch());
+            if (arm32Wine) {
+                Log.i("GuestProgramLauncherComponent", "Using isolated ARMHF + Box86 + Wine i386 runtime");
+            } else {
+                if (wineInfo.isArm64EC())
+                    extractEmulatorsDlls();
+                else
+                    extractBox64Files();
+                checkDependencies();
+            }
             pid = execGuestProgram();
         }
     }
@@ -334,7 +340,8 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
 
     public void setFEXCorePreset (String fexcorePreset) { this.fexcorePreset = fexcorePreset; }
 
-    private int execArm32GuestProgram(Context context, ImageFs imageFs, File rootDir) {
+    private int execArm32GuestProgram(Context context, ImageFs imageFs, File appRootDir) {
+        File rootDir = new File(appRootDir, "armhf-rootfs");
         if (!Arm32RuntimeInstaller.isInstalled(context)) {
             Log.e("GuestProgramLauncherComponent", "ARMHF runtime is not installed");
             return -1;
@@ -391,6 +398,16 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         command.add("/proc");
         command.add("-b");
         command.add("/sys");
+        // Reuse the app's active container home and X/audio sockets without
+        // overlaying or replacing the Android/Bionic ImageFS with Debian/glibc.
+        File appHome = new File(appRootDir, "home");
+        File appTmp = new File(appRootDir, "usr/tmp");
+        new File(rootDir, "home").mkdirs();
+        new File(rootDir, "usr/tmp").mkdirs();
+        command.add("-b");
+        command.add(appHome.getAbsolutePath() + ":/home");
+        command.add("-b");
+        command.add(appTmp.getAbsolutePath() + ":/usr/tmp");
 
         if (bindingPaths != null) {
             for (String binding : bindingPaths) {
@@ -426,7 +443,7 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         Log.i("GuestProgramLauncherComponent", "Starting ARMHF Wine through PRoot: " +
                 command.subList(0, Math.min(command.size(), 12)));
         return ProcessHelper.exec(command.toArray(new String[0]), hostEnv.toStringArray(),
-                rootDir, status -> {
+                appRootDir, status -> {
                     synchronized (lock) {
                         pid = -1;
                     }
