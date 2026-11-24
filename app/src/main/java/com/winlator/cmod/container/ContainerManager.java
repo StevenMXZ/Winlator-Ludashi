@@ -286,6 +286,15 @@ public class ContainerManager {
     public boolean extractContainerPatternFile(Container container, String wineVersion, ContentsManager contentsManager, File containerDir, OnExtractFileListener onExtractFileListener) {
         WineInfo wineInfo = WineInfo.fromIdentifier(context, contentsManager, wineVersion);
         if (wineInfo.path == null || wineInfo.path.isEmpty()) return false;
+
+        // The ARM32 Wine runtime is a separate ARMHF/Box86 rootfs and has no
+        // Winlator prefixPack archive. Create an empty prefix directory; Wine
+        // will bootstrap it through winlator-wine/PRoot on its first launch.
+        if (!android.os.Process.is64Bit() && "x86".equals(wineInfo.getArch())) {
+            File winePrefix = new File(containerDir, ".wine");
+            return winePrefix.isDirectory() || winePrefix.mkdirs();
+        }
+
         String containerPattern = wineVersion + "_container_pattern.tzst";
         boolean result = TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, context, containerPattern, containerDir, onExtractFileListener);
 
