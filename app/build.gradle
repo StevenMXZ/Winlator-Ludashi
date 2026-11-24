@@ -1,6 +1,15 @@
 import java.net.URL
 import java.security.MessageDigest
 
+// The normal Winlator build remains ARM64. ARM32 is currently supported only for
+// native compile experiments until matching Box86/Wine/rootfs runtime assets exist.
+def winlatorAbi = providers.gradleProperty("winlatorAbi").getOrElse("arm64-v8a")
+def winlatorNativeCompileOnly = providers.gradleProperty("winlatorNativeCompileOnly")
+        .map { it.toBoolean() }.getOrElse(false)
+if (!(winlatorAbi in ["arm64-v8a", "armeabi-v7a"])) {
+    throw new GradleException("Unsupported Winlator ABI: " + winlatorAbi)
+}
+
 buildscript {
     repositories {
         google()
@@ -113,11 +122,18 @@ tasks.register("downloadProton") {
 
 tasks.register("prepareKotlinBuildScriptModel"){}
 tasks.register("downloadComponentTools") {
-    def nativeTools = layout.buildDirectory.dir("generated/component-tools/arm64-v8a")
-    def manifestFile = rootProject.file("app/src/main/scripts/component-tools.json")
+    def nativeTools = layout.buildDirectory.dir("generated/component-tools/" + winlatorAbi)
+    def manifestName = winlatorAbi == "arm64-v8a"
+            ? "component-tools.json"
+            : "component-tools-" + winlatorAbi + ".json"
+    def manifestFile = rootProject.file("app/src/main/scripts/" + manifestName)
     outputs.dir(nativeTools)
     inputs.file(manifestFile)
     doLast {
+        if (!manifestFile.isFile()) {
+            throw new GradleException("Missing native component manifest: " + manifestFile +
+                    ". ARM32 component tools have not been supplied yet.")
+        }
         def manifest = new groovy.json.JsonSlurper().parse(manifestFile)
         File directory = nativeTools.get().asFile
         directory.mkdirs()
@@ -135,7 +151,7 @@ tasks.register("downloadComponentTools") {
             if (!target.isFile() || hash(target) != expected) {
                 File part = new File(directory, name + ".part")
                 try {
-                    new URL("https://raw.githubusercontent.com/Other-backup/winlator-imagefs-v2/ludashi-components/component-tools/arm64-v8a/" + name).withInputStream { input ->
+                    new URL("https://raw.githubusercontent.com/Other-backup/winlator-imagefs-v2/ludashi-components/component-tools/" + winlatorAbi + " + "" + name).withInputStream { input ->
                         part.withOutputStream { output -> output << input }
                     }
                     if (hash(part) != expected) throw new GradleException("Component tool checksum mismatch: " + name)
@@ -145,9 +161,24 @@ tasks.register("downloadComponentTools") {
         }
     }
 }
-downloadProton.dependsOn(downloadImageFS)
-preBuild.dependsOn(downloadProton)
-preBuild.dependsOn(downloadComponentTools)
+if (winlatorAbi == "arm64-v8a") {
+    // Existing release path: ARM64EC Proton and ARM64 helper binaries.
+    downloadProton.dependsOn(downloadImageFS)
+    preBuild.dependsOn(downloadProton)
+    preBuild.dependsOn(downloadComponentTools)
+} else if (winlatorAbi == "armeabi-v7a" && !winlatorNativeCompileOnly) {
+    // Never create a misleading ARM32 APK that embeds ARM64EC/ARM64 runtime payloads.
+    tasks.register("verifyArm32Runtime") {
+        doLast {
+            throw new GradleException(
+                "ARM32 APK packaging is blocked: this fork does not yet include an ARMHF " +
+                "Linux rootfs, 32-bit Wine/Box86 runtime, or an armeabi-v7a component-tools " +
+                "manifest. Use -PwinlatorNativeCompileOnly=true for JNI-only bring-up."
+            )
+        }
+    }
+    preBuild.dependsOn("verifyArm32Runtime")
+}
 
 android {
     sourceSets.main.jniLibs.srcDir(layout.buildDirectory.dir("generated/component-tools"))
@@ -178,7 +209,7 @@ android {
 
         // You originally only did arm64-v8a. If you want multi-ABI splits, see below.
         ndk {
-            abiFilters 'arm64-v8a'
+            abiFilters winlatorAbi
         }
     }
 
