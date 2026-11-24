@@ -27,6 +27,7 @@ public final class WineRuntimeGuard {
     }
 
     public static boolean isBundledMainInstalled(Context context) {
+        if (!android.os.Process.is64Bit()) return Arm32RuntimeInstaller.isInstalled(context);
         String identifier = WineInfo.MAIN_WINE_VERSION.identifier();
         if (ProtonPackageManager.isKnownPackage(identifier)) {
             return ProtonPackageManager.isInstalled(context, identifier);
@@ -37,6 +38,7 @@ public final class WineRuntimeGuard {
     }
 
     public static boolean removeBundledMain(Context context) {
+        if (!android.os.Process.is64Bit()) return false;
         String identifier = WineInfo.MAIN_WINE_VERSION.identifier();
         if (isInUse(context, identifier)) return false;
         File runtime = new File(ImageFs.find(context).getRootDir(), "opt/" + identifier);
