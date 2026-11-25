@@ -662,6 +662,15 @@
                     android:tag="i18n/enable_touchscreen_haptics"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
+                    <Switch
+                        android:id="@+id/SWEnableTouchHighlights"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:checked="true"
+                        android:text="@string/enable_touch_highlights"
+                    android:tag="i18n/enable_touch_highlights"
+                        android:textColor="#FFFFFF"
+                        android:textSize="15sp" />
                 </LinearLayout>
                 <Switch
                     android:id="@+id/SWRelativeMouse"

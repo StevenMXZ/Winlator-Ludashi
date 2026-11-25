@@ -106,6 +106,14 @@ public class ControlElement {
     private RangeScroller scroller;
     private CubicBezierInterpolator interpolator;
     private Object touchTime;
+    private String cachedLabel;
+    private boolean labelDirty = true;
+    private String sizedLabel;
+    private float sizedWidth;
+    private float sizedMax;
+    private float sizedValue;
+    private final Rect iconSrcRect = new Rect();
+    private final Rect iconDstRect = new Rect();
 
     public ControlElement(InputControlsView inputControlsView) {
         this.inputControlsView = inputControlsView;
@@ -150,6 +158,7 @@ public class ControlElement {
 
     public void setType(Type type) {
         this.type = type;
+        labelDirty = true;
         reset();
     }
 
@@ -169,6 +178,7 @@ public class ControlElement {
     }
 
     public void setBindingCount(int bindingCount) {
+        labelDirty = true;
         bindings = new Binding[bindingCount];
         setBinding(Binding.NONE);
         states = new boolean[bindingCount];
@@ -234,6 +244,7 @@ public class ControlElement {
     }
 
     public void setBindingAt(int index, Binding binding) {
+        labelDirty = true;
         if (index >= bindings.length) {
             int oldLength = bindings.length;
             bindings = Arrays.copyOf(bindings, index+1);
@@ -245,6 +256,7 @@ public class ControlElement {
     }
 
     public void setBinding(Binding binding) {
+        labelDirty = true;
         Arrays.fill(bindings, binding);
     }
 
@@ -334,6 +346,7 @@ public class ControlElement {
     }
 
     public void setText(String text) {
+        labelDirty = true;
         this.text = text != null ? text : "";
     }
 
@@ -437,6 +450,14 @@ public class ControlElement {
     }
 
     private String getDisplayText() {
+        if (labelDirty || cachedLabel == null) {
+            cachedLabel = computeDisplayText();
+            labelDirty = false;
+        }
+        return cachedLabel;
+    }
+
+    private String computeDisplayText() {
         if (text != null && !text.isEmpty()) {
             return text;
         }
@@ -538,28 +559,36 @@ public class ControlElement {
         return schemeColor != 0 ? schemeColor : 0xffffffff;
     }
 
-    private boolean isVisuallyPressed() {
-        return selected || currentPointerId != -1;
+    private boolean highlightsOn() {
+        return inputControlsView.isTouchHighlightsEnabled();
     }
 
-    private Rect expandedBounds(Rect rect, int padding) {
-        return new Rect(rect.left - padding, rect.top - padding, rect.right + padding, rect.bottom + padding);
+    private boolean isVisuallyPressed() {
+        return selected || (currentPointerId != -1 && highlightsOn());
+    }
+
+    private boolean isDirectionActive(int index) {
+        return index < states.length && states[index] && highlightsOn();
+    }
+
+    private boolean isLiveType() {
+        return type == Type.STICK || type == Type.DYNAMIC_STICK || type == Type.RANGE_BUTTON;
+    }
+
+    public boolean isLiveDrawn() {
+        return currentPointerId != -1 && isLiveType();
     }
 
     private void invalidateSelf() {
-        Rect rect = getBoundingBox();
-        int pad = Math.max(4, inputControlsView.getSnappingSize() * 2);
-        if (type == Type.STICK) pad = Math.max(pad, rect.width() / 4);
-        if (type == Type.DYNAMIC_STICK) pad = Math.max(pad, getDynamicStickRadiusPixels() * 2);
-        inputControlsView.invalidateElement(expandedBounds(rect, pad));
+        inputControlsView.invalidateStaticLayer();
     }
 
-    private void invalidateDynamicThumb(float oldX, float oldY, float newX, float newY) {
-        int pad = (int)(getDynamicStickRadiusPixels() * 0.5f) + 4;
-        inputControlsView.invalidate((int)Math.floor(Math.min(oldX, newX)) - pad,
-                (int)Math.floor(Math.min(oldY, newY)) - pad,
-                (int)Math.ceil(Math.max(oldX, newX)) + pad,
-                (int)Math.ceil(Math.max(oldY, newY)) + pad);
+    private void invalidateForPress() {
+        if (highlightsOn() || inputControlsView.isEditMode()) invalidateSelf();
+    }
+
+    public void invalidateLive() {
+        inputControlsView.invalidate();
     }
 
     private void setupPaint(Paint paint, Paint.Style style, int color, float strokeWidth) {
@@ -576,6 +605,20 @@ public class ControlElement {
         int alpha = (color >>> 24) & 0xff;
         setupPaint(paint, Paint.Style.FILL, withAlpha(color, alpha), 0);
         paint.setTextSize(Math.min(getTextSizeForWidth(paint, text, maxWidth), maxSize));
+        canvas.drawText(text, cx, cy - ((paint.descent() + paint.ascent()) * 0.5f), paint);
+    }
+
+    private void drawLabelText(Canvas canvas, String text, float cx, float cy, float maxWidth, float maxSize, int color) {
+        Paint paint = inputControlsView.getPaint();
+        int alpha = (color >>> 24) & 0xff;
+        setupPaint(paint, Paint.Style.FILL, withAlpha(color, alpha), 0);
+        if (!text.equals(sizedLabel) || sizedWidth != maxWidth || sizedMax != maxSize) {
+            sizedValue = Math.min(getTextSizeForWidth(paint, text, maxWidth), maxSize);
+            sizedLabel = text;
+            sizedWidth = maxWidth;
+            sizedMax = maxSize;
+        }
+        paint.setTextSize(sizedValue);
         canvas.drawText(text, cx, cy - ((paint.descent() + paint.ascent()) * 0.5f), paint);
     }
 
@@ -707,7 +750,7 @@ public class ControlElement {
                 }
                 else {
                     int textColor = active ? 0xffffffff : accent;
-                    drawCenteredText(canvas, label, cx, cy, w * 0.55f, snappingSize * 2.1f * scale, textColor);
+                    drawLabelText(canvas, label, cx, cy, w * 0.55f, snappingSize * 2.1f * scale, textColor);
                 }
                 break;
             }
@@ -737,10 +780,10 @@ public class ControlElement {
                         paint
                 );
 
-                drawDPadPiece(canvas, cx, cy - dist, piece, 0, states.length > 0 && states[0]);
-                drawDPadPiece(canvas, cx + dist, cy, piece, 1, states.length > 1 && states[1]);
-                drawDPadPiece(canvas, cx, cy + dist, piece, 2, states.length > 2 && states[2]);
-                drawDPadPiece(canvas, cx - dist, cy, piece, 3, states.length > 3 && states[3]);
+                drawDPadPiece(canvas, cx, cy - dist, piece, 0, isDirectionActive(0));
+                drawDPadPiece(canvas, cx + dist, cy, piece, 1, isDirectionActive(1));
+                drawDPadPiece(canvas, cx, cy + dist, piece, 2, isDirectionActive(2));
+                drawDPadPiece(canvas, cx - dist, cy, piece, 3, isDirectionActive(3));
                 break;
             }
 
@@ -762,7 +805,7 @@ public class ControlElement {
 
                 
                 
-                boolean isPressingSegment = currentPointerId != -1 && !scroller.isScrolling();
+                boolean isPressingSegment = highlightsOn() && currentPointerId != -1 && !scroller.isScrolling();
                 Binding pressedBinding = scroller.getBinding();
 
                 if (orientation == 0) {
@@ -919,9 +962,9 @@ public class ControlElement {
         int margin = (int)(inputControlsView.getSnappingSize() * (shape == Shape.CIRCLE || shape == Shape.SQUARE ? 1.65f : 0.85f) * scale);
         int halfSize = (int)((Math.min(width, height) - margin) * 0.5f);
 
-        Rect srcRect = new Rect(0, 0, icon.getWidth(), icon.getHeight());
-        Rect dstRect = new Rect((int)(cx - halfSize), (int)(cy - halfSize), (int)(cx + halfSize), (int)(cy + halfSize));
-        canvas.drawBitmap(icon, srcRect, dstRect, paint);
+        iconSrcRect.set(0, 0, icon.getWidth(), icon.getHeight());
+        iconDstRect.set((int)(cx - halfSize), (int)(cy - halfSize), (int)(cx + halfSize), (int)(cy + halfSize));
+        canvas.drawBitmap(icon, iconSrcRect, iconDstRect, paint);
         paint.setColorFilter(null);
         paint.setAlpha(255);
     }
@@ -985,24 +1028,22 @@ public class ControlElement {
     public boolean handleTouchDown(int pointerId, float x, float y) {
         if (currentPointerId == -1 && containsPoint(x, y)) {
             currentPointerId = pointerId;
-            invalidateSelf();
+            if (isLiveType()) invalidateSelf();
+            else invalidateForPress();
             if (type == Type.BUTTON) {
                 if (mouseMoveMode) {
                     setButtonBindingsActive(true);
                     inputControlsView.getTouchpadView().mouseMove(x, y, MotionEvent.ACTION_DOWN);
-                    invalidateSelf();
                     return true;
                 }
                 if (isKeepButtonPressedAfterMinTime()) touchTime = System.currentTimeMillis();
                 if (!toggleSwitch || !selected) {
                     setButtonBindingsActive(true);
                 }
-                invalidateSelf();
                 return true;
             }
             else if (type == Type.RANGE_BUTTON) {
                 scroller.handleTouchDown(x, y);
-                invalidateSelf();
                 return true;
             }
             else {
@@ -1013,7 +1054,6 @@ public class ControlElement {
                 if (type == Type.DYNAMIC_STICK) {
                     dynamicThumbX = x;
                     dynamicThumbY = y;
-                    invalidateSelf();
                 }
                 return handleTouchMove(pointerId, x, y);
             }
@@ -1084,7 +1124,7 @@ public class ControlElement {
                     redraw = Math.abs(dynamicThumbX - visualX) >= 0.5f ||
                              Math.abs(dynamicThumbY - visualY) >= 0.5f;
                     if (redraw) {
-                        invalidateDynamicThumb(dynamicThumbX, dynamicThumbY, visualX, visualY);
+                        invalidateLive();
                         dynamicThumbX = visualX;
                         dynamicThumbY = visualY;
                     }
@@ -1136,7 +1176,7 @@ public class ControlElement {
                         this.states[i] = state;
                     }
                 }
-                if (redraw && type == Type.STICK) invalidateSelf();
+                if (redraw && type == Type.STICK) invalidateLive();
                 return true;
             }
             else if (type == Type.TRACKPAD) {
@@ -1245,7 +1285,7 @@ public class ControlElement {
                         this.states[i] = state;
                     }
                 }
-                if (dpadStateChanged) invalidateSelf();
+                if (dpadStateChanged) invalidateForPress();
                 return true;
             }
 
@@ -1255,7 +1295,6 @@ public class ControlElement {
         }
         else if (pointerId == currentPointerId && type == Type.RANGE_BUTTON) {
             scroller.handleTouchMove(x, y);
-            invalidateSelf();
             return true;
         }
         else return false;
@@ -1267,7 +1306,6 @@ public class ControlElement {
                 if (mouseMoveMode) {
                     inputControlsView.getTouchpadView().mouseMove(0, 0, MotionEvent.ACTION_UP);
                     setButtonBindingsActive(false);
-                    invalidateSelf();
                 }
                 else if (isKeepButtonPressedAfterMinTime() && touchTime != null) {
                     selected = (System.currentTimeMillis() - (long)touchTime) > BUTTON_MIN_TIME_TO_KEEP_PRESSED;
@@ -1309,9 +1347,6 @@ public class ControlElement {
                 if (type == Type.RANGE_BUTTON) {
                     scroller.handleTouchUp();
                 }
-                else if (type == Type.STICK || type == Type.DYNAMIC_STICK) {
-                    invalidateSelf();
-                }
 
                 if (currentPosition != null) currentPosition = null;
                 if (type == Type.DYNAMIC_STICK) {
@@ -1320,7 +1355,8 @@ public class ControlElement {
                 }
             }
             currentPointerId = -1;
-            invalidateSelf();
+            if (isLiveType()) invalidateSelf();
+            else invalidateForPress();
             return true;
         }
         return false;
@@ -1339,7 +1375,6 @@ public class ControlElement {
             currentPosition = new PointF();
         }
         currentPosition.set(x, y);
-        
-        invalidateSelf();
+        invalidateLive();
     }
 }
