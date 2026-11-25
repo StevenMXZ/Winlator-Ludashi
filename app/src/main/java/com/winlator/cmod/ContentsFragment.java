@@ -86,12 +86,23 @@ public class ContentsFragment extends Fragment {
         super.onResume();
 
 
+        final Activity activity = requireActivity();
+        new Thread(() -> {
+            String releases = Downloader.downloadString(ContentsManager.FREEDRENO_RELEASES);
+            if (releases != null) activity.runOnUiThread(() -> {
+                if (!isAdded() || getView() == null) return;
+                manager.setFreedrenoReleases(releases);
+                loadContentList();
+            });
+        }).start();
+
         new Thread(() -> {
             String contentsURL = sp.getString("downloadable_contents_url", ContentsManager.REMOTE_PROFILES);
             String json = Downloader.downloadString(contentsURL);
             if (json == null)
                 return;
-            getActivity().runOnUiThread(() -> {
+            activity.runOnUiThread(() -> {
+                if (!isAdded() || getView() == null) return;
                 manager.setRemoteProfiles(json);
                 loadContentList();
             });
@@ -316,6 +327,37 @@ public class ContentsFragment extends Fragment {
         }
     }
 
+    private void downloadFreedreno(ContentProfile profile) {
+        Activity activity = requireActivity();
+        Context appContext = requireContext().getApplicationContext();
+        DownloadProgressDialog dialog = new DownloadProgressDialog(activity);
+        dialog.show(R.string.downloading_file);
+        new Thread(() -> {
+            File output = null;
+            String error = null;
+            try {
+                output = File.createTempFile("freedreno-", ".zip", appContext.getCacheDir());
+                if (!Downloader.downloadFile(profile.remoteUrl, output,
+                        progress -> activity.runOnUiThread(() -> dialog.setProgress(progress))))
+                    throw new IOException("Download failed");
+                new com.winlator.cmod.contents.OpenGLDriverManager(appContext).install(Uri.fromFile(output));
+            } catch (Exception e) {
+                error = e.getMessage() != null ? e.getMessage() : e.toString();
+            } finally {
+                if (output != null) output.delete();
+            }
+            final String failure = error;
+            activity.runOnUiThread(() -> {
+                dialog.close();
+                if (!isAdded() || getView() == null) return;
+                manager.syncContents();
+                loadContentList();
+                if (failure == null) ContentDialog.alert(requireContext(), getString(R.string.content_installed_success), null);
+                else ContentDialog.alert(requireContext(), getString(R.string.install_failed) + ": " + failure, null);
+            });
+        }).start();
+    }
+
     private class ContentItemAdapter extends RecyclerView.Adapter<ContentItemAdapter.ViewHolder> {
         private final List<ContentProfile> data;
 
@@ -368,8 +410,9 @@ public class ContentsFragment extends Fragment {
             holder.ivIcon.setBackground(getContext().getDrawable(iconId));
 
             String shownVersion = profile.type == ContentProfile.ContentType.CONTENT_TYPE_FREEDRENO
-                    ? new com.winlator.cmod.contents.OpenGLDriverManager(requireContext()).versionLabel(
-                            ContentsManager.getInstallDir(requireContext(), profile).getName()) : profile.verName;
+                    ? (profile.remoteUrl != null ? profile.desc
+                        : new com.winlator.cmod.contents.OpenGLDriverManager(requireContext()).versionLabel(
+                            ContentsManager.getInstallDir(requireContext(), profile).getName())) : profile.verName;
             holder.tvVersionName.setText(getContext().getString(R.string.version) + ": " + shownVersion);
             holder.tvVersionCode.setText(getContext().getString(R.string.version_code) + ": " + profile.verCode);
             holder.ibMenu.setVisibility(profile.remoteUrl == null ? View.VISIBLE : View.GONE);
@@ -404,6 +447,10 @@ public class ContentsFragment extends Fragment {
             });
             holder.ibDownload.setVisibility((profile.remoteUrl != null) && (holder.progressBar.getVisibility() == View.GONE) ? View.VISIBLE : View.GONE);
             holder.ibDownload.setOnClickListener(v -> {
+                if (profile.type == ContentProfile.ContentType.CONTENT_TYPE_FREEDRENO) {
+                    downloadFreedreno(profile);
+                    return;
+                }
                 holder.ibDownload.setVisibility(View.GONE);
                 holder.progressBar.setVisibility(View.VISIBLE);
 

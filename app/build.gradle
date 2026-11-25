@@ -145,12 +145,48 @@ tasks.register("downloadComponentTools") {
         }
     }
 }
+// Pin the bundled driver to a verified Freedreno release, independent of the
+// downloadable Components catalog. Never silently substitute another build.
+def bundledFreedrenoAssets = layout.buildDirectory.dir("generated/freedreno-assets")
+tasks.register("downloadBundledFreedreno") {
+    def targetFile = bundledFreedrenoAssets.map { it.file("graphics_driver/opengl_freedreno.zip") }
+    String sha256 = "38b1a84e14d9b1fbb6bd697918c4e952113c1f5dbdfd06bfcf8ff98adc75d4b9"
+    String releaseURL = "https://github.com/StevenMXZ/Freedreno/releases/download/freedreno-dri3-dfa64af-10-1/Freedreno-DRI3-dfa64af.zip"
+    inputs.property("releaseURL", releaseURL)
+    inputs.property("sha256", sha256)
+    outputs.file(targetFile)
+    def valid = { File file ->
+        file.isFile() && file.length() == 5425687L &&
+                MessageDigest.getInstance("SHA-256").digest(file.bytes).encodeHex().toString() == sha256
+    }
+    outputs.upToDateWhen { valid(targetFile.get().asFile) }
+    doLast {
+        File target = targetFile.get().asFile
+        if (valid(target)) return
+        target.parentFile.mkdirs()
+        File partial = new File(target.parentFile, target.name + ".part")
+        try {
+            def connection = new URL(releaseURL).openConnection()
+            connection.setConnectTimeout(30000)
+            connection.setReadTimeout(120000)
+            connection.setRequestProperty("User-Agent", "Winlator-Ludashi-build")
+            connection.getInputStream().withCloseable { input ->
+                partial.withOutputStream { output -> output << input }
+            }
+            if (!valid(partial)) throw new GradleException("Bundled Freedreno SHA-256 verification failed")
+            java.nio.file.Files.move(partial.toPath(), target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        } finally { partial.delete() }
+    }
+}
+preBuild.dependsOn(downloadBundledFreedreno)
 downloadProton.dependsOn(downloadImageFS)
 preBuild.dependsOn(downloadProton)
 preBuild.dependsOn(downloadComponentTools)
 
 android {
     sourceSets.main.jniLibs.srcDir(layout.buildDirectory.dir("generated/component-tools"))
+    sourceSets.main.assets.srcDir(bundledFreedrenoAssets)
     namespace 'com.winlator.cmod'
     // Keep compileSdk from your current config. If you want to match Termux-X11, you could set to 34.
     compileSdk 35

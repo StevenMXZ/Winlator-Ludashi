@@ -78,6 +78,7 @@ public class ContentsManager {
     private final Context context;
     private HashMap<ContentProfile.ContentType, List<ContentProfile>> profilesMap;
     private ArrayList<ContentProfile> remoteProfiles;
+    private List<ContentProfile> freedrenoReleases = new ArrayList<>();
 
     public ContentsManager(Context context) {
         this.context = context;
@@ -124,6 +125,47 @@ public class ContentsManager {
         syncContents();
     }
 
+    public static final String FREEDRENO_RELEASES =
+            "https://api.github.com/repos/StevenMXZ/Freedreno/releases?per_page=100";
+
+    public void setFreedrenoReleases(String json) {
+        try {
+            JSONArray releases = new JSONArray(json);
+            List<ContentProfile> result = new ArrayList<>();
+            java.util.regex.Pattern tagPattern = java.util.regex.Pattern.compile(
+                    "freedreno-dri3-([a-f0-9]+)-([0-9]+)-([0-9]+)");
+            for (int i = 0; i < releases.length(); i++) {
+                JSONObject release = releases.optJSONObject(i);
+                if (release == null || release.optBoolean("draft")) continue;
+                String tag = release.optString("tag_name");
+                java.util.regex.Matcher match = tagPattern.matcher(tag);
+                if (!match.matches()) continue;
+                String assetName = "Freedreno-DRI3-" + match.group(1) + ".zip";
+                String url = "https://github.com/StevenMXZ/Freedreno/releases/download/" + tag + "/" + assetName;
+                JSONArray assets = release.optJSONArray("assets");
+                if (assets == null) continue;
+                for (int j = 0; j < assets.length(); j++) {
+                    JSONObject asset = assets.optJSONObject(j);
+                    if (asset == null || !assetName.equals(asset.optString("name"))
+                            || !url.equals(asset.optString("browser_download_url"))) continue;
+                    ContentProfile profile = new ContentProfile();
+                    profile.type = ContentProfile.ContentType.CONTENT_TYPE_FREEDRENO;
+                    // Same stable package identity as OpenGLDriverManager.install().
+                    profile.verName = "Freedreno_DRI3-" + match.group(2) + "." + match.group(3);
+                    profile.verCode = 1;
+                    profile.desc = release.optString("name", tag);
+                    profile.remoteUrl = url;
+                    result.add(profile);
+                    break;
+                }
+            }
+            freedrenoReleases = result;
+            syncContents();
+        } catch (JSONException e) {
+            Log.w("ContentsManager", "Invalid Freedreno release list", e);
+        }
+    }
+
     public void syncContents() {
         profilesMap = new HashMap<>();
         for (ContentProfile.ContentType type : ContentProfile.ContentType.values()) profilesMap.put(type, new LinkedList<>());
@@ -143,6 +185,19 @@ public class ContentsManager {
                         } else Log.w("ContentsManager", "Invalid local profile at: " + proFile.getAbsolutePath());
                     }
                 }
+            }
+            if (type == ContentProfile.ContentType.CONTENT_TYPE_FREEDRENO) {
+                for (ContentProfile remote : freedrenoReleases) {
+                    boolean installed = false;
+                    for (ContentProfile local : profiles) {
+                        if (local.verCode == remote.verCode && local.verName.equals(remote.verName)) {
+                            installed = true;
+                            break;
+                        }
+                    }
+                    if (!installed) profiles.add(remote);
+                }
+                continue;
             }
             if (remoteProfiles != null) {
                 for (ContentProfile remote : remoteProfiles) {

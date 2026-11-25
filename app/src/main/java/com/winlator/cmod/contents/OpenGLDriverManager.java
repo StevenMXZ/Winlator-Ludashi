@@ -81,38 +81,9 @@ public final class OpenGLDriverManager {
         root().mkdirs();
         File stage = Files.createTempDirectory(root().toPath(), ".import-").toFile();
         try {
-            long total = 0; int count = 0;
-            try (ZipInputStream zip = new ZipInputStream(context.getContentResolver().openInputStream(uri))) {
-                ZipEntry entry; byte[] buf = new byte[16384];
-                Set<String> names = new HashSet<>();
-                while ((entry = zip.getNextEntry()) != null) {
-                    String name = entry.getName();
-                    if (++count > 8 || entry.isDirectory() || !names.add(name)
-                            || !(name.equals("meta.json") || name.equals("libGL.so.1") || name.matches("libgallium[^/\\\\]*\\.so")))
-                        throw new IOException("Unexpected Freedreno package entry: " + name);
-                    File dst = LocalDriverArchive.resolveEntry(stage, name);
-                    try (OutputStream out = new FileOutputStream(dst)) {
-                        int n; while ((n = zip.read(buf)) != -1) {
-                            if ((total += n) > 256L * 1024 * 1024) throw new IOException("Driver too large");
-                            out.write(buf, 0, n);
-                        }
-                    }
-                }
-            }
-            if (new File(stage, "meta.json").length() > 65536) throw new IOException("Metadata too large");
-            JSONObject meta = new JSONObject(FileUtils.readString(new File(stage, "meta.json")));
-            if (!"freedreno".equalsIgnoreCase(meta.optString("type")) || meta.optInt("schemaVersion") != 1
-                    || !"libGL.so.1".equals(meta.optString("libraryName"))) throw new IOException("Invalid Freedreno metadata");
+            JSONObject meta = extractPackage(context.getContentResolver().openInputStream(uri), stage);
             String name = meta.optString("name").trim(), version = meta.optString("packageVersion").trim();
-            if (name.isEmpty() || version.isEmpty()) throw new IOException("Missing driver name/version");
             String id = (name + "-" + version).replaceAll("[^A-Za-z0-9._-]", "_") + "-1";
-            File gl = new File(stage, "libGL.so.1");
-            List<String> needs = ElfLibrary.dependencies(gl);
-            String gallium = null;
-            for (String lib : needs) if (lib.startsWith("libgallium") && lib.endsWith(".so")) gallium = lib;
-            if (gallium == null || gallium.contains("/") || count != 3) throw new IOException("Missing paired Gallium dependency");
-            ElfLibrary.dependencies(new File(stage, gallium));
-            aliases(stage, gl);
             JSONObject profile = new JSONObject().put("type", "Freedreno").put("versionName", id.substring(0, id.length()-2))
                     .put("versionCode", 1).put("description", meta.optString("description", name)).put("files", new JSONArray());
             FileUtils.writeString(new File(stage, "profile.json"), profile.toString());
@@ -120,6 +91,42 @@ public final class OpenGLDriverManager {
             if (destination.exists() || !stage.renameTo(destination)) throw new IOException("Driver version already installed");
             return id;
         } finally { FileUtils.delete(stage); }
+    }
+
+    private static JSONObject extractPackage(InputStream input, File stage) throws Exception {
+        if (input == null) throw new IOException("Cannot open driver package");
+        long total = 0; int count = 0;
+        try (ZipInputStream zip = new ZipInputStream(input)) {
+            ZipEntry entry; byte[] buf = new byte[16384];
+            Set<String> names = new HashSet<>();
+            while ((entry = zip.getNextEntry()) != null) {
+                String name = entry.getName();
+                if (++count > 8 || entry.isDirectory() || !names.add(name)
+                        || !(name.equals("meta.json") || name.equals("libGL.so.1") || name.matches("libgallium[^/\\\\]*\\.so")))
+                    throw new IOException("Unexpected Freedreno package entry: " + name);
+                File dst = LocalDriverArchive.resolveEntry(stage, name);
+                try (OutputStream out = new FileOutputStream(dst)) {
+                    int n; while ((n = zip.read(buf)) != -1) {
+                        if ((total += n) > 256L * 1024 * 1024) throw new IOException("Driver too large");
+                        out.write(buf, 0, n);
+                    }
+                }
+            }
+        }
+        if (new File(stage, "meta.json").length() > 65536) throw new IOException("Metadata too large");
+        JSONObject meta = new JSONObject(FileUtils.readString(new File(stage, "meta.json")));
+        if (!"freedreno".equalsIgnoreCase(meta.optString("type")) || meta.optInt("schemaVersion") != 1
+                || !"libGL.so.1".equals(meta.optString("libraryName"))) throw new IOException("Invalid Freedreno metadata");
+        String name = meta.optString("name").trim(), version = meta.optString("packageVersion").trim();
+        if (name.isEmpty() || version.isEmpty()) throw new IOException("Missing driver name/version");
+        File gl = new File(stage, "libGL.so.1");
+        List<String> needs = ElfLibrary.dependencies(gl);
+        String gallium = null;
+        for (String lib : needs) if (lib.startsWith("libgallium") && lib.endsWith(".so")) gallium = lib;
+        if (gallium == null || gallium.contains("/") || count != 3) throw new IOException("Missing paired Gallium dependency");
+        ElfLibrary.dependencies(new File(stage, gallium));
+        aliases(stage, gl);
+        return meta;
     }
 
     private static void aliases(File dir, File gl) throws IOException {
@@ -145,13 +152,23 @@ public final class OpenGLDriverManager {
             return dir;
         }
         File builtins = new File(context.getFilesDir(), "opengl-bundled-v1"); builtins.mkdirs();
-        File destination = new File(builtins, driver);
+        // Use a versioned extraction directory so an app update cannot reuse
+        // the old bundled Freedreno binaries. Other drivers keep their paths.
+        boolean freedreno = "freedreno".equals(driver);
+        File destination = new File(builtins, freedreno ? "freedreno-dfa64af" : driver);
         if (new File(destination, "libGL.so.1").isFile()) return destination;
         File stage = Files.createTempDirectory(builtins.toPath(), ".install-").toFile();
         try {
-            if (!TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, context,
-                    "graphics_driver/opengl_" + driver + ".tzst", stage)) throw new IOException("Cannot install bundled OpenGL driver");
-            File libs = new File(stage, "usr/lib");
+            File libs;
+            if (freedreno) {
+                extractPackage(context.getAssets().open("graphics_driver/opengl_freedreno.zip"), stage);
+                libs = stage;
+            } else {
+                if (!TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, context,
+                        "graphics_driver/opengl_" + driver + ".tzst", stage))
+                    throw new IOException("Cannot install bundled OpenGL driver");
+                libs = new File(stage, "usr/lib");
+            }
             File gl = new File(libs, "libGL.so.1");
             if (!gl.isFile()) gl = new File(libs, "libGL.so.1.5.0");
             if (!gl.isFile()) throw new IOException("Bundled libGL missing");
