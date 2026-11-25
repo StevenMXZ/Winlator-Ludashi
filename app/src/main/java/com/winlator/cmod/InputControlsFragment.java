@@ -239,6 +239,14 @@ public class InputControlsFragment extends Fragment {
             }
 
             @Override
+            public void onToggleControllerBlocked(int index) {
+                if (index < 0 || index >= visibleControllers.size()) return;
+                String id = visibleControllers.get(index).getId();
+                ExternalController.setBlocked(id, !ExternalController.isBlocked(id));
+                refreshCompose();
+            }
+
+            @Override
             public void onRemoveController(int index) {
                 removeController(index);
             }
@@ -259,7 +267,8 @@ public class InputControlsFragment extends Fragment {
                     index,
                     controller.getName(),
                     controller.getControllerBindingCount(),
-                    controller.isConnected()
+                    controller.isConnected(),
+                    ExternalController.isBlocked(controller.getId())
             ));
         }
 
@@ -279,7 +288,7 @@ public class InputControlsFragment extends Fragment {
         ArrayList<ExternalController> controllers = currentProfile != null
                 ? currentProfile.loadControllers()
                 : new ArrayList<>();
-        for (ExternalController connected : ExternalController.getControllers()) {
+        for (ExternalController connected : ExternalController.getControllers(true)) {
             if (!controllers.contains(connected)) controllers.add(connected);
         }
         return controllers;
@@ -350,6 +359,7 @@ public class InputControlsFragment extends Fragment {
         }
         if (index < 0 || index >= visibleControllers.size()) return;
         ExternalController controller = visibleControllers.get(index);
+        if (ExternalController.isBlocked(controller.getId())) return;
         Intent intent = new Intent(requireContext(), ExternalControllerBindingsActivity.class);
         intent.putExtra("profile_id", currentProfile.id);
         intent.putExtra("controller_id", controller.getId());

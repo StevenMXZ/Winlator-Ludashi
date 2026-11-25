@@ -15,9 +15,20 @@ import static org.junit.Assert.assertTrue;
 @Config(sdk = 34)
 public class ExternalControllerTest {
     @Test
-    public void rejectsXiaomiUinputEvenWhenAndroidReportsGamepadSources() {
-        assertFalse(ExternalController.isGameController(gamepad("Uinput-xiaomi", false)));
-        assertFalse(ExternalController.isGameController(gamepad("ui-input-xiaomi", false)));
+    public void blocksDeviceByDescriptorInsteadOfName() {
+        InputDevice device = gamepad("Uinput-xiaomi", false);
+        String descriptor = device.getDescriptor();
+        ExternalController.initializeBlockedDevices(org.robolectric.RuntimeEnvironment.getApplication());
+        try {
+            ExternalController.setBlocked(descriptor, false);
+            assertTrue(ExternalController.isGameController(device));
+            ExternalController.setBlocked(descriptor, true);
+            assertFalse(ExternalController.isGameController(device));
+            ExternalController.initializeBlockedDevices(org.robolectric.RuntimeEnvironment.getApplication());
+            assertFalse(ExternalController.isGameController(device));
+        } finally {
+            ExternalController.setBlocked(descriptor, false);
+        }
     }
 
     @Test

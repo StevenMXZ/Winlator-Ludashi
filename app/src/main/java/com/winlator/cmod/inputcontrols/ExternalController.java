@@ -436,12 +436,35 @@ public class ExternalController {
 
 
 
+    private static volatile android.content.SharedPreferences blockedPreferences;
+    private static volatile java.util.Set<String> blockedDescriptors = java.util.Collections.emptySet();
+
+    public static void initializeBlockedDevices(Context context) {
+        blockedPreferences = context.getApplicationContext().getSharedPreferences("blocked_input_devices", Context.MODE_PRIVATE);
+        blockedDescriptors = new java.util.HashSet<>(blockedPreferences.getStringSet("descriptors", java.util.Collections.emptySet()));
+    }
+
+    public static boolean isBlocked(String descriptor) {
+        return blockedDescriptors.contains(descriptor);
+    }
+
+    public static synchronized void setBlocked(String descriptor, boolean blocked) {
+        java.util.Set<String> next = new java.util.HashSet<>(blockedDescriptors);
+        if (blocked) next.add(descriptor); else next.remove(descriptor);
+        blockedDescriptors = next;
+        if (blockedPreferences != null) blockedPreferences.edit().putStringSet("descriptors", next).apply();
+    }
+
     public static ArrayList<ExternalController> getControllers() {
+        return getControllers(false);
+    }
+
+    public static ArrayList<ExternalController> getControllers(boolean includeBlocked) {
         int[] deviceIds = InputDevice.getDeviceIds();
         ArrayList<ExternalController> controllers = new ArrayList<>();
         for (int i = deviceIds.length-1; i >= 0; i--) {
             InputDevice device = InputDevice.getDevice(deviceIds[i]);
-            if (isGameController(device)) {
+            if (isControllerCandidate(device) && (includeBlocked || !isBlocked(device.getDescriptor()))) {
                 ExternalController controller = new ExternalController();
                 controller.setId(device.getDescriptor());
                 controller.setName(device.getName());
@@ -468,11 +491,11 @@ public class ExternalController {
     }
 
     public static boolean isGameController(InputDevice device) {
+        return isControllerCandidate(device) && !isBlocked(device.getDescriptor());
+    }
+
+    private static boolean isControllerCandidate(InputDevice device) {
         if (device == null) return false;
-        String name = device.getName();
-        // Xiaomi's uinput device can advertise gamepad sources even when Android reports it as non-virtual.
-        if ("uinput-xiaomi".equalsIgnoreCase(name) || "ui-input-xiaomi".equalsIgnoreCase(name)) return false;
-        if (name != null && name.toLowerCase().contains("uinput-fpc")) return false;
         int sources = device.getSources();
         // A mouse can advertise a joystick source without acting as a gamepad.
         boolean gamepad = (sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD;
@@ -498,6 +521,8 @@ public class ExternalController {
     }
 
     public static boolean isControllerKeyEvent(KeyEvent event) {
+        InputDevice sourceDevice = event.getDevice();
+        if (sourceDevice != null && isBlocked(sourceDevice.getDescriptor())) return false;
         int key = event.getKeyCode();
         if (KeyEvent.isGamepadButton(key)) return true;
         boolean keyboard = event.isFromSource(InputDevice.SOURCE_KEYBOARD);
