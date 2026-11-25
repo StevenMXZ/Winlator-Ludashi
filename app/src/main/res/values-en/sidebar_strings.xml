@@ -26,6 +26,7 @@
   <string name="sidebar_new_task">"+ New Task"</string>
   <string name="sidebar_fit">"Fit"</string>
   <string name="sidebar_stretch">"Stretch"</string>
+  <string name="sidebar_integer_scaling">"Integer"</string>
   <string name="sidebar_fps_limit">"FPS Limit"</string>
   <string name="sidebar_enter_custom_fps">"Enter custom FPS"</string>
   <string name="sidebar_automatic_display">"Automatic (display)"</string>

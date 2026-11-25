@@ -231,7 +231,7 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
             listOf(heading, uiStr(R.string.ui_rendering), uiStr(R.string.ui_display_and_effects), uiStr(R.string.sidebar_controls), "HUD")
                 .any { view.text.toString().trim().equals(it, ignoreCase = true) }) continue
         if (view.id == R.id.BTItemToggleFullscreen || view.id == R.id.BTItemSoftStretch) continue
-        // Both fullscreen actions are represented by the three-way display-mode selector.
+        // Both fullscreen actions are represented by the display-mode selector.
         when {
             view.tag == "winz-hud-options-v2" && view is ViewGroup -> HudCheckboxGrid(view, revision, refresh)
             view.tag is FpsLimiterControl -> NativeBlock(view.tag as View, active)
@@ -303,27 +303,30 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
     }
 }
 
-// Keep all display modes in one selector; native X++ currently supports Fit and Stretch.
+// Keep all display modes in one selector.
 @Composable
 private fun FullscreenModeSelector(state: ModernSidebarController) {
     val mode = state.activity.sidebarDisplayMode
     val entries = listOf(
         0 to uiStr(R.string.sidebar_fit),
         1 to uiStr(R.string.sidebar_stretch),
-        2 to uiStr(R.string.sidebar_soft_stretch)
+        2 to uiStr(R.string.sidebar_soft_stretch),
+        3 to uiStr(R.string.sidebar_integer_scaling)
     )
     Surface(shape = WinZShapes.Medium, color = MaterialTheme.colorScheme.surfaceVariant) {
         Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(uiStr(R.string.ui_display_mode), style = MaterialTheme.typography.labelLarge)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                entries.forEach { (selectedMode, label) ->
-                    FilterChip(
-                        selected = mode == selectedMode,
-                        onClick = { state.activity.setSidebarDisplayMode(selectedMode); state.refresh() },
-                        enabled = selectedMode != 2 || state.activity.isSidebarSoftStretchSupported,
-                        label = { Text(label, maxLines = 1, style = MaterialTheme.typography.labelSmall) },
-                        modifier = Modifier.weight(1f)
-                    )
+            entries.chunked(2).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    row.forEach { (selectedMode, label) ->
+                        FilterChip(
+                            selected = mode == selectedMode,
+                            onClick = { state.activity.setSidebarDisplayMode(selectedMode); state.refresh() },
+                            enabled = selectedMode < 2 || state.activity.isSidebarSoftStretchSupported,
+                            label = { Text(label, maxLines = 1, style = MaterialTheme.typography.labelSmall) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }

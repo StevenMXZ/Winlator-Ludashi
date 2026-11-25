@@ -26,6 +26,7 @@
   <string name="sidebar_new_task">"+ Nova tarefa"</string>
   <string name="sidebar_fit">"Ajustar"</string>
   <string name="sidebar_stretch">"Esticar"</string>
+  <string name="sidebar_integer_scaling">"Escala inteira"</string>
   <string name="sidebar_fps_limit">"Limite de FPS"</string>
   <string name="sidebar_enter_custom_fps">"Digite o FPS personalizado"</string>
   <string name="sidebar_automatic_display">"Automático (tela)"</string>

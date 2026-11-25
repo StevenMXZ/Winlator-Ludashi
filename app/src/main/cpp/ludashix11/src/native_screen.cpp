@@ -95,7 +95,7 @@ void NativeScreen::UpdateCursor(const sp<NativeDrawable>& image, s16 x, s16 y) {
 u64 NativeScreen::SetVisualOptions(NativeVisualOptions options) {
     options.filter = std::clamp(options.filter, 0, 5);
     options.postFX = std::clamp(options.postFX, 0, 20);
-    options.stretch = options.stretch == 1 ? 1 : 0;
+    options.stretch = std::clamp(options.stretch, 0, 2);
     options.sharpness = std::isfinite(options.sharpness) ? std::clamp(options.sharpness, 0.f, 1.f) : .5f;
     options.multiplier = std::clamp(options.multiplier, 2, 4);
     options.targetRate = std::clamp(options.targetRate, -1, 1000);

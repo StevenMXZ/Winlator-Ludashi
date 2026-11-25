@@ -293,7 +293,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     }
     @Override public synchronized void surfaceCreated(SurfaceHolder holder) { updateOptions(); startDisplayTimeline(); }
     @Override public synchronized void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
-        viewTransformation.update(w, h, xServer.screenInfo.width, xServer.screenInfo.height);
+        viewTransformation.update(w, h, xServer.screenInfo.width, xServer.screenInfo.height, isIntegerScaling());
         if (handle != 0) nativeSurface(handle, holder.getSurface());
         updateOptions();
     }
@@ -373,7 +373,7 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     @Override public void onUpdateWindowContentDirect(Window w, Drawable d, short x, short y) {}
     @Override public void requestRender() {}
     @Override public void queueEvent(Runnable action) { post(action); }
-    @Override public void onSurfaceChanged(int w, int h) { viewTransformation.update(w, h, xServer.screenInfo.width, xServer.screenInfo.height); }
+    @Override public void onSurfaceChanged(int w, int h) { viewTransformation.update(w, h, xServer.screenInfo.width, xServer.screenInfo.height, isIntegerScaling()); }
     @Override public void setFpsWindowId(int id) {}
     @Override public void setPipMode(boolean pip) {}
     @Override public void setFrameRating(Object rating) {
@@ -413,8 +413,12 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
     @Override public synchronized void setPostFXMode(int mode) {
         postFXMode = isVulkanBackend() ? Math.max(0, Math.min(20, mode)) : 0; applyVisualOptions();
     }
+    @Override public boolean isIntegerScaling() { return stretchMode == 2; }
     @Override public synchronized void setStretchMode(int mode) {
-        stretchMode = mode == 1 ? 1 : 0; applyVisualOptions();
+        stretchMode = isVulkanBackend() ? Math.max(0, Math.min(2, mode)) : 0;
+        viewTransformation.update(getWidth(), getHeight(), xServer.screenInfo.width,
+                xServer.screenInfo.height, isIntegerScaling());
+        applyVisualOptions();
     }
     @Override public synchronized void setSharpness(float value) {
         sharpness = Float.isNaN(value) ? .5f : Math.max(0f, Math.min(1f, value)); applyVisualOptions();
