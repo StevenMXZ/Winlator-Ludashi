@@ -13,11 +13,24 @@ import com.winlator.cmod.xenvironment.EnvironmentComponent;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 
 /** PulseAudio 17 with the upstream Android Oboe sink. */
 public class PulseAudioComponent extends EnvironmentComponent {
     private static final String ASSET = "pulseaudio.tzst";
-    private static final String MARKER = ".pulseaudio.sha256sum";
+    private static final String CPP_ASSET = "pulseaudio-runtime/libc++_shared.so";
+    private static final String MARKER = ".pulseaudio-runtime-v2.sha256sum";
+    private static final String[] REQUIRED_FILES = {
+            "pulseaudio", "pactl", "libsndfile.so", "libpulse.so", "libpulse-simple.so",
+            "libpulsecommon-17.0.so", "libpulsecore-17.0.so", "libltdl.so",
+            "libiconv.so", "libcharset.so", "libOpenSLES.so", "libtermux-platform-ns.so",
+            "libc++_shared.so", "modules/libprotocol-native.so",
+            "modules/module-native-protocol-unix.so", "modules/module-oboe-sink.so",
+            "modules/module-pipe-source.so"
+    };
     private static final Object lock = new Object();
     private static int pid = -1;
     private final UnixSocketConfig socketConfig;
@@ -45,15 +58,18 @@ public class PulseAudioComponent extends EnvironmentComponent {
     }
 
     private static boolean runtimeReady(File directory) {
-        File daemon = new File(directory, "pulseaudio");
-        File module = new File(directory, "modules/module-oboe-sink.so");
-        return daemon.isFile() && daemon.length() > 0 && daemon.canExecute()
-                && module.isFile() && module.length() > 0;
+        for (String name : REQUIRED_FILES) {
+            File file = new File(directory, name);
+            if (!file.isFile() || file.length() == 0) return false;
+        }
+        return new File(directory, "pulseaudio").canExecute();
     }
 
     static void install(Context context, File directory) {
         try {
-            byte[] digest = Sha256Util.calculate(context, ASSET);
+            byte[] digest = ByteBuffer.allocate(64)
+                    .put(Sha256Util.calculate(context, ASSET))
+                    .put(Sha256Util.calculate(context, CPP_ASSET)).array();
             File marker = new File(directory, MARKER);
             if (runtimeReady(directory) && Sha256Util.matches(marker, digest)) return;
 
@@ -62,9 +78,16 @@ public class PulseAudioComponent extends EnvironmentComponent {
             if (!directory.mkdirs() && !directory.isDirectory())
                 throw new IOException("Cannot create PulseAudio runtime");
             FileUtils.chmod(directory, 0771);
-            if (!TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, context, ASSET, directory)
-                    || !runtimeReady(directory))
-                throw new IOException("Incomplete PulseAudio runtime");
+            if (!TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, context, ASSET, directory))
+                throw new IOException("Unable to extract PulseAudio runtime");
+            PulseAudioRuntimeFix.removeUnusedLame(new File(directory, "libsndfile.so"));
+            // This daemon runs outside ImageFS. Keep its NDK C++ runtime private.
+            File cpp = new File(directory, "libc++_shared.so");
+            try (InputStream input = context.getAssets().open(CPP_ASSET)) {
+                Files.copy(input, cpp.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+            FileUtils.chmod(cpp, 0771);
+            if (!runtimeReady(directory)) throw new IOException("Incomplete PulseAudio runtime");
             Sha256Util.write(marker, digest);
         } catch (IOException error) {
             throw new IllegalStateException("Unable to install PulseAudio 17", error);

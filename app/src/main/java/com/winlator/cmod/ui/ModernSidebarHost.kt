@@ -306,7 +306,7 @@ private fun LegacyFields(group: ViewGroup, revision: Int, active: Boolean, refre
 // Keep all display modes in one selector.
 @Composable
 private fun FullscreenModeSelector(state: ModernSidebarController) {
-    val mode = state.activity.sidebarDisplayMode
+    val mode = remember(state.revision) { state.activity.sidebarDisplayMode }
     val entries = listOf(
         0 to uiStr(R.string.sidebar_fit),
         1 to uiStr(R.string.sidebar_stretch),

@@ -184,7 +184,26 @@ downloadProton.dependsOn(downloadImageFS)
 preBuild.dependsOn(downloadProton)
 preBuild.dependsOn(downloadComponentTools)
 
+// Package the NDK C++ runtime separately for the standalone PulseAudio daemon.
+// Do not change the JNI library selected by the app or the ImageFS ALSA runtime.
+def pulseAudioAssets = layout.buildDirectory.dir("generated/pulseaudio-assets")
+def pulseAudioCpp = providers.provider {
+    File prebuilt = new File(android.ndkDirectory, "toolchains/llvm/prebuilt")
+    def candidates = prebuilt.listFiles()?.collect {
+        new File(it, "sysroot/usr/lib/aarch64-linux-android/libc++_shared.so")
+    }?.findAll { it.isFile() } ?: []
+    if (candidates.size() != 1)
+        throw new GradleException("Cannot locate ARM64 libc++_shared.so in the configured NDK")
+    candidates[0]
+}
+tasks.register("preparePulseAudioCpp", Copy) {
+    from(pulseAudioCpp)
+    into(pulseAudioAssets.map { it.dir("pulseaudio-runtime") })
+}
+preBuild.dependsOn(tasks.named("preparePulseAudioCpp"))
+
 android {
+    sourceSets.main.assets.srcDir(pulseAudioAssets)
     sourceSets.main.jniLibs.srcDir(layout.buildDirectory.dir("generated/component-tools"))
     sourceSets.main.assets.srcDir(bundledFreedrenoAssets)
     namespace 'com.winlator.cmod'
