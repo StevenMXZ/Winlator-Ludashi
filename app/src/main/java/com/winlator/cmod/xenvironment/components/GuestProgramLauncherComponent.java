@@ -5,6 +5,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
 import android.os.Process;
 import android.util.Log;
 
@@ -42,7 +44,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
+import java.util.List;
 
 public class GuestProgramLauncherComponent extends EnvironmentComponent {
     private String guestExecutable;
@@ -404,9 +406,17 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
 
         String primaryDNS = "8.8.4.4";
         ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Service.CONNECTIVITY_SERVICE);
-        if (connectivityManager.getActiveNetwork() != null) {
-            ArrayList<InetAddress> dnsServers = new ArrayList<>(connectivityManager.getLinkProperties(connectivityManager.getActiveNetwork()).getDnsServers());
-            primaryDNS = dnsServers.get(0).toString().substring(1);
+        if (connectivityManager != null) {
+            Network network = connectivityManager.getActiveNetwork();
+            if (network != null) {
+                LinkProperties properties = connectivityManager.getLinkProperties(network);
+                if (properties != null) {
+                    List<InetAddress> dnsServers = properties.getDnsServers();
+                    if (!dnsServers.isEmpty()) {
+                        primaryDNS = dnsServers.get(0).getHostAddress();
+                    }
+                }
+            }
         }
         execEnvVars.put("ANDROID_RESOLV_DNS", primaryDNS);
         execEnvVars.put("WINE_NEW_NDIS", "1");
