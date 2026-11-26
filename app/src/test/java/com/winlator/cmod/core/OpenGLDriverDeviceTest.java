@@ -4,6 +4,19 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class OpenGLDriverDeviceTest {
+    @Test public void removesOnlyLegacyAutomaticMesaVersion() {
+        assertEquals("FD_MESA_DEBUG=hiprio,sysmem vblank_mode=0",
+                OpenGLDriverDefaults.withoutAutomaticMesaOverride(
+                        "FD_MESA_DEBUG=hiprio,sysmem MESA_GL_VERSION_OVERRIDE=3.3 vblank_mode=0", true));
+        assertEquals("", OpenGLDriverDefaults.withoutAutomaticMesaOverride("MESA_GL_VERSION_OVERRIDE=3.3", true));
+        assertEquals("MESA_GL_VERSION_OVERRIDE=3.3",
+                OpenGLDriverDefaults.withoutAutomaticMesaOverride("MESA_GL_VERSION_OVERRIDE=3.3", false));
+        assertEquals("MESA_GL_VERSION_OVERRIDE=4.5COMPAT",
+                OpenGLDriverDefaults.withoutAutomaticMesaOverride("MESA_GL_VERSION_OVERRIDE=4.5COMPAT", true));
+        assertEquals("vblank_mode=0", OpenGLDriverDefaults.withoutAutomaticMesaOverride("vblank_mode=0", true));
+        assertNull(OpenGLDriverDefaults.withoutAutomaticMesaOverride(null, true));
+    }
+
     @Test public void detectsAdreno825WithoutMatchingOtherAdrenos() {
         assertTrue(OpenGLDriverDefaults.isAdreno825("Adreno (TM) 825", ""));
         assertTrue(OpenGLDriverDefaults.isAdreno825("", "SM8735"));

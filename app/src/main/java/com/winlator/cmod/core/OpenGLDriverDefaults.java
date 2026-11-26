@@ -3,6 +3,7 @@ package com.winlator.cmod.core;
 import android.content.Context;
 
 import com.winlator.cmod.container.Container;
+import com.winlator.cmod.container.Shortcut;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -22,28 +23,26 @@ public final class OpenGLDriverDefaults {
         try {
             JSONObject extraData = data.optJSONObject("extraData");
             if (extraData == null) extraData = new JSONObject();
-            if ("1".equals(extraData.optString(INITIALIZED, "0"))) return false;
+            boolean migrated = "1".equals(extraData.optString(AUTO_MESA_OVERRIDE, "0"));
+            if (migrated) {
+                data.put("envVars", withoutAutomaticMesaOverride(
+                        data.optString("envVars", Container.DEFAULT_ENV_VARS), true));
+                extraData.put(AUTO_MESA_OVERRIDE, "0");
+                data.put("extraData", extraData);
+            }
+            if ("1".equals(extraData.optString(INITIALIZED, "0"))) return migrated;
 
             String config = data.optString("graphicsDriverConfig", Container.DEFAULT_GRAPHICSDRIVERCONFIG);
             String selectedVersion = resolveDriverVersion(context, configValue(config, "version"));
             boolean freedreno = shouldUseFreedreno(context, selectedVersion);
-            EnvVars environment = new EnvVars(data.optString("envVars", Container.DEFAULT_ENV_VARS));
-            boolean automaticOverride = false;
-
-            if (freedreno && !environment.has(MESA_OVERRIDE)) {
-                environment.put(MESA_OVERRIDE, "3.3");
-                automaticOverride = true;
-            }
-
             data.put("graphicsDriver", freedreno ? "freedreno" : Container.DEFAULT_GRAPHICS_DRIVER);
             data.put("graphicsDriverConfig", putConfigValue(config, "version", selectedVersion));
-            data.put("envVars", environment.toString());
             if (!extraData.has("surfaceFormat")) {
                 extraData.put("surfaceFormat",
                         "1".equals(extraData.optString("useDisplayX", "0")) ? "rgba8" : "bgra8");
             }
             extraData.put(INITIALIZED, "1");
-            extraData.put(AUTO_MESA_OVERRIDE, automaticOverride ? "1" : "0");
+            extraData.put(AUTO_MESA_OVERRIDE, "0");
             data.put("extraData", extraData);
             return true;
         } catch (JSONException error) {
@@ -52,25 +51,44 @@ public final class OpenGLDriverDefaults {
     }
 
     public static boolean initialize(Context context, Container container) {
-        if (container == null || "1".equals(container.getExtra(INITIALIZED, "0"))) return false;
+        if (container == null) return false;
+        boolean migrated = migrateAutomaticMesaOverride(container);
+        if ("1".equals(container.getExtra(INITIALIZED, "0"))) return migrated;
 
         String config = container.getGraphicsDriverConfig();
         String selectedVersion = resolveDriverVersion(context, configValue(config, "version"));
         boolean freedreno = shouldUseFreedreno(context, selectedVersion);
-        EnvVars environment = new EnvVars(container.getEnvVars());
-        boolean automaticOverride = false;
-
-        if (freedreno && !environment.has(MESA_OVERRIDE)) {
-            environment.put(MESA_OVERRIDE, "3.3");
-            automaticOverride = true;
-        }
-
         container.setGraphicsDriver(freedreno ? "freedreno" : Container.DEFAULT_GRAPHICS_DRIVER);
         container.setGraphicsDriverConfig(putConfigValue(config, "version", selectedVersion));
-        container.setEnvVars(environment.toString());
         container.putExtra(INITIALIZED, "1");
-        container.putExtra(AUTO_MESA_OVERRIDE, automaticOverride ? "1" : "0");
+        container.putExtra(AUTO_MESA_OVERRIDE, "0");
         container.saveData();
+        return true;
+    }
+
+    // Only remove the legacy override if Ludashi marked it as automatic.
+    public static String withoutAutomaticMesaOverride(String raw, boolean automatic) {
+        if (!automatic || raw == null || raw.isEmpty()) return raw;
+        EnvVars environment = new EnvVars(raw);
+        if (!"3.3".equals(environment.get(MESA_OVERRIDE))) return raw;
+        environment.remove(MESA_OVERRIDE);
+        return environment.toString();
+    }
+
+    public static boolean migrateAutomaticMesaOverride(Container container) {
+        if (container == null || !"1".equals(container.getExtra(AUTO_MESA_OVERRIDE, "0"))) return false;
+        container.setEnvVars(withoutAutomaticMesaOverride(container.getEnvVars(), true));
+        container.putExtra(AUTO_MESA_OVERRIDE, "0");
+        container.saveData();
+        return true;
+    }
+
+    public static boolean migrateAutomaticMesaOverride(Shortcut shortcut) {
+        if (shortcut == null || !"1".equals(shortcut.getExtra(AUTO_MESA_OVERRIDE, "0"))) return false;
+        String raw = shortcut.getExtra("envVars", null);
+        if (raw != null) shortcut.putExtra("envVars", withoutAutomaticMesaOverride(raw, true));
+        shortcut.putExtra(AUTO_MESA_OVERRIDE, "0");
+        shortcut.saveData();
         return true;
     }
 

@@ -296,12 +296,6 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     var gameSavesEnabled by mutableStateOf(GameSaveManager.isEnabled(shortcut))
     var autoSaveBackup by mutableStateOf(GameSaveManager.isAutoBackupEnabled(shortcut))
     var execArgs by mutableStateOf(SteamLaunch.gameArguments(shortcut))
-    var autoMesaGlVersionOverride by mutableStateOf(
-        shortcut.getExtra(
-            "autoMesaGlVersionOverride",
-            container.getExtra("autoMesaGlVersionOverride", "0")
-        ) == "1"
-    )
     var envVars by mutableStateOf(shortcut.getExtra("envVars", container.getEnvVars()))
     var winlatorHudMode by mutableIntStateOf(
         shortcut.getExtra("hudMode", container.getExtra("hudMode", if (container.isShowFPS) "2" else "0")).toIntOrNull() ?: 0
@@ -367,44 +361,16 @@ private class ShortcutEditorStateV2(val shortcut: Shortcut) {
     }
 
     fun setEnvironment(raw: String) {
-        if (autoMesaGlVersionOverride && envValue(raw, "MESA_GL_VERSION_OVERRIDE") != "3.3") {
-            autoMesaGlVersionOverride = false
-            shortcut.putExtra("autoMesaGlVersionOverride", "0")
-        }
         envVars = raw
         shortcut.putExtra("envVars", raw.ifBlank { null })
+        shortcut.putExtra("autoMesaGlVersionOverride", "0")
         save()
     }
 
     fun selectGraphicsDriver(value: String) {
         graphicsDriver = value
         shortcut.putExtra("graphicsDriver", value)
-        if (value.equals("freedreno", true)) {
-            if (envValue(envVars, "MESA_GL_VERSION_OVERRIDE").isNullOrBlank()) {
-                envVars = envPut(envVars, "MESA_GL_VERSION_OVERRIDE", "3.3")
-                autoMesaGlVersionOverride = true
-            }
-        } else if (autoMesaGlVersionOverride) {
-            if (envValue(envVars, "MESA_GL_VERSION_OVERRIDE") == "3.3") {
-                envVars = envPut(envVars, "MESA_GL_VERSION_OVERRIDE", null)
-            }
-            autoMesaGlVersionOverride = false
-        }
-        shortcut.putExtra("autoMesaGlVersionOverride", if (autoMesaGlVersionOverride) "1" else "0")
-        shortcut.putExtra("envVars", envVars.ifBlank { null })
         save()
-    }
-
-    fun syncOpenGlEnvironment() {
-        if (graphicsDriver.equals("freedreno", true) &&
-            envValue(envVars, "MESA_GL_VERSION_OVERRIDE").isNullOrBlank()
-        ) {
-            envVars = envPut(envVars, "MESA_GL_VERSION_OVERRIDE", "3.3")
-            autoMesaGlVersionOverride = true
-            shortcut.putExtra("autoMesaGlVersionOverride", "1")
-            shortcut.putExtra("envVars", envVars)
-            save()
-        }
     }
 
     fun updateDxvkHud(enabled: Boolean) {
@@ -467,6 +433,7 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
     val context = fragment.requireContext()
     val state = remember(shortcut.file.path) {
         OpenGLDriverDefaults.initialize(context, shortcut.container)
+        OpenGLDriverDefaults.migrateAutomaticMesaOverride(shortcut)
         ShortcutEditorStateV2(shortcut)
     }
     val scope = rememberCoroutineScope()
@@ -483,9 +450,6 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
         if (uri != null) runCatching { ShortcutPresetManager.read(context, uri) }
             .onSuccess { importDialog = it; presetGroups = ShortcutPresetManager.allGroups().toList() }
             .onFailure { Toast.makeText(context, uiStr(R.string.ui_preset_import_failed, it.message ?: ""), Toast.LENGTH_LONG).show() }
-    }
-    LaunchedEffect(shortcut.file.path) {
-        state.syncOpenGlEnvironment()
     }
     val manager = remember { ContainerManager(context) }
     val containers = remember { manager.containers.toList() }

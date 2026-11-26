@@ -270,13 +270,10 @@ private class ContainerEditorStateV2(
     private val initialEnvVars = cleanContainerEnvironment(editing?.envVars ?: envPut(Container.DEFAULT_ENV_VARS, "DXVK_HUD", null)).let {
         if (envValue(it, "FD_MESA_DEBUG").isNullOrBlank()) envPut(it, "FD_MESA_DEBUG", "hiprio,sysmem") else it
     }
-    private val shouldAddMesaGlOverride = graphicsDriver.equals("freedreno", true) &&
-        envValue(initialEnvVars, "MESA_GL_VERSION_OVERRIDE").isNullOrBlank()
-    var autoMesaGlVersionOverride by mutableStateOf(
-        (editing?.getExtra("autoMesaGlVersionOverride", "0") ?: "0") == "1" || shouldAddMesaGlOverride
-    )
     var envVars by mutableStateOf(
-        if (shouldAddMesaGlOverride) envPut(initialEnvVars, "MESA_GL_VERSION_OVERRIDE", "3.3") else initialEnvVars
+        OpenGLDriverDefaults.withoutAutomaticMesaOverride(
+            initialEnvVars, editing?.getExtra("autoMesaGlVersionOverride", "0") == "1"
+        )
     )
     val components = mutableStateMapOf<String, Int>().apply {
         putAll(parseContainerComponentsV2(editing?.winComponents ?: Container.DEFAULT_WINCOMPONENTS))
@@ -289,25 +286,10 @@ private class ContainerEditorStateV2(
 
     fun selectGraphicsDriver(value: String) {
         graphicsDriver = value
-        if (value.equals("freedreno", true)) {
-            if (envValue(envVars, "MESA_GL_VERSION_OVERRIDE").isNullOrBlank()) {
-                envVars = envPut(envVars, "MESA_GL_VERSION_OVERRIDE", "3.3")
-                autoMesaGlVersionOverride = true
-            }
-        } else if (autoMesaGlVersionOverride) {
-            if (envValue(envVars, "MESA_GL_VERSION_OVERRIDE") == "3.3") {
-                envVars = envPut(envVars, "MESA_GL_VERSION_OVERRIDE", null)
-            }
-            autoMesaGlVersionOverride = false
-        }
     }
 
     fun setEnvironment(value: String) {
-        val cleaned = cleanContainerEnvironment(value)
-        if (autoMesaGlVersionOverride && envValue(cleaned, "MESA_GL_VERSION_OVERRIDE") != "3.3") {
-            autoMesaGlVersionOverride = false
-        }
-        envVars = cleaned
+        envVars = cleanContainerEnvironment(value)
     }
 
     fun wrapperValue(key: String, value: String) {
@@ -347,7 +329,7 @@ private class ContainerEditorStateV2(
         displayXPrecisePresentation, frameGenEngine, frameGenEnabled, frameGenMultiplier,
         frameGenTargetRate, frameGenFlowScale, graphicsDriver, freedrenoVersion, graphicsConfig,
         wrapper, wrapperConfig, emulator, fexVersion, boxVersion, fexPreset, boxPreset, exclusive, xinput, dinput,
-        forceSsbs, syncCpu, startup, openGlDefaultInitialized, autoMesaGlVersionOverride, envVars,
+        forceSsbs, syncCpu, startup, openGlDefaultInitialized, envVars,
         cpu64.joinToString(), cpu32.joinToString(), components.entries.sortedBy { it.key }.joinToString()
     ).joinToString("|")
 }
@@ -528,7 +510,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
         container.putExtra("hudMode", state.hudMode.toString())
         container.putExtra("mouseWarpOverride", state.mouseWarp)
         container.putExtra("openGlDefaultInitialized", if (state.openGlDefaultInitialized) "1" else "0")
-        container.putExtra("autoMesaGlVersionOverride", if (state.autoMesaGlVersionOverride) "1" else "0")
+        container.putExtra("autoMesaGlVersionOverride", "0")
         container.saveData()
         applyMouseWarp(container)
     }
@@ -603,7 +585,7 @@ internal fun ContainerEditorV2(editId: Int?, onBack: () -> Unit, onCreated: () -
                     .put("frameGenTargetRate", state.frameGenTargetRate.toString())
                     .put("frameGenFlowScale", state.frameGenFlowScale.toString())
                     .put("openGlDefaultInitialized", if (state.openGlDefaultInitialized) "1" else "0")
-                    .put("autoMesaGlVersionOverride", if (state.autoMesaGlVersionOverride) "1" else "0"))
+                    .put("autoMesaGlVersionOverride", "0"))
             }
             manager.createContainerAsync(data, contents) { created ->
                 creating = false

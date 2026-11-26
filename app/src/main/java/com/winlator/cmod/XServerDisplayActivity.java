@@ -1252,6 +1252,9 @@ public class XServerDisplayActivity extends AppCompatActivity {
 
             guestProgramLauncherComponent.setGuestExecutable(guestExecutable);
 
+            com.winlator.cmod.core.OpenGLDriverDefaults.migrateAutomaticMesaOverride(container);
+            if (shortcut != null)
+                com.winlator.cmod.core.OpenGLDriverDefaults.migrateAutomaticMesaOverride(shortcut);
             envVars.putAll(container.getEnvVars());
 
             if (shortcut != null)
@@ -3197,21 +3200,6 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
     }
 
-    private boolean isMesaGlVersionOverrideManual() {
-        if (shortcut != null) {
-            String shortcutEnvironment = shortcut.getExtra("envVars", "");
-            EnvVars shortcutEnvVars = new EnvVars(shortcutEnvironment);
-            if (shortcutEnvVars.has("MESA_GL_VERSION_OVERRIDE")) {
-                return !"1".equals(shortcut.getExtra("autoMesaGlVersionOverride", "0"));
-            }
-        }
-
-        if (container == null) return false;
-        EnvVars containerEnvVars = new EnvVars(container.getEnvVars());
-        return containerEnvVars.has("MESA_GL_VERSION_OVERRIDE")
-                && !"1".equals(container.getExtra("autoMesaGlVersionOverride", "0"));
-    }
-
     private void applyOpenGLDriverEnvVars() {
         boolean freedreno = "freedreno".equals(getSelectedOpenGLDriver());
 
@@ -3220,17 +3208,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
         envVars.put("MESA_LOADER_DRIVER_OVERRIDE", freedreno ? "kgsl" : "zink");
 
         if (freedreno) {
-            if (!envVars.has("MESA_GL_VERSION_OVERRIDE")) envVars.put("MESA_GL_VERSION_OVERRIDE", "3.3");
             envVars.remove("ZINK_DESCRIPTORS");
             envVars.remove("ZINK_DEBUG");
             envVars.remove("ZINK_INLINE_UNIFORMS");
             if (!envVars.has("FD_MESA_DEBUG")) envVars.put("FD_MESA_DEBUG", "hiprio,sysmem");
             if (!envVars.has("vblank_mode")) envVars.put("vblank_mode", "0");
         } else {
-            if (!isMesaGlVersionOverrideManual()
-                    && "3.3".equals(envVars.get("MESA_GL_VERSION_OVERRIDE"))) {
-                envVars.remove("MESA_GL_VERSION_OVERRIDE");
-            }
             if (!envVars.has("ZINK_DESCRIPTORS")) envVars.put("ZINK_DESCRIPTORS", "lazy");
             if (!envVars.has("ZINK_DEBUG")) envVars.put("ZINK_DEBUG", "compact");
         }
