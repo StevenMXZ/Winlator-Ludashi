@@ -13,10 +13,10 @@ import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** A user-started development transfer survives dismissal of the updater dialog. */
+/** A user-started APK transfer survives dismissal of the updater dialog. */
 class ActionsUpdateService : Service() {
     internal data class State(
-        val artifact: ActionsUpdates.Artifact? = null,
+        val update: UpstreamUpdates.AvailableUpdate? = null,
         val active: Boolean = false,
         val message: String = "",
         val done: Long = 0,
@@ -44,10 +44,10 @@ class ActionsUpdateService : Service() {
         internal val state = mutable.asStateFlow()
         private var cancellation = AtomicBoolean(false)
 
-        @Synchronized internal fun begin(context: Context, artifact: ActionsUpdates.Artifact) {
+        @Synchronized internal fun begin(context: Context, update: UpstreamUpdates.AvailableUpdate) {
             if (mutable.value.active) return
             cancellation = AtomicBoolean(false)
-            mutable.value = State(artifact = artifact, active = true, message = "Preparing download…", total = artifact.downloadSize)
+            mutable.value = State(update = update, active = true, message = "Preparing download…", total = update.downloadSize)
             try {
                 ContextCompat.startForegroundService(context, Intent(context, ActionsUpdateService::class.java))
             } catch (e: Exception) {
@@ -104,8 +104,8 @@ class ActionsUpdateService : Service() {
             return START_NOT_STICKY
         }
         if (job != null) return START_NOT_STICKY
-        val artifact = mutable.value.artifact
-        if (artifact == null || !mutable.value.active) { stopSelf(); return START_NOT_STICKY }
+        val update = mutable.value.update
+        if (update == null || !mutable.value.active) { stopSelf(); return START_NOT_STICKY }
         val cancelled = cancellation
         token = cancelled
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "App Updates", NotificationManager.IMPORTANCE_LOW))
@@ -117,8 +117,7 @@ class ActionsUpdateService : Service() {
             var sampleBytes = 0L
             var speed = 0L
             val result = try {
-                val apk = ActionsUpdates.download(this@ActionsUpdateService, artifact, cancelled,
-                    { done, total ->
+                val report: (Long, Long) -> Unit = { done, total ->
                         val now = SystemClock.elapsedRealtime()
                         if (sampleTime == 0L || done < sampleBytes) {
                             sampleTime = now; sampleBytes = done; speed = 0
@@ -132,8 +131,11 @@ class ActionsUpdateService : Service() {
                             last = now
                             publish(mutable.value.copy(done = done, total = total, speed = speed))
                         }
-                    },
-                    { message -> publish(mutable.value.copy(message = message, speed = 0)) })
+                    }
+                val status: (String) -> Unit = { message -> publish(mutable.value.copy(message = message, speed = 0)) }
+                val apk = if (update.artifact != null)
+                    ActionsUpdates.download(this@ActionsUpdateService, update.artifact, cancelled, report, status)
+                else StableApkTransfer.download(this@ActionsUpdateService, update, cancelled, report, status)
                 mutable.value.copy(active = false, message = "Download and verification completed.",
                     ready = apk, done = mutable.value.total, speed = 0)
             } catch (e: Exception) {
@@ -163,6 +165,6 @@ class ActionsUpdateService : Service() {
 class ActionsUpdateActivity : androidx.activity.ComponentActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
-        UpstreamUpdates.show(this, onDismiss = { finish() }, forceDevelopment = true)
+        UpstreamUpdates.show(this, onDismiss = { finish() }, initial = ActionsUpdateService.state.value.update)
     }
 }

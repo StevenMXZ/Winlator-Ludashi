@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Button
@@ -176,8 +177,14 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             .getBoolean("app_update_development", false)
         try {
             val available = UpstreamUpdates.available(host, development)
-            if (!openedUpdater && !host.isFinishing && !host.isDestroyed && !ActionsUpdateService.state.value.active)
+            val prefs = PreferenceManager.getDefaultSharedPreferences(host)
+            if (available != null && !openedUpdater && !host.isFinishing && !host.isDestroyed &&
+                !ActionsUpdateService.state.value.active &&
+                ActionsUpdateService.state.value.update?.key != available.key &&
+                prefs.getString("app_update_notice_key", "") != available.key) {
                 updateNotice = available
+                prefs.edit().putString("app_update_notice_key", available.key).apply()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -187,15 +194,17 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
     updateNotice?.let { available ->
         AlertDialog(
             onDismissRequest = { updateNotice = null },
+            icon = { Icon(Icons.Outlined.Download, contentDescription = null) },
             title = { Text("Update available") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(available.title, style = MaterialTheme.typography.titleMedium)
-                    Text(available.description, style = MaterialTheme.typography.bodyMedium)
+                    Text(available.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (available.downloadSize > 0) Text(UpstreamUpdates.sizeText(available.downloadSize), style = MaterialTheme.typography.titleLarge)
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                Button(onClick = {
                     updateNotice = null
                     openedUpdater = true
                     activity?.let { UpstreamUpdates.show(it, onDismiss = {}, initial = available) }

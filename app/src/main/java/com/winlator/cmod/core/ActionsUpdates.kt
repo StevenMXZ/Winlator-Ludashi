@@ -193,7 +193,7 @@ internal object ActionsUpdates {
 
     fun download(activity: Context, artifact: Artifact, cancelled: AtomicBoolean,
                  progress: (Long, Long) -> Unit, status: (String) -> Unit): File {
-        check(ContainerSessionGate.maintain()) { "Close Wine sessions and component operations before updating." }
+        // Only private APK staging files are changed; running Wine sessions are unaffected.
         val directory = File(activity.cacheDir, "upstream-update")
         val parts = File(directory, "actions-parts")
         val key = artifact.id.toString() + "-" + artifact.digest
@@ -212,7 +212,7 @@ internal object ActionsUpdates {
                 val patch = File(deltaWork, "update.ldu")
                 try {
                     check(deltaWork.isDirectory || deltaWork.mkdirs())
-                    status("Downloading incremental update…")
+                    status("Downloading update…")
                     ActionsArtifactTransfer.download(client, delta.url, delta.size, deltaWork, archive, cancelled, progress)
                     check(ApkPatcher.sha256(archive).equals(delta.digest, true))
                     ZipFile(archive).use { z ->
@@ -246,7 +246,7 @@ internal object ActionsUpdates {
                     android.util.Log.w("ActionsUpdates", "Incremental update failed; downloading full APK", e)
                     deltaWork.deleteRecursively()
                     apk.delete()
-                    status("Incremental update unavailable; downloading full APK…")
+                    status("Downloading full APK…")
                 }
             }
             val existing = work.listFiles()?.sumOf { it.length() } ?: 0L
@@ -271,7 +271,6 @@ internal object ActionsUpdates {
         } finally {
             if (success || invalid) work.deleteRecursively()
             if (!success) apk.delete()
-            ContainerSessionGate.maintained()
         }
     }
 }
