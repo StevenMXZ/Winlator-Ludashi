@@ -60,6 +60,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.preference.PreferenceManager
+import com.winlator.cmod.core.UpstreamUpdates
+import com.winlator.cmod.core.ActionsUpdateService
+import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
@@ -162,6 +167,43 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
     val activity = context as? MainActivity
+    var updateNotice by remember { mutableStateOf<UpstreamUpdates.AvailableUpdate?>(null) }
+    var openedUpdater by remember { mutableStateOf(false) }
+    LaunchedEffect(activity) {
+        val host = activity ?: return@LaunchedEffect
+        if (ActionsUpdateService.state.value.active) return@LaunchedEffect
+        val development = PreferenceManager.getDefaultSharedPreferences(host)
+            .getBoolean("app_update_development", false)
+        try {
+            val available = UpstreamUpdates.available(host, development)
+            if (!openedUpdater && !host.isFinishing && !host.isDestroyed && !ActionsUpdateService.state.value.active)
+                updateNotice = available
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Settings stays usable offline or when the update endpoint is unavailable.
+        }
+    }
+    updateNotice?.let { available ->
+        AlertDialog(
+            onDismissRequest = { updateNotice = null },
+            title = { Text("Update available") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(available.title, style = MaterialTheme.typography.titleMedium)
+                    Text(available.description, style = MaterialTheme.typography.bodyMedium)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    updateNotice = null
+                    openedUpdater = true
+                    activity?.let { UpstreamUpdates.show(it, onDismiss = {}, initial = available) }
+                }) { Text("View update") }
+            },
+            dismissButton = { TextButton(onClick = { updateNotice = null }) { Text("Later") } }
+        )
+    }
     val storage = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.data?.getStringExtra("storage_action") == "containers") activity?.navigateToMainDestination(R.id.main_menu_containers)
     }
@@ -326,7 +368,9 @@ private fun SettingsScreen(model: SettingsModel, callbacks: SettingsCallbacks) {
             item("about-title") { SectionTitle(uiStr(R.string.ui_about)) }
             item("app-updates") {
                 NavigationRow(Icons.Outlined.Refresh, uiStr(R.string.ui_app_updates), uiStr(R.string.ui_check_for_upstream_updates)) {
-                    activity?.let { com.winlator.cmod.core.UpstreamUpdates.show(it) }
+                    openedUpdater = true
+                    updateNotice = null
+                    activity?.let { UpstreamUpdates.show(it) }
                 }
             }
             item("about") {

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Small in-app updates: rebuild the new APK from the installed one plus a patch.
 
+Original BLDP implementation by The412Banner (Bannerlator), adapted for Ludashi.
+Upstream: https://github.com/The412Banner/Bannerlator/commit/89960a5c65343e8b75c00e9755a7b8a3b6abc91f
+GPL-3.0; see LICENSE and THIRD_PARTY_NOTICES.txt.
+
 The new APK is described as COPY ranges (zip entries whose raw, still-compressed
 bytes already sit in the old APK) and LITERAL bytes (changed entries, local
 headers, the signing block, the central directory). Nothing is recompressed, so

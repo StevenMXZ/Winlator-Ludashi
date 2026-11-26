@@ -224,6 +224,16 @@ android {
         versionCode 67
         versionName "5.0"
 
+        // Signed provenance for the Actions updater; local builds have no CI identity.
+        def ciBranch = System.getenv("GITHUB_REF_NAME") ?: ""
+        def ciSha = System.getenv("GITHUB_SHA") ?: ""
+        def ciRun = System.getenv("GITHUB_RUN_NUMBER") ?: ""
+        def ciAttempt = System.getenv("GITHUB_RUN_ATTEMPT") ?: ""
+        def officialCi = System.getenv("GITHUB_REPOSITORY") == "StevenMXZ/Winlator-Ludashi" &&
+                (ciBranch in ["5.0", "feature/actions-updater"]) &&
+                (ciSha ==~ /[0-9a-f]{40}/) && (ciRun ==~ /[1-9][0-9]*/) && (ciAttempt ==~ /[1-9][0-9]*/)
+        manifestPlaceholders["ludashiActionsBuild"] = officialCi ? "v1:${ciBranch}:${ciSha}:${ciRun}:${ciAttempt}" : "local"
+
         // External native build from Winlator
         externalNativeBuild {
             cmake {

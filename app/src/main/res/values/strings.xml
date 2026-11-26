@@ -804,4 +804,18 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="steam_demo_access_denied">Steam denied access to this demo’s download. If the demo is still offered, add it to the same Steam account in Steam and try again.</string>
     <string name="itch_remove_installed_help">This itch.io game is installed. Remove only the shortcut or uninstall the game and remove its shortcut.</string>
     <string name="itch_remove_shortcut_only">Remove shortcut only</string>
+    <string name="app_info_updates">App Updates</string>
+    <string name="app_info_installed">Installed version</string>
+    <string name="app_info_channel">Update channel</string>
+    <string name="app_info_stable">Stable</string>
+    <string name="app_info_development">Development</string>
+    <string name="app_info_dev_description">Experimental builds from GitHub Actions.</string>
+    <string name="app_info_stable_description">Receive stable releases only.</string>
+    <string name="app_info_download_install">Download &amp; install</string>
+    <string name="app_info_check_updates">Check for updates</string>
+    <string name="app_info_report_issue">Report issue</string>
+    <string name="app_info_close">Close</string>
+    <string name="app_info_developed_by">Developed by</string>
+    <string name="app_info_maintainer">Maintainer</string>
+    <string name="app_info_forked_from">Forked from</string>
 </resources>

@@ -15,6 +15,10 @@ import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
+ * Original BLDP implementation by The412Banner (Bannerlator), adapted for Ludashi.
+ * Upstream: https://github.com/The412Banner/Bannerlator/commit/82399dc898f089dc9a0d85db32bf960980fd4fa7
+ * GPL-3.0; see LICENSE and THIRD_PARTY_NOTICES.txt.
+ *
  * Rebuilds the new APK from the installed one plus a BLDP v1 patch (small in-app updates).
  * The format and the maker live in scripts/apk_delta.py; release.yml checks every patch it
  * publishes by applying it back. COPY ops take raw bytes from the installed APK, LITERAL ops

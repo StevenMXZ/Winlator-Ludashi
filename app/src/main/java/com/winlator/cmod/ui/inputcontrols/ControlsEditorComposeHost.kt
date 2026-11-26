@@ -444,14 +444,19 @@ private fun loadIcons(context: Context): List<IconOption> {
 }
 
 private fun decodeIcon(path: String): Bitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(path, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    val options = BitmapFactory.Options()
-    while (bounds.outWidth / options.inSampleSize > 256 || bounds.outHeight / options.inSampleSize > 256) {
-        options.inSampleSize *= 2
+    return try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options().apply { inSampleSize = 1 }
+        while (bounds.outWidth / options.inSampleSize > 256 || bounds.outHeight / options.inSampleSize > 256) {
+            options.inSampleSize *= 2
+        }
+        BitmapFactory.decodeFile(path, options)
+    } catch (e: RuntimeException) {
+        android.util.Log.w("ControlsEditor", "Unable to decode custom icon", e)
+        null
     }
-    return BitmapFactory.decodeFile(path, options)
 }
 
 @OptIn(ExperimentalFoundationApi::class)

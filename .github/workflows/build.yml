@@ -5,9 +5,11 @@ on:
   push:
     branches:
       - "5.0"
+      - "feature/actions-updater"
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ludashi-public-apk-${{ github.ref }}
@@ -162,6 +164,9 @@ jobs:
       - name: Download verified Gradle distribution with fallback
         run: bash .github/scripts/prepare-gradle.sh
 
+      - name: Test content-aware delta generator
+        run: python3 app/src/main/scripts/test_content_apk_delta.py
+
       - name: Run Android tests
         run: >-
           bash gradlew testDebugUnitTest --no-daemon --max-workers=2
@@ -215,6 +220,46 @@ jobs:
         with:
           name: Winlator-Ludashi-5.0-${{ github.run_number }}-r${{ github.run_attempt }}
           path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Generate incremental update from previous successful build
+        if: github.ref_name == '5.0' || github.ref_name == 'feature/actions-updater'
+        id: delta
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          old_run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build.yml --branch "$GITHUB_REF_NAME" --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$old_run" ]; then exit 0; fi
+          mkdir -p "$RUNNER_TEMP/old-apk" "$RUNNER_TEMP/delta"
+          gh run download "$old_run" --repo "$GITHUB_REPOSITORY" --pattern 'Winlator-Ludashi-5.0-*' --dir "$RUNNER_TEMP/old-apk"
+          old=$(find "$RUNNER_TEMP/old-apk" -name app-release.apk -type f -print -quit)
+          test -n "$old"
+          new=app/build/outputs/apk/release/app-release.apk
+          patch="$RUNNER_TEMP/delta/update.ldu"
+          python3 app/src/main/scripts/content_apk_delta.py make "$old" "$new" "$patch"
+          python3 app/src/main/scripts/content_apk_delta.py apply "$old" "$patch" "$RUNNER_TEMP/rebuilt.apk"
+          cmp "$new" "$RUNNER_TEMP/rebuilt.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$RUNNER_TEMP/rebuilt.apk"
+          rm "$RUNNER_TEMP/rebuilt.apk"
+          if [ "$(stat -c %s "$patch")" -ge "$(stat -c %s "$new")" ]; then exit 0; fi
+          echo "base=$(sha256sum "$old" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "size=$(stat -c %s "$patch")" >> "$GITHUB_OUTPUT"
+          echo "Incremental size: $(stat -c %s "$patch") bytes; full: $(stat -c %s "$new") bytes" >> "$GITHUB_STEP_SUMMARY"
+          # Benchmark the legacy format without publishing it.
+          if python3 app/src/main/scripts/apk_delta.py make "$old" "$new" "$RUNNER_TEMP/legacy.bldp"; then
+            echo "Legacy BLDP size: $(stat -c %s "$RUNNER_TEMP/legacy.bldp") bytes" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload incremental APK artifact
+        if: steps.delta.outputs.base != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ludashi-Delta-${{ github.run_number }}-r${{ github.run_attempt }}-${{ steps.delta.outputs.base }}
+          path: ${{ runner.temp }}/delta/update.ldu
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

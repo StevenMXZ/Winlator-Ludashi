@@ -4,6 +4,13 @@ This file preserves the complete text of the original third-party notice and lic
 The project is licensed under GPL-3.0; see LICENSE.
 Third-party components retain their respective licenses.
 
+The legacy BLDP incremental APK update implementation (ApkPatcher.kt and
+apk_delta.py) was adapted from The412Banner/Bannerlator (GPL-3.0).
+Original source commits:
+https://github.com/The412Banner/Bannerlator/commit/89960a5c65343e8b75c00e9755a7b8a3b6abc91f
+https://github.com/The412Banner/Bannerlator/commit/82399dc898f089dc9a0d85db32bf960980fd4fa7
+Ludashi adds validation and retains BLDP compatibility alongside LDU1.
+
 The native X11 protocol headers in app/src/main/cpp/ludashix11/third_party/X11
 come from the X.Org xorgproto 2025.1 release. Each header preserves its upstream
 copyright and license text.

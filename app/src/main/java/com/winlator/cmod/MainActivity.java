@@ -5,7 +5,6 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
-import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -16,10 +15,8 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.StatFs;
 import android.provider.Settings;
-import android.text.Html;
 import android.text.format.Formatter;
 import android.text.SpannableString;
-import android.text.method.LinkMovementMethod;
 import android.text.style.ForegroundColorSpan;
 import android.util.Log;
 import android.view.MenuItem;
@@ -47,7 +44,6 @@ import com.google.android.material.navigation.NavigationView;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.winlator.cmod.FileManagerFragment;
 import com.winlator.cmod.R;
-import com.winlator.cmod.contentdialog.ContentDialog;
 import com.winlator.cmod.core.Callback;
 import com.winlator.cmod.core.ImageUtils;
 import com.winlator.cmod.core.PreloaderDialog;
@@ -514,56 +510,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     }
 
     public void showAboutDialog() {
-        ContentDialog dialog = new ContentDialog(this, R.layout.about_dialog);
-        dialog.findViewById(R.id.LLBottomBar).setVisibility(View.GONE);
-
-        if (isDarkMode) {
-            dialog.getWindow().setBackgroundDrawableResource(R.drawable.content_dialog_background_dark);
-        } else {
-            dialog.getWindow().setBackgroundDrawableResource(R.drawable.content_dialog_background);
-        }
-
-        try {
-            final PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
-
-            TextView tvWebpage = dialog.findViewById(R.id.TVWebpage);
-            tvWebpage.setText(Html.fromHtml("<a href=\"https://www.winlator.org\">winlator.org</a>", Html.FROM_HTML_MODE_LEGACY));
-            tvWebpage.setMovementMethod(LinkMovementMethod.getInstance());
-
-            ((TextView) dialog.findViewById(R.id.TVAppVersion)).setText(getString(R.string.version) + " " + pInfo.versionName);
-
-            String creditsAndThirdPartyAppsHTML = String.join("<br />",
-                    "Winlator Ludashi by StevenMX, pipetto-crypto (<a href=\"https://github.com/StevenMXZ/Winlator-Ludashi\">Fork</a>, <a href=\"https://github.com/Pipetto-crypto/winlator\">Fork</a>)",
-                    com.winlator.cmod.ui.UiStrings.get(com.winlator.cmod.R.string.ui_big_picture_mode_music_by),
-                    "Dale Melvin Blevens III (Fumer)",
-                    "---",
-                    "Termux Package(<a href=\"https://github.com/termux/termux-packages\">github.com/termux/termux-package</a>)",
-                    "Wine (<a href=\"https://www.winehq.org\">winehq.org</a>)",
-                    "Box64 (<a href=\"https://github.com/ptitSeb/box64\">github.com/ptitSeb/box64</a>)",
-                    "Mesa (Turnip/Zink/Wrapper) (<a href=\"https://github.com/xMeM/mesa/tree/wrapper\">github.com/xMeM/mesa</a>)",
-                    "DXVK (<a href=\"https://github.com/doitsujin/dxvk\">github.com/doitsujin/dxvk</a>)",
-                    "VKD3D (<a href=\"https://gitlab.winehq.org/wine/vkd3d\">gitlab.winehq.org/wine/vkd3d</a>)",
-                    "D8VK (<a href=\"https://github.com/AlpyneDreams/d8vk\">github.com/AlpyneDreams/d8vk</a>)",
-                    "CNC DDraw (<a href=\"https://github.com/FunkyFr3sh/cnc-ddraw\">github.com/FunkyFr3sh/cnc-ddraw</a>)",
-                    "dxwrapper (<a href=\"https://github.com/elishacloud/dxwrapper\">github.com/elishacloud/dxwrapper</a>)",
-                    "FEX-Emu (<a href=\"https://github.com/FEX-Emu/FEX\">github.com/FEX-Emu/FEX</a>)",
-                    "libadrenotools (<a href=\"https://github.com/bylaws/libadrenotools\">github.com/bylaws/libadrenotools</a>)"
-            );
-
-            TextView tvCreditsAndThirdPartyApps = dialog.findViewById(R.id.TVCreditsAndThirdPartyApps);
-            tvCreditsAndThirdPartyApps.setText(Html.fromHtml(creditsAndThirdPartyAppsHTML, Html.FROM_HTML_MODE_LEGACY));
-            tvCreditsAndThirdPartyApps.setMovementMethod(LinkMovementMethod.getInstance());
-
-            String glibcExpVersionForkHTML = String.join("<br />",
-                    "longjunyu2's <a href=\"https://github.com/longjunyu2/winlator/tree/use-glibc-instead-of-proot\">(GLIBC Fork)</a>");
-            TextView tvGlibcExpVersionFork = dialog.findViewById(R.id.TVGlibcExpVersionFork);
-            tvGlibcExpVersionFork.setText(Html.fromHtml(glibcExpVersionForkHTML, Html.FROM_HTML_MODE_LEGACY));
-            tvGlibcExpVersionFork.setMovementMethod(LinkMovementMethod.getInstance());
-        } catch (PackageManager.NameNotFoundException e) {
-            e.printStackTrace();
-        }
-
-        dialog.show();
+        com.winlator.cmod.ui.AboutComposeDialog.show(this);
     }
 
     private void setNavigationViewItemTextColor(NavigationView navigationView, int color) {

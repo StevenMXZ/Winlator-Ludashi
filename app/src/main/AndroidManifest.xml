@@ -43,11 +43,15 @@
         android:supportsRtl="true"
         tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
 
+        <meta-data android:name="com.winlator.cmod.ACTIONS_BUILD" android:value="${ludashiActionsBuild}" />
+
         <activity android:name=".storage.StorageActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
         <activity android:name=".stores.StoreActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
         <activity android:name=".stores.StoreSettingsScreen" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
         <activity android:name=".stores.StoreLoginActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
         <activity android:name=".stores.StoreDetailActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
+        <service android:name=".core.ActionsUpdateService" android:foregroundServiceType="dataSync" android:exported="false" />
+        <activity android:name=".core.ActionsUpdateActivity" android:theme="@style/AppTheme.Dark" android:exported="false" />
         <service android:name=".stores.StoreDownloadService" android:foregroundServiceType="dataSync" android:exported="false" />
         <activity android:name=".steam.StoresActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
         <activity android:name=".gog.GogSettingsActivity" android:screenOrientation="sensor" android:exported="false" android:theme="@style/AppThemeFullscreen" />
