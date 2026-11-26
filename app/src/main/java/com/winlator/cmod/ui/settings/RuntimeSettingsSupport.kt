@@ -53,6 +53,7 @@ import androidx.preference.PreferenceManager
 import com.winlator.cmod.R
 import com.winlator.cmod.contents.AdrenotoolsManager
 import com.winlator.cmod.contents.ContentProfile
+import com.winlator.cmod.contents.ContentVersionOrder
 import com.winlator.cmod.contents.ContentsManager
 import com.winlator.cmod.contents.RemoteDriverCatalog
 import com.winlator.cmod.core.DefaultVersion
@@ -71,6 +72,26 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 internal data class VersionCatalog(val all: List<String>, val installed: Set<String>)
+
+/** Presentation order only; preserve component IDs, availability and the VKD3D off option. */
+internal fun orderSettingsVersions(
+    type: ContentProfile.ContentType,
+    versions: Collection<String>,
+    installed: Set<String>
+): List<String> = versions.sortedWith { left, right ->
+    val leftNone = type == ContentProfile.ContentType.CONTENT_TYPE_VKD3D && left.equals("None", true)
+    val rightNone = type == ContentProfile.ContentType.CONTENT_TYPE_VKD3D && right.equals("None", true)
+    val noneOrder = rightNone.compareTo(leftNone)
+    if (noneOrder != 0) noneOrder
+    else {
+        val leftInstalled = installed.any { it.equals(left, ignoreCase = true) }
+        val rightInstalled = installed.any { it.equals(right, ignoreCase = true) }
+        val installedOrder = rightInstalled.compareTo(leftInstalled)
+        if (installedOrder != 0) installedOrder
+        else ContentVersionOrder.compare(type.toString(), right, type.toString(), left)
+    }
+}
+
 internal data class DriverOption(
     val id: String,
     val label: String,
@@ -222,7 +243,7 @@ internal suspend fun loadSettingsCatalog(
         bundled.filter { it.isNotBlank() && allowed(it) }.forEach(installed::add)
         runCatching { manager.getInstalledProfiles(type) }.getOrNull().orEmpty()
             .map { it.verName }.filter(allowed).forEach(installed::add)
-        return VersionCatalog(all.toList(), installed)
+        return VersionCatalog(orderSettingsVersions(type, all, installed), installed)
     }
 
     val adreno = AdrenotoolsManager(context)
