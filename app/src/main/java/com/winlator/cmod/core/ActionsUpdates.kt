@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
@@ -94,14 +95,53 @@ internal object ActionsUpdates {
     internal fun commitTitle(message: String?): String =
         message.orEmpty().lineSequence().firstOrNull()?.trim()?.take(240).orEmpty()
 
-    private fun json(path: String): JSONObject {
+    private fun jsonBody(path: String): String {
         val request = Request.Builder().url("https://api.github.com/repos/" + REPO + "/" + path)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "Winlator-Ludashi-Updater").build()
         return client.newCall(request).execute().use { response ->
             check(response.isSuccessful) { "GitHub update check failed (HTTP " + response.code + ")" }
-            JSONObject(response.body?.string() ?: error("Empty GitHub response"))
+            response.body?.string() ?: error("Empty GitHub response")
         }
+    }
+
+    private fun json(path: String): JSONObject = JSONObject(jsonBody(path))
+
+    internal data class DeltaMetadata(val title: String, val level: String, val message: String)
+
+    internal fun matchesDeltaMetadata(annotations: List<DeltaMetadata>, runId: Long, attempt: Long,
+                                      artifactId: Long, installedHash: String): Boolean {
+        if (!digestPattern.matches(installedHash)) return false
+        val expected = "v1:$runId:$attempt:$artifactId:$installedHash"
+        val prefix = "v1:$runId:$attempt:$artifactId:"
+        val records = annotations.filter {
+            it.title == "Ludashi delta metadata" && it.level == "notice" && it.message.startsWith(prefix)
+        }.map { it.message }
+        return records.singleOrNull() == expected
+    }
+
+    private fun compactDeltaMatches(run: JSONObject, build: Build, delta: Delta, installedHash: String): Boolean {
+        // Metadata is a public check annotation, not another downloadable artifact.
+        // Missing, ambiguous or unavailable metadata must fall back to the full APK.
+        return runCatching {
+            val runId = run.getLong("id")
+            val jobs = json("actions/runs/$runId/attempts/${build.attempt}/jobs?per_page=100").getJSONArray("jobs")
+            val job = (0 until jobs.length()).mapNotNull { jobs.optJSONObject(it) }.singleOrNull {
+                it.optString("name") == "android-apk" && it.optLong("run_id") == runId &&
+                    it.optString("head_sha") == build.sha && it.optString("conclusion") == "success"
+            } ?: return@runCatching false
+            val prefix = "https://api.github.com/repos/$REPO/check-runs/"
+            val url = job.optString("check_run_url")
+            if (!url.startsWith(prefix)) return@runCatching false
+            val checkId = url.removePrefix(prefix).toLongOrNull()?.takeIf { it > 0 } ?: return@runCatching false
+            val annotations = JSONArray(jsonBody("check-runs/$checkId/annotations?per_page=100"))
+            val metadata = (0 until annotations.length()).mapNotNull { index ->
+                annotations.optJSONObject(index)?.let {
+                    DeltaMetadata(it.optString("title"), it.optString("annotation_level"), it.optString("message"))
+                }
+            }
+            matchesDeltaMetadata(metadata, runId, build.attempt, delta.id, installedHash)
+        }.getOrDefault(false)
     }
 
     fun latest(current: Build?, installedHash: String? = null): Artifact? {
@@ -120,16 +160,23 @@ internal object ActionsUpdates {
             val matches = (0 until entries.length()).mapNotNull { parseArtifact(entries.getJSONObject(it), run, build) }
             if (matches.size == 1) {
                 val full = matches.single()
-                val name = "Ludashi-Delta-" + build.number + "-r" + build.attempt + "-" + installedHash
-                val delta = if (installedHash != null && digestPattern.matches(installedHash))
-                    (0 until entries.length()).mapNotNull { i ->
-                        val e = entries.getJSONObject(i)
-                        if (e.optString("name") != name) null else {
-                            // Reuse the full artifact's strict provenance validation.
-                            val copy = JSONObject(e.toString()).put("name", "Winlator-Ludashi-5.0-" + build.number + "-r" + build.attempt)
-                            parseArtifact(copy, run, build)?.takeIf { it.size < full.size }?.let { Delta(it.id, it.size, it.digest) }
-                        }
-                    }.singleOrNull() else null
+                val name = "Ludashi-Delta-" + build.number + "-r" + build.attempt
+                val delta = if (installedHash != null && digestPattern.matches(installedHash)) {
+                    fun findDelta(artifactName: String): Delta? =
+                        (0 until entries.length()).mapNotNull { i ->
+                            val e = entries.getJSONObject(i)
+                            if (e.optString("name") != artifactName) null else {
+                                val copy = JSONObject(e.toString()).put("name",
+                                    "Winlator-Ludashi-5.0-" + build.number + "-r" + build.attempt)
+                                parseArtifact(copy, run, build)?.takeIf { it.size < full.size }
+                                    ?.let { Delta(it.id, it.size, it.digest) }
+                            }
+                        }.singleOrNull()
+                    // Older builds encoded the full base hash in the artifact name.
+                    findDelta("$name-$installedHash") ?: findDelta(name)?.takeIf {
+                        compactDeltaMatches(run, build, it, installedHash)
+                    }
+                } else null
                 return full.copy(delta = delta)
             }
         }

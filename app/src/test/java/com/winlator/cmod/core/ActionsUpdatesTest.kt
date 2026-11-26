@@ -24,6 +24,23 @@ class ActionsUpdatesTest {
         assertFalse(ActionsArtifactTransfer.rangeMatches("bytes 0-5/11", 2, 5, 11))
     }
 
+    @Test fun compactDeltaRequiresExactBaseAndArtifactMetadata() {
+        val base = "b".repeat(64)
+        fun annotation(message: String, title: String = "Ludashi delta metadata") =
+            ActionsUpdates.DeltaMetadata(title, "notice", message)
+        fun matches(vararg values: ActionsUpdates.DeltaMetadata) = ActionsUpdates.matchesDeltaMetadata(
+            values.toList(), 100, 2, 55, base)
+        val valid = annotation("v1:100:2:55:$base")
+        assertTrue(matches(valid))
+        assertFalse(matches())
+        assertFalse(matches(annotation("v1:100:1:55:$base")))
+        assertFalse(matches(annotation("v1:100:2:56:$base")))
+        assertFalse(matches(annotation("v1:101:2:55:$base")))
+        assertFalse(matches(annotation("v1:100:2:55:" + "c".repeat(64))))
+        assertFalse(matches(annotation("v1:100:2:55:$base", "Other notice")))
+        assertFalse(matches(valid, valid))
+    }
+
     @Test fun signedBuildIdentityAndOrdering() {
         assertEquals(old, ActionsUpdates.Build.parse("v1:5.0:" + sha + ":117:1"))
         assertNull(ActionsUpdates.Build.parse("local"))

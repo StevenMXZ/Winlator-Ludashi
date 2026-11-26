@@ -167,6 +167,20 @@ jobs:
       - name: Test content-aware delta generator
         run: python3 app/src/main/scripts/test_content_apk_delta.py
 
+      - name: Restore Robolectric SDK cache
+        id: robolectric-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.m2/repository/org/robolectric/android-all-instrumented
+          key: robolectric-sdk-${{ runner.os }}-${{ hashFiles('.github/scripts/prepare-robolectric.sh', 'app/build.gradle') }}
+      - name: Prepare Robolectric SDK
+        run: bash .github/scripts/prepare-robolectric.sh
+      - name: Save Robolectric SDK cache
+        if: steps.robolectric-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.m2/repository/org/robolectric/android-all-instrumented
+          key: robolectric-sdk-${{ runner.os }}-${{ hashFiles('.github/scripts/prepare-robolectric.sh', 'app/build.gradle') }}
       - name: Run Android tests
         run: >-
           bash gradlew testDebugUnitTest --no-daemon --max-workers=2
@@ -255,11 +269,22 @@ jobs:
           fi
 
       - name: Upload incremental APK artifact
+        id: upload_delta
         if: steps.delta.outputs.base != ''
         uses: actions/upload-artifact@v4
         with:
-          name: Ludashi-Delta-${{ github.run_number }}-r${{ github.run_attempt }}-${{ steps.delta.outputs.base }}
+          name: Ludashi-Delta-${{ github.run_number }}-r${{ github.run_attempt }}
           path: ${{ runner.temp }}/delta/update.ldu
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+      - name: Publish delta metadata
+        if: steps.upload_delta.outcome == 'success'
+        env:
+          BASE_SHA: ${{ steps.delta.outputs.base }}
+          ARTIFACT_ID: ${{ steps.upload_delta.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          [[ "$BASE_SHA" =~ ^[a-f0-9]{64}$ && "$ARTIFACT_ID" =~ ^[0-9]+$ ]]
+          printf '::notice file=.github/workflows/build.yml,line=1,title=Ludashi delta metadata::v1:%s:%s:%s:%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$ARTIFACT_ID" "$BASE_SHA"
