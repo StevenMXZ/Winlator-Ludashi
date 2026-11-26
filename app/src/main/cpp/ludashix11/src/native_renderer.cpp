@@ -2,6 +2,7 @@
 #include "VulkanRendererContext.h"
 #include "native_magnifier.h"
 #include <type_traits>
+#include <cmath>
 #ifdef __ANDROID__
 #include "VulkanDriver.h"
 #endif
@@ -68,10 +69,14 @@ public:
         }
     }
     void VisualOptions(const NativeVisualOptions& options) override {
+        const bool nextInteger = options.stretch == 2;
+        const bool changed = integerScaling != nextInteger;
+        integerScaling = nextInteger;
         if (!context) return;
-        context->setFilterMode(options.filter);
-        context->setPostFXMode(options.postFX);
-        context->setStretchMode(options.stretch);
+        context->setFilterMode(integerScaling ? 1 : options.filter);
+        context->setPostFXMode(integerScaling ? 0 : options.postFX);
+        context->setStretchMode(options.stretch == 1 ? 1 : 0);
+        if (changed) UpdateTransform();
         context->setSharpness(options.sharpness);
         wfgSelected = options.frameGenEngine == 1;
         context->setFrameGenerationEngine(options.frameGenEngine);
@@ -261,12 +266,18 @@ private:
     }
     void UpdateTransform() {
         if (!context || context->surfaceWidth <= 0 || context->surfaceHeight <= 0) return;
-        const float aspect = std::min(float(context->surfaceWidth) / width,
-                                      float(context->surfaceHeight) / height);
-        const float baseSx = fullscreen ? 1.f : width * aspect / context->surfaceWidth;
-        const float baseSy = fullscreen ? 1.f : height * aspect / context->surfaceHeight;
-        const float baseX = width * (1.f - baseSx) * .5f;
-        const float baseY = height * (1.f - baseSy) * .5f;
+        const int outW = context->surfaceWidth, outH = context->surfaceHeight;
+        float aspect = std::min(float(outW) / width, float(outH) / height);
+        const int integerFactor = std::min(outW / width, outH / height);
+        const bool pixelAligned = integerScaling && integerFactor >= 1;
+        if (pixelAligned) aspect = float(integerFactor);
+        const bool stretch = fullscreen && !integerScaling;
+        const float baseSx = stretch ? 1.f : width * aspect / outW;
+        const float baseSy = stretch ? 1.f : height * aspect / outH;
+        const float baseX = pixelAligned ? float((outW - width * integerFactor) / 2) * width / outW
+                                         : width * (1.f - baseSx) * .5f;
+        const float baseY = pixelAligned ? float((outH - height * integerFactor) / 2) * height / outH
+                                         : height * (1.f - baseSy) * .5f;
         magnifierPan.Update(lastCursorX, lastCursorY, width, height, zoom);
         context->setTransform(baseX - magnifierPan.x * baseSx,
                               baseY - magnifierPan.y * baseSy,
@@ -298,7 +309,7 @@ private:
     int width, height;
     const bool validation;
     const NativeRendererConfig rendererConfig;
-    bool fullscreen{}, cursor{true};
+    bool fullscreen{}, cursor{true}, integerScaling{};
     float refresh{60}, zoom{1.f};
     int lastCursorX{}, lastCursorY{};
     NativeMagnifierPan magnifierPan{};

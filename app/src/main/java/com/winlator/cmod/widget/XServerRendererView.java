@@ -25,6 +25,7 @@ public abstract class XServerRendererView extends SurfaceView {
 
     public abstract void toggleFullscreen();
     public abstract boolean isFullscreen();
+    public boolean isIntegerScaling() { return false; }
 
     public abstract void setCursorVisible(boolean visible);
     public abstract void setScreenOffsetYRelativeToCursor(boolean relative);

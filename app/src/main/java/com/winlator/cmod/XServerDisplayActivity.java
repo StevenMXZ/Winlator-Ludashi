@@ -1335,7 +1335,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
             envVars.put("PULSE_SERVER", rootPath + UnixSocketConfig.PULSE_SERVER_PATH);
             environment.addComponent(
                     new PulseAudioComponent(
-                            UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.PULSE_SERVER_PATH)));
+                            UnixSocketConfig.createSocket(rootPath, UnixSocketConfig.PULSE_SERVER_PATH), envVars));
         }
 
         if (exiting.get()) return;
@@ -1756,9 +1756,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (btItemToggleFullscreen != null) {
             btItemToggleFullscreen.setOnClickListener(v -> {
                 if (xServerView != null) {
-                    xServerView.toggleFullscreen();
-                    if (touchpadView != null)
-                        touchpadView.toggleFullscreen();
+                    setSidebarDisplayMode(getSidebarDisplayMode() == 0 ? 1 : 0);
                 }
                 drawerLayout.closeDrawers();
             });
@@ -1906,6 +1904,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     public int getSidebarDisplayMode() {
+        if (xServerView != null && xServerView.isIntegerScaling()) return 3;
         return softStretchEnabled && isSidebarSoftStretchSupported() ? 2 : isSidebarFullscreenStretched() ? 1 : 0;
     }
 
@@ -1914,17 +1913,19 @@ public class XServerDisplayActivity extends AppCompatActivity {
     }
 
     public void setSidebarDisplayMode(int mode) {
-        if (xServerView == null || mode < 0 || mode > 2
-                || (mode == 2 && !isSidebarSoftStretchSupported())) return;
+        if (xServerView == null || mode < 0 || mode > 3
+                || (mode >= 2 && !isSidebarSoftStretchSupported())) return;
         boolean newSoft = mode == 2;
+        boolean wasInteger = xServerView.isIntegerScaling();
+        boolean newInteger = mode == 3;
         if (xServerView instanceof VulkanRendererControls)
-            ((VulkanRendererControls) xServerView).setStretchMode(newSoft ? 1 : 0);
+            ((VulkanRendererControls) xServerView).setStretchMode(newInteger ? 2 : newSoft ? 1 : 0);
         softStretchEnabled = newSoft;
-        boolean fullscreen = mode != 0;
-        if (xServerView.isFullscreen() != fullscreen) {
-            xServerView.toggleFullscreen();
-            if (touchpadView != null) touchpadView.toggleFullscreen();
-        }
+        boolean fullscreen = mode == 1 || mode == 2;
+        boolean fullscreenChanged = xServerView.isFullscreen() != fullscreen;
+        if (fullscreenChanged) xServerView.toggleFullscreen();
+        if ((fullscreenChanged || wasInteger != newInteger) && touchpadView != null)
+            touchpadView.toggleFullscreen();
         View softButton = findViewById(R.id.BTItemSoftStretch);
         if (softButton != null) softButton.setSelected(newSoft);
     }

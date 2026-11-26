@@ -22,6 +22,8 @@ public final class AudioOutputSettings {
             int size = bufferSize(buffer);
             if (size > 0) env.put("ALSA_BUFFER_SIZE", size);
         } else if ("pulse-audio-gn".equals(driver)) {
+            if (OPENSL_ES.equals(api)) env.put("PULSEAUDIO_API", "1");
+            else if (AAUDIO.equals(api)) env.put("PULSEAUDIO_API", "0");
             int millis = latencyMs(latency);
             if (millis > 0) env.put("PULSE_LATENCY_MSEC", millis);
         }

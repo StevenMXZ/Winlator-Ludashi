@@ -48,9 +48,14 @@ internal fun AudioDriverOptions(
     var configuring by remember(driver) { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f)) {
-            val selected = driverEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(driver, true) } ?: driver
-            SettingChoice(uiStr(R.string.audio_driver), selected, driverEntries) {
-                onDriverChanged(StringUtils.parseIdentifier(it))
+            // Keep the saved driver identifier compatible with existing containers.
+            val labels = driverEntries.associateWith {
+                if (StringUtils.parseIdentifier(it) == "pulse-audio-gn") "PulseAudio-Oboe" else it
+            }
+            val selected = driverEntries.firstOrNull { StringUtils.parseIdentifier(it).equals(driver, true) }
+            SettingChoice(uiStr(R.string.audio_driver), labels[selected] ?: driver, labels.values.toList()) { label ->
+                val original = labels.entries.firstOrNull { it.value == label }?.key ?: label
+                onDriverChanged(StringUtils.parseIdentifier(original))
             }
         }
         if (hasConfiguration) {
@@ -98,10 +103,8 @@ private fun AudioOutputDialog(
         title = { Text(title) },
         text = {
             Column {
-                if (alsa) {
-                    SettingMappedChoice(uiStr(R.string.audio_output_api), api, apiLabels) { api = it }
-                    SettingsDivider()
-                }
+                SettingMappedChoice(uiStr(R.string.audio_output_api), api, apiLabels) { api = it }
+                SettingsDivider()
                 Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
                     Text(amountLabel, modifier = Modifier.weight(1f))
                     Text(amountText)
@@ -120,7 +123,7 @@ private fun AudioOutputDialog(
         confirmButton = {
             TextButton(onClick = {
                 onConfirm(buildMap {
-                    if (alsa) put(AudioOutputSettings.API, api)
+                    put(AudioOutputSettings.API, api)
                     put(amountKey, amount.toString())
                 })
                 onDismiss()

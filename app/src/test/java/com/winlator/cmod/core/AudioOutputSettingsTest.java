@@ -12,6 +12,7 @@ public class AudioOutputSettingsTest {
         assertFalse(env.has("ALSA_USE_SLES"));
         AudioOutputSettings.apply(env, "pulse-audio-gn", "opensles", "2048", "121");
         assertEquals("45", env.get("PULSE_LATENCY_MSEC"));
+        assertEquals("1", env.get("PULSEAUDIO_API"));
         assertEquals("8192", env.get("ALSA_BUFFER_SIZE"));
         assertFalse(env.has("ALSA_USE_SLES"));
     }
@@ -28,6 +29,11 @@ public class AudioOutputSettingsTest {
 
         EnvVars pulse = new EnvVars();
         AudioOutputSettings.apply(pulse, "pulse-audio-gn", "opensles", "2048", "17");
-        assertEquals("PULSE_LATENCY_MSEC=17", pulse.toString());
+        assertEquals("17", pulse.get("PULSE_LATENCY_MSEC"));
+        assertEquals("1", pulse.get("PULSEAUDIO_API"));
+        assertFalse(pulse.has("ALSA_USE_SLES"));
+        assertFalse(pulse.has("ALSA_BUFFER_SIZE"));
+        AudioOutputSettings.apply(pulse, "pulse-audio-gn", "aaudio", "auto", "auto");
+        assertEquals("0", pulse.get("PULSEAUDIO_API"));
     }
 }

@@ -211,10 +211,10 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
                     } else {
 
                         nativeSetPresentMode(nativeHandle, pendingPresentMode);
-                        nativeSetFilterMode(nativeHandle, pendingFilterMode);
+                        nativeSetFilterMode(nativeHandle, isIntegerScaling() ? 1 : pendingFilterMode);
                         nativeSetSwapRB(nativeHandle, pendingSwapRB);
-                        nativeSetStretchMode(nativeHandle, pendingStretchMode);
-                        nativeSetPostFXMode(nativeHandle, pendingPostFXMode);
+                        nativeSetStretchMode(nativeHandle, pendingStretchMode == 1 ? 1 : 0);
+                        nativeSetPostFXMode(nativeHandle, isIntegerScaling() ? 0 : pendingPostFXMode);
                         nativeSetSharpness(nativeHandle, pendingSharpness);
                         applyPendingFrameGeneration();
                         updateTransform();
@@ -231,9 +231,10 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
                 if (nativeHandle != 0) {
                     nativeSetPresentMode(nativeHandle, pendingPresentMode);
-                    nativeSetFilterMode(nativeHandle, pendingFilterMode);
+                    nativeSetFilterMode(nativeHandle, isIntegerScaling() ? 1 : pendingFilterMode);
                     nativeSetSwapRB(nativeHandle, pendingSwapRB);
-                    nativeSetPostFXMode(nativeHandle, pendingPostFXMode);
+                    nativeSetStretchMode(nativeHandle, pendingStretchMode == 1 ? 1 : 0);
+                    nativeSetPostFXMode(nativeHandle, isIntegerScaling() ? 0 : pendingPostFXMode);
                     nativeSetSharpness(nativeHandle, pendingSharpness);
                     applyPendingFrameGeneration();
                     updateTransform();
@@ -259,7 +260,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
     public void onSurfaceChanged(int width, int height) {
         if (inPipMode) return;
         surfaceWidth = width; surfaceHeight = height;
-        viewTransformation.update(width, height, xServer.screenInfo.width, xServer.screenInfo.height);
+        viewTransformation.update(width, height, xServer.screenInfo.width, xServer.screenInfo.height, isIntegerScaling());
         synchronized (lock) {
             if (nativeHandle != 0) { nativeResize(nativeHandle, width, height); updateTransform(); }
         }
@@ -322,7 +323,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
         final float baseX = fullscreen ? 0f : viewTransformation.sceneOffsetX;
         final float baseY = fullscreen ? 0f : viewTransformation.sceneOffsetY;
         float offsetY = baseY - magnifierPan.panY() * baseScaleY;
-        if (screenOffsetYRelativeToCursor && zoom <= 1f && !fullscreen) {
+        if (screenOffsetYRelativeToCursor && zoom <= 1f && !fullscreen && !isIntegerScaling()) {
             final float halfH = screenH * .5f;
             offsetY -= Math.max(0f, Math.min(ptrY - halfH * .5f, halfH));
         }
@@ -649,14 +650,27 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
         synchronized (lock) { if (nativeHandle != 0) nativeDumpRendererInfo(nativeHandle); }
     }
 
+    @Override
+    public boolean isIntegerScaling() { return pendingStretchMode == 2; }
+
     public void setStretchMode(int mode) {
-        pendingStretchMode = mode;
-        synchronized (lock) { if (nativeHandle != 0) nativeSetStretchMode(nativeHandle, mode); }
+        synchronized (lock) {
+            if (pendingStretchMode == mode) return;
+            pendingStretchMode = mode;
+            viewTransformation.update(surfaceWidth, surfaceHeight, xServer.screenInfo.width,
+                    xServer.screenInfo.height, isIntegerScaling());
+            if (nativeHandle != 0) {
+                nativeSetStretchMode(nativeHandle, mode == 1 ? 1 : 0);
+                nativeSetFilterMode(nativeHandle, isIntegerScaling() ? 1 : pendingFilterMode);
+                nativeSetPostFXMode(nativeHandle, isIntegerScaling() ? 0 : pendingPostFXMode);
+                updateTransform();
+            }
+        }
     }
 
     public void setPostFXMode(int mode) {
         pendingPostFXMode = mode;
-        synchronized (lock) { if (nativeHandle != 0) nativeSetPostFXMode(nativeHandle, mode); }
+        synchronized (lock) { if (nativeHandle != 0 && !isIntegerScaling()) nativeSetPostFXMode(nativeHandle, mode); }
     }
 
     public void setSharpness(float s) {
@@ -666,7 +680,7 @@ public class VulkanXServerView extends XServerRendererView implements SurfaceHol
 
     public void setFilterMode(int mode) {
         pendingFilterMode = mode;
-        synchronized (lock) { if (nativeHandle != 0) nativeSetFilterMode(nativeHandle, mode); }
+        synchronized (lock) { if (nativeHandle != 0 && !isIntegerScaling()) nativeSetFilterMode(nativeHandle, mode); }
     }
 
     public void setSwapRB(boolean enabled) {
