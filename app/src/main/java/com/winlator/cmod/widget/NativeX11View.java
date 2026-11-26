@@ -428,6 +428,17 @@ public final class NativeX11View extends XServerRendererView implements SurfaceH
             frameGenEngine = "wfg".equals(engine) ? "wfg" : "lsfg";
     }
     @Override public synchronized String getFrameGenerationEngine() { return frameGenEngine; }
+
+    // Called only during an explicit sidebar engine switch. A requested disable
+    // is not complete until the present worker has applied its visual revision.
+    public synchronized boolean isFrameGenerationTransitionPending() {
+        if (destroyed || paused || handle == 0) return true;
+        long[] state = nativeVisualState(handle);
+        if (state == null || state.length < 3 || state[0] < visualRevision ||
+                (state[1] & 1) == 0) return true;
+        frameGenEnabled = (state[1] & 4) != 0;
+        return false;
+    }
     @Override public synchronized void setFrameGenerationConfig(boolean enabled, String cachePath,
             int multiplier, int targetRate, int flowScalePercent, float refreshRate) {
         frameGenCache = cachePath;

@@ -85,6 +85,7 @@ public class RenderingSidebarPolisherView extends View {
 
         styleSpinnerRow(root.findViewById(R.id.SPUpscalerMode), onSurface);
         styleSpinnerRow(root.findViewById(R.id.SPPostFXMode), onSurface);
+        styleSpinnerRow(root.findViewById(R.id.SPFrameGenEngine), onSurface);
         postDelayed(() -> ensureVulkanUpscalers(getRootView(), 0), 100);
 
         TextView sharpnessHeader = root.findViewById(R.id.LBLSharpnessHeader);

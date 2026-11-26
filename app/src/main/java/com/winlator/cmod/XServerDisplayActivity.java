@@ -2242,6 +2242,99 @@ public class XServerDisplayActivity extends AppCompatActivity {
         }
     }
 
+    private void saveSidebarFrameGenerationEngine(String engine, boolean enabled) {
+        String value = enabled ? "1" : "0";
+        if (shortcut != null) {
+            shortcut.putExtra("frameGenEngine", engine);
+            shortcut.putExtra("frameGen", value);
+            shortcut.saveData();
+        } else if (container != null) {
+            container.putExtra("frameGenEngine", engine);
+            container.putExtra("frameGen", value);
+            container.saveData();
+        }
+    }
+
+    private void awaitSidebarFrameGeneration(VulkanRendererControls renderer,
+            java.util.function.Consumer<Boolean> completion) {
+        final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+        final long deadline = android.os.SystemClock.uptimeMillis() + 5000L;
+        handler.post(new Runnable() {
+            @Override public void run() {
+                if (isFinishing() || isDestroyed() || xServerView != renderer) return;
+                boolean pending = renderer instanceof com.winlator.cmod.widget.NativeX11View &&
+                    ((com.winlator.cmod.widget.NativeX11View) renderer).isFrameGenerationTransitionPending();
+                if (!pending) completion.accept(true);
+                else if (android.os.SystemClock.uptimeMillis() >= deadline) completion.accept(false);
+                else handler.postDelayed(this, 50L);
+            }
+        });
+    }
+
+    private void switchSidebarFrameGeneration(VulkanRendererControls renderer, String next,
+            java.util.function.Consumer<Boolean> completion) {
+        final String previous = renderer.getFrameGenerationEngine();
+        final boolean wasEnabled = renderer.isFrameGenerationRequested() ||
+            renderer.isFrameGenerationEnabled();
+        if (next.equals(previous)) {
+            completion.accept(true);
+            return;
+        }
+        // An inactive LSFG selection is allowed without shaders, just like the editor.
+        if (wasEnabled && "lsfg".equals(next) &&
+                LosslessScaling.getStatus(this, true) != LosslessScaling.STATUS_OK) {
+            completion.accept(false);
+            return;
+        }
+
+        // The old engine must be fully disabled before changing its ID. The
+        // native X11 worker drains GPU submissions before acknowledging this.
+        if (!renderer.setFrameGenerationEnabled(false)) {
+            completion.accept(false);
+            return;
+        }
+        awaitSidebarFrameGeneration(renderer, stopped -> {
+            if (!stopped || renderer.isFrameGenerationEnabled()) {
+                renderer.setFrameGenerationEnabled(false);
+                completion.accept(false);
+                return;
+            }
+            renderer.setFrameGenerationEngine(next);
+            if (!next.equals(renderer.getFrameGenerationEngine())) {
+                if (wasEnabled) renderer.setFrameGenerationEnabled(true);
+                completion.accept(false);
+                return;
+            }
+            if (!wasEnabled) {
+                completion.accept(true);
+                return;
+            }
+            boolean requested = renderer.setFrameGenerationEnabled(true);
+            awaitSidebarFrameGeneration(renderer, applied -> {
+                if (requested && applied && renderer.isFrameGenerationEnabled()) {
+                    completion.accept(true);
+                    return;
+                }
+                // Roll back only after the failed/new engine has drained.
+                renderer.setFrameGenerationEnabled(false);
+                awaitSidebarFrameGeneration(renderer, drained -> {
+                    if (!drained || renderer.isFrameGenerationEnabled()) {
+                        completion.accept(false);
+                        return;
+                    }
+                    renderer.setFrameGenerationEngine(previous);
+                    if (previous.equals(renderer.getFrameGenerationEngine()))
+                        renderer.setFrameGenerationEnabled(true);
+                    awaitSidebarFrameGeneration(renderer, restored -> {
+                        if (!restored || !renderer.isFrameGenerationEnabled())
+                            renderer.setFrameGenerationEnabled(false);
+                        completion.accept(false);
+                    });
+                });
+            });
+        });
+    }
+
     private void saveSidebarFrameGenerationSettings(int multiplier, int targetRate, int flowScale) {
         String[][] values = {
             {"frameGenMultiplier", String.valueOf(multiplier)},
@@ -2324,6 +2417,8 @@ public class XServerDisplayActivity extends AppCompatActivity {
         View    btSaveGraphicsPreset = findViewById(R.id.BTSaveGraphicsPreset);
         View    llFrameGenOptions  = findViewById(R.id.LLFrameGenOptions);
         Switch  swEnableFrameGen   = findViewById(R.id.SWEnableFrameGen);
+        Spinner spFrameGenEngine = findViewById(R.id.SPFrameGenEngine);
+        final boolean[] switchingFrameGen = {false};
         if (swEnableFrameGen != null && vkRenderer != null) {
             swEnableFrameGen.setTag(null);
             swEnableFrameGen.setText("wfg".equals(vkRenderer.getFrameGenerationEngine())
@@ -2429,11 +2524,13 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     String frameGenQualityValue =
                         String.valueOf(frameGenQualityValues[qualityPos]);
                     container.putExtra("frameGen", frameGenEnabledValue);
+                    container.putExtra("frameGenEngine", vkRenderer.getFrameGenerationEngine());
                     container.putExtra("frameGenMultiplier", frameGenMultiplierValue);
                     container.putExtra("frameGenTargetRate", frameGenTargetValue);
                     container.putExtra("frameGenFlowScale", frameGenQualityValue);
                     if (shortcut != null) {
                         shortcut.putExtra("frameGen", frameGenEnabledValue);
+                        shortcut.putExtra("frameGenEngine", vkRenderer.getFrameGenerationEngine());
                         shortcut.putExtra("frameGenMultiplier", frameGenMultiplierValue);
                         shortcut.putExtra("frameGenTargetRate", frameGenTargetValue);
                         shortcut.putExtra("frameGenFlowScale", frameGenQualityValue);
@@ -2499,7 +2596,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     enabled && fixedMultiplier ? View.VISIBLE : View.GONE);
         };
         Runnable applyFrameGenSettings = () -> {
-            if (swEnableFrameGen == null || !swEnableFrameGen.isChecked()) return;
+            if (switchingFrameGen[0] || swEnableFrameGen == null || !swEnableFrameGen.isChecked()) return;
             int modePos = spFrameGenMode != null
                 ? spFrameGenMode.getSelectedItemPosition() : 1;
             int multiplierPos = spFrameGenMultiplier != null
@@ -2565,7 +2662,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (swEnableFrameGen != null) {
             final boolean[] updatingFrameGenSwitch = {false};
             swEnableFrameGen.setOnCheckedChangeListener((button, checked) -> {
-                if (updatingFrameGenSwitch[0]) return;
+                if (updatingFrameGenSwitch[0] || switchingFrameGen[0]) return;
                 if (checked && !"wfg".equals(vkRenderer.getFrameGenerationEngine()) && LosslessScaling.getStatus(this, true) !=
                         LosslessScaling.STATUS_OK) {
                     updatingFrameGenSwitch[0] = true;
@@ -2591,9 +2688,10 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 if (checked) applyFrameGenSettings.run();
                 saveSidebarFrameGeneration(checked);
                 Log.i("XServerDisplayActivity",
-                    "LSFG runtime toggle: " + (checked ? "enabled" : "disabled"));
+                    vkRenderer.getFrameGenerationEngine() + " runtime toggle: " + (checked ? "enabled" : "disabled"));
             });
             vkRenderer.setOnFrameGenerationStateChangedListener(() -> {
+                if (switchingFrameGen[0]) return;
                 updatingFrameGenSwitch[0] = true;
                 swEnableFrameGen.setChecked(vkRenderer.isFrameGenerationRequested());
                 updatingFrameGenSwitch[0] = false;
@@ -2603,6 +2701,50 @@ public class XServerDisplayActivity extends AppCompatActivity {
             updatingFrameGenSwitch[0] = true;
             swEnableFrameGen.setChecked(vkRenderer.isFrameGenerationRequested());
             updatingFrameGenSwitch[0] = false;
+
+            if (spFrameGenEngine != null) {
+                ArrayAdapter<String> adapter = createSidebarSpinnerAdapter(new String[]{"LSFG", "WFG"});
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                spFrameGenEngine.setAdapter(adapter);
+                spFrameGenEngine.setSelection("wfg".equals(vkRenderer.getFrameGenerationEngine()) ? 1 : 0, false);
+                spFrameGenEngine.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                    @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
+                        if (switchingFrameGen[0]) return;
+                        String next = pos == 1 ? "wfg" : "lsfg";
+                        if (next.equals(vkRenderer.getFrameGenerationEngine())) return;
+                        if (vkRenderer.isFrameGenerationRequested() && "lsfg".equals(next) &&
+                                LosslessScaling.getStatus(XServerDisplayActivity.this, true) != LosslessScaling.STATUS_OK) {
+                            spFrameGenEngine.setSelection(1, false);
+                            Toast.makeText(XServerDisplayActivity.this,
+                                "Import a valid Lossless.dll in the container settings first.",
+                                Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        switchingFrameGen[0] = true;
+                        View[] controls = {spFrameGenEngine, swEnableFrameGen, spFrameGenMode,
+                            spFrameGenMultiplier, spFrameGenQuality, btSaveGraphicsPreset};
+                        for (View control : controls) if (control != null) control.setEnabled(false);
+                        switchSidebarFrameGeneration(vkRenderer, next, success -> {
+                            String selected = vkRenderer.getFrameGenerationEngine();
+                            boolean requested = vkRenderer.isFrameGenerationRequested();
+                            updatingFrameGenSwitch[0] = true;
+                            spFrameGenEngine.setSelection("wfg".equals(selected) ? 1 : 0, false);
+                            swEnableFrameGen.setText("wfg".equals(selected)
+                                ? "WFG Frame Generation" : getString(R.string.sidebar_lsfg_frame_generation));
+                            swEnableFrameGen.setChecked(requested);
+                            updatingFrameGenSwitch[0] = false;
+                            switchingFrameGen[0] = false;
+                            for (View control : controls) if (control != null) control.setEnabled(true);
+                            updateFrameGenVisibility.run();
+                            saveSidebarFrameGenerationEngine(selected, requested);
+                            if (modernSidebar != null) modernSidebar.onRuntimeStatusChanged();
+                            if (!success) Toast.makeText(XServerDisplayActivity.this,
+                                R.string.sidebar_frame_generation_switch_failed, Toast.LENGTH_LONG).show();
+                        });
+                    }
+                    @Override public void onNothingSelected(AdapterView<?> p) {}
+                });
+            }
         }
         updateFrameGenVisibility.run();
 

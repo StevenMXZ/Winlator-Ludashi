@@ -708,4 +708,5 @@
   <string name="steam_demo_access_denied">A Steam recusou o acesso ao download desta demo. Se ela ainda estiver disponível, adicione-a à mesma conta pelo cliente Steam e tente novamente.</string>
   <string name="itch_remove_installed_help">Este jogo do itch.io está instalado. Remova apenas o atalho ou desinstale o jogo e remova o atalho.</string>
   <string name="itch_remove_shortcut_only">Remover só o atalho</string>
+    <string name="sidebar_frame_generation_switch_failed">Não foi possível alternar o gerador de quadros.</string>
 </resources>
