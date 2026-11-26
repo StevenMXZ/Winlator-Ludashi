@@ -130,6 +130,30 @@ private fun componentVersionParts(type: String, name: String): List<Int> {
     return token.split('.').map { it.toIntOrNull() ?: 0 }
 }
 
+// Presentation only: recommendations are computed from the original catalog, not these rows.
+internal fun visibleComponentRows(
+    all: List<OnboardingComponent>,
+    category: String,
+    recommendedIds: Set<String>
+): List<OnboardingComponent> {
+    val rows = all.filter {
+        when (category) {
+            "Recommended" -> it.id in recommendedIds
+            "Wine & Proton" -> it.type == "Wine" || it.type == "Proton"
+            else -> it.type == category
+        }
+    }
+    if (category == "Recommended" || category == "Freedreno" || category == "AdrenoTools")
+        return rows.sortedByDescending { it.installed }
+    return rows.sortedWith { left, right ->
+        val installed = right.installed.compareTo(left.installed)
+        if (installed != 0) installed
+        else com.winlator.cmod.contents.ContentVersionOrder.compare(
+            right.type, right.name, left.type, left.name
+        )
+    }
+}
+
 internal fun recommendedComponentIds(all: List<OnboardingComponent>): Set<String> {
     val result = all.filter { it.recommended && it.type !in latestRecommendedTypes && it.type != "Wine" && it.type != "Proton" }
         .mapTo(linkedSetOf()) { it.id }
@@ -172,17 +196,7 @@ internal fun OnboardingComponentsScreen(
     val landscape = LocalConfiguration.current.screenWidthDp > LocalConfiguration.current.screenHeightDp
     val recommendedIds = remember(all) { recommendedComponentIds(all) }
     val visible = remember(all, category, recommendedIds) {
-        all.filter {
-            when (category) {
-                "Recommended" -> it.id in recommendedIds
-                "Wine & Proton" -> it.type == "Wine" || it.type == "Proton"
-                else -> it.type == category
-            }
-        // Installed rows first. The catalog order is by type and version code, so an installed
-        // row with a low version code (a local package, an older build) or of the second type
-        // in "Wine & Proton" used to sink below the uninstalled ones. The sort is stable, so the
-        // order inside each group stays as the catalog gave it.
-        }.sortedByDescending { it.installed }
+        visibleComponentRows(all, category, recommendedIds)
     }
     val hasInstalledRuntime = bundledInstalled.value || all.any {
         it.installed && (it.type == "Wine" || it.type == "Proton") && !it.runtimeIdentifier.isNullOrBlank()

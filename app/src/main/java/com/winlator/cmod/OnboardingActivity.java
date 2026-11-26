@@ -292,6 +292,14 @@ public class OnboardingActivity extends AppCompatActivity {
                 }
             } catch (Exception ignored) {
             }
+            try (Response response = http.newCall(new Request.Builder()
+                    .url(ContentsManager.FREEDRENO_RELEASES).build()).execute()) {
+                if (response.isSuccessful() && response.body() != null) {
+                    contentsManager.setFreedrenoReleases(response.body().string());
+                }
+            } catch (Exception error) {
+                android.util.Log.w("OnboardingActivity", "Unable to load Freedreno releases", error);
+            }
             contentsManager.syncContents();
             rebuildCatalog();
             runOnUiThread(() -> {
@@ -322,7 +330,8 @@ public class OnboardingActivity extends AppCompatActivity {
                 if (!seen.add(key)) continue;
                 rebuilt.add(item);
                 ComponentItem current = newest.get(typeName);
-                if (current == null || item.versionCode > current.versionCode) newest.put(typeName, item);
+                if (!typeName.equals("Freedreno") && (current == null || item.versionCode > current.versionCode))
+                    newest.put(typeName, item);
             }
         }
 
@@ -418,9 +427,7 @@ public class OnboardingActivity extends AppCompatActivity {
                 ui.add(new OnboardingComponent(
                         componentId(item),
                         item.type,
-                        item.type.equals("Freedreno") && item.installed && item.profile != null
-                                ? new com.winlator.cmod.contents.OpenGLDriverManager(this).versionLabel(
-                                        ContentsManager.getInstallDir(this, item.profile).getName()) : item.name,
+                        componentDisplayName(item),
                         item.installed,
                         item.recommended,
                         item.installed,
@@ -453,6 +460,12 @@ public class OnboardingActivity extends AppCompatActivity {
         refreshBundledRuntimeState();
     }
 
+    private String componentDisplayName(ComponentItem item) {
+        if (item.profile == null || item.profile.type != ContentProfile.ContentType.CONTENT_TYPE_FREEDRENO)
+            return item.name;
+        return contentsManager.getFreedrenoDisplayName(item.profile);
+    }
+
     private void installComponent(ComponentItem item) {
         if (item.packageInfo != null) {
             installProtonPackage(item);
@@ -465,14 +478,24 @@ public class OnboardingActivity extends AppCompatActivity {
         composeController.updateInstallProgress("Preparing " + item.name, 0);
         io.execute(() -> {
             File archive = new File(getCacheDir(), "winz-component-" + System.nanoTime());
+            String displayName = componentDisplayName(item);
             try {
-                if (!download(item.url, archive, item.name)) throw new Exception("Download failed");
+                if (!download(item.url, archive, displayName)) throw new Exception("Download failed");
+                if (item.profile != null && item.profile.type == ContentProfile.ContentType.CONTENT_TYPE_FREEDRENO) {
+                    postInstallProgress("Installing " + displayName, 72);
+                    new com.winlator.cmod.contents.OpenGLDriverManager(this).install(Uri.fromFile(archive));
+                    contentsManager.syncContents();
+                    rebuildCatalog();
+                    postInstallProgress("Installed " + displayName, 100);
+                    runOnUiThread(() -> finishInstall(id, null));
+                    return;
+                }
                 installContentArchive(Uri.fromFile(archive), item.name, 72, () -> {
                     rebuildCatalog();
                     runOnUiThread(() -> finishInstall(id, null));
                 }, error -> runOnUiThread(() -> finishInstall(id, error)));
             } catch (Exception error) {
-                runOnUiThread(() -> finishInstall(id, "Unable to install " + item.name + "."));
+                runOnUiThread(() -> finishInstall(id, "Unable to install " + displayName + "."));
             } finally {
                 archive.delete();
             }

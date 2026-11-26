@@ -166,6 +166,18 @@ public class ContentsManager {
         }
     }
 
+    /** Display the release title for both installed and downloadable copies of the same build. */
+    public String getFreedrenoDisplayName(ContentProfile profile) {
+        for (ContentProfile release : freedrenoReleases) {
+            if (release.verCode == profile.verCode && release.verName.equals(profile.verName)
+                    && release.desc != null && !release.desc.trim().isEmpty()) return release.desc;
+        }
+        if (profile.remoteUrl != null) {
+            return profile.desc == null || profile.desc.trim().isEmpty() ? profile.verName : profile.desc;
+        }
+        return new OpenGLDriverManager(context).versionLabel(getInstallDir(context, profile).getName());
+    }
+
     public void syncContents() {
         profilesMap = new HashMap<>();
         for (ContentProfile.ContentType type : ContentProfile.ContentType.values()) profilesMap.put(type, new LinkedList<>());

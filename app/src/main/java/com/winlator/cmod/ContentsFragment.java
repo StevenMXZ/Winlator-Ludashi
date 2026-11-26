@@ -316,7 +316,17 @@ public class ContentsFragment extends Fragment {
     }
 
     private void loadContentList() {
-        List<ContentProfile> profiles = manager.getProfiles(currentContentType);
+        // Sort a UI-only copy; the catalog order is also used by recommendation logic.
+        List<ContentProfile> profiles = new ArrayList<>(manager.getProfiles(currentContentType));
+        if (currentContentType != ContentProfile.ContentType.CONTENT_TYPE_FREEDRENO) {
+            profiles.sort((left, right) -> {
+                int installed = Boolean.compare(right.remoteUrl == null, left.remoteUrl == null);
+                if (installed != 0) return installed;
+                int version = com.winlator.cmod.contents.ContentVersionOrder.compare(
+                        right.type.toString(), right.verName, left.type.toString(), left.verName);
+                return version != 0 ? version : Integer.compare(right.verCode, left.verCode);
+            });
+        }
         if (profiles.isEmpty()) {
             emptyText.setVisibility(View.VISIBLE);
             recyclerView.setVisibility(View.GONE);
@@ -410,9 +420,7 @@ public class ContentsFragment extends Fragment {
             holder.ivIcon.setBackground(getContext().getDrawable(iconId));
 
             String shownVersion = profile.type == ContentProfile.ContentType.CONTENT_TYPE_FREEDRENO
-                    ? (profile.remoteUrl != null ? profile.desc
-                        : new com.winlator.cmod.contents.OpenGLDriverManager(requireContext()).versionLabel(
-                            ContentsManager.getInstallDir(requireContext(), profile).getName())) : profile.verName;
+                    ? manager.getFreedrenoDisplayName(profile) : profile.verName;
             holder.tvVersionName.setText(getContext().getString(R.string.version) + ": " + shownVersion);
             holder.tvVersionCode.setText(getContext().getString(R.string.version_code) + ": " + profile.verCode);
             holder.ibMenu.setVisibility(profile.remoteUrl == null ? View.VISIBLE : View.GONE);
