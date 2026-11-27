@@ -4,7 +4,7 @@ import org.json.JSONObject
 import android.content.Context
 import java.io.File
 
-/** Windows base-game depot selection and Steam install metadata. */
+/** Windows game/DLC depot selection and Steam install metadata. */
 object SteamCatalog {
     fun desktopExecPath(path: String): String = path.replace("\\", "\\\\\\\\")
 
@@ -50,6 +50,14 @@ object SteamCatalog {
         branch: String = "public",
         language: String = "english",
         sourceInfo: ((Int) -> JSONObject)? = null,
+    ): List<Depot> = depots(info, branch, language, emptySet(), sourceInfo)
+
+    fun depots(
+        info: JSONObject,
+        branch: String,
+        language: String,
+        selectedDlc: Set<Int>,
+        sourceInfo: ((Int) -> JSONObject)? = null,
     ): List<Depot> {
         val all = info.optJSONObject("depots") ?: error("No depot metadata")
         require(branch in branches(info)) { "Selected Steam version is unavailable" }
@@ -63,7 +71,7 @@ object SteamCatalog {
             val depot = all.optJSONObject(key) ?: continue
             // Mode 1 is a separate shared installation, such as Steamworks Common Redistributables.
             val resolved = resolveDepot(id, depot, branch, language,
-                lookup.takeUnless { depot.optInt("sharedinstall") == 1 }) ?: continue
+                lookup.takeUnless { depot.optInt("sharedinstall") == 1 }, selectedDlc) ?: continue
             if (resolved.manifestAppId == 0) local.add(resolved) else shared.add(resolved)
         }
         // Base files must be in place before the game's own depots are applied.
@@ -99,14 +107,60 @@ object SteamCatalog {
         return estimate.takeIf { it.all { depot -> depot.size > 0 } }?.sumOf { it.size }
     }
 
-    private fun matchesInstall(depot: JSONObject, language: String): Boolean {
+    private fun dlcAppId(depot: JSONObject): Int =
+        depot.optInt("dlcappid").takeIf { it > 0 } ?: (depot.optJSONObject("config")?.optInt("dlcappid") ?: 0)
+
+    internal fun dlcDepotApps(info: JSONObject): Map<Int, Int> {
+        val depots = info.optJSONObject("depots") ?: return emptyMap()
+        return depots.keys().asSequence().mapNotNull { key ->
+            val id = key.toIntOrNull() ?: return@mapNotNull null
+            val entry = depots.optJSONObject(key) ?: return@mapNotNull null
+            dlcAppId(entry).takeIf { it > 0 }?.let { id to it }
+        }.toMap()
+    }
+
+    internal fun dlcIds(info: JSONObject): Set<Int> =
+        (info.optJSONObject("extended")?.optString("listofdlc").orEmpty()
+            .split(',').mapNotNull { it.trim().toIntOrNull()?.takeIf { id -> id > 0 } } +
+            dlcDepotApps(info).values).toSet()
+
+    internal fun ownedAppIds(library: JSONObject): Set<Int> {
+        val apps = library.optJSONArray("owned_apps") ?: return emptySet()
+        return (0 until apps.length()).mapNotNull { apps.optJSONObject(it)?.optInt("id")?.takeIf { id -> id > 0 } }.toSet()
+    }
+
+    internal fun packageMetadataReady(library: JSONObject): Boolean {
+        val packages = library.optJSONArray("packages") ?: return false
+        return packages.length() > 0 && (0 until packages.length()).all {
+            packages.optJSONObject(it)?.optBoolean("pics_fetched") == true
+        }
+    }
+
+    internal fun selectedDlc(info: JSONObject, library: JSONObject, excluded: Set<Int>): Set<Int> =
+        dlcDepotApps(info).values.toSet().intersect(ownedAppIds(library)) - excluded
+
+    internal fun installedDlcIds(record: JSONObject): Set<Int> {
+        val installed = record.optString("ludashiInstalledDepots").split(',')
+            .mapNotNull { it.substringBefore(':').toIntOrNull() }.toSet()
+        return dlcDepotApps(record).filterKeys { it in installed }.values.toSet()
+    }
+
+    // Unselected DLC files are retained; retain their manifest records as well.
+    internal fun installedManifestList(previous: JSONObject, attempted: List<Depot>, installed: List<Depot>): String {
+        val retainedDlcDepots = dlcDepotApps(previous).keys - attempted.map { it.id }.toSet()
+        val retained = previous.optString("ludashiInstalledDepots").split(',')
+            .filter { it.substringBefore(':').toIntOrNull() in retainedDlcDepots }
+        return (installed.map { "${it.id}:${it.manifest.toULong()}:0" } + retained).joinToString(",")
+    }
+
+    private fun matchesInstall(depot: JSONObject, language: String, selectedDlc: Set<Int>): Boolean {
         val config = depot.optJSONObject("config")
         val os = config?.optString("oslist").orEmpty()
         val depotLanguage = config?.optString("language").orEmpty()
         return (os.isBlank() || os.split(',').any { it.trim().equals("windows", true) }) &&
             (depotLanguage.isBlank() || depotLanguage.equals(language, true)) &&
             (config?.optString("lowviolence") !in listOf("1", "true")) &&
-            depot.optInt("dlcappid") == 0
+            (dlcAppId(depot) == 0 || dlcAppId(depot) in selectedDlc)
     }
 
     private fun resolveDepot(
@@ -115,11 +169,12 @@ object SteamCatalog {
         branch: String,
         language: String,
         sourceInfo: ((Int) -> JSONObject)?,
+        selectedDlc: Set<Int>,
     ): Depot? {
         var depot = entry
         var appId = 0
         val visited = mutableSetOf<Int>()
-        while (matchesInstall(depot, language)) {
+        while (matchesInstall(depot, language, selectedDlc)) {
             val manifests = depot.optJSONObject("manifests")
             val manifestBranch = if (manifests?.has(branch) == true) branch else "public"
             val raw = manifests?.opt(manifestBranch)
@@ -166,6 +221,13 @@ object SteamInstallOptions {
     private fun prefs(context: Context) = context.getSharedPreferences("steam-settings", 0)
     fun branch(context: Context, id: Int): String = prefs(context).getString("install-branch-$id", "public") ?: "public"
     fun language(context: Context, id: Int): String = prefs(context).getString("install-language-$id", "english") ?: "english"
+    fun excludedDlc(context: Context, id: Int): Set<Int> =
+        prefs(context).getStringSet("install-dlc-excluded-$id", emptySet()).orEmpty()
+            .mapNotNull { it.toIntOrNull() }.toSet()
+    fun setExcludedDlc(context: Context, id: Int, excluded: Set<Int>) {
+        check(!SteamSession.downloading && !SteamSession.gameActive && SteamSession.installRequestId == 0)
+        prefs(context).edit().putStringSet("install-dlc-excluded-$id", excluded.map { it.toString() }.toSet()).apply()
+    }
     fun setBranch(context: Context, id: Int, value: String) {
         check(!SteamSession.downloading && !SteamSession.gameActive)
         prefs(context).edit().putString("install-branch-$id", value).apply()

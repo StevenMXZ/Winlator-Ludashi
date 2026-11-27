@@ -503,7 +503,15 @@ object SteamSession {
         val name = SteamCatalog.installName(info)
         val branch = SteamInstallOptions.branch(context, id)
         val language = SteamInstallOptions.language(context, id)
-        val depots = SteamCatalog.depots(info, branch, language, ::info)
+        val liveLibrary = JSONObject(s.getLibrarySnapshotJson())
+        if (!isDemo && SteamCatalog.dlcDepotApps(info).isNotEmpty()) {
+            check(SteamCatalog.packageMetadataReady(liveLibrary)) {
+                context.getString(R.string.steam_dlc_wait_licenses)
+            }
+        }
+        val selectedDlc = SteamCatalog.selectedDlc(info, liveLibrary, SteamInstallOptions.excludedDlc(context, id))
+        val depots = SteamCatalog.depots(info, branch, language, selectedDlc, ::info)
+        val previousRecord = runCatching { SteamGames.info(context, id) }.getOrDefault(JSONObject())
         val freeToDownload = info.optJSONObject("common")?.let {
             it.optString("freetodownload", it.optString("FreeToDownload")) in listOf("1", "true")
         } == true
@@ -546,7 +554,8 @@ object SteamSession {
                                         File(dir, ".ludashi_depot/denied.depots").takeIf { it.isFile }
                                             ?.useLines { lines -> lines.mapNotNull { it.toIntOrNull() }.toSet() }
                                     }.getOrNull().orEmpty()
-                                    record.put("ludashiInstalledDepots", SteamCatalog.manifestList(depots.filterNot { it.id in denied }))
+                                    record.put("ludashiInstalledDepots", SteamCatalog.installedManifestList(
+                                        previousRecord, depots, depots.filterNot { it.id in denied }))
                                     SteamInstallRecord.write(context.filesDir, id, record)
                                     finalized = true
                                     SteamGoldberg.invalidate(dir)

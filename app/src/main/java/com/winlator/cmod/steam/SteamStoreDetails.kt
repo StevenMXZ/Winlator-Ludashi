@@ -71,11 +71,18 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
     var language by remember(id) { mutableStateOf(SteamInstallOptions.language(context, id)) }
     var branchMenu by remember { mutableStateOf(false) }
     var languageMenu by remember { mutableStateOf(false) }
-    val pics by produceState(JSONObject(), id, state.signedIn, installed) {
+    val gameRevision = SteamGames.version
+    val installedInfo by produceState(JSONObject(), id, installed, gameRevision) {
         value = withContext(Dispatchers.IO) {
-            runCatching { if (installed) SteamGames.info(context, id) else if (state.signedIn) SteamSession.info(id) else JSONObject() }.getOrDefault(JSONObject())
+            if (installed) runCatching { SteamGames.info(context, id) }.getOrDefault(JSONObject()) else JSONObject()
         }
     }
+    val livePics by produceState(JSONObject(), id, state.signedIn, state.gameActive, gameRevision) {
+        value = withContext(Dispatchers.IO) {
+            if (state.signedIn && !state.gameActive) runCatching { SteamSession.info(id) }.getOrDefault(JSONObject()) else JSONObject()
+        }
+    }
+    val pics = livePics.takeIf { it.length() > 0 } ?: installedInfo
     val store by produceState(JSONObject(), id) {
         value = withContext(Dispatchers.IO) {
             runCatching { SteamStoreMetadata.fetch(id) }.getOrDefault(JSONObject())
@@ -83,16 +90,24 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
     }
     val branches = remember(pics) { SteamCatalog.branches(pics) }
     val languages = remember(pics) { SteamCatalog.languages(pics) }
-    val downloadSize by produceState(0L, pics, branch, language, state.library, state.signedIn, installed) {
+    var excludedDlc by remember(id) { mutableStateOf(SteamInstallOptions.excludedDlc(context, id)) }
+    val library = remember(state.library) { runCatching { JSONObject(state.library) }.getOrDefault(JSONObject()) }
+    val ownedDlc = remember(library) { SteamCatalog.ownedAppIds(library) }
+    val dlcDepotApps = remember(pics) { SteamCatalog.dlcDepotApps(pics).values.toSet() }
+    val selectedDlc = remember(pics, library, excludedDlc) { SteamCatalog.selectedDlc(pics, library, excludedDlc) }
+    val installedDlc = remember(installedInfo) { SteamCatalog.installedDlcIds(installedInfo) }
+    val licensesReady = state.signedIn && SteamCatalog.packageMetadataReady(library)
+    val canEditDlc = licensesReady && !state.downloading && !state.gameActive && SteamSession.installRequestId == 0
+    val downloadSize by produceState(0L, pics, branch, language, state.library, state.signedIn, installed, selectedDlc) {
         value = withContext(Dispatchers.IO) {
             runCatching {
                 val lookup: ((Int) -> JSONObject)? = if (state.signedIn && !installed) SteamSession::info else null
-                val depots = SteamCatalog.depots(pics, branch, language, lookup)
-                SteamCatalog.estimatedSize(depots, JSONObject(state.library)) ?: 0L
+                val depots = SteamCatalog.depots(pics, branch, language, selectedDlc, lookup)
+                SteamCatalog.estimatedSize(depots, library) ?: 0L
             }.getOrDefault(0L)
         }
     }
-    val installedSize by produceState<Long?>(null, id, installed) {
+    val installedSize by produceState<Long?>(null, id, installed, gameRevision) {
         value = if (!installed) null else withContext(Dispatchers.IO) {
             runCatching {
                 val coroutine = currentCoroutineContext()
@@ -102,8 +117,8 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
             }.getOrNull()
         }
     }
-    val recordedBranch = if (installed) pics.optString("ludashiInstallBranch", "public") else "public"
-    val recordedLanguage = if (installed) pics.optString("ludashiInstallLanguage", "english") else "english"
+    val recordedBranch = installedInfo.optString("ludashiInstallBranch", "public")
+    val recordedLanguage = installedInfo.optString("ludashiInstallLanguage", "english")
     fun readableSize(bytes: Long): String = if (bytes >= 1073741824L) "%.1f GiB".format(bytes / 1073741824.0)
         else "%.1f MiB".format(bytes / 1048576.0)
     val cached = rememberSteamGameSnapshot(context, id)
@@ -223,14 +238,11 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
                 }
                 2 -> {
                     val dlcJson = store.optJSONArray("dlc") ?: JSONArray()
-                    val ids = (0 until dlcJson.length()).mapNotNull { dlcJson.optInt(it).takeIf { item -> item > 0 } }
-                        .ifEmpty {
-                            pics.optJSONObject("extended")?.optString("listofdlc").orEmpty()
-                                .split(',').mapNotNull { it.trim().toIntOrNull() }
-                        }
+                    val ids = ((0 until dlcJson.length()).mapNotNull { dlcJson.optInt(it).takeIf { item -> item > 0 } } +
+                        SteamCatalog.dlcIds(pics) + installedDlc).distinct()
                     val dlcNames by produceState<Map<Int, String>>(emptyMap(), id, ids.joinToString(","), state.signedIn) {
                         value = if (!state.signedIn || ids.isEmpty()) emptyMap() else withContext(Dispatchers.IO) {
-                            ids.take(16).mapNotNull { dlcId ->
+                            ids.take(60).mapNotNull { dlcId ->
                                 currentCoroutineContext().ensureActive()
                                 val name = runCatching { SteamSession.info(dlcId).optJSONObject("common")?.optString("name") }
                                     .getOrNull().orEmpty()
@@ -240,12 +252,52 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
                     }
                     if (ids.isEmpty()) Text(uiStr(R.string.steam_store_no_dlc))
                     else {
-                        Text(uiStr(R.string.steam_store_dlc_count, ids.size), style = MaterialTheme.typography.bodySmall)
-                        ids.take(60).forEachIndexed { index, dlcId ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Outlined.Extension, null, Modifier.size(18.dp))
-                                Text(dlcNames[dlcId].orEmpty().ifBlank { "DLC ${index + 1}" }, style = MaterialTheme.typography.bodyMedium)
+                        Text(uiStr(R.string.steam_dlc_selected_count, selectedDlc.size, dlcDepotApps.intersect(ownedDlc).size),
+                            style = MaterialTheme.typography.bodySmall)
+                        if (!licensesReady) Text(uiStr(R.string.steam_dlc_wait_licenses), style = MaterialTheme.typography.bodySmall)
+                        else if (installed) Text(uiStr(R.string.steam_dlc_keep_installed), style = MaterialTheme.typography.bodySmall)
+                        val selectable = dlcDepotApps.intersect(ownedDlc)
+                        if (selectable.isNotEmpty()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(enabled = canEditDlc && !selectedDlc.containsAll(selectable), onClick = {
+                                    val next = excludedDlc - selectable
+                                    SteamInstallOptions.setExcludedDlc(context, id, next)
+                                    excludedDlc = next
+                                }) { Text(uiStr(R.string.steam_dlc_select_all)) }
+                                TextButton(enabled = canEditDlc && selectedDlc.isNotEmpty(), onClick = {
+                                    val next = excludedDlc + selectable
+                                    SteamInstallOptions.setExcludedDlc(context, id, next)
+                                    excludedDlc = next
+                                }) { Text(uiStr(R.string.steam_dlc_select_none)) }
                             }
+                        }
+                        ids.forEach { dlcId ->
+                            val owned = dlcId in ownedDlc
+                            val hasContent = dlcId in dlcDepotApps
+                            val isInstalled = dlcId in installedDlc
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Checkbox(checked = dlcId in selectedDlc, enabled = canEditDlc && owned && hasContent,
+                                    onCheckedChange = { checked ->
+                                        val next = if (checked) excludedDlc - dlcId else excludedDlc + dlcId
+                                        SteamInstallOptions.setExcludedDlc(context, id, next)
+                                        excludedDlc = next
+                                    })
+                                Column(Modifier.weight(1f)) {
+                                    Text(dlcNames[dlcId].orEmpty().ifBlank { "DLC $dlcId" }, style = MaterialTheme.typography.bodyMedium)
+                                    Text(uiStr(when {
+                                        isInstalled -> R.string.steam_dlc_installed_content
+                                        !licensesReady -> R.string.steam_dlc_license_unknown
+                                        !owned -> R.string.steam_dlc_not_owned
+                                        !hasContent -> R.string.steam_dlc_no_separate_content
+                                        else -> R.string.steam_dlc_available
+                                    }), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                        if (installed && selectable.isNotEmpty()) {
+                            Button(enabled = canEditDlc && selectedDlc.isNotEmpty(),
+                                onClick = { SteamSession.install(id) }) { Text(uiStr(R.string.steam_dlc_install_selected)) }
                         }
                     }
                 }

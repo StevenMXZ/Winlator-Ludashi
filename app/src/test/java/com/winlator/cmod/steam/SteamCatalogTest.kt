@@ -82,6 +82,36 @@ class SteamCatalogTest {
         assertNull(SteamCatalog.estimatedSize(listOf(SteamCatalog.Depot(1, 11)), JSONObject()))
     }
 
+    @Test fun selectsOnlyOwnedAndEnabledDlcAlongsideBaseDepots() {
+        val info = JSONObject("""{"extended":{"listofdlc":"101,102,103,104"},"depots":{
+            "1":{"manifests":{"public":{"gid":"11","size":"100"}}},
+            "2":{"dlcappid":"101","manifests":{"public":{"gid":"22","size":"20"}}},
+            "3":{"dlcappid":"102","manifests":{"public":{"gid":"33","size":"30"}}},
+            "4":{"dlcappid":"103","manifests":{"public":{"gid":"44","size":"40"}}},
+            "5":{"dlcappid":"101","config":{"language":"french"},"manifests":{"public":"55"}}
+        }}""")
+        val library = JSONObject("""{"owned_apps":[{"id":100},{"id":101},{"id":102},{"id":104}],
+          "packages":[{"pics_fetched":true,"depot_ids":[1,2,3]}]}""")
+        assertTrue(SteamCatalog.packageMetadataReady(library))
+        assertFalse(SteamCatalog.packageMetadataReady(JSONObject()))
+        assertEquals(setOf(101,102,103,104), SteamCatalog.dlcIds(info))
+        assertEquals(setOf(101,102), SteamCatalog.selectedDlc(info, library, emptySet()))
+        val selected = SteamCatalog.selectedDlc(info, library, setOf(102))
+        val depots = SteamCatalog.depots(info, "public", "english", selected)
+        assertEquals(listOf(1,2), depots.map { it.id })
+        assertEquals(120L, SteamCatalog.estimatedSize(depots, library))
+        assertEquals(listOf(1), SteamCatalog.depots(info).map { it.id })
+    }
+
+    @Test fun keepsManifestRecordsForDeselectedInstalledDlc() {
+        val previous = JSONObject("""{"depots":{"1":{},"2":{"dlcappid":"101"},"3":{"dlcappid":"102"}},
+            "ludashiInstalledDepots":"1:11:0,2:22:0,3:33:0"}""")
+        val attempted = listOf(SteamCatalog.Depot(1, 12), SteamCatalog.Depot(2, 23))
+        assertEquals(setOf(101,102), SteamCatalog.installedDlcIds(previous))
+        assertEquals("1:12:0,2:23:0,3:33:0", SteamCatalog.installedManifestList(previous, attempted, attempted))
+        assertEquals("1:12:0,3:33:0", SteamCatalog.installedManifestList(previous, attempted, attempted.take(1)))
+    }
+
     @Test fun rejectsCircularSharedDepotReferences() {
         val info = JSONObject("""{"depots":{"92":{"depotfromapp":"800","sharedinstall":"2"}}}""")
         assertThrows(IllegalStateException::class.java) { SteamCatalog.depots(info) { info } }

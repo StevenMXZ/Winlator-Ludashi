@@ -137,4 +137,15 @@
     <string name="steam_store_downloads_help">Active and paused downloads</string>
     <string name="steam_store_location">Download location</string>
     <string name="steam_store_features">Features</string>
+    <string name="steam_dlc_selected_count">%1$d of %2$d downloadable DLCs selected</string>
+    <string name="steam_dlc_wait_licenses">Connect to Steam and wait for license information to load.</string>
+    <string name="steam_dlc_keep_installed">Deselecting a DLC excludes it from future downloads; installed files are kept.</string>
+    <string name="steam_dlc_select_all">Select all</string>
+    <string name="steam_dlc_select_none">Select none</string>
+    <string name="steam_dlc_installed_content">Installed content</string>
+    <string name="steam_dlc_license_unknown">License not verified</string>
+    <string name="steam_dlc_not_owned">Not owned</string>
+    <string name="steam_dlc_no_separate_content">Owned · no separate download available</string>
+    <string name="steam_dlc_available">Available to install</string>
+    <string name="steam_dlc_install_selected">Install selected DLCs</string>
 </resources>
