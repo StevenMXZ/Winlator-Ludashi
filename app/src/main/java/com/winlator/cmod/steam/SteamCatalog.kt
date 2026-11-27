@@ -70,6 +70,35 @@ object SteamCatalog {
         return (shared + local).also { require(it.isNotEmpty()) { "No Windows depots for the selected version and language" } }
     }
 
+    /** Estimate from owned PICS packages, not every public manifest.
+     * Package metadata is advisory: the native downloader still validates depot keys and
+     * manifest access (including demos, shared depots and resumed installations).
+     */
+    internal fun estimatedSize(depots: List<Depot>, library: JSONObject): Long? {
+        if (depots.isEmpty()) return null
+        val packages = library.optJSONArray("packages")
+        val ownedIds = mutableSetOf<Int>()
+        var complete = packages != null && packages.length() > 0
+        for (i in 0 until (packages?.length() ?: 0)) {
+            val pkg = packages?.optJSONObject(i)
+            val ids = pkg?.optJSONArray("depot_ids")
+            if (pkg?.optBoolean("pics_fetched") != true || ids == null) {
+                complete = false
+                continue
+            }
+            for (j in 0 until ids.length()) {
+                ids.optInt(j).takeIf { it > 0 }?.let { ownedIds.add(it) }
+            }
+        }
+        val selected = depots.filter { it.id in ownedIds }
+        val estimate = when {
+            depots.size == 1 -> depots
+            complete && selected.isNotEmpty() -> selected
+            else -> return null // No reliable selection yet; never sum alternative variants.
+        }
+        return estimate.takeIf { it.all { depot -> depot.size > 0 } }?.sumOf { it.size }
+    }
+
     private fun matchesInstall(depot: JSONObject, language: String): Boolean {
         val config = depot.optJSONObject("config")
         val os = config?.optString("oslist").orEmpty()

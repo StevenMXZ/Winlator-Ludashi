@@ -59,6 +59,29 @@ class SteamCatalogTest {
         ), depots)
     }
 
+    @Test fun estimatesOnlyLicensedRegionalDepotsAndDeduplicatesPackages() {
+        val depots = listOf(SteamCatalog.Depot(1, 11, 57), SteamCatalog.Depot(2, 22, 63),
+            SteamCatalog.Depot(3, 33, 1))
+        val library = JSONObject("""{"packages":[
+            {"pics_fetched":true,"depot_ids":[1,3]},
+            {"pics_fetched":true,"depot_ids":[3,99]}
+        ]}""")
+        assertEquals(58L, SteamCatalog.estimatedSize(depots, library))
+        val japanese = JSONObject("""{"packages":[{"pics_fetched":true,"depot_ids":[2,3]}]}""")
+        assertEquals(64L, SteamCatalog.estimatedSize(depots, japanese))
+    }
+
+    @Test fun doesNotGuessAlternativeSizesWhileLicenseMetadataIsMissing() {
+        val depots = listOf(SteamCatalog.Depot(1, 11, 57), SteamCatalog.Depot(2, 22, 63))
+        assertNull(SteamCatalog.estimatedSize(depots, JSONObject()))
+        assertNull(SteamCatalog.estimatedSize(depots, JSONObject("""{"packages":[
+            {"pics_fetched":true,"depot_ids":[1]},
+            {"pics_fetched":false,"depot_ids":[]}
+        ]}""")))
+        assertEquals(57L, SteamCatalog.estimatedSize(depots.take(1), JSONObject()))
+        assertNull(SteamCatalog.estimatedSize(listOf(SteamCatalog.Depot(1, 11)), JSONObject()))
+    }
+
     @Test fun rejectsCircularSharedDepotReferences() {
         val info = JSONObject("""{"depots":{"92":{"depotfromapp":"800","sharedinstall":"2"}}}""")
         assertThrows(IllegalStateException::class.java) { SteamCatalog.depots(info) { info } }

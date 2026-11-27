@@ -3,6 +3,10 @@ package com.winlator.cmod.feature.stores.steam.ludashisteam
 // Native depot download callbacks; methods run on a worker thread.
 interface LudashiDownloadListener {
 
+    // Called after native entitlement checks, before any per-depot progress.
+    @androidx.annotation.Keep
+    fun onDepotsResolved(depotIds: IntArray) {}
+
     // Per-chunk progress for the current depot.
     fun onProgress(
         depotId: Int,

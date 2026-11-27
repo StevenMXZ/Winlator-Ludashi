@@ -23,6 +23,15 @@ class SteamDownloadMeterTest {
         assertEquals(1500L, reading.done); assertEquals(2000L, reading.total)
         assertTrue(reading.bytesPerSecond > 0); assertNotNull(reading.etaSeconds)
     }
+    @Test fun nativeResolvedOrderExcludesDeniedRegionalDepots() {
+        val meter = SteamDownloadMeter(listOf(2, 3), mapOf(1 to 57000L, 2 to 63000L, 3 to 1000L))
+        meter.update(2, 63000, 63000, 0, false, 0)
+        meter.update(3, 500, 1000, 1, false, 1000)
+        val reading = meter.read(1000)
+        assertEquals(63500L, reading.done)
+        assertEquals(64000L, reading.total)
+    }
+
     @Test fun unknownFutureDepotSizeDoesNotProduceAnInventedGameEta() {
         val meter = SteamDownloadMeter(listOf(1, 2), mapOf(1 to 1000L, 2 to 0L))
         meter.update(1, 0, 1000, 0, false, 0)

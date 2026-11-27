@@ -3826,6 +3826,7 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
             );
             return;
         }
+        dispatch_resolved_depots(&listener, &resolved);
         let progress_listener = listener.clone();
         let progress = |progress: &crate::depot_downloader::DepotDownloadProgress| {
             dispatch_download_progress(&progress_listener, progress);
@@ -3867,6 +3868,25 @@ pub extern "system" fn Java_com_winlator_cmod_feature_stores_steam_ludashisteam_
             );
         dispatch_download_complete(listener, result);
     });
+}
+
+fn dispatch_resolved_depots(
+    listener: &GlobalRef,
+    depots: &[crate::depot_downloader::ResolvedDepotSpec],
+) {
+    let Some(vm) = JVM.get() else { return; };
+    let Ok(mut env) = vm.attach_current_thread_as_daemon() else { return; };
+    let ids: Vec<jint> = depots.iter().map(|depot| depot.depot_id as jint).collect();
+    let Ok(array) = env.new_int_array(ids.len() as jint) else {
+        clear_pending_exception(&mut env);
+        return;
+    };
+    if env.set_int_array_region(&array, 0, &ids).is_ok() {
+        let object = JObject::from(array);
+        let _ = env.call_method(listener.as_obj(), "onDepotsResolved", "([I)V",
+            &[JValue::Object(&object)]);
+    }
+    clear_pending_exception(&mut env);
 }
 
 fn dispatch_download_progress(

@@ -83,8 +83,14 @@ internal fun SteamStoreDetails(id: Int, installed: Boolean, state: SteamUiSnapsh
     }
     val branches = remember(pics) { SteamCatalog.branches(pics) }
     val languages = remember(pics) { SteamCatalog.languages(pics) }
-    val downloadSize = remember(pics, branch, language) {
-        runCatching { SteamCatalog.depots(pics, branch, language).sumOf { it.size } }.getOrDefault(0L)
+    val downloadSize by produceState(0L, pics, branch, language, state.library, state.signedIn, installed) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                val lookup: ((Int) -> JSONObject)? = if (state.signedIn && !installed) SteamSession::info else null
+                val depots = SteamCatalog.depots(pics, branch, language, lookup)
+                SteamCatalog.estimatedSize(depots, JSONObject(state.library)) ?: 0L
+            }.getOrDefault(0L)
+        }
     }
     val installedSize by produceState<Long?>(null, id, installed) {
         value = if (!installed) null else withContext(Dispatchers.IO) {

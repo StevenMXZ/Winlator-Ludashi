@@ -511,7 +511,7 @@ object SteamSession {
         val dir = SteamStorage.download(context, id, name)
         SteamGoldberg.restore(dir)
         SteamGoldberg.invalidate(dir)
-        downloadMeter = SteamDownloadMeter(depots.map { it.id }, depots.associate { it.id to it.size })
+        downloadMeter = null // Wait for the native entitlement-filtered depot order.
         downloading = true
         downloadId = id; downloadName = name; downloadDone = 0; downloadTotal = 0
         status = "Downloading $name…"
@@ -520,6 +520,11 @@ object SteamSession {
             s.downloadApp(id, depots.map { it.id }.toIntArray(), depots.map { it.manifest }.toLongArray(),
                 depots.map { if (freeToDownload || it.manifestAppId == 0) id else it.manifestAppId }.toIntArray(),
                 depots.map { it.manifestBranch }.toTypedArray(), dir.absolutePath, false, ca, SteamDownloadSettings.network(SteamDownloadSettings.tier(context)), object : LudashiDownloadListener {
+                    @androidx.annotation.Keep
+                    override fun onDepotsResolved(depotIds: IntArray) {
+                        if (session !== s || !signedIn) return
+                        downloadMeter = SteamDownloadMeter(depotIds.toList(), depots.associate { it.id to it.size })
+                    }
                     override fun onProgress(depotId: Int, depotDone: Long, depotTotal: Long, depotsDone: Int, depotsTotal: Int, verifying: Boolean) {
                         if (session !== s || !signedIn) return
                         downloadMeter?.update(depotId, depotDone, depotTotal, depotsDone, verifying, SystemClock.elapsedRealtime())

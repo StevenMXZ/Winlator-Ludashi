@@ -385,6 +385,7 @@ impl LudashiLibraryStore {
                 "license_type": p.license_type,
                 "change_number": p.change_number,
                 "access_token": p.access_token.to_string(),
+                "depot_ids": p.depot_ids,
             })).collect::<Vec<_>>(),
             "owned_apps": owned.iter().map(|a| json!({
                 "id": a.app_id,
